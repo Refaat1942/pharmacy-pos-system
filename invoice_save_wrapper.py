@@ -1,7 +1,6 @@
-# invoice_save_wrapper.py
 from decimal import Decimal
 from tkinter import messagebox
-from pos_app import get_connection
+from db import get_connection
 from datetime import datetime
 
 
@@ -20,11 +19,23 @@ def extract_ins_company_id(app):
     return None
 
 
+def _safe_decimal(val, default=Decimal(0)):
+    """
+    تحويل آمن لأي قيمة لـ Decimal
+    """
+    try:
+        return Decimal(str(val))
+    except:
+        return default
+
+
 def safe_save_order(app):
     """
-    Wrapper يحمي عملية حفظ الفاتورة ويضمن إضافة CustomerID & insuranceCompanyID.
+    Wrapper يحمي عملية حفظ الفاتورة
+    ومتوافق مع UI بعد الـ refactor
     """
 
+    # ================== Validations ==================
     if not app.emp_code:
         messagebox.showerror("خطأ", "لم يتم اختيار الموظف.")
         return
@@ -37,21 +48,31 @@ def safe_save_order(app):
         messagebox.showerror("خطأ", "لا توجد أصناف داخل الفاتورة.")
         return
 
-    # إجماليات الفاتورة
-    tot = Decimal(app.lbl_total.cget("text"))
-    disc = Decimal(app.lbl_disc.cget("text"))
-    cop = Decimal(app.lbl_copay.cget("text"))
-    dlv = Decimal(app.lbl_dlv.cget("text"))
-    due = Decimal(app.lbl_due.cget("text"))
+    # ================== Totals ==================
+    tot = _safe_decimal(app.lbl_total.cget("text"))
+    disc = _safe_decimal(app.lbl_disc.cget("text"))
+    due = _safe_decimal(app.lbl_due.cget("text"))
+
+    # copay (من Entry)
+    if hasattr(app, "entry_copay"):
+        cop = _safe_decimal(app.entry_copay.get())
+    else:
+        cop = Decimal(0)
+
+    # delivery fee (من Entry)
+    if hasattr(app, "entry_delivery"):
+        dlv = _safe_decimal(app.entry_delivery.get())
+    else:
+        dlv = Decimal(0)
 
     insurance_id = extract_ins_company_id(app)
 
+    # ================== Save ==================
     try:
         db = get_connection()
-
         cur = db.cursor()
 
-        # إدخال رأس الفاتورة مع CustomerID + insuranceCompanyID
+        # -------- Invoice Header --------
         cur.execute(
             """
             INSERT INTO dbo.Invoices
@@ -60,7 +81,7 @@ def safe_save_order(app):
                DeliveryFee, CustomerID, insuranceCompanyID)
             OUTPUT inserted.InvoiceID
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+            """,
             datetime.now(),
             app.emp_code,
             app.invoice_type,
@@ -74,7 +95,7 @@ def safe_save_order(app):
 
         inv_id = cur.fetchone()[0]
 
-        # إدخال البنود
+        # -------- Invoice Items --------
         for it in app.items:
             cur.execute(
                 """
@@ -82,7 +103,7 @@ def safe_save_order(app):
                 (InvoiceID, ProductCode, Unit, Quantity,
                  UnitPrice, TotalPrice, Discount, NetPrice)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+                """,
                 inv_id,
                 it["id"],
                 it["unit"],

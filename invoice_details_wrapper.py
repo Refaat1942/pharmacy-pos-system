@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import customtkinter as ctk
-import ui_base  # تفعيل الثيم
+import ui_base
 from ui_font_fix import apply_arabic_font
 from datetime import datetime
 
@@ -17,7 +17,7 @@ def nice_format_date(dt):
 
 
 def open_invoice_details(app, invoice_id):
-    """شاشة تفاصيل فاتورة – UI مطور بدون لمس الـ Logic"""
+    """شاشة تفاصيل فاتورة – تحديث الشكل فقط"""
 
     # -------------------------
     # جلب بيانات الفاتورة
@@ -61,35 +61,46 @@ def open_invoice_details(app, invoice_id):
     ) = inv
 
     # -------------------------
-    # نافذة العرض
+    # نافذة العرض (حديثة)
     # -------------------------
-    win = tk.Toplevel(app)
+    win = ctk.CTkToplevel(app)
     win.title(f"تفاصيل الفاتورة رقم {inv_id}")
     win.geometry("1100x650")
-    win.configure(bg="#f5f7fa")
+    win.configure(fg_color=ui_base.BG_MAIN)
 
     # -------------------------
-    # Header (بيانات الفاتورة)
+    # كارت بيانات الفاتورة
     # -------------------------
-    header = ctk.CTkFrame(win)
-    header.pack(fill="x", padx=20, pady=20)
+    card = ctk.CTkFrame(
+        win,
+        fg_color=ui_base.CARD_BG,
+        corner_radius=18
+    )
+    card.pack(fill="x", padx=20, pady=20)
+
+    ctk.CTkLabel(
+        card,
+        text="تفاصيل الفاتورة",
+        font=ui_base.TITLE_FONT,
+        text_color=ui_base.TEXT
+    ).pack(anchor="e", pady=(10, 15), padx=20)
 
     def add_row(lbl, val):
-        row = ctk.CTkFrame(header, fg_color="transparent")
-        row.pack(anchor="e", pady=4)
+        row = ctk.CTkFrame(card, fg_color="transparent")
+        row.pack(anchor="e", padx=20, pady=4)
 
-        tk.Label(
+        ctk.CTkLabel(
             row,
-            text=f"{lbl}: ",
+            text=f"{lbl}:",
             font=("Cairo", 13, "bold"),
-            bg=win["bg"],
-        ).pack(side="right")
+            text_color=ui_base.TEXT
+        ).pack(side="right", padx=(0, 6))
 
-        tk.Label(
+        ctk.CTkLabel(
             row,
             text=str(val),
             font=("Cairo", 13),
-            bg=win["bg"],
+            text_color=ui_base.TEXT
         ).pack(side="right")
 
     add_row("رقم الفاتورة", inv_id)
@@ -98,17 +109,24 @@ def open_invoice_details(app, invoice_id):
     add_row("العميل", f"{fname} {lname}".strip())
     add_row("الهاتف", phone if phone else "-")
     add_row("شركة التأمين", ins_comp if ins_comp else "-")
-    add_row("إجمالي المشتريات", f"{total:.2f}")
-    add_row("إجمالي الخصم", f"{disc:.2f}")
+    add_row("إجمالي", f"{total:.2f}")
+    add_row("خصم", f"{disc:.2f}")
     add_row("الصافي", f"{net:.2f}")
-    add_row("رسوم التوصيل", f"{delivery:.2f}")
+    add_row("التوصيل", f"{delivery:.2f}")
 
     # -------------------------
-    # جدول الأصناف (سيبناه ttk)
+    # جدول الأصناف (ttk زي ما هو)
     # -------------------------
+    table_frame = ctk.CTkFrame(
+        win,
+        fg_color=ui_base.CARD_BG,
+        corner_radius=18
+    )
+    table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
     cols = ("code", "name", "unit", "qty", "up", "total", "disc", "net")
-    tv = ttk.Treeview(win, columns=cols, show="headings", height=15)
-    tv.pack(fill="both", expand=True, padx=20, pady=10)
+    tv = ttk.Treeview(table_frame, columns=cols, show="headings", height=14)
+    tv.pack(fill="both", expand=True, padx=10, pady=10)
 
     for c in cols:
         tv.heading(c, text=c)
@@ -153,33 +171,40 @@ def open_invoice_details(app, invoice_id):
     db.close()
 
     # -------------------------
-    # أزرار أسفل الشاشة
+    # أزرار التحكم
     # -------------------------
-    btn_frame = ctk.CTkFrame(win)
-    btn_frame.pack(pady=15)
+    btns = ctk.CTkFrame(win, fg_color="transparent")
+    btns.pack(pady=15)
 
     ctk.CTkButton(
-        btn_frame,
+        btns,
         text="🖨 طباعة الفاتورة",
         command=lambda: app.generate_pdf(inv_id),
+        fg_color=ui_base.PRIMARY,
+        font=ui_base.FONT,
+        height=40,
+        corner_radius=12,
         width=160,
     ).pack(side="right", padx=8)
 
     ctk.CTkButton(
-        btn_frame,
+        btns,
         text="↩ مرتجع جزئي",
-        command=lambda: messagebox.showinfo(
-            "قريبًا", "سيتم تفعيل المرتجع الجزئي مع هذا الشكل"
-        ),
+        command=lambda: messagebox.showinfo("قريبًا", "سيتم تفعيل المرتجع الجزئي"),
+        font=ui_base.FONT,
+        height=40,
+        corner_radius=12,
         width=160,
     ).pack(side="right", padx=8)
 
     ctk.CTkButton(
-        btn_frame,
+        btns,
         text="إغلاق",
         fg_color="#9ca3af",
         hover_color="#6b7280",
         command=win.destroy,
+        height=40,
+        corner_radius=12,
         width=120,
     ).pack(side="right", padx=8)
 
