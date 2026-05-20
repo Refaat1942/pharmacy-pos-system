@@ -1,0 +1,135 @@
+Continue working on the current Pharmacy POS & ERP project without changing the existing architecture or breaking current features.
+
+The following modules/features are already completed:
+
+* Basic POS System
+* Product Master Data
+* Barcode System
+* Customer Complaints CRM
+* Customer Orders
+* Customer Search
+* SQL Server Connection
+* Multi Screens using Python
+* Basic Inventory Management
+
+Now continue the project and implement ONLY the missing features below in a clean scalable structure with modern UI and optimized SQL Server performance.
+
+========================
+EXPIRY MANAGEMENT
+=================
+
+* Link Expiry to Barcode
+* Auto Expiry Detection During Sale
+* Near Expiry Report
+* Expired Items Report
+* Warning Popup During Sale
+* Prevent Selling Expired Items
+
+========================
+PURCHASING & SUPPLIERS
+======================
+
+* Purchase Order Issuing
+* Supplier Management
+* Supplier Contact Information
+* Purchase History
+* Supplier Invoice Number
+* Supplier Invoice Date
+* Supplier Invoice Total Value
+* Outstanding Supplier Balances
+* Supplier Payment History
+* Supplier Account Statement
+
+========================
+CUSTOMER MANAGEMENT
+===================
+
+* Customer Page
+* Remaining & Paid Balance
+* Customer Analysis
+* Customer Purchase History
+* Customer Notes
+
+========================
+HR & EMPLOYEES
+==============
+
+* Employee Code
+* Employee Name
+* Employee Branch
+* Employee Status
+* Employee Salary
+* Pharmacist Role
+* Assistant Pharmacist Role
+* Branch Manager Role
+* Delivery Role
+* Payroll Calculator
+* Vacation Allowance
+
+========================
+FINANCIAL MANAGEMENT
+====================
+
+* Financial Reports
+* Daily Sales Reports
+* Cash Drawer Management
+
+========================
+MULTI BRANCH & SECURITY
+=======================
+
+* Multiple Branches
+* Multiple Users
+* Permissions & Roles
+* Admin Dashboard
+* User Permissions
+
+========================
+INTEGRATION & AUTOMATION
+========================
+
+* Automatic Stock Sync with Talabat
+* Prepare Mobile App Integration APIs
+* Online & Offline Mode
+
+========================
+BRANDING & UI
+=============
+
+* Pharmacy Logo & Branding
+* Arabic Interface
+* English Interface
+* Fast Modern POS UI
+* Responsive Design
+
+========================
+ANALYTICS & BI
+==============
+
+* Sales Analysis
+* Customer Analysis
+* Product Performance Analysis
+* Fast / Slow / Dead Stock Reports
+* Expiry Loss Analysis
+* Sales Trend Reports
+* Recommend Alternatives During Sale
+
+========================
+GENERAL REQUIREMENTS
+====================
+
+* All reports must support Excel export
+* Use clean modular architecture
+* Keep SQL queries optimized
+* Add proper validation and error handling
+* Maintain compatibility with existing database
+* Create reusable components
+* Use professional pharmacy workflow logic
+* Keep UI very fast and simple for pharmacy use
+* Add comments in code for maintainability
+
+At the beginning of implementation:
+1- Analyze the existing project structure
+2- Detect completed modules automatically
+3- List missing modules
+4- Then start implementing missing features step by step without affecting current working functions
