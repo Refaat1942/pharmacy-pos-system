@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ShoppingCart, History, LogOut, Globe, Clock, Package, ArrowRightLeft, Calendar, Truck, FileText, Users, BarChart3, RotateCcw } from 'lucide-react'
+import { ShoppingCart, History, LogOut, Globe, Clock, Package, ArrowRightLeft, Calendar, Truck, FileText, Users, BarChart3, RotateCcw, Pill } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useEffect, useState } from 'react'
 import i18n from '../lib/i18n'
@@ -33,20 +33,18 @@ export default function Header() {
   const initial = (user?.name_en || user?.name_ar || 'U').charAt(0).toUpperCase()
 
   return (
-    <header className="bg-slate-900 text-white h-14 flex items-center px-4 gap-3 shadow-xl flex-shrink-0 z-10">
-      <div className="flex items-center gap-2.5 me-2">
+    <header className="bg-slate-900 text-white min-h-14 flex flex-wrap items-center px-3 py-1.5 gap-x-2 gap-y-1 shadow-xl flex-shrink-0 z-10">
+      <div className="flex items-center gap-2 me-1 shrink-0">
         <div className="bg-pharma-600 rounded-lg p-1.5 shadow-lg">
-          <svg viewBox="0 0 24 24" className="w-5 h-5 text-white fill-current">
-            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c.55 0 1 .45 1 1v3h3c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3v3c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-3H7c-.55 0-1-.45-1-1v-2c0-.55.45-1 1-1h3V7c0-.55.45-1 1-1h2z"/>
-          </svg>
+          <Pill size={18} className="text-white" strokeWidth={2.5} />
         </div>
-        <span className="font-bold text-base tracking-tight hidden sm:block">{t('app_name')}</span>
+        <span className="font-bold text-sm tracking-tight hidden sm:block">{t('app_name')}</span>
       </div>
 
-      <nav className="flex items-center gap-1">
+      <nav className="flex items-center flex-wrap gap-0.5 min-w-0">
         <Link
           to="/dashboard"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/dashboard'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -57,7 +55,7 @@ export default function Header() {
         </Link>
         <Link
           to="/"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -68,7 +66,7 @@ export default function Header() {
         </Link>
         <Link
           to="/sales"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/sales'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -79,7 +77,7 @@ export default function Header() {
         </Link>
         <Link
           to="/returns"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/returns'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -90,7 +88,7 @@ export default function Header() {
         </Link>
         <Link
           to="/inventory"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/inventory'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -101,7 +99,7 @@ export default function Header() {
         </Link>
         <Link
           to="/transfers"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/transfers'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -112,7 +110,7 @@ export default function Header() {
         </Link>
         <Link
           to="/expiry"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/expiry'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -123,7 +121,7 @@ export default function Header() {
         </Link>
         <Link
           to="/purchases"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/purchases'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -134,7 +132,7 @@ export default function Header() {
         </Link>
         <Link
           to="/customers"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/customers'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -145,7 +143,7 @@ export default function Header() {
         </Link>
         <Link
           to="/suppliers"
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
             location.pathname === '/suppliers'
               ? 'bg-pharma-600 text-white'
               : 'text-white/70 hover:text-white hover:bg-white/10'
@@ -158,7 +156,7 @@ export default function Header() {
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-1.5 text-white/50 text-xs font-mono tabular-nums">
+      <div className="flex items-center gap-1 text-white/50 text-xs font-mono tabular-nums">
         <Clock size={13} />
         {time.toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
           hour: '2-digit',
@@ -171,7 +169,7 @@ export default function Header() {
 
       <button
         onClick={toggleLang}
-        className="flex items-center gap-1.5 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+        className="flex items-center gap-1 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded-md text-xs font-medium transition-all whitespace-nowrap"
       >
         <Globe size={14} />
         {i18n.language === 'ar' ? 'EN' : 'عر'}
@@ -186,7 +184,7 @@ export default function Header() {
 
       <button
         onClick={handleLogout}
-        className="flex items-center gap-1.5 text-white/50 hover:text-red-400 hover:bg-red-900/30 p-2 rounded-lg transition-all"
+        className="flex items-center gap-1 text-white/50 hover:text-red-400 hover:bg-red-900/30 p-2 rounded-lg transition-all"
         title={t('nav.logout')}
       >
         <LogOut size={16} />

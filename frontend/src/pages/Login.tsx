@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Eye, EyeOff, Loader2, Globe } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Globe, Pill } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { authAPI } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -50,9 +50,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-pharma-600 rounded-2xl shadow-2xl mb-4 mx-auto">
-            <svg viewBox="0 0 24 24" className="w-12 h-12 text-white fill-current">
-              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c.55 0 1 .45 1 1v3h3c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1h-3v3c0 .55-.45 1-1 1h-2c-.55 0-1-.45-1-1v-3H7c-.55 0-1-.45-1-1v-2c0-.55.45-1 1-1h3V7c0-.55.45-1 1-1h2z"/>
-            </svg>
+            <Pill className="w-12 h-12 text-white" strokeWidth={2.5} />
           </div>
           <h1 className="text-3xl font-bold text-white">{t('app_name')}</h1>
           <p className="text-white/60 mt-1 text-sm">{t('login.subtitle')}</p>
