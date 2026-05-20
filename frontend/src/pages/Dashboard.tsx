@@ -4,7 +4,7 @@ import {
   TrendingUp, ShoppingCart, RotateCcw, AlertTriangle, Package,
   Calendar as CalendarIcon, Users, BarChart3, Loader2,
 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import i18n from '../lib/i18n'
 import { dashboardAPI } from '../lib/api'
 import type {
@@ -56,8 +56,7 @@ export default function Dashboard() {
     })
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
-      <Header />
+    <Layout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6 space-y-6">
           <div className="flex items-center justify-between">
@@ -240,7 +239,7 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-    </div>
+    </Layout>
   )
 }
 

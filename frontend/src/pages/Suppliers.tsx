@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import { suppliersAPI, Supplier } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import RegionSelect from '../components/RegionSelect'
@@ -34,8 +34,7 @@ export default function Suppliers() {
   }, [q])
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
+    <Layout>
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -153,7 +152,7 @@ export default function Suppliers() {
       {paying && (
         <PaymentModal supplier={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />
       )}
-    </div>
+    </Layout>
   )
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import api from '../lib/api'
 
 type Product = {
@@ -104,9 +104,7 @@ export default function Inventory() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
-
+    <Layout>
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full">
         {/* Title */}
         <div className="flex items-center justify-between mb-6">
@@ -266,7 +264,7 @@ export default function Inventory() {
       {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSaved={() => { setAdjustItem(null); loadItems() }} />}
       {historyItem && <HistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
       {showExcel && <ExcelUploadModal onClose={() => setShowExcel(false)} onDone={() => { setShowExcel(false); loadItems() }} />}
-    </div>
+    </Layout>
   )
 }
 

@@ -1,0 +1,492 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert } from 'lucide-react'
+import Layout from '../components/Layout'
+import api from '../lib/api'
+import { useAuth } from '../lib/auth'
+import i18n from '../lib/i18n'
+
+interface UserRow {
+  id: number
+  username: string
+  name_ar: string
+  name_en: string
+  role: string
+  branch_id: number | null
+  salary: number | null
+  status: string
+  branch_name_en: string | null
+  branch_name_ar: string | null
+}
+
+interface BranchRow {
+  id: number
+  name_ar: string
+  name_en: string
+  address: string | null
+  phone: string | null
+  user_count: number
+  product_count: number
+}
+
+const ROLES = ['admin', 'pharmacist', 'assistant', 'cashier']
+
+const roleClass: Record<string, string> = {
+  admin: 'bg-purple-100 text-purple-700 border-purple-200',
+  pharmacist: 'bg-blue-100 text-blue-700 border-blue-200',
+  assistant: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  cashier: 'bg-amber-100 text-amber-700 border-amber-200',
+}
+
+export default function Settings() {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const [tab, setTab] = useState<'users' | 'branches'>('users')
+
+  if (user?.role !== 'admin') {
+    return (
+      <Layout>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
+          <ShieldAlert size={48} className="mb-3 text-red-400" />
+          <p className="text-lg font-medium">{t('settings.admin_only')}</p>
+        </div>
+      </Layout>
+    )
+  }
+
+  return (
+    <Layout>
+      <div className="flex-1 overflow-auto p-6 max-w-screen-xl mx-auto w-full">
+        <div className="mb-5">
+          <h1 className="text-2xl font-bold text-slate-800">{t('settings.title')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{t('settings.subtitle')}</p>
+        </div>
+
+        <div className="flex border-b border-slate-200 mb-5">
+          <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
+          <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
+        </div>
+
+        {tab === 'users' ? <UsersTab /> : <BranchesTab />}
+      </div>
+    </Layout>
+  )
+}
+
+function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+        active ? 'border-pharma-600 text-pharma-700' : 'border-transparent text-slate-500 hover:text-slate-700'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
+// ---------------- Users Tab ----------------
+
+function UsersTab() {
+  const { t } = useTranslation()
+  const [users, setUsers] = useState<UserRow[]>([])
+  const [branches, setBranches] = useState<BranchRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<UserRow | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [pwUser, setPwUser] = useState<UserRow | null>(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [u, b] = await Promise.all([
+        api.get('/settings/users'),
+        api.get('/settings/branches'),
+      ])
+      setUsers(u.data)
+      setBranches(b.data)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <h2 className="text-sm font-semibold text-slate-700">{t('settings.user_list')} ({users.length})</h2>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
+        >
+          <Plus size={15} /> {t('settings.add_user')}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="p-10 text-center text-slate-400 text-sm">{t('common.loading')}</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-2.5 text-start">{t('settings.username')}</th>
+                <th className="px-4 py-2.5 text-start">{t('settings.name')}</th>
+                <th className="px-4 py-2.5 text-start">{t('settings.role')}</th>
+                <th className="px-4 py-2.5 text-start">{t('settings.branch')}</th>
+                <th className="px-4 py-2.5 text-end">{t('settings.salary')}</th>
+                <th className="px-4 py-2.5 text-start">{t('settings.status')}</th>
+                <th className="px-4 py-2.5 text-end">{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const name = i18n.language === 'ar' ? u.name_ar : u.name_en
+                const branch = i18n.language === 'ar' ? u.branch_name_ar : u.branch_name_en
+                return (
+                  <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                    <td className="px-4 py-2.5 font-mono text-xs text-slate-700">{u.username}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-800">{name}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold border ${roleClass[u.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        {t(`settings.role_${u.role}`, u.role)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600">{branch || '—'}</td>
+                    <td className="px-4 py-2.5 text-end font-mono tabular-nums">{u.salary != null ? Number(u.salary).toFixed(2) : '—'}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-semibold ${
+                        u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {t(`settings.status_${u.status}`, u.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-end whitespace-nowrap">
+                      <button onClick={() => setPwUser(u)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md" title={t('settings.reset_password')}>
+                        <KeyRound size={14} />
+                      </button>
+                      <button onClick={() => setEditing(u)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md ms-1" title={t('common.edit')}>
+                        <Pencil size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {creating && (
+        <UserModal branches={branches} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />
+      )}
+      {editing && (
+        <UserModal user={editing} branches={branches} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />
+      )}
+      {pwUser && (
+        <PasswordModal user={pwUser} onClose={() => setPwUser(null)} onSaved={() => setPwUser(null)} />
+      )}
+    </div>
+  )
+}
+
+function UserModal({ user, branches, onClose, onSaved }: {
+  user?: UserRow; branches: BranchRow[]; onClose: () => void; onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const isEdit = !!user
+  const [form, setForm] = useState({
+    username: user?.username || '',
+    name_en: user?.name_en || '',
+    name_ar: user?.name_ar || '',
+    role: user?.role || 'cashier',
+    branch_id: user?.branch_id || null as number | null,
+    salary: user?.salary?.toString() || '',
+    status: user?.status || 'active',
+    password: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    setSaving(true); setError(null)
+    try {
+      const payload: any = {
+        name_en: form.name_en,
+        name_ar: form.name_ar,
+        role: form.role,
+        branch_id: form.branch_id ? Number(form.branch_id) : null,
+        salary: form.salary ? Number(form.salary) : null,
+      }
+      if (isEdit) {
+        payload.status = form.status
+        await api.put(`/settings/users/${user!.id}`, payload)
+      } else {
+        payload.username = form.username
+        payload.password = form.password
+        await api.post('/settings/users', payload)
+      }
+      onSaved()
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">{isEdit ? t('settings.edit_user') : t('settings.add_user')}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {!isEdit && (
+            <Field label={t('settings.username')}>
+              <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="input w-full" autoFocus />
+            </Field>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('settings.name_en')}>
+              <input value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} className="input w-full" />
+            </Field>
+            <Field label={t('settings.name_ar')}>
+              <input value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="input w-full" dir="rtl" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('settings.role')}>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input w-full">
+                {ROLES.map((r) => <option key={r} value={r}>{t(`settings.role_${r}`, r)}</option>)}
+              </select>
+            </Field>
+            <Field label={t('settings.branch')}>
+              <select
+                value={form.branch_id ?? ''}
+                onChange={(e) => setForm({ ...form, branch_id: e.target.value ? Number(e.target.value) : null })}
+                className="input w-full"
+              >
+                <option value="">—</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={t('settings.salary')}>
+              <input type="number" value={form.salary} onChange={(e) => setForm({ ...form, salary: e.target.value })} className="input w-full" />
+            </Field>
+            {isEdit && (
+              <Field label={t('settings.status')}>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="input w-full">
+                  <option value="active">{t('settings.status_active')}</option>
+                  <option value="inactive">{t('settings.status_inactive')}</option>
+                </select>
+              </Field>
+            )}
+          </div>
+          {!isEdit && (
+            <Field label={t('settings.password')}>
+              <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input w-full" autoComplete="new-password" />
+            </Field>
+          )}
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PasswordModal({ user, onClose, onSaved }: { user: UserRow; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const [pw, setPw] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    if (pw.length < 4) { setError(t('settings.password_too_short')); return }
+    setSaving(true); setError(null)
+    try {
+      await api.put(`/settings/users/${user.id}/password`, { password: pw })
+      onSaved()
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">{t('settings.reset_password')} — {user.username}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <Field label={t('settings.new_password')}>
+            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} className="input w-full" autoFocus autoComplete="new-password" />
+          </Field>
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('settings.reset_password')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------- Branches Tab ----------------
+
+function BranchesTab() {
+  const { t } = useTranslation()
+  const [branches, setBranches] = useState<BranchRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<BranchRow | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const r = await api.get('/settings/branches')
+      setBranches(r.data)
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+        <h2 className="text-sm font-semibold text-slate-700">{t('settings.branch_list')} ({branches.length})</h2>
+        <button
+          onClick={() => setCreating(true)}
+          className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
+        >
+          <Plus size={15} /> {t('settings.add_branch')}
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="p-10 text-center text-slate-400 text-sm">{t('common.loading')}</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+          {branches.map((b) => {
+            const name = i18n.language === 'ar' ? b.name_ar : b.name_en
+            return (
+              <div key={b.id} className="border border-slate-200 rounded-xl p-4 hover:border-pharma-300 hover:shadow-md transition-all bg-white">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="bg-pharma-100 p-2 rounded-lg">
+                      <Building2 size={18} className="text-pharma-700" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800 leading-tight">{name}</p>
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wider">ID #{b.id}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setEditing(b)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md">
+                    <Pencil size={14} />
+                  </button>
+                </div>
+                {b.address && <p className="text-xs text-slate-500 mt-1">{b.address}</p>}
+                {b.phone && <p className="text-xs text-slate-500 font-mono">{b.phone}</p>}
+                <div className="mt-3 pt-3 border-t border-slate-100 flex gap-4 text-xs text-slate-500">
+                  <span><b className="text-slate-800">{b.user_count}</b> {t('settings.users_count')}</span>
+                  <span><b className="text-slate-800">{b.product_count}</b> {t('settings.products_count')}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {creating && <BranchModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />}
+      {editing && <BranchModal branch={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+    </div>
+  )
+}
+
+function BranchModal({ branch, onClose, onSaved }: { branch?: BranchRow; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const isEdit = !!branch
+  const [form, setForm] = useState({
+    name_en: branch?.name_en || '',
+    name_ar: branch?.name_ar || '',
+    address: branch?.address || '',
+    phone: branch?.phone || '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    setSaving(true); setError(null)
+    try {
+      const payload = { ...form, address: form.address || null, phone: form.phone || null }
+      if (isEdit) await api.put(`/settings/branches/${branch!.id}`, payload)
+      else await api.post('/settings/branches', payload)
+      onSaved()
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">{isEdit ? t('settings.edit_branch') : t('settings.add_branch')}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <Field label={t('settings.name_en')}>
+            <input value={form.name_en} onChange={(e) => setForm({ ...form, name_en: e.target.value })} className="input w-full" autoFocus />
+          </Field>
+          <Field label={t('settings.name_ar')}>
+            <input value={form.name_ar} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} className="input w-full" dir="rtl" />
+          </Field>
+          <Field label={t('settings.address')}>
+            <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="input w-full" />
+          </Field>
+          <Field label={t('settings.phone')}>
+            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input w-full" />
+          </Field>
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
+      {children}
+    </div>
+  )
+}

@@ -24,6 +24,8 @@ app.add_middleware(
 app.include_router(inventory_router)
 app.include_router(purchasing_router)
 app.include_router(customers_router)
+from settings import router as settings_router
+app.include_router(settings_router)
 
 
 @app.on_event("startup")

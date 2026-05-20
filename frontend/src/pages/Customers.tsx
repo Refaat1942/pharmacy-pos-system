@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import RegionSelect from '../components/RegionSelect'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -33,8 +33,7 @@ export default function Customers() {
   }, [q])
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
+    <Layout>
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -125,7 +124,7 @@ export default function Customers() {
       {editing && <EditModal initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
       {statement && <StatementModal data={statement} onClose={() => setStatement(null)} />}
       {paying && <PaymentModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />}
-    </div>
+    </Layout>
   )
 }
 

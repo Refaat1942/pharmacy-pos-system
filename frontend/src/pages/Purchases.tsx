@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Package, Plus, Eye, Check, X, Trash2 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -53,8 +53,7 @@ export default function Purchases() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
+    <Layout>
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -144,7 +143,7 @@ export default function Purchases() {
           canManage={user?.role === 'admin' || user?.branch_id === viewing.branch_id}
         />
       )}
-    </div>
+    </Layout>
   )
 }
 

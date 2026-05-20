@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Calendar, Download } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import { expiryAPI, ExpiryItem, ExpirySummary } from '../lib/api'
 import i18n from '../lib/i18n'
 
@@ -92,8 +92,7 @@ export default function Expiry() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
+    <Layout>
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
@@ -206,7 +205,7 @@ export default function Expiry() {
           </table>
         </div>
       </main>
-    </div>
+    </Layout>
   )
 }
 

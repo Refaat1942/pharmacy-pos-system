@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RotateCcw, Filter, Loader2 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import { returnsAPI, salesAPI } from '../lib/api'
 import type { ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -44,8 +44,7 @@ export default function Returns() {
   const ratio = salesTotal > 0 ? (totalReturned / salesTotal) * 100 : 0
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
-      <Header />
+    <Layout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6 space-y-4">
           <div className="flex items-center justify-between">
@@ -160,6 +159,6 @@ export default function Returns() {
           )}
         </div>
       </div>
-    </div>
+    </Layout>
   )
 }

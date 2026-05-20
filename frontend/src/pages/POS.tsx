@@ -13,7 +13,7 @@ import {
   Trash2,
   CornerDownLeft,
 } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
 import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
@@ -168,9 +168,7 @@ export default function POS() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
-      <Header />
-
+    <Layout>
       <div className="flex-1 flex overflow-hidden">
         {/* ──────────── Main work area: scan + cart ──────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -471,6 +469,6 @@ export default function POS() {
       {showReceiptModal && lastSale && (
         <ReceiptModal sale={lastSale} onNewSale={handleNewSale} onClose={handleNewSale} />
       )}
-    </div>
+    </Layout>
   )
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter } from 'lucide-react'
-import Header from '../components/Header'
+import Layout from '../components/Layout'
 import { salesAPI, employeesAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -127,9 +127,7 @@ export default function Sales() {
   const totalGross = completed.reduce((sum, i) => sum + (i.subtotal || 0), 0)
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
-      <Header />
-
+    <Layout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
           {/* Page header */}
@@ -499,6 +497,6 @@ export default function Sales() {
           </div>
         </div>
       )}
-    </div>
+    </Layout>
   )
 }
