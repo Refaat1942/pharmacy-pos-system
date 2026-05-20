@@ -26,6 +26,8 @@ app.include_router(purchasing_router)
 app.include_router(customers_router)
 from settings import router as settings_router
 app.include_router(settings_router)
+from reports import router as reports_router
+app.include_router(reports_router)
 
 
 @app.on_event("startup")

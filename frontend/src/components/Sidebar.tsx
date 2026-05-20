@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
+  LineChart,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 
@@ -11,6 +12,7 @@ interface NavItem {
   labelKey: string
   Icon: typeof ShoppingCart
   adminOnly?: boolean
+  roles?: string[]
 }
 
 const NAV: NavItem[] = [
@@ -24,6 +26,7 @@ const NAV: NavItem[] = [
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck },
+  { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart, roles: ['admin', 'pharmacist'] },
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, adminOnly: true },
 ]
 
@@ -48,7 +51,11 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
-        {NAV.filter((n) => !n.adminOnly || isAdmin).map(({ to, labelKey, Icon }) => {
+        {NAV.filter((n) => {
+          if (n.adminOnly && !isAdmin) return false
+          if (n.roles && !n.roles.includes(user?.role || '')) return false
+          return true
+        }).map(({ to, labelKey, Icon }) => {
           const active = location.pathname === to
           return (
             <Link
