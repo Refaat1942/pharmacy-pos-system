@@ -28,6 +28,10 @@ from settings import router as settings_router
 app.include_router(settings_router)
 from reports import router as reports_router
 app.include_router(reports_router)
+from shifts import router as shifts_router
+app.include_router(shifts_router)
+from hr import router as hr_router
+app.include_router(hr_router)
 
 
 @app.on_event("startup")

@@ -15,6 +15,8 @@ import Dashboard from './pages/Dashboard'
 import Returns from './pages/Returns'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
+import Shifts from './pages/Shifts'
+import HR from './pages/HR'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -45,6 +47,8 @@ function AppRoutes() {
       <Route path="/returns" element={<ProtectedRoute><Returns /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+      <Route path="/shifts" element={<ProtectedRoute><Shifts /></ProtectedRoute>} />
+      <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

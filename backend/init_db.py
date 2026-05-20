@@ -272,6 +272,67 @@ SELECT setval('purchase_order_seq',
 SELECT setval('stock_transfer_seq',
               GREATEST((SELECT COALESCE(MAX(id), 0) FROM stock_transfers), 1));
 
+-- Cash drawer / shifts
+CREATE TABLE IF NOT EXISTS shifts (
+    id            SERIAL PRIMARY KEY,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    branch_id     INTEGER NOT NULL REFERENCES branches(id),
+    opened_at     TIMESTAMP NOT NULL DEFAULT now(),
+    opening_cash  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    closed_at     TIMESTAMP,
+    closing_cash  NUMERIC(10,2),
+    expected_cash NUMERIC(10,2),
+    variance      NUMERIC(10,2),
+    status        VARCHAR(10) NOT NULL DEFAULT 'open',
+    notes         TEXT
+);
+CREATE INDEX IF NOT EXISTS shifts_user_status_idx ON shifts(user_id, status);
+CREATE INDEX IF NOT EXISTS shifts_branch_opened_idx ON shifts(branch_id, opened_at);
+CREATE UNIQUE INDEX IF NOT EXISTS shifts_one_open_per_user
+  ON shifts(user_id) WHERE status='open';
+
+-- HR & Payroll
+CREATE TABLE IF NOT EXISTS employees (
+    id           SERIAL PRIMARY KEY,
+    name         VARCHAR(150) NOT NULL,
+    role         VARCHAR(50),
+    branch_id    INTEGER REFERENCES branches(id),
+    base_salary  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    hire_date    DATE,
+    phone        VARCHAR(30),
+    national_id  VARCHAR(50),
+    active       BOOLEAN DEFAULT true,
+    notes        TEXT,
+    created_at   TIMESTAMP DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS attendance (
+    id          SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    work_date   DATE NOT NULL,
+    check_in    TIME,
+    check_out   TIME,
+    hours       NUMERIC(5,2),
+    status      VARCHAR(20) DEFAULT 'present',
+    notes       TEXT,
+    UNIQUE(employee_id, work_date)
+);
+CREATE INDEX IF NOT EXISTS attendance_date_idx ON attendance(work_date);
+CREATE TABLE IF NOT EXISTS salary_slips (
+    id           SERIAL PRIMARY KEY,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    period_month VARCHAR(7) NOT NULL,
+    base_salary  NUMERIC(10,2) NOT NULL DEFAULT 0,
+    bonus        NUMERIC(10,2) DEFAULT 0,
+    deductions   NUMERIC(10,2) DEFAULT 0,
+    days_worked  INTEGER DEFAULT 0,
+    net_amount   NUMERIC(10,2) NOT NULL DEFAULT 0,
+    status       VARCHAR(20) DEFAULT 'draft',
+    paid_at      TIMESTAMP,
+    notes        TEXT,
+    created_at   TIMESTAMP DEFAULT now(),
+    UNIQUE(employee_id, period_month)
+);
+
 -- Migration: replace single-column UNIQUE(barcode) with composite UNIQUE(barcode, branch_id)
 DO $$
 BEGIN

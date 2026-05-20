@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
-  LineChart,
+  LineChart, DollarSign, UsersRound,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 
@@ -27,6 +27,8 @@ const NAV: NavItem[] = [
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart, roles: ['admin', 'pharmacist'] },
+  { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign },
+  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound, adminOnly: true },
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, adminOnly: true },
 ]
 
