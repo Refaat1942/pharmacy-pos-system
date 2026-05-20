@@ -158,6 +158,75 @@ CREATE TABLE IF NOT EXISTS stock_transfer_items (
 CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer ON stock_transfer_items(transfer_id);
 
 CREATE SEQUENCE IF NOT EXISTS stock_transfer_seq START 1;
+
+-- ─── PURCHASING & SUPPLIERS ──────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS suppliers (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    contact_person VARCHAR(150),
+    phone VARCHAR(40),
+    email VARCHAR(200),
+    address TEXT,
+    tax_number VARCHAR(50),
+    notes TEXT,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_suppliers_active ON suppliers(active);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id SERIAL PRIMARY KEY,
+    po_number VARCHAR(40) UNIQUE NOT NULL,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    supplier_invoice_number VARCHAR(80),
+    supplier_invoice_date DATE,
+    subtotal DECIMAL(12,2) DEFAULT 0,
+    discount DECIMAL(12,2) DEFAULT 0,
+    tax DECIMAL(12,2) DEFAULT 0,
+    total DECIMAL(12,2) DEFAULT 0,
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    received_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    received_at TIMESTAMP,
+    cancelled_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_po_supplier ON purchase_orders(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_po_branch ON purchase_orders(branch_id);
+CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id SERIAL PRIMARY KEY,
+    po_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id),
+    barcode VARCHAR(50),
+    product_name_ar TEXT,
+    product_name_en TEXT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    unit_cost DECIMAL(12,2) NOT NULL,
+    expiry_date DATE,
+    total DECIMAL(12,2) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_po_items_po ON purchase_order_items(po_id);
+
+CREATE TABLE IF NOT EXISTS supplier_payments (
+    id SERIAL PRIMARY KEY,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    po_id INTEGER REFERENCES purchase_orders(id),
+    amount DECIMAL(12,2) NOT NULL CHECK (amount > 0),
+    payment_method VARCHAR(30),
+    reference VARCHAR(100),
+    notes TEXT,
+    paid_at TIMESTAMP DEFAULT NOW(),
+    recorded_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_sup_pay_supplier ON supplier_payments(supplier_id, paid_at DESC);
+
+CREATE SEQUENCE IF NOT EXISTS purchase_order_seq START 1;
+SELECT setval('purchase_order_seq',
+              GREATEST((SELECT COALESCE(MAX(id), 0) FROM purchase_orders), 1));
 SELECT setval('stock_transfer_seq',
               GREATEST((SELECT COALESCE(MAX(id), 0) FROM stock_transfers), 1));
 

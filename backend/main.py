@@ -8,6 +8,7 @@ from auth import create_token, verify_password
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
 from inventory import router as inventory_router, log_movement
+from purchasing import router as purchasing_router
 
 app = FastAPI(title="PharmaPOS API")
 
@@ -20,6 +21,7 @@ app.add_middleware(
 )
 
 app.include_router(inventory_router)
+app.include_router(purchasing_router)
 
 
 # ─── AUTH ────────────────────────────────────────────────────────────────────

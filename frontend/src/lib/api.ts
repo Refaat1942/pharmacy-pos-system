@@ -234,6 +234,84 @@ export interface ExpirySummary {
   near_value: number
 }
 
+export interface Supplier {
+  id: number
+  name: string
+  contact_person: string | null
+  phone: string | null
+  email: string | null
+  address: string | null
+  tax_number: string | null
+  notes: string | null
+  active: boolean
+  total_charged: number
+  total_paid: number
+  balance: number
+}
+
+export interface POItem {
+  id?: number
+  product_id?: number | null
+  barcode?: string | null
+  product_name_ar?: string | null
+  product_name_en?: string | null
+  quantity: number
+  unit_cost: number
+  expiry_date?: string | null
+  total?: number
+}
+
+export interface PurchaseOrder {
+  id: number
+  po_number: string
+  supplier_id: number
+  supplier_name: string
+  branch_id: number
+  branch_name_en?: string
+  branch_name_ar?: string
+  status: 'draft' | 'received' | 'cancelled'
+  supplier_invoice_number: string | null
+  supplier_invoice_date: string | null
+  subtotal: number
+  discount: number
+  tax: number
+  total: number
+  notes: string | null
+  created_at: string
+  received_at: string | null
+  cancelled_at: string | null
+  items?: POItem[]
+}
+
+export const suppliersAPI = {
+  list: (params: { q?: string; active_only?: boolean } = {}) =>
+    api.get<Supplier[]>('/suppliers', { params }),
+  create: (data: Partial<Supplier>) => api.post<Supplier>('/suppliers', data),
+  update: (id: number, data: Partial<Supplier>) => api.put<Supplier>(`/suppliers/${id}`, data),
+  remove: (id: number) => api.delete(`/suppliers/${id}`),
+  statement: (id: number) => api.get(`/suppliers/${id}/statement`),
+  pay: (id: number, data: { amount: number; payment_method?: string; po_id?: number; reference?: string; notes?: string }) =>
+    api.post(`/suppliers/${id}/payments`, data),
+}
+
+export const purchasesAPI = {
+  list: (params: { status?: string; supplier_id?: number } = {}) =>
+    api.get<PurchaseOrder[]>('/purchase-orders', { params }),
+  get: (id: number) => api.get<PurchaseOrder>(`/purchase-orders/${id}`),
+  create: (data: {
+    supplier_id: number
+    branch_id: number
+    supplier_invoice_number?: string
+    supplier_invoice_date?: string
+    discount?: number
+    tax?: number
+    notes?: string
+    items: POItem[]
+  }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number }>('/purchase-orders', data),
+  receive: (id: number) => api.post(`/purchase-orders/${id}/receive`),
+  cancel: (id: number) => api.post(`/purchase-orders/${id}/cancel`),
+}
+
 export const expiryAPI = {
   list: (params: { status: 'near' | 'expired' | 'all'; days?: number; branch_id?: number }) =>
     api.get<ExpiryItem[]>('/inventory/expiry', { params }),
