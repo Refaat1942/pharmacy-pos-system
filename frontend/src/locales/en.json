@@ -18,7 +18,8 @@
     "transfers": "Transfers",
     "expiry": "Expiry",
     "purchases": "Purchases",
-    "suppliers": "Suppliers"
+    "suppliers": "Suppliers",
+    "customers": "Customers"
   },
   "inventory": {
     "title": "Inventory & Stock",
@@ -167,7 +168,10 @@
     "items": "items",
     "subtotal": "Subtotal",
     "discount": "Discount",
-    "total": "Total"
+    "total": "Total",
+    "account": "On Account",
+    "charge_to": "Charge to:",
+    "account_requires_customer": "Please select a customer (top of POS) to charge on account."
   },
   "receipt": {
     "title": "Invoice",
@@ -327,7 +331,10 @@
     "method_check": "Check",
     "invalid_amount": "Amount must be greater than 0",
     "name_required": "Name is required",
-    "confirm_delete": "Deactivate this supplier?"
+    "confirm_delete": "Deactivate this supplier?",
+    "col_region": "Area / Region",
+    "col_address_details": "Address Details",
+    "address_details_placeholder": "Street, building #, apartment…"
   },
   "purchases": {
     "title": "Purchase Orders",
@@ -366,5 +373,52 @@
     "confirm_cancel": "Cancel this draft PO?",
     "fill_required": "Select supplier, branch and add at least one item",
     "empty": "No purchase orders yet"
+  },
+  "customers": {
+    "title": "Customers",
+    "new": "New Customer",
+    "edit": "Edit Customer",
+    "empty": "No customers yet",
+    "search_placeholder": "Search by name, phone, email",
+    "col_name": "Name",
+    "col_phone": "Phone",
+    "col_email": "Email",
+    "col_region": "Area / Region",
+    "col_address_details": "Address Details (street, building, apt)",
+    "col_tax": "Tax #",
+    "col_limit": "Credit Limit",
+    "col_charged": "Total Charged",
+    "col_paid": "Total Paid",
+    "col_balance": "Balance",
+    "col_date": "Date",
+    "col_kind": "Type",
+    "col_reference": "Reference",
+    "col_debit": "Debit (+)",
+    "col_credit": "Credit (-)",
+    "statement": "Account Statement",
+    "record_payment": "Record Payment",
+    "kind_sale": "Account Sale",
+    "kind_payment": "Payment",
+    "no_txns": "No transactions",
+    "amount": "Amount",
+    "method": "Payment Method",
+    "reference": "Reference / Check #",
+    "method_cash": "Cash",
+    "method_bank": "Bank Transfer",
+    "method_check": "Check",
+    "invalid_amount": "Amount must be greater than 0",
+    "name_required": "Name is required",
+    "confirm_delete": "Deactivate this customer?",
+    "address_details_placeholder": "Street, building #, apartment, landmark…",
+    "against_invoice": "Against Invoice",
+    "untied_payment": "Untied (on account)",
+    "invoice_required": "Please select an invoice to apply the payment to",
+    "authorized_branches": "Branches Authorized for Account Sales",
+    "authorized_branches_hint": "Non-admin staff can only sell to this customer at these branches."
+  },
+  "regions": {
+    "select": "-- Select region --",
+    "markaz": "City / Markaz",
+    "areas": "Areas (Ismailia City)"
   }
 }

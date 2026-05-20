@@ -4,6 +4,9 @@ import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-reac
 import Header from '../components/Header'
 import { suppliersAPI, Supplier } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import RegionSelect from '../components/RegionSelect'
+import { regionLabel } from '../lib/regions'
+import i18n from '../lib/i18n'
 
 export default function Suppliers() {
   const { t } = useTranslation()
@@ -66,6 +69,7 @@ export default function Suppliers() {
                 <th className="px-3 py-2 text-start">{t('suppliers.col_name')}</th>
                 <th className="px-3 py-2 text-start">{t('suppliers.col_contact')}</th>
                 <th className="px-3 py-2 text-start">{t('suppliers.col_phone')}</th>
+                <th className="px-3 py-2 text-start">{t('suppliers.col_region')}</th>
                 <th className="px-3 py-2 text-end">{t('suppliers.col_charged')}</th>
                 <th className="px-3 py-2 text-end">{t('suppliers.col_paid')}</th>
                 <th className="px-3 py-2 text-end">{t('suppliers.col_balance')}</th>
@@ -73,8 +77,8 @@ export default function Suppliers() {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && list.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('suppliers.empty')}</td></tr>}
+              {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
+              {!loading && list.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('suppliers.empty')}</td></tr>}
               {list.map((s) => {
                 const bal = Number(s.balance)
                 return (
@@ -82,6 +86,7 @@ export default function Suppliers() {
                     <td className="px-3 py-2 font-medium">{s.name}</td>
                     <td className="px-3 py-2 text-slate-600">{s.contact_person || '—'}</td>
                     <td className="px-3 py-2 text-slate-600 font-mono text-xs">{s.phone || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">{regionLabel((s as any).region, i18n.language === 'ar' ? 'ar' : 'en') || '—'}</td>
                     <td className="px-3 py-2 text-end">{Number(s.total_charged).toFixed(2)}</td>
                     <td className="px-3 py-2 text-end">{Number(s.total_paid).toFixed(2)}</td>
                     <td className={`px-3 py-2 text-end font-semibold ${bal > 0 ? 'text-red-700' : bal < 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
@@ -174,13 +179,40 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; 
           <h2 className="font-bold text-lg">{f.id ? t('suppliers.edit') : t('suppliers.new')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
-        <div className="p-5 space-y-3 max-h-[70vh] overflow-auto">
+        <div className="p-5 space-y-3 max-h-[75vh] overflow-auto">
           {[
             ['name', t('suppliers.col_name')],
             ['contact_person', t('suppliers.col_contact')],
             ['phone', t('suppliers.col_phone')],
             ['email', t('suppliers.col_email')],
-            ['address', t('suppliers.col_address')],
+          ].map(([k, label]) => (
+            <div key={k as string}>
+              <label className="text-xs text-slate-600 font-medium">{label}</label>
+              <input
+                value={(f as any)[k as string] || ''}
+                onChange={(e) => setF({ ...f, [k as string]: e.target.value })}
+                className="input mt-1 w-full"
+              />
+            </div>
+          ))}
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_region')}</label>
+            <RegionSelect value={(f as any).region} onChange={(v) => setF({ ...f, ...({ region: v } as any) })} className="mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_address_details')}</label>
+            <input value={(f as any).address_details || ''}
+              onChange={(e) => setF({ ...f, ...({ address_details: e.target.value } as any) })}
+              placeholder={t('suppliers.address_details_placeholder') as string}
+              className="input mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_address')}</label>
+            <input value={(f as any).address || ''}
+              onChange={(e) => setF({ ...f, address: e.target.value })}
+              className="input mt-1 w-full" />
+          </div>
+          {[
             ['tax_number', t('suppliers.col_tax')],
             ['notes', t('common.notes')],
           ].map(([k, label]) => (

@@ -49,6 +49,7 @@ export default function PaymentModal({
   const isValid = () => {
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= netTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
+    if (paymentMethod === 'account') return !!selectedCustomer
     return true
   }
 
@@ -148,11 +149,12 @@ export default function PaymentModal({
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {[
                     { value: 'cash', label: t('payment.cash') },
                     { value: 'visa', label: t('payment.visa') },
                     { value: 'hybrid', label: t('payment.hybrid') },
+                    { value: 'account', label: t('payment.account') },
                   ].map(({ value, label }) => (
                     <button
                       key={value}
@@ -258,6 +260,21 @@ export default function PaymentModal({
                     ? `Remaining: ${t('receipt.egp')} ${(netTotal - hybridSum).toFixed(2)}`
                     : `Enter amounts totaling ${t('receipt.egp')} ${netTotal.toFixed(2)}`}
                 </div>
+              </div>
+            )}
+
+            {/* Account (on-credit) */}
+            {paymentMethod === 'account' && (
+              <div className={`p-5 rounded-xl border-2 text-center space-y-2 ${selectedCustomer ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+                <CreditCard size={32} className={selectedCustomer ? 'text-amber-500 mx-auto' : 'text-red-500 mx-auto'} />
+                <p className={`text-sm font-semibold ${selectedCustomer ? 'text-amber-800' : 'text-red-800'}`}>
+                  {selectedCustomer
+                    ? `${t('payment.charge_to')} ${selectedCustomer.name}`
+                    : t('payment.account_requires_customer')}
+                </p>
+                <p className={`text-2xl font-bold ${selectedCustomer ? 'text-amber-900' : 'text-red-900'}`}>
+                  {t('receipt.egp')} {netTotal.toFixed(2)}
+                </p>
               </div>
             )}
 

@@ -115,7 +115,8 @@
     "transfers": "التحويلات",
     "expiry": "الصلاحية",
     "purchases": "المشتريات",
-    "suppliers": "الموردون"
+    "suppliers": "الموردون",
+    "customers": "العملاء"
   },
   "pos": {
     "search_placeholder": "بحث بالاسم أو الباركود...",
@@ -167,7 +168,10 @@
     "items": "أصناف",
     "subtotal": "المجموع",
     "discount": "الخصم",
-    "total": "الإجمالي"
+    "total": "الإجمالي",
+    "account": "على الحساب",
+    "charge_to": "تحميل على حساب:",
+    "account_requires_customer": "اختر العميل (أعلى نقطة البيع) لتسجيل البيع آجلاً."
   },
   "receipt": {
     "title": "فاتورة",
@@ -327,7 +331,10 @@
     "method_check": "شيك",
     "invalid_amount": "يجب أن يكون المبلغ أكبر من صفر",
     "name_required": "الاسم مطلوب",
-    "confirm_delete": "إلغاء تفعيل هذا المورد؟"
+    "confirm_delete": "إلغاء تفعيل هذا المورد؟",
+    "col_region": "المنطقة",
+    "col_address_details": "تفاصيل العنوان",
+    "address_details_placeholder": "الشارع، رقم العقار، الشقة…"
   },
   "purchases": {
     "title": "أوامر الشراء",
@@ -366,5 +373,52 @@
     "confirm_cancel": "إلغاء هذه المسودة؟",
     "fill_required": "اختر المورد والفرع وأضف صنفاً على الأقل",
     "empty": "لا توجد أوامر شراء"
+  },
+  "customers": {
+    "title": "العملاء",
+    "new": "عميل جديد",
+    "edit": "تعديل العميل",
+    "empty": "لا يوجد عملاء",
+    "search_placeholder": "بحث بالاسم أو الهاتف أو البريد",
+    "col_name": "الاسم",
+    "col_phone": "الهاتف",
+    "col_email": "البريد",
+    "col_region": "المنطقة",
+    "col_address_details": "تفاصيل العنوان (الشارع، العقار، الشقة)",
+    "col_tax": "الرقم الضريبي",
+    "col_limit": "حد الائتمان",
+    "col_charged": "إجمالي المستحق",
+    "col_paid": "إجمالي المدفوع",
+    "col_balance": "الرصيد",
+    "col_date": "التاريخ",
+    "col_kind": "النوع",
+    "col_reference": "المرجع",
+    "col_debit": "مدين (+)",
+    "col_credit": "دائن (-)",
+    "statement": "كشف الحساب",
+    "record_payment": "تسجيل دفعة",
+    "kind_sale": "بيع آجل",
+    "kind_payment": "دفعة",
+    "no_txns": "لا توجد حركات",
+    "amount": "المبلغ",
+    "method": "طريقة الدفع",
+    "reference": "رقم المرجع / الشيك",
+    "method_cash": "نقدي",
+    "method_bank": "تحويل بنكي",
+    "method_check": "شيك",
+    "invalid_amount": "يجب أن يكون المبلغ أكبر من صفر",
+    "name_required": "الاسم مطلوب",
+    "confirm_delete": "إلغاء تفعيل هذا العميل؟",
+    "address_details_placeholder": "الشارع، رقم العقار، الشقة، علامة مميزة…",
+    "against_invoice": "مقابل الفاتورة",
+    "untied_payment": "دفعة على الحساب (بدون فاتورة)",
+    "invoice_required": "يجب اختيار فاتورة لتطبيق الدفعة",
+    "authorized_branches": "الفروع المصرح لها بالبيع الآجل",
+    "authorized_branches_hint": "يمكن للموظفين غير المسؤولين البيع لهذا العميل فقط في هذه الفروع."
+  },
+  "regions": {
+    "select": "-- اختر المنطقة --",
+    "markaz": "مدن / مراكز",
+    "areas": "أحياء (مدينة الإسماعيلية)"
   }
 }

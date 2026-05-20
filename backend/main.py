@@ -9,6 +9,7 @@ from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
 from inventory import router as inventory_router, log_movement
 from purchasing import router as purchasing_router
+from customers import router as customers_router
 
 app = FastAPI(title="PharmaPOS API")
 
@@ -22,6 +23,7 @@ app.add_middleware(
 
 app.include_router(inventory_router)
 app.include_router(purchasing_router)
+app.include_router(customers_router)
 
 
 # ─── AUTH ────────────────────────────────────────────────────────────────────
@@ -168,12 +170,29 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
 
 @app.get("/api/customers")
 def list_customers(q: str = "", current_user=Depends(get_current_user)):
+    """Legacy customer lookup (used by POS). Branch-scoped for non-admins:
+    only customers with at least one invoice in the user's branch are visible."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        "SELECT * FROM customers WHERE name ILIKE %s OR phone ILIKE %s ORDER BY name LIMIT 30",
-        (f"%{q}%", f"%{q}%"),
-    )
+    like = f"%{q}%"
+    if current_user.get("role") == "admin":
+        cur.execute(
+            "SELECT * FROM customers WHERE (name ILIKE %s OR phone ILIKE %s) "
+            "AND COALESCE(active, true)=true ORDER BY name LIMIT 30",
+            (like, like),
+        )
+    else:
+        ub = current_user.get("branch_id")
+        if ub is None:
+            conn.close()
+            return []
+        cur.execute(
+            "SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
+            "AND COALESCE(c.active, true)=true AND EXISTS "
+            "(SELECT 1 FROM customer_branches cb WHERE cb.customer_id=c.id AND cb.branch_id=%s) "
+            "ORDER BY c.name LIMIT 30",
+            (like, like, ub),
+        )
     customers = cur.fetchall()
     conn.close()
     return [dict(c) for c in customers]
@@ -187,13 +206,24 @@ class CustomerCreate(BaseModel):
 
 @app.post("/api/customers")
 def create_customer(req: CustomerCreate, current_user=Depends(get_current_user)):
+    """Quick-create from POS — admin only. Non-admins must request the admin
+    to open a customer account (which authorizes specific branches)."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can create customers")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_id = current_user.get("branch_id")
     cur.execute(
-        "INSERT INTO customers (name, phone, notes, branch_id) VALUES (%s,%s,%s,%s) RETURNING *",
-        (req.name, req.phone, req.notes, current_user.get("branch_id")),
+        "INSERT INTO customers (name, phone, notes, branch_id, active) VALUES (%s,%s,%s,%s,true) RETURNING *",
+        (req.name, req.phone, req.notes, branch_id),
     )
     customer = cur.fetchone()
+    if branch_id is not None:
+        cur.execute(
+            "INSERT INTO customer_branches (customer_id, branch_id, authorized_by) "
+            "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+            (customer["id"], branch_id, current_user.get("user_id")),
+        )
     conn.commit()
     conn.close()
     return dict(customer)
@@ -252,6 +282,32 @@ def create_sale(req: SaleRequest,
         change = 0.0
         if req.payment_method == "cash" and req.cash_amount:
             change = max(0.0, req.cash_amount - net_total)
+        # Account (credit) sales require a customer + credit-limit check
+        if req.payment_method == "account" and req.type != "return":
+            if not req.customer_id:
+                raise HTTPException(status_code=400, detail="Customer is required for account sales")
+            cur.execute("SELECT id, name, credit_limit, active FROM customers WHERE id=%s",
+                        (req.customer_id,))
+            cust = cur.fetchone()
+            if not cust or not cust.get("active", True):
+                raise HTTPException(status_code=400, detail="Customer not found or inactive")
+            # Compute current balance
+            cur.execute(
+                """SELECT COALESCE(SUM(net_total),0) AS charged FROM invoices
+                   WHERE customer_id=%s AND payment_method='account' AND type!='return'""",
+                (req.customer_id,))
+            charged = float(cur.fetchone()["charged"])
+            cur.execute(
+                "SELECT COALESCE(SUM(amount),0) AS paid FROM customer_payments WHERE customer_id=%s",
+                (req.customer_id,))
+            paid = float(cur.fetchone()["paid"])
+            current_bal = charged - paid
+            limit = float(cust["credit_limit"] or 0)
+            if limit > 0 and (current_bal + net_total) > limit:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Credit limit exceeded for {cust['name']} (balance {current_bal:.2f} + sale {net_total:.2f} > limit {limit:.2f})",
+                )
 
         seller_id = req.seller_id or current_user.get("user_id")
         branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
@@ -260,6 +316,18 @@ def create_sale(req: SaleRequest,
         cur.execute("SELECT id FROM branches WHERE id=%s", (branch_id,))
         if not cur.fetchone():
             raise HTTPException(status_code=400, detail=f"Branch {branch_id} does not exist")
+
+        # Non-admin: any sale that attaches a customer_id requires customer-branch authorization
+        if req.customer_id and current_user.get("role") != "admin":
+            cur.execute(
+                "SELECT 1 FROM customer_branches WHERE customer_id=%s AND branch_id=%s",
+                (req.customer_id, branch_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(
+                    status_code=403,
+                    detail="Customer is not authorized for this branch — ask an admin to open an account here",
+                )
 
         today = date.today()
         for item in req.items:
@@ -370,10 +438,23 @@ def list_sales(limit: int = 50, offset: int = 0,
     return [dict(i) for i in invoices]
 
 
+def _assert_invoice_branch_access(cur, invoice_id: int, current_user):
+    """Non-admins may only access invoices in their own branch."""
+    if current_user.get("role") == "admin":
+        return
+    cur.execute("SELECT branch_id FROM invoices WHERE id=%s", (invoice_id,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if row["branch_id"] != current_user.get("branch_id"):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+
 @app.get("/api/sales/{invoice_id}")
 def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    _assert_invoice_branch_access(cur, invoice_id, current_user)
     cur.execute(
         """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
                   c.name AS customer_name
@@ -407,6 +488,7 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        _assert_invoice_branch_access(cur, invoice_id, current_user)
         cur.execute("SELECT COUNT(*) AS cnt FROM returns")
         count = cur.fetchone()["cnt"]
         return_number = f"RET-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
@@ -469,6 +551,9 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 
         conn.commit()
         return dict(ret)
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

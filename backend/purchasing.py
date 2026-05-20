@@ -24,6 +24,8 @@ class SupplierIn(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
+    region: Optional[str] = None
+    address_details: Optional[str] = None
     tax_number: Optional[str] = None
     notes: Optional[str] = None
     active: bool = True
@@ -83,9 +85,11 @@ def create_supplier(req: SupplierIn, current_user=Depends(get_current_user)):
     try:
         cur.execute(
             """INSERT INTO suppliers
-               (name, contact_person, phone, email, address, tax_number, notes, active)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+               (name, contact_person, phone, email, address, region, address_details,
+                tax_number, notes, active)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (req.name, req.contact_person, req.phone, req.email, req.address,
+             req.region, req.address_details,
              req.tax_number, req.notes, req.active),
         )
         row = cur.fetchone()
@@ -107,8 +111,10 @@ def update_supplier(supplier_id: int, req: SupplierIn,
     try:
         cur.execute(
             """UPDATE suppliers SET name=%s, contact_person=%s, phone=%s, email=%s,
-               address=%s, tax_number=%s, notes=%s, active=%s WHERE id=%s RETURNING *""",
+               address=%s, region=%s, address_details=%s,
+               tax_number=%s, notes=%s, active=%s WHERE id=%s RETURNING *""",
             (req.name, req.contact_person, req.phone, req.email, req.address,
+             req.region, req.address_details,
              req.tax_number, req.notes, req.active, supplier_id),
         )
         row = cur.fetchone()

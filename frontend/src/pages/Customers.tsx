@@ -1,0 +1,372 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
+import Header from '../components/Header'
+import RegionSelect from '../components/RegionSelect'
+import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
+import { useAuth } from '../lib/auth'
+import { regionLabel } from '../lib/regions'
+import i18n from '../lib/i18n'
+
+export default function Customers() {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [list, setList] = useState<Customer[]>([])
+  const [loading, setLoading] = useState(false)
+  const [q, setQ] = useState('')
+  const [editing, setEditing] = useState<Partial<Customer> | null>(null)
+  const [statement, setStatement] = useState<any>(null)
+  const [paying, setPaying] = useState<Customer | null>(null)
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+
+  const load = () => {
+    setLoading(true)
+    customersAPI.listV2({ q })
+      .then((r) => setList(r.data))
+      .catch(() => setList([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => {
+    const id = setTimeout(load, 250)
+    return () => clearTimeout(id)
+  }, [q])
+
+  return (
+    <div className="h-screen flex flex-col bg-slate-50">
+      <Header />
+      <main className="flex-1 overflow-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="text-pharma-600" />
+            {t('customers.title')}
+          </h1>
+          {isAdmin && (
+            <button onClick={() => setEditing({ name: '', active: true, credit_limit: 0 })}
+              className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+              <Plus size={16} />
+              {t('customers.new')}
+            </button>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <input value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder={t('customers.search_placeholder') as string}
+            className="input w-full md:w-96" />
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-start">{t('customers.col_name')}</th>
+                <th className="px-3 py-2 text-start">{t('customers.col_phone')}</th>
+                <th className="px-3 py-2 text-start">{t('customers.col_region')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_limit')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_charged')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_paid')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_balance')}</th>
+                <th className="px-3 py-2 text-end">{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
+              {!loading && list.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
+              {list.map((c) => {
+                const bal = Number(c.balance)
+                const limit = Number(c.credit_limit || 0)
+                const overLimit = limit > 0 && bal > limit
+                return (
+                  <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 font-medium">{c.name}</td>
+                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">{c.phone || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600">{regionLabel(c.region, lang) || '—'}</td>
+                    <td className="px-3 py-2 text-end">{limit > 0 ? limit.toFixed(2) : '—'}</td>
+                    <td className="px-3 py-2 text-end">{Number(c.total_charged || 0).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-end">{Number(c.total_paid || 0).toFixed(2)}</td>
+                    <td className={`px-3 py-2 text-end font-semibold ${overLimit ? 'text-red-700' : bal > 0 ? 'text-amber-700' : bal < 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+                      {bal.toFixed(2)}{overLimit && ' ⚠'}
+                    </td>
+                    <td className="px-3 py-2 text-end">
+                      <div className="flex justify-end gap-1">
+                        <button onClick={() => customersAPI.statement(c.id).then((r) => setStatement(r.data))}
+                          className="p-1.5 hover:bg-slate-100 rounded text-slate-600" title={t('customers.statement') as string}>
+                          <FileText size={14} />
+                        </button>
+                        <button onClick={() => setPaying(c)}
+                          className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700" title={t('customers.record_payment') as string}>
+                          <DollarSign size={14} />
+                        </button>
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => setEditing(c)}
+                              className="p-1.5 hover:bg-slate-100 rounded text-slate-600" title={t('common.edit') as string}>
+                              <Edit2 size={14} />
+                            </button>
+                            <button onClick={async () => {
+                              if (!confirm(t('customers.confirm_delete') as string)) return
+                              await customersAPI.removeV2(c.id); load()
+                            }} className="p-1.5 hover:bg-red-100 rounded text-red-700" title={t('common.delete') as string}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </main>
+
+      {editing && <EditModal initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {statement && <StatementModal data={statement} onClose={() => setStatement(null)} />}
+      {paying && <PaymentModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />}
+    </div>
+  )
+}
+
+function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const [f, setF] = useState<Partial<Customer>>(initial)
+  const [saving, setSaving] = useState(false)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [selectedBranches, setSelectedBranches] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    branchesAPI.list().then((r) => setBranches(r.data)).catch(() => {})
+    if (initial.id) {
+      customersAPI.branches(initial.id).then((r) => setSelectedBranches(new Set(r.data.map((b) => b.branch_id)))).catch(() => {})
+    }
+  }, [initial.id])
+  const toggleBranch = (bid: number) => {
+    const next = new Set(selectedBranches)
+    if (next.has(bid)) next.delete(bid); else next.add(bid)
+    setSelectedBranches(next)
+  }
+  const save = async () => {
+    if (!f.name?.trim()) { alert(t('customers.name_required')); return }
+    setSaving(true)
+    try {
+      const payload = { ...f, branch_ids: Array.from(selectedBranches) }
+      if (f.id) await customersAPI.updateV2(f.id, payload)
+      else await customersAPI.createV2(payload)
+      onSaved()
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{f.id ? t('customers.edit') : t('customers.new')}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3 max-h-[75vh] overflow-auto">
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.col_name')} *</label>
+            <input value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} className="input mt-1 w-full" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.col_phone')}</label>
+              <input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} className="input mt-1 w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.col_email')}</label>
+              <input value={f.email || ''} onChange={(e) => setF({ ...f, email: e.target.value })} className="input mt-1 w-full" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.col_region')}</label>
+            <RegionSelect value={f.region} onChange={(v) => setF({ ...f, region: v })} className="mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.col_address_details')}</label>
+            <input value={f.address_details || ''}
+              onChange={(e) => setF({ ...f, address_details: e.target.value })}
+              placeholder={t('customers.address_details_placeholder') as string}
+              className="input mt-1 w-full" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.col_tax')}</label>
+              <input value={f.tax_number || ''} onChange={(e) => setF({ ...f, tax_number: e.target.value })} className="input mt-1 w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.col_limit')}</label>
+              <input type="number" min={0} step="0.01" value={f.credit_limit ?? 0}
+                onChange={(e) => setF({ ...f, credit_limit: Number(e.target.value) })} className="input mt-1 w-full" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('common.notes')}</label>
+            <input value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} className="input mt-1 w-full" />
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />
+            {t('common.active')}
+          </label>
+          <div className="pt-2 border-t">
+            <label className="text-xs text-slate-600 font-medium">{t('customers.authorized_branches')}</label>
+            <p className="text-[11px] text-slate-500 mb-2">{t('customers.authorized_branches_hint')}</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {branches.map((b) => (
+                <label key={b.id} className="flex items-center gap-2 text-sm px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50 cursor-pointer">
+                  <input type="checkbox" checked={selectedBranches.has(b.id)} onChange={() => toggleBranch(b.id)} />
+                  <span>{lang === 'ar' ? b.name_ar : b.name_en}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={save} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('common.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
+  const { t } = useTranslation()
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{data.customer.name} — {t('customers.statement')}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 overflow-auto flex-1">
+          <div className="mb-3 text-sm">
+            <span className="text-slate-500">{t('customers.col_balance')}: </span>
+            <b className={data.balance > 0 ? 'text-amber-700' : 'text-emerald-700'}>{Number(data.balance).toFixed(2)}</b>
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-start">{t('customers.col_date')}</th>
+                <th className="px-3 py-2 text-start">{t('customers.col_kind')}</th>
+                <th className="px-3 py-2 text-start">{t('customers.col_reference')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_debit')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_credit')}</th>
+                <th className="px-3 py-2 text-end">{t('customers.col_balance')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.transactions.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-slate-400">{t('customers.no_txns')}</td></tr>}
+              {data.transactions.map((tx: any, i: number) => (
+                <tr key={i} className="border-t border-slate-100">
+                  <td className="px-3 py-2 text-xs">{tx.at ? new Date(tx.at).toLocaleString() : '—'}</td>
+                  <td className="px-3 py-2">{tx.kind === 'sale' ? t('customers.kind_sale') : t('customers.kind_payment')}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{tx.reference || '—'}</td>
+                  <td className="px-3 py-2 text-end text-amber-700">{Number(tx.debit) > 0 ? Number(tx.debit).toFixed(2) : ''}</td>
+                  <td className="px-3 py-2 text-end text-emerald-700">{Number(tx.credit) > 0 ? Number(tx.credit).toFixed(2) : ''}</td>
+                  <td className="px-3 py-2 text-end font-semibold">{Number(tx.balance).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PaymentModal({ customer, onClose, onSaved }: { customer: Customer; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const [amount, setAmount] = useState<number>(0)
+  const [method, setMethod] = useState('cash')
+  const [reference, setReference] = useState('')
+  const [notes, setNotes] = useState('')
+  const [invoiceId, setInvoiceId] = useState<number | ''>('')
+  const [openInvoices, setOpenInvoices] = useState<any[]>([])
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    customersAPI.statement(customer.id).then((r) => {
+      const sales = (r.data.transactions as any[]).filter((t) => t.kind === 'sale')
+      setOpenInvoices(sales)
+    }).catch(() => setOpenInvoices([]))
+  }, [customer.id])
+  const submit = async () => {
+    if (amount <= 0) { alert(t('customers.invalid_amount')); return }
+    if (!isAdmin && !invoiceId) { alert(t('customers.invoice_required')); return }
+    setSaving(true)
+    try {
+      await customersAPI.pay(customer.id, {
+        amount,
+        payment_method: method,
+        invoice_id: invoiceId ? Number(invoiceId) : undefined,
+        reference: reference || undefined,
+        notes: notes || undefined,
+      })
+      onSaved()
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    } finally { setSaving(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{t('customers.record_payment')} — {customer.name}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="text-sm">
+            <span className="text-slate-500">{t('customers.col_balance')}: </span>
+            <b className={Number(customer.balance) > 0 ? 'text-amber-700' : ''}>{Number(customer.balance).toFixed(2)}</b>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">
+              {t('customers.against_invoice')}{!isAdmin && ' *'}
+            </label>
+            <select value={invoiceId} onChange={(e) => setInvoiceId(e.target.value ? Number(e.target.value) : '')} className="input mt-1 w-full">
+              <option value="">{isAdmin ? t('customers.untied_payment') : '—'}</option>
+              {openInvoices.map((inv) => (
+                <option key={inv.ref_id} value={inv.ref_id}>
+                  {inv.reference} — {Number(inv.debit).toFixed(2)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.amount')}</label>
+            <input type="number" min={0} step={0.01} value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="input mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.method')}</label>
+            <select value={method} onChange={(e) => setMethod(e.target.value)} className="input mt-1 w-full">
+              <option value="cash">{t('customers.method_cash')}</option>
+              <option value="bank">{t('customers.method_bank')}</option>
+              <option value="check">{t('customers.method_check')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.reference')}</label>
+            <input value={reference} onChange={(e) => setReference(e.target.value)} className="input mt-1 w-full" />
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('common.notes')}</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} className="input mt-1 w-full" />
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={submit} disabled={saving || amount <= 0} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('customers.record_payment')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

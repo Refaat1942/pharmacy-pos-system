@@ -67,7 +67,7 @@ export default function POS() {
       })
       .catch(() => setLoadingProducts(false))
     employeesAPI.list().then((r) => setEmployees(r.data))
-    customersAPI.list('').then((r) => setCustomers(r.data))
+    customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
   }, [])
 
   useEffect(() => {

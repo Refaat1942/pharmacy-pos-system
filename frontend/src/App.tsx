@@ -10,6 +10,7 @@ import Transfers from './pages/Transfers'
 import Expiry from './pages/Expiry'
 import Suppliers from './pages/Suppliers'
 import Purchases from './pages/Purchases'
+import Customers from './pages/Customers'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -35,6 +36,7 @@ function AppRoutes() {
       <Route path="/expiry" element={<ProtectedRoute><Expiry /></ProtectedRoute>} />
       <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
       <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
+      <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

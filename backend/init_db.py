@@ -224,6 +224,48 @@ CREATE TABLE IF NOT EXISTS supplier_payments (
 );
 CREATE INDEX IF NOT EXISTS idx_sup_pay_supplier ON supplier_payments(supplier_id, paid_at DESC);
 
+-- Extend customers + suppliers with region + structured fields
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS email VARCHAR(200);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS region VARCHAR(100);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_details TEXT;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_number VARCHAR(50);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
+
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS region VARCHAR(100);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address_details TEXT;
+
+CREATE TABLE IF NOT EXISTS customer_payments (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    invoice_id INTEGER REFERENCES invoices(id),
+    amount DECIMAL(12,2) NOT NULL CHECK (amount > 0),
+    payment_method VARCHAR(30),
+    reference VARCHAR(100),
+    notes TEXT,
+    paid_at TIMESTAMP DEFAULT NOW(),
+    recorded_by INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_cust_pay_customer ON customer_payments(customer_id, paid_at DESC);
+
+-- Per-branch customer authorization (admins open accounts; non-admins limited to authorized branches)
+CREATE TABLE IF NOT EXISTS customer_branches (
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    branch_id INTEGER NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
+    authorized_at TIMESTAMP DEFAULT NOW(),
+    authorized_by INTEGER REFERENCES users(id),
+    PRIMARY KEY (customer_id, branch_id)
+);
+-- Backfill: any customer who already has an invoice in a branch is authorized there
+INSERT INTO customer_branches (customer_id, branch_id)
+SELECT DISTINCT customer_id, branch_id FROM invoices
+WHERE customer_id IS NOT NULL AND branch_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+-- Backfill: any customer with a legacy branch_id assignment is authorized there
+INSERT INTO customer_branches (customer_id, branch_id)
+SELECT id, branch_id FROM customers WHERE branch_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
 CREATE SEQUENCE IF NOT EXISTS purchase_order_seq START 1;
 SELECT setval('purchase_order_seq',
               GREATEST((SELECT COALESCE(MAX(id), 0) FROM purchase_orders), 1));

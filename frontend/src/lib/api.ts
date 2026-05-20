@@ -55,9 +55,18 @@ export interface Employee {
 export interface Customer {
   id: number
   name: string
-  phone: string
-  notes: string
+  phone: string | null
+  email?: string | null
+  region?: string | null
+  address_details?: string | null
+  tax_number?: string | null
+  credit_limit?: number
+  active?: boolean
+  notes: string | null
   balance: number
+  total_charged?: number
+  total_paid?: number
+  branch_ids?: number[]
 }
 
 export interface CartItem {
@@ -133,6 +142,16 @@ export const customersAPI = {
   list: (q: string = '') => api.get<Customer[]>('/customers', { params: { q } }),
   create: (data: { name: string; phone?: string; notes?: string }) =>
     api.post<Customer>('/customers', data),
+  // Extended v2 endpoints (Phase 6)
+  listV2: (params: { q?: string; active_only?: boolean } = {}) =>
+    api.get<Customer[]>('/customers/v2', { params }),
+  createV2: (data: Partial<Customer>) => api.post<Customer>('/customers/v2', data),
+  updateV2: (id: number, data: Partial<Customer>) => api.put<Customer>(`/customers/v2/${id}`, data),
+  removeV2: (id: number) => api.delete(`/customers/v2/${id}`),
+  statement: (id: number) => api.get(`/customers/v2/${id}/statement`),
+  pay: (id: number, data: { amount: number; payment_method?: string; invoice_id?: number; reference?: string; notes?: string }) =>
+    api.post(`/customers/v2/${id}/payments`, data),
+  branches: (id: number) => api.get<{ branch_id: number; name_en: string; name_ar: string }[]>(`/customers/v2/${id}/branches`),
 }
 
 export const employeesAPI = {
@@ -241,6 +260,8 @@ export interface Supplier {
   phone: string | null
   email: string | null
   address: string | null
+  region?: string | null
+  address_details?: string | null
   tax_number: string | null
   notes: string | null
   active: boolean
