@@ -27,8 +27,7 @@ export default function Login() {
       const slug = tenantSlug.trim().toLowerCase()
       const { data } = await authAPI.login(slug, username, password)
       localStorage.setItem('pharma_tenant_slug', slug)
-      if (data.tenant) localStorage.setItem('pharma_tenant', JSON.stringify(data.tenant))
-      login(data.token, data.user)
+      login(data.token, data.user, data.tenant)
       navigate('/')
     } catch (err: any) {
       setError(err?.response?.data?.detail || t('login.error'))

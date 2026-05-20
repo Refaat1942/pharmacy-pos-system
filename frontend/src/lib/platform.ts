@@ -39,6 +39,15 @@ export interface Tenant {
   notes: string | null
   created_at: string
   suspended_at: string | null
+  features: string[] | null
+  subscription_start: string | null
+  subscription_end: string | null
+}
+
+export interface FeatureDef {
+  key: string
+  label: string
+  default: boolean
 }
 
 export interface TenantStats {
@@ -75,12 +84,16 @@ export const platformAPI = {
     notes?: string
     admin_username: string
     admin_password: string
+    features?: string[]
+    subscription_start?: string | null
+    subscription_end?: string | null
   }) => platformApi.post<Tenant>('/tenants', data),
   updateTenant: (id: number, data: Partial<Tenant>) =>
     platformApi.patch<Tenant>(`/tenants/${id}`, data),
   deleteTenant: (id: number, confirm_slug: string) =>
     platformApi.delete(`/tenants/${id}`, { params: { confirm_slug } }),
   migrateAll: () => platformApi.post<{ ok: number; failed: { slug: string; error: string }[] }>('/migrate-all'),
+  featuresCatalog: () => platformApi.get<{ features: FeatureDef[]; defaults: string[] }>('/features-catalog'),
 }
 
 export default platformApi

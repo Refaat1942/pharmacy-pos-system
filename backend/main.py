@@ -83,11 +83,10 @@ async def tenant_middleware(request: Request, call_next):
         tenant = get_tenant_by_slug(slug)
         if not tenant:
             return JSONResponse({"detail": "Tenant not found"}, status_code=401)
-        if tenant["status"] != "active":
-            return JSONResponse(
-                {"detail": "This account is suspended. Please contact support."},
-                status_code=403,
-            )
+        from platform_db import is_tenant_live
+        live, reason = is_tenant_live(tenant)
+        if not live:
+            return JSONResponse({"detail": reason}, status_code=403)
 
         set_current_schema(tenant["schema_name"])
         return await call_next(request)
@@ -95,17 +94,18 @@ async def tenant_middleware(request: Request, call_next):
         reset_current_schema(token)
 
 
-app.include_router(inventory_router)
-app.include_router(purchasing_router)
-app.include_router(customers_router)
+from deps import requires_feature
+app.include_router(inventory_router, dependencies=[Depends(requires_feature("inventory"))])
+app.include_router(purchasing_router, dependencies=[Depends(requires_feature("purchases"))])
+app.include_router(customers_router, dependencies=[Depends(requires_feature("customers"))])
 from settings import router as settings_router
-app.include_router(settings_router)
+app.include_router(settings_router, dependencies=[Depends(requires_feature("settings"))])
 from reports import router as reports_router
-app.include_router(reports_router)
+app.include_router(reports_router, dependencies=[Depends(requires_feature("reports"))])
 from shifts import router as shifts_router
-app.include_router(shifts_router)
+app.include_router(shifts_router, dependencies=[Depends(requires_feature("shifts"))])
 from hr import router as hr_router
-app.include_router(hr_router)
+app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
 from platform_api import router as platform_router
 app.include_router(platform_router)
 
@@ -142,8 +142,10 @@ def login(req: LoginRequest):
     tenant = get_tenant_by_slug(req.tenant_slug.strip().lower())
     if not tenant:
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
-    if tenant["status"] != "active":
-        raise HTTPException(status_code=403, detail="This account is suspended. Please contact support.")
+    from platform_db import is_tenant_live, normalize_features
+    live, reason = is_tenant_live(tenant)
+    if not live:
+        raise HTTPException(status_code=403, detail=reason)
     conn = get_db_connection(schema=tenant["schema_name"])
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
@@ -178,6 +180,9 @@ def login(req: LoginRequest):
             "slug": tenant["slug"],
             "name": tenant["name"],
             "plan": tenant.get("plan"),
+            "features": normalize_features(tenant.get("features")),
+            "subscription_start": tenant.get("subscription_start").isoformat() if tenant.get("subscription_start") else None,
+            "subscription_end": tenant.get("subscription_end").isoformat() if tenant.get("subscription_end") else None,
         },
     }
 

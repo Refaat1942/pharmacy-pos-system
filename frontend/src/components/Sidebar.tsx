@@ -13,29 +13,30 @@ interface NavItem {
   Icon: typeof ShoppingCart
   adminOnly?: boolean
   roles?: string[]
+  feature?: string
 }
 
 const NAV: NavItem[] = [
-  { to: '/dashboard', labelKey: 'nav.dashboard', Icon: BarChart3 },
-  { to: '/',          labelKey: 'nav.pos',        Icon: ShoppingCart },
-  { to: '/sales',     labelKey: 'nav.sales',      Icon: History },
-  { to: '/returns',   labelKey: 'nav.returns',    Icon: RotateCcw },
-  { to: '/inventory', labelKey: 'nav.inventory',  Icon: Package },
-  { to: '/transfers', labelKey: 'nav.transfers',  Icon: ArrowRightLeft },
-  { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar },
-  { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText },
-  { to: '/customers', labelKey: 'nav.customers',  Icon: Users },
-  { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck },
-  { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart, roles: ['admin', 'pharmacist'] },
-  { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign },
-  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound, adminOnly: true },
-  { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, adminOnly: true },
+  { to: '/dashboard', labelKey: 'nav.dashboard', Icon: BarChart3,    feature: 'dashboard' },
+  { to: '/',          labelKey: 'nav.pos',        Icon: ShoppingCart, feature: 'pos' },
+  { to: '/sales',     labelKey: 'nav.sales',      Icon: History,      feature: 'sales' },
+  { to: '/returns',   labelKey: 'nav.returns',    Icon: RotateCcw,    feature: 'returns' },
+  { to: '/inventory', labelKey: 'nav.inventory',  Icon: Package,      feature: 'inventory' },
+  { to: '/transfers', labelKey: 'nav.transfers',  Icon: ArrowRightLeft, feature: 'transfers' },
+  { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
+  { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
+  { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
+  { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
+  { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
+  { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
+  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       adminOnly: true },
+  { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true },
 ]
 
 export default function Sidebar() {
   const { t } = useTranslation()
   const location = useLocation()
-  const { user } = useAuth()
+  const { user, hasFeature } = useAuth()
   const isAdmin = user?.role === 'admin'
 
   return (
@@ -56,6 +57,7 @@ export default function Sidebar() {
         {NAV.filter((n) => {
           if (n.adminOnly && !isAdmin) return false
           if (n.roles && !n.roles.includes(user?.role || '')) return false
+          if (n.feature && !hasFeature(n.feature)) return false
           return true
         }).map(({ to, labelKey, Icon }) => {
           const active = location.pathname === to

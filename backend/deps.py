@@ -19,6 +19,30 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return payload
 
 
+def requires_feature(key: str):
+    """Server-side feature gate. Use as a router dependency:
+        app.include_router(hr_router, dependencies=[Depends(requires_feature('hr'))])
+    Returns 403 if the tenant has the feature disabled. Falls open if the
+    tenant row has NULL features (legacy rows; defaults apply via login).
+    """
+    def _dep(current_user=Depends(get_current_user)):
+        from platform_db import get_tenant_by_slug, normalize_features
+        slug = current_user.get("tenant_slug")
+        if not slug:
+            raise HTTPException(status_code=401, detail="Missing tenant context")
+        tenant = get_tenant_by_slug(slug)
+        if not tenant:
+            raise HTTPException(status_code=401, detail="Tenant not found")
+        enabled = normalize_features(tenant.get("features"))
+        if key not in enabled:
+            raise HTTPException(
+                status_code=403,
+                detail=f"This feature ('{key}') is not enabled for your plan.",
+            )
+        return current_user
+    return _dep
+
+
 def get_super_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     payload = verify_token(token)

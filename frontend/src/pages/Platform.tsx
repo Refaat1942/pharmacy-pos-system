@@ -2,9 +2,40 @@ import { useEffect, useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Edit2, Trash2, Pause, Play, LogOut, ShieldCheck, KeyRound,
-  X, ExternalLink, Building2, RefreshCw, AlertTriangle, Eye, EyeOff,
+  X, ExternalLink, Building2, RefreshCw, AlertTriangle,
+  CalendarClock, Sparkles,
 } from 'lucide-react'
-import { platformAPI, Tenant, TenantStats, PlatformAdmin } from '../lib/platform'
+import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef } from '../lib/platform'
+
+const PLAN_PRESETS: Record<string, string[]> = {
+  basic:      ['dashboard','pos','sales','returns','inventory','customers','shifts','settings'],
+  pro:        ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','shifts','settings'],
+  enterprise: ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
+  trial:      ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
+  pilot:      ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
+}
+
+function daysLeft(end: string | null): number | null {
+  if (!end) return null
+  const d = new Date(end + 'T23:59:59')
+  return Math.ceil((d.getTime() - Date.now()) / 86400000)
+}
+
+function ExpiryBadge({ end }: { end: string | null }) {
+  if (!end) return <span className="text-slate-400 text-xs">No expiry</span>
+  const dl = daysLeft(end)!
+  const cls =
+    dl < 0     ? 'bg-red-100 text-red-700 border-red-200'
+    : dl <= 7  ? 'bg-orange-100 text-orange-700 border-orange-200'
+    : dl <= 30 ? 'bg-amber-100 text-amber-700 border-amber-200'
+    :            'bg-emerald-100 text-emerald-700 border-emerald-200'
+  const txt = dl < 0 ? `Expired ${-dl}d ago` : dl === 0 ? 'Expires today' : `${dl}d left`
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${cls}`}>
+      {txt}
+    </span>
+  )
+}
 
 const fmtDate = (s: string | null) =>
   s ? new Date(s).toLocaleString() : '—'
@@ -14,6 +45,8 @@ export default function Platform() {
   const [admin, setAdmin] = useState<PlatformAdmin | null>(null)
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [stats, setStats] = useState<Record<number, TenantStats>>({})
+  const [featuresCatalog, setFeaturesCatalog] = useState<FeatureDef[]>([])
+  const [featureDefaults, setFeatureDefaults] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -27,8 +60,13 @@ export default function Platform() {
     try {
       const meRes = await platformAPI.me()
       setAdmin(meRes.data)
-      const r = await platformAPI.listTenants()
+      const [r, fc] = await Promise.all([
+        platformAPI.listTenants(),
+        platformAPI.featuresCatalog(),
+      ])
       setTenants(r.data)
+      setFeaturesCatalog(fc.data.features)
+      setFeatureDefaults(fc.data.defaults)
       // Fetch stats in parallel
       const statResults = await Promise.allSettled(
         r.data.map((t) => platformAPI.tenantStats(t.id).then((res) => [t.id, res.data] as const))
@@ -141,12 +179,12 @@ export default function Platform() {
                   <th className="px-4 py-3 text-start">Pharmacy</th>
                   <th className="px-4 py-3 text-start">Code</th>
                   <th className="px-4 py-3 text-start">Plan</th>
+                  <th className="px-4 py-3 text-start">Subscription</th>
+                  <th className="px-4 py-3 text-center">Features</th>
                   <th className="px-4 py-3 text-start">Contact</th>
                   <th className="px-4 py-3 text-center">Users</th>
-                  <th className="px-4 py-3 text-center">Branches</th>
                   <th className="px-4 py-3 text-center">Products</th>
                   <th className="px-4 py-3 text-center">Invoices</th>
-                  <th className="px-4 py-3 text-start">Created</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
@@ -157,6 +195,7 @@ export default function Platform() {
                 )}
                 {tenants.map((t) => {
                   const s = stats[t.id]
+                  const featCount = (t.features?.length ?? featureDefaults.length)
                   return (
                     <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                       <td className="px-4 py-3 font-medium">
@@ -167,6 +206,19 @@ export default function Platform() {
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-indigo-700">{t.slug}</td>
                       <td className="px-4 py-3 text-slate-600 capitalize">{t.plan || '—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-xs text-slate-600">
+                          {t.subscription_start && <div>{t.subscription_start} → {t.subscription_end || '∞'}</div>}
+                          {!t.subscription_start && t.subscription_end && <div>until {t.subscription_end}</div>}
+                          {!t.subscription_start && !t.subscription_end && <div className="text-slate-400">unlimited</div>}
+                          <div className="mt-1"><ExpiryBadge end={t.subscription_end} /></div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-[11px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-mono">
+                          {featCount}/{featuresCatalog.length || 14}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-slate-600">
                         {t.contact_name || t.contact_email || t.contact_phone ? (
                           <div className="text-xs">
@@ -176,10 +228,8 @@ export default function Platform() {
                         ) : '—'}
                       </td>
                       <td className="px-4 py-3 text-center font-mono">{s?.users ?? '—'}</td>
-                      <td className="px-4 py-3 text-center font-mono">{s?.branches ?? '—'}</td>
                       <td className="px-4 py-3 text-center font-mono">{s?.products ?? '—'}</td>
                       <td className="px-4 py-3 text-center font-mono">{s?.invoices ?? '—'}</td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{fmtDate(t.created_at)}</td>
                       <td className="px-4 py-3 text-center">
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'active'
@@ -220,8 +270,8 @@ export default function Platform() {
         </div>
       </div>
 
-      {showCreate && <CreateModal onClose={() => setShowCreate(false)} onDone={load} />}
-      {editing && <EditModal tenant={editing} onClose={() => setEditing(null)} onDone={load} />}
+      {showCreate && <CreateModal catalog={featuresCatalog} defaults={featureDefaults} onClose={() => setShowCreate(false)} onDone={load} />}
+      {editing && <EditModal tenant={editing} catalog={featuresCatalog} onClose={() => setEditing(null)} onDone={load} />}
       {deleting && <DeleteModal tenant={deleting} onClose={() => setDeleting(null)} onDone={load} />}
       {showPwd && <ChangePwdModal onClose={() => setShowPwd(false)} />}
     </div>
@@ -272,14 +322,61 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
 
-function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function todayPlus(months: number): string {
+  const d = new Date()
+  d.setMonth(d.getMonth() + months)
+  return d.toISOString().slice(0, 10)
+}
+
+function FeaturesPicker({ catalog, value, onChange }: {
+  catalog: FeatureDef[]; value: string[]; onChange: (v: string[]) => void
+}) {
+  const toggle = (k: string) => {
+    onChange(value.includes(k) ? value.filter(x => x !== k) : [...value, k])
+  }
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+      {catalog.map(f => {
+        const on = value.includes(f.key)
+        return (
+          <button type="button" key={f.key} onClick={() => toggle(f.key)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm text-start transition ${
+              on
+                ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+            }`}>
+            <span className={`w-4 h-4 rounded border flex items-center justify-center text-[10px] ${
+              on ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'
+            }`}>{on ? '✓' : ''}</span>
+            {f.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function CreateModal({ catalog, defaults, onClose, onDone }: {
+  catalog: FeatureDef[]; defaults: string[]; onClose: () => void; onDone: () => void
+}) {
   const [form, setForm] = useState({
     slug: '', name: '', plan: 'basic',
     contact_name: '', contact_email: '', contact_phone: '', notes: '',
     admin_username: 'admin', admin_password: '',
+    subscription_start: new Date().toISOString().slice(0, 10),
+    subscription_end: todayPlus(12),
   })
+  const [features, setFeatures] = useState<string[]>(defaults)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+
+  const onPlanChange = (plan: string) => {
+    setForm({ ...form, plan })
+    if (PLAN_PRESETS[plan]) {
+      // Only override features if user hasn't customized them; simplest = always set on plan change.
+      setFeatures(PLAN_PRESETS[plan].filter(k => catalog.some(c => c.key === k)))
+    }
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -295,6 +392,9 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
         notes: form.notes || undefined,
         admin_username: form.admin_username,
         admin_password: form.admin_password,
+        features,
+        subscription_start: form.subscription_start || null,
+        subscription_end: form.subscription_end || null,
       })
       onDone()
       onClose()
@@ -321,8 +421,8 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <Field label="Pharmacy Name">
             <input className={inputCls} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Acme Pharmacy" />
           </Field>
-          <Field label="Plan">
-            <select className={inputCls} value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })}>
+          <Field label="Plan" hint="Choosing a plan auto-selects its default features (you can still tweak)">
+            <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
               <option value="basic">Basic</option>
               <option value="pro">Pro</option>
               <option value="enterprise">Enterprise</option>
@@ -332,6 +432,39 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
           <Field label="Contact Name"><input className={inputCls} value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} /></Field>
           <Field label="Contact Email"><input type="email" className={inputCls} value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
           <Field label="Contact Phone"><input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></Field>
+        </div>
+
+        <div className="border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700 flex items-center gap-2">
+            <CalendarClock size={16} className="text-indigo-600" /> Subscription period
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Start date">
+              <input type="date" className={inputCls}
+                value={form.subscription_start}
+                onChange={(e) => setForm({ ...form, subscription_start: e.target.value })} />
+            </Field>
+            <Field label="End date" hint="Leave empty for unlimited. Login is blocked after this date.">
+              <input type="date" className={inputCls}
+                value={form.subscription_end}
+                onChange={(e) => setForm({ ...form, subscription_end: e.target.value })} />
+            </Field>
+          </div>
+          <div className="flex gap-2 mt-2 text-xs">
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(1) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+1 month</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(3) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+3 months</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(6) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+6 months</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(12) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+1 year</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: '' })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">Unlimited</button>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700 flex items-center gap-2">
+            <Sparkles size={16} className="text-indigo-600" /> Features
+            <span className="text-xs font-normal text-slate-400 ms-auto">{features.length} enabled</span>
+          </h3>
+          <FeaturesPicker catalog={catalog} value={features} onChange={setFeatures} />
         </div>
 
         <div className="border-t border-slate-100 pt-4">
@@ -356,7 +489,9 @@ function CreateModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
   )
 }
 
-function EditModal({ tenant, onClose, onDone }: { tenant: Tenant; onClose: () => void; onDone: () => void }) {
+function EditModal({ tenant, catalog, onClose, onDone }: {
+  tenant: Tenant; catalog: FeatureDef[]; onClose: () => void; onDone: () => void
+}) {
   const [form, setForm] = useState({
     name: tenant.name,
     plan: tenant.plan || 'basic',
@@ -364,14 +499,31 @@ function EditModal({ tenant, onClose, onDone }: { tenant: Tenant; onClose: () =>
     contact_email: tenant.contact_email || '',
     contact_phone: tenant.contact_phone || '',
     notes: tenant.notes || '',
+    subscription_start: tenant.subscription_start || '',
+    subscription_end: tenant.subscription_end || '',
   })
+  const [features, setFeatures] = useState<string[]>(
+    tenant.features ?? catalog.filter(c => c.default).map(c => c.key)
+  )
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+
+  const onPlanChange = (plan: string) => {
+    setForm({ ...form, plan })
+    if (PLAN_PRESETS[plan]) {
+      setFeatures(PLAN_PRESETS[plan].filter(k => catalog.some(c => c.key === k)))
+    }
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault(); setBusy(true); setErr('')
     try {
-      await platformAPI.updateTenant(tenant.id, form as any)
+      await platformAPI.updateTenant(tenant.id, {
+        ...form,
+        features,
+        subscription_start: form.subscription_start || null,
+        subscription_end: form.subscription_end || null,
+      } as any)
       onDone(); onClose()
     } catch (e: any) {
       setErr(e?.response?.data?.detail || 'Failed')
@@ -380,12 +532,12 @@ function EditModal({ tenant, onClose, onDone }: { tenant: Tenant; onClose: () =>
 
   return (
     <Modal onClose={onClose} title={`Edit — ${tenant.slug}`} wide>
-      <form onSubmit={submit} className="space-y-3">
+      <form onSubmit={submit} className="space-y-4">
         {err && <div className="bg-red-50 border border-red-200 text-red-700 p-2 rounded text-sm">{err}</div>}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name"><input className={inputCls} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Plan">
-            <select className={inputCls} value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })}>
+          <Field label="Plan" hint="Selecting a plan resets features to that plan's defaults">
+            <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
               <option value="basic">Basic</option><option value="pro">Pro</option>
               <option value="enterprise">Enterprise</option><option value="trial">Trial</option>
               <option value="pilot">Pilot</option>
@@ -395,7 +547,41 @@ function EditModal({ tenant, onClose, onDone }: { tenant: Tenant; onClose: () =>
           <Field label="Contact Email"><input type="email" className={inputCls} value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
           <Field label="Contact Phone"><input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></Field>
         </div>
-        <Field label="Notes"><textarea className={inputCls} rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
+
+        <div className="border-t border-slate-100 pt-3">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700 flex items-center gap-2">
+            <CalendarClock size={16} className="text-indigo-600" /> Subscription
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Start date">
+              <input type="date" className={inputCls}
+                value={form.subscription_start}
+                onChange={(e) => setForm({ ...form, subscription_start: e.target.value })} />
+            </Field>
+            <Field label="End date" hint="Empty = unlimited. Login is blocked after this date.">
+              <input type="date" className={inputCls}
+                value={form.subscription_end}
+                onChange={(e) => setForm({ ...form, subscription_end: e.target.value })} />
+            </Field>
+          </div>
+          <div className="flex gap-2 mt-2 text-xs flex-wrap">
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(1) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">Renew +1 month</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(3) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+3 months</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(6) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+6 months</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(12) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+1 year</button>
+            <button type="button" onClick={() => setForm({ ...form, subscription_end: '' })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">Unlimited</button>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-100 pt-3">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700 flex items-center gap-2">
+            <Sparkles size={16} className="text-indigo-600" /> Features
+            <span className="text-xs font-normal text-slate-400 ms-auto">{features.length} enabled</span>
+          </h3>
+          <FeaturesPicker catalog={catalog} value={features} onChange={setFeatures} />
+        </div>
+
+        <Field label="Notes"><textarea className={inputCls} rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
         <button type="submit" disabled={busy} className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg">
           {busy ? 'Saving…' : 'Save Changes'}
         </button>

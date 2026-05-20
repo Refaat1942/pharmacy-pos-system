@@ -76,6 +76,9 @@ class TenantCreateIn(BaseModel):
     notes: Optional[str] = None
     admin_username: str = "admin"
     admin_password: str = Field(min_length=6)
+    features: Optional[list[str]] = None
+    subscription_start: Optional[str] = None  # ISO date 'YYYY-MM-DD'
+    subscription_end: Optional[str] = None
 
 
 @router.post("/tenants")
@@ -91,6 +94,9 @@ def create_tenant(body: TenantCreateIn, admin=Depends(get_super_admin)):
             notes=body.notes,
             admin_username=body.admin_username,
             admin_password=body.admin_password,
+            features=body.features,
+            subscription_start=body.subscription_start,
+            subscription_end=body.subscription_end,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -106,6 +112,9 @@ class TenantUpdateIn(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     notes: Optional[str] = None
+    features: Optional[list[str]] = None
+    subscription_start: Optional[str] = None
+    subscription_end: Optional[str] = None
 
 
 @router.patch("/tenants/{tid}")
@@ -149,6 +158,14 @@ def tenant_stats(tid: int, admin=Depends(get_super_admin)):
     if not t:
         raise HTTPException(404, "Tenant not found")
     return platform_db.get_tenant_stats(t)
+
+
+@router.get("/features-catalog")
+def features_catalog(admin=Depends(get_super_admin)):
+    return {
+        "features": platform_db.FEATURES_CATALOG,
+        "defaults": platform_db.DEFAULT_FEATURES,
+    }
 
 
 @router.post("/migrate-all")

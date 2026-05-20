@@ -18,6 +18,54 @@ from auth import hash_password
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]{2,29}$")
 RESERVED_SLUGS = {"platform", "public", "default", "_platform", "admin", "tenant"}
 
+# Master list of toggleable features. Keys are stable; UI uses labels.
+# `default` = which features are enabled when a tenant is provisioned.
+FEATURES_CATALOG = [
+    {"key": "dashboard",  "label": "Dashboard",            "default": True},
+    {"key": "pos",        "label": "Point of Sale",        "default": True},
+    {"key": "sales",      "label": "Sales History",        "default": True},
+    {"key": "returns",    "label": "Returns",              "default": True},
+    {"key": "inventory",  "label": "Inventory",            "default": True},
+    {"key": "transfers",  "label": "Branch Transfers",     "default": False},
+    {"key": "expiry",     "label": "Expiry Tracking",      "default": True},
+    {"key": "purchases",  "label": "Purchase Orders",      "default": True},
+    {"key": "suppliers",  "label": "Suppliers",            "default": True},
+    {"key": "customers",  "label": "Customers / Accounts", "default": True},
+    {"key": "reports",    "label": "Reports & Analytics",  "default": False},
+    {"key": "shifts",     "label": "Cash Shifts",          "default": True},
+    {"key": "hr",         "label": "HR & Payroll",         "default": False},
+    {"key": "settings",   "label": "Settings",             "default": True},
+]
+DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
+ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
+
+
+def is_tenant_live(t: dict) -> tuple[bool, str]:
+    """Returns (live, reason). A tenant is live if status='active' AND not expired."""
+    from datetime import date
+    if t.get("status") != "active":
+        return False, "This account is suspended. Please contact support."
+    end = t.get("subscription_end")
+    if end:
+        # psycopg2 returns DATE as datetime.date
+        try:
+            end_d = end if isinstance(end, date) else date.fromisoformat(str(end))
+            if end_d < date.today():
+                return False, f"Subscription expired on {end_d.isoformat()}. Please contact support to renew."
+        except Exception:
+            pass
+    return True, ""
+
+
+def normalize_features(features) -> list[str]:
+    """Whitelist filter; preserves order from catalog for stability."""
+    if not features:
+        return list(DEFAULT_FEATURES)
+    if isinstance(features, str):
+        features = [s.strip() for s in features.split(",") if s.strip()]
+    requested = {f for f in features if f in ALL_FEATURE_KEYS}
+    return [f["key"] for f in FEATURES_CATALOG if f["key"] in requested]
+
 
 class _DuplicateSlug(Exception):
     """Internal sentinel: slug already exists; do not run destructive cleanup."""
@@ -42,6 +90,11 @@ CREATE TABLE IF NOT EXISTS platform.tenants (
     created_at    TIMESTAMP DEFAULT NOW(),
     suspended_at  TIMESTAMP
 );
+
+-- Idempotent column additions (safe on existing installs)
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS features          JSONB;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS subscription_start DATE;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS subscription_end   DATE;
 
 CREATE TABLE IF NOT EXISTS platform.super_admins (
     id            SERIAL PRIMARY KEY,
@@ -164,6 +217,9 @@ def create_tenant(
     notes: Optional[str] = None,
     admin_username: str = "admin",
     admin_password: str = "admin123",
+    features: Optional[list] = None,
+    subscription_start: Optional[str] = None,
+    subscription_end: Optional[str] = None,
 ) -> dict:
     """Race-safe atomic tenant provisioning.
 
@@ -188,7 +244,9 @@ def create_tenant(
         raise ValueError(f"Slug '{slug}' is reserved")
 
     schema_name = f"tenant_{slug.replace('-', '_')}"
+    features_norm = normalize_features(features)
 
+    import json as _json
     import init_db
 
     pconn = get_platform_connection()  # already autocommit=False; tx started by SET search_path
@@ -206,11 +264,16 @@ def create_tenant(
         try:
             pcur.execute(
                 """INSERT INTO tenants(slug, name, schema_name, status, plan,
-                                        contact_name, contact_email, contact_phone, notes)
-                   VALUES (%s, %s, %s, 'provisioning', %s, %s, %s, %s, %s)
+                                        contact_name, contact_email, contact_phone, notes,
+                                        features, subscription_start, subscription_end)
+                   VALUES (%s, %s, %s, 'provisioning', %s, %s, %s, %s, %s,
+                           %s::jsonb, %s, %s)
                    RETURNING *""",
                 [slug, name, schema_name, plan,
-                 contact_name, contact_email, contact_phone, notes],
+                 contact_name, contact_email, contact_phone, notes,
+                 _json.dumps(features_norm),
+                 subscription_start or None,
+                 subscription_end or None],
             )
         except psycopg2.errors.UniqueViolation:
             pconn.rollback()
@@ -314,14 +377,18 @@ def create_tenant(
 
 
 def update_tenant(tid: int, fields: dict) -> dict:
+    import json as _json
     allowed = {"name", "status", "plan", "contact_name", "contact_email",
-               "contact_phone", "notes"}
+               "contact_phone", "notes", "subscription_start", "subscription_end"}
     sets = []
     params = []
     for k, v in fields.items():
         if k in allowed:
             sets.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
-            params.append(v)
+            params.append(v if v != "" else None)
+    if "features" in fields:
+        sets.append(sql.SQL("features = %s::jsonb"))
+        params.append(_json.dumps(normalize_features(fields["features"])))
     if "status" in fields:
         sets.append(sql.SQL("suspended_at = %s"))
         params.append(None if fields["status"] == "active" else "now()")
