@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import date
 import io
 import psycopg2.extras
@@ -496,3 +496,300 @@ def consumption_alerts(days: int = 30,
             d["days_remaining"] = round(int(r["stock"]) / avg, 1) if avg > 0 else None
             alerts.append(d)
     return alerts
+
+
+# ─── STOCK TRANSFERS ────────────────────────────────────────────────────────
+
+class TransferItemIn(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class TransferRequest(BaseModel):
+    from_branch_id: int
+    to_branch_id: int
+    items: List[TransferItemIn]
+    notes: Optional[str] = None
+
+
+def _assert_can_transfer_from(user, from_branch_id: int):
+    if user.get("role") == "admin":
+        return
+    if user.get("branch_id") != from_branch_id:
+        raise HTTPException(status_code=403, detail="You can only transfer from your own branch")
+
+
+@router.post("/transfers")
+def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)):
+    if req.from_branch_id == req.to_branch_id:
+        raise HTTPException(status_code=400, detail="Source and destination must differ")
+    if not req.items:
+        raise HTTPException(status_code=400, detail="At least one item is required")
+    _assert_can_transfer_from(current_user, req.from_branch_id)
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # validate branches
+        cur.execute("SELECT id FROM branches WHERE id IN (%s, %s)",
+                    (req.from_branch_id, req.to_branch_id))
+        if len(cur.fetchall()) != 2:
+            raise HTTPException(status_code=400, detail="Invalid branch(es)")
+
+        cur.execute("SELECT nextval('stock_transfer_seq') AS n")
+        seq_n = cur.fetchone()["n"]
+        transfer_number = f"TRN-{date.today().strftime('%Y%m%d')}-{int(seq_n):04d}"
+
+        cur.execute(
+            """INSERT INTO stock_transfers
+               (transfer_number, from_branch_id, to_branch_id, status, notes, created_by)
+               VALUES (%s,%s,%s,'in_transit',%s,%s) RETURNING id""",
+            (transfer_number, req.from_branch_id, req.to_branch_id,
+             req.notes, current_user.get("user_id")),
+        )
+        transfer_id = cur.fetchone()["id"]
+
+        for it in req.items:
+            if it.quantity <= 0:
+                raise HTTPException(status_code=400, detail="Quantity must be positive")
+            cur.execute(
+                "SELECT id, stock, branch_id, barcode, name_ar, name_en FROM products WHERE id=%s FOR UPDATE",
+                (it.product_id,),
+            )
+            p = cur.fetchone()
+            if not p:
+                raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
+            if p["branch_id"] != req.from_branch_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Product {p['name_en']} is not in source branch {req.from_branch_id}",
+                )
+            if int(p["stock"]) < it.quantity:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient stock for {p['name_en']} (have {p['stock']}, need {it.quantity})",
+                )
+            new_stock = int(p["stock"]) - it.quantity
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, p["id"]))
+            cur.execute(
+                """INSERT INTO stock_transfer_items
+                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], it.quantity),
+            )
+            log_movement(
+                cur, p["id"], req.from_branch_id, "transfer_out",
+                -it.quantity, new_stock,
+                reference_type="transfer", reference_id=transfer_id,
+                reason=f"Transfer {transfer_number} → branch {req.to_branch_id}",
+                user_id=current_user.get("user_id"),
+            )
+        conn.commit()
+        return {"ok": True, "transfer_id": transfer_id, "transfer_number": transfer_number}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.get("/transfers")
+def list_transfers(status: Optional[str] = None,
+                   current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    where = []
+    params = []
+    if status:
+        where.append("t.status = %s")
+        params.append(status)
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        where.append("(t.from_branch_id = %s OR t.to_branch_id = %s)")
+        params += [ub, ub]
+    sql = """SELECT t.*,
+                    bf.name_en AS from_name_en, bf.name_ar AS from_name_ar,
+                    bt.name_en AS to_name_en, bt.name_ar AS to_name_ar,
+                    u.name_en AS created_by_name_en, u.name_ar AS created_by_name_ar
+             FROM stock_transfers t
+             LEFT JOIN branches bf ON t.from_branch_id = bf.id
+             LEFT JOIN branches bt ON t.to_branch_id = bt.id
+             LEFT JOIN users u ON t.created_by = u.id"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY t.created_at DESC LIMIT 200"
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.get("/transfers/{transfer_id}")
+def get_transfer(transfer_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """SELECT t.*,
+                  bf.name_en AS from_name_en, bf.name_ar AS from_name_ar,
+                  bt.name_en AS to_name_en, bt.name_ar AS to_name_ar
+           FROM stock_transfers t
+           LEFT JOIN branches bf ON t.from_branch_id = bf.id
+           LEFT JOIN branches bt ON t.to_branch_id = bt.id
+           WHERE t.id=%s""",
+        (transfer_id,),
+    )
+    t = cur.fetchone()
+    if not t:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub not in (t["from_branch_id"], t["to_branch_id"]):
+            conn.close()
+            raise HTTPException(status_code=403, detail="Not accessible")
+    cur.execute("SELECT * FROM stock_transfer_items WHERE transfer_id=%s ORDER BY id", (transfer_id,))
+    items = cur.fetchall()
+    conn.close()
+    out = dict(t)
+    out["items"] = [dict(i) for i in items]
+    return out
+
+
+@router.post("/transfers/{transfer_id}/receive")
+def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM stock_transfers WHERE id=%s FOR UPDATE", (transfer_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+        if t["status"] != "in_transit":
+            raise HTTPException(status_code=400, detail=f"Cannot receive transfer in status '{t['status']}'")
+        # Authorization: admin OR member of destination branch
+        if current_user.get("role") != "admin":
+            if current_user.get("branch_id") != t["to_branch_id"]:
+                raise HTTPException(status_code=403, detail="Only destination branch can receive")
+        to_branch = t["to_branch_id"]
+
+        cur.execute("SELECT * FROM stock_transfer_items WHERE transfer_id=%s", (transfer_id,))
+        items = cur.fetchall()
+        for it in items:
+            # Find or create destination product by barcode in destination branch.
+            # Use INSERT ... ON CONFLICT to be safe against concurrent receives.
+            dest = None
+            if it["barcode"]:
+                cur.execute(
+                    "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+                    (it["barcode"], to_branch),
+                )
+                dest = cur.fetchone()
+            if not dest:
+                # Clone from source product
+                cur.execute("SELECT * FROM products WHERE id=%s", (it["source_product_id"],))
+                src = cur.fetchone()
+                cur.execute(
+                    """INSERT INTO products
+                       (barcode, name_ar, name_en, category, unit, price, cost,
+                        stock, min_stock, expiry_date, branch_id, active)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
+                       ON CONFLICT (barcode, branch_id) DO NOTHING
+                       RETURNING id, stock""",
+                    (src["barcode"], src["name_ar"], src["name_en"], src["category"],
+                     src["unit"], src["price"], src["cost"],
+                     src["min_stock"], src["expiry_date"], to_branch),
+                )
+                dest = cur.fetchone()
+                if not dest:
+                    # A concurrent receive inserted it first — re-fetch with lock.
+                    cur.execute(
+                        "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+                        (src["barcode"], to_branch),
+                    )
+                    dest = cur.fetchone()
+                    if not dest:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"Could not resolve destination product for barcode {src['barcode']}",
+                        )
+            new_stock = int(dest["stock"]) + int(it["quantity"])
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, dest["id"]))
+            cur.execute(
+                "UPDATE stock_transfer_items SET dest_product_id=%s WHERE id=%s",
+                (dest["id"], it["id"]),
+            )
+            log_movement(
+                cur, dest["id"], to_branch, "transfer_in",
+                int(it["quantity"]), new_stock,
+                reference_type="transfer", reference_id=transfer_id,
+                reason=f"Transfer {t['transfer_number']} received",
+                user_id=current_user.get("user_id"),
+            )
+
+        cur.execute(
+            """UPDATE stock_transfers
+               SET status='completed', received_by=%s, received_at=NOW()
+               WHERE id=%s""",
+            (current_user.get("user_id"), transfer_id),
+        )
+        conn.commit()
+        return {"ok": True, "status": "completed"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.post("/transfers/{transfer_id}/cancel")
+def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM stock_transfers WHERE id=%s FOR UPDATE", (transfer_id,))
+        t = cur.fetchone()
+        if not t:
+            raise HTTPException(status_code=404, detail="Transfer not found")
+        if t["status"] != "in_transit":
+            raise HTTPException(status_code=400, detail=f"Cannot cancel transfer in status '{t['status']}'")
+        # Only admin OR member of source branch can cancel
+        if current_user.get("role") != "admin":
+            if current_user.get("branch_id") != t["from_branch_id"]:
+                raise HTTPException(status_code=403, detail="Only source branch can cancel")
+
+        cur.execute("SELECT * FROM stock_transfer_items WHERE transfer_id=%s", (transfer_id,))
+        items = cur.fetchall()
+        for it in items:
+            cur.execute("SELECT stock FROM products WHERE id=%s FOR UPDATE", (it["source_product_id"],))
+            p = cur.fetchone()
+            if not p:
+                continue
+            new_stock = int(p["stock"]) + int(it["quantity"])
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, it["source_product_id"]))
+            log_movement(
+                cur, it["source_product_id"], t["from_branch_id"], "adjustment",
+                int(it["quantity"]), new_stock,
+                reference_type="transfer_cancel", reference_id=transfer_id,
+                reason=f"Transfer {t['transfer_number']} cancelled",
+                user_id=current_user.get("user_id"),
+            )
+        cur.execute(
+            "UPDATE stock_transfers SET status='cancelled', cancelled_at=NOW() WHERE id=%s",
+            (transfer_id,),
+        )
+        conn.commit()
+        return {"ok": True, "status": "cancelled"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()

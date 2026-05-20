@@ -111,7 +111,8 @@
     "pos": "نقطة البيع",
     "sales": "سجل المبيعات",
     "inventory": "المخزون",
-    "logout": "تسجيل الخروج"
+    "logout": "تسجيل الخروج",
+    "transfers": "التحويلات"
   },
   "pos": {
     "search_placeholder": "بحث بالاسم أو الباركود...",
@@ -221,11 +222,47 @@
     "cancel": "إلغاء",
     "save": "حفظ",
     "search": "بحث",
-    "close": "إغلاق"
+    "close": "إغلاق",
+    "view": "عرض",
+    "actions": "إجراءات",
+    "saving": "جاري الحفظ..."
   },
   "branch": {
     "switch": "تبديل الفرع",
     "all": "جميع الفروع",
     "none": "لا توجد فروع"
+  },
+  "transfers": {
+    "title": "تحويلات المخزون",
+    "new": "تحويل جديد",
+    "all": "الكل",
+    "status_in_transit": "قيد النقل",
+    "status_completed": "مكتمل",
+    "status_cancelled": "ملغي",
+    "col_number": "رقم التحويل",
+    "col_from": "من",
+    "col_to": "إلى",
+    "col_status": "الحالة",
+    "col_date": "التاريخ",
+    "col_barcode": "الباركود",
+    "empty": "لا توجد تحويلات",
+    "from_branch": "الفرع المصدر",
+    "to_branch": "الفرع الهدف",
+    "notes": "ملاحظات",
+    "notes_placeholder": "ملاحظات اختيارية",
+    "add_products": "إضافة منتجات",
+    "search_placeholder": "بحث بالاسم أو الباركود",
+    "items": "الأصناف",
+    "no_items": "لم تتم إضافة أصناف",
+    "stock": "المخزون",
+    "quantity": "الكمية",
+    "product": "المنتج",
+    "create": "إنشاء التحويل",
+    "receive": "تأكيد الاستلام",
+    "cancel": "إلغاء التحويل",
+    "confirm_receive": "تأكيد استلام التحويل وتحديث مخزون الفرع الهدف؟",
+    "confirm_cancel": "إلغاء التحويل وإعادة المخزون للفرع المصدر؟",
+    "fill_required": "اختر الفروع وأضف صنفاً واحداً على الأقل",
+    "same_branch_error": "الفرع المصدر والهدف يجب أن يختلفا"
   }
 }

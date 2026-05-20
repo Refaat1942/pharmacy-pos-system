@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
-    barcode VARCHAR(50) UNIQUE,
+    barcode VARCHAR(50),
     name_ar VARCHAR(200) NOT NULL,
     name_en VARCHAR(200) NOT NULL,
     category VARCHAR(100),
@@ -127,6 +127,50 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movements_branch ON stock_movements(branch_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movements_type ON stock_movements(movement_type);
+
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id SERIAL PRIMARY KEY,
+    transfer_number VARCHAR(40) UNIQUE NOT NULL,
+    from_branch_id INTEGER NOT NULL REFERENCES branches(id),
+    to_branch_id INTEGER NOT NULL REFERENCES branches(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'in_transit',
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    received_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    received_at TIMESTAMP,
+    cancelled_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_transfers_status ON stock_transfers(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transfers_from ON stock_transfers(from_branch_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_to ON stock_transfers(to_branch_id);
+
+CREATE TABLE IF NOT EXISTS stock_transfer_items (
+    id SERIAL PRIMARY KEY,
+    transfer_id INTEGER NOT NULL REFERENCES stock_transfers(id) ON DELETE CASCADE,
+    source_product_id INTEGER NOT NULL REFERENCES products(id),
+    dest_product_id INTEGER REFERENCES products(id),
+    barcode VARCHAR(50),
+    product_name_ar TEXT,
+    product_name_en TEXT,
+    quantity INTEGER NOT NULL CHECK (quantity > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer ON stock_transfer_items(transfer_id);
+
+CREATE SEQUENCE IF NOT EXISTS stock_transfer_seq START 1;
+SELECT setval('stock_transfer_seq',
+              GREATEST((SELECT COALESCE(MAX(id), 0) FROM stock_transfers), 1));
+
+-- Migration: replace single-column UNIQUE(barcode) with composite UNIQUE(barcode, branch_id)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_barcode_key') THEN
+        ALTER TABLE products DROP CONSTRAINT products_barcode_key;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'products_barcode_branch_key') THEN
+        ALTER TABLE products ADD CONSTRAINT products_barcode_branch_key UNIQUE (barcode, branch_id);
+    END IF;
+END $$;
 """
 
 

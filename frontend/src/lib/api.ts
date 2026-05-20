@@ -177,3 +177,49 @@ export interface Branch {
 export const branchesAPI = {
   list: () => api.get<Branch[]>('/branches'),
 }
+
+export interface TransferItem {
+  id: number
+  source_product_id: number
+  dest_product_id: number | null
+  barcode: string | null
+  product_name_ar: string | null
+  product_name_en: string | null
+  quantity: number
+}
+
+export interface Transfer {
+  id: number
+  transfer_number: string
+  from_branch_id: number
+  to_branch_id: number
+  status: 'in_transit' | 'completed' | 'cancelled'
+  notes: string | null
+  created_by: number | null
+  received_by: number | null
+  created_at: string
+  received_at: string | null
+  cancelled_at: string | null
+  from_name_en: string
+  from_name_ar: string
+  to_name_en: string
+  to_name_ar: string
+  created_by_name_en?: string
+  created_by_name_ar?: string
+  items?: TransferItem[]
+}
+
+export const transfersAPI = {
+  list: (status?: string) => api.get<Transfer[]>('/inventory/transfers', { params: { status } }),
+  get: (id: number) => api.get<Transfer>(`/inventory/transfers/${id}`),
+  create: (data: {
+    from_branch_id: number
+    to_branch_id: number
+    items: { product_id: number; quantity: number }[]
+    notes?: string
+  }) => api.post<{ ok: boolean; transfer_id: number; transfer_number: string }>(
+    '/inventory/transfers', data,
+  ),
+  receive: (id: number) => api.post(`/inventory/transfers/${id}/receive`),
+  cancel: (id: number) => api.post(`/inventory/transfers/${id}/cancel`),
+}

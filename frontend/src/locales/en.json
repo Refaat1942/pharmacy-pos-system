@@ -14,7 +14,8 @@
     "pos": "Point of Sale",
     "sales": "Sales History",
     "inventory": "Inventory",
-    "logout": "Logout"
+    "logout": "Logout",
+    "transfers": "Transfers"
   },
   "inventory": {
     "title": "Inventory & Stock",
@@ -221,11 +222,47 @@
     "cancel": "Cancel",
     "save": "Save",
     "search": "Search",
-    "close": "Close"
+    "close": "Close",
+    "view": "View",
+    "actions": "Actions",
+    "saving": "Saving..."
   },
   "branch": {
     "switch": "Switch Branch",
     "all": "All Branches",
     "none": "No branches available"
+  },
+  "transfers": {
+    "title": "Stock Transfers",
+    "new": "New Transfer",
+    "all": "All",
+    "status_in_transit": "In Transit",
+    "status_completed": "Completed",
+    "status_cancelled": "Cancelled",
+    "col_number": "Transfer #",
+    "col_from": "From",
+    "col_to": "To",
+    "col_status": "Status",
+    "col_date": "Date",
+    "col_barcode": "Barcode",
+    "empty": "No transfers yet",
+    "from_branch": "From Branch",
+    "to_branch": "To Branch",
+    "notes": "Notes",
+    "notes_placeholder": "Optional notes",
+    "add_products": "Add Products",
+    "search_placeholder": "Search by name or barcode",
+    "items": "Items",
+    "no_items": "No items added yet",
+    "stock": "Stock",
+    "quantity": "Quantity",
+    "product": "Product",
+    "create": "Create Transfer",
+    "receive": "Mark Received",
+    "cancel": "Cancel Transfer",
+    "confirm_receive": "Mark this transfer as received and update destination stock?",
+    "confirm_cancel": "Cancel this transfer and restore stock to source branch?",
+    "fill_required": "Please select branches and add at least one item",
+    "same_branch_error": "Source and destination must differ"
   }
 }

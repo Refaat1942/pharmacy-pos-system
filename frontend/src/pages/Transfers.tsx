@@ -1,0 +1,462 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { ArrowRightLeft, Plus, Check, X, Eye, Trash2 } from 'lucide-react'
+import Header from '../components/Header'
+import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../lib/api'
+import api from '../lib/api'
+import { useAuth } from '../lib/auth'
+import i18n from '../lib/i18n'
+
+type StatusFilter = '' | 'in_transit' | 'completed' | 'cancelled'
+
+export default function Transfers() {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const [transfers, setTransfers] = useState<Transfer[]>([])
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('')
+  const [loading, setLoading] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [viewing, setViewing] = useState<Transfer | null>(null)
+
+  const load = () => {
+    setLoading(true)
+    transfersAPI
+      .list(statusFilter || undefined)
+      .then((r) => setTransfers(r.data))
+      .catch(() => setTransfers([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    branchesAPI.list().then((r) => setBranches(r.data)).catch(() => {})
+  }, [])
+  useEffect(load, [statusFilter])
+
+  const branchName = (b?: Branch | null) =>
+    b ? (i18n.language === 'ar' ? b.name_ar : b.name_en) : '—'
+
+  const statusBadge = (s: string) => {
+    const map: Record<string, string> = {
+      in_transit: 'bg-amber-100 text-amber-800',
+      completed: 'bg-emerald-100 text-emerald-800',
+      cancelled: 'bg-slate-200 text-slate-600',
+    }
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[s] || ''}`}>
+        {t(`transfers.status_${s}`, { defaultValue: s })}
+      </span>
+    )
+  }
+
+  const handleReceive = async (id: number) => {
+    if (!confirm(t('transfers.confirm_receive') as string)) return
+    try {
+      await transfersAPI.receive(id)
+      load()
+      setViewing(null)
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    }
+  }
+  const handleCancel = async (id: number) => {
+    if (!confirm(t('transfers.confirm_cancel') as string)) return
+    try {
+      await transfersAPI.cancel(id)
+      load()
+      setViewing(null)
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    }
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-slate-50">
+      <Header />
+      <main className="flex-1 overflow-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <ArrowRightLeft className="text-pharma-600" />
+            {t('transfers.title')}
+          </h1>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+          >
+            <Plus size={16} />
+            {t('transfers.new')}
+          </button>
+        </div>
+
+        <div className="mb-4 flex gap-2">
+          {(['', 'in_transit', 'completed', 'cancelled'] as StatusFilter[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
+                statusFilter === s
+                  ? 'bg-pharma-600 text-white'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {s === '' ? t('transfers.all') : t(`transfers.status_${s}`)}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-start">{t('transfers.col_number')}</th>
+                <th className="px-3 py-2 text-start">{t('transfers.col_from')}</th>
+                <th className="px-3 py-2 text-start">{t('transfers.col_to')}</th>
+                <th className="px-3 py-2 text-start">{t('transfers.col_status')}</th>
+                <th className="px-3 py-2 text-start">{t('transfers.col_date')}</th>
+                <th className="px-3 py-2 text-end">{t('common.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
+              )}
+              {!loading && transfers.length === 0 && (
+                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('transfers.empty')}</td></tr>
+              )}
+              {transfers.map((t2) => (
+                <tr key={t2.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-2 font-mono text-xs">{t2.transfer_number}</td>
+                  <td className="px-3 py-2">{i18n.language === 'ar' ? t2.from_name_ar : t2.from_name_en}</td>
+                  <td className="px-3 py-2">{i18n.language === 'ar' ? t2.to_name_ar : t2.to_name_en}</td>
+                  <td className="px-3 py-2">{statusBadge(t2.status)}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{new Date(t2.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-end">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        onClick={() => transfersAPI.get(t2.id).then((r) => setViewing(r.data))}
+                        className="p-1.5 hover:bg-slate-100 rounded text-slate-600"
+                        title={t('common.view') as string}
+                      >
+                        <Eye size={14} />
+                      </button>
+                      {t2.status === 'in_transit' && (user?.role === 'admin' || user?.branch_id === t2.to_branch_id) && (
+                        <button
+                          onClick={() => handleReceive(t2.id)}
+                          className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700"
+                          title={t('transfers.receive') as string}
+                        >
+                          <Check size={14} />
+                        </button>
+                      )}
+                      {t2.status === 'in_transit' && (user?.role === 'admin' || user?.branch_id === t2.from_branch_id) && (
+                        <button
+                          onClick={() => handleCancel(t2.id)}
+                          className="p-1.5 hover:bg-red-100 rounded text-red-700"
+                          title={t('transfers.cancel') as string}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </main>
+
+      {showCreate && (
+        <CreateTransferModal
+          branches={branches}
+          onClose={() => setShowCreate(false)}
+          onSaved={() => {
+            setShowCreate(false)
+            load()
+          }}
+        />
+      )}
+
+      {viewing && (
+        <TransferDetailModal
+          transfer={viewing}
+          onClose={() => setViewing(null)}
+          onReceive={() => handleReceive(viewing.id)}
+          onCancel={() => handleCancel(viewing.id)}
+          canReceive={user?.role === 'admin' || user?.branch_id === viewing.to_branch_id}
+          canCancel={user?.role === 'admin' || user?.branch_id === viewing.from_branch_id}
+        />
+      )}
+    </div>
+  )
+}
+
+interface CartLine {
+  product_id: number
+  name_en: string
+  name_ar: string
+  barcode: string
+  stock: number
+  quantity: number
+}
+
+function CreateTransferModal({
+  branches,
+  onClose,
+  onSaved,
+}: {
+  branches: Branch[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const [fromBranch, setFromBranch] = useState<number | ''>(user?.branch_id || '')
+  const [toBranch, setToBranch] = useState<number | ''>('')
+  const [notes, setNotes] = useState('')
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<any[]>([])
+  const [lines, setLines] = useState<CartLine[]>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!fromBranch) {
+      setResults([])
+      return
+    }
+    const timer = setTimeout(() => {
+      api
+        .get('/inventory/items', { params: { q: search, branch_id: fromBranch } })
+        .then((r) => setResults(r.data))
+        .catch(() => setResults([]))
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [search, fromBranch])
+
+  const addLine = (p: any) => {
+    if (lines.find((l) => l.product_id === p.id)) return
+    setLines([...lines, {
+      product_id: p.id,
+      name_en: p.name_en,
+      name_ar: p.name_ar,
+      barcode: p.barcode,
+      stock: p.stock,
+      quantity: 1,
+    }])
+  }
+  const updateQty = (pid: number, qty: number) =>
+    setLines(lines.map((l) => l.product_id === pid ? { ...l, quantity: qty } : l))
+  const removeLine = (pid: number) => setLines(lines.filter((l) => l.product_id !== pid))
+
+  const submit = async () => {
+    if (!fromBranch || !toBranch || lines.length === 0) {
+      alert(t('transfers.fill_required'))
+      return
+    }
+    if (fromBranch === toBranch) {
+      alert(t('transfers.same_branch_error'))
+      return
+    }
+    setSaving(true)
+    try {
+      await transfersAPI.create({
+        from_branch_id: Number(fromBranch),
+        to_branch_id: Number(toBranch),
+        items: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+        notes: notes || undefined,
+      })
+      onSaved()
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isAdmin = user?.role === 'admin'
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{t('transfers.new')}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 overflow-auto flex-1">
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('transfers.from_branch')}</label>
+              <select
+                value={fromBranch}
+                onChange={(e) => setFromBranch(e.target.value ? Number(e.target.value) : '')}
+                disabled={!isAdmin}
+                className="input mt-1 w-full"
+              >
+                <option value="">--</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {i18n.language === 'ar' ? b.name_ar : b.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('transfers.to_branch')}</label>
+              <select
+                value={toBranch}
+                onChange={(e) => setToBranch(e.target.value ? Number(e.target.value) : '')}
+                className="input mt-1 w-full"
+              >
+                <option value="">--</option>
+                {branches.filter((b) => b.id !== fromBranch).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {i18n.language === 'ar' ? b.name_ar : b.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mb-3">
+            <label className="text-xs text-slate-600 font-medium">{t('transfers.notes')}</label>
+            <input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="input mt-1 w-full"
+              placeholder={t('transfers.notes_placeholder') as string}
+            />
+          </div>
+
+          <div className="border-t pt-4 mt-2">
+            <label className="text-xs text-slate-600 font-medium">{t('transfers.add_products')}</label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              disabled={!fromBranch}
+              className="input mt-1 w-full"
+              placeholder={t('transfers.search_placeholder') as string}
+            />
+            {results.length > 0 && (
+              <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg">
+                {results.slice(0, 20).map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => addLine(p)}
+                    className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between"
+                  >
+                    <span>{i18n.language === 'ar' ? p.name_ar : p.name_en}</span>
+                    <span className="text-xs text-slate-500">{p.barcode} · {t('transfers.stock')}: {p.stock}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('transfers.items')} ({lines.length})</h3>
+            {lines.length === 0 && <div className="text-sm text-slate-400 py-3 text-center">{t('transfers.no_items')}</div>}
+            {lines.map((l) => (
+              <div key={l.product_id} className="flex items-center gap-2 py-2 border-b border-slate-100">
+                <div className="flex-1">
+                  <div className="text-sm font-medium">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
+                  <div className="text-xs text-slate-500">{l.barcode} · {t('transfers.stock')}: {l.stock}</div>
+                </div>
+                <input
+                  type="number"
+                  min={1}
+                  max={l.stock}
+                  value={l.quantity}
+                  onChange={(e) => updateQty(l.product_id, Math.max(1, Math.min(l.stock, Number(e.target.value))))}
+                  className="input w-20 text-end"
+                />
+                <button onClick={() => removeLine(l.product_id)} className="p-1.5 hover:bg-red-100 rounded text-red-600">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">
+            {t('common.cancel')}
+          </button>
+          <button
+            onClick={submit}
+            disabled={saving || lines.length === 0 || !fromBranch || !toBranch}
+            className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50"
+          >
+            {saving ? t('common.saving') : t('transfers.create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TransferDetailModal({
+  transfer,
+  onClose,
+  onReceive,
+  onCancel,
+  canReceive,
+  canCancel,
+}: {
+  transfer: Transfer
+  onClose: () => void
+  onReceive: () => void
+  onCancel: () => void
+  canReceive: boolean
+  canCancel: boolean
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{transfer.transfer_number}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 overflow-auto flex-1">
+          <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+            <div><span className="text-slate-500">{t('transfers.col_from')}: </span><b>{i18n.language === 'ar' ? transfer.from_name_ar : transfer.from_name_en}</b></div>
+            <div><span className="text-slate-500">{t('transfers.col_to')}: </span><b>{i18n.language === 'ar' ? transfer.to_name_ar : transfer.to_name_en}</b></div>
+            <div><span className="text-slate-500">{t('transfers.col_status')}: </span><b>{t(`transfers.status_${transfer.status}`)}</b></div>
+            <div><span className="text-slate-500">{t('transfers.col_date')}: </span>{new Date(transfer.created_at).toLocaleString()}</div>
+            {transfer.notes && <div className="col-span-2"><span className="text-slate-500">{t('transfers.notes')}: </span>{transfer.notes}</div>}
+          </div>
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-start">{t('transfers.product')}</th>
+                <th className="px-3 py-2 text-start">{t('transfers.col_barcode')}</th>
+                <th className="px-3 py-2 text-end">{t('transfers.quantity')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(transfer.items || []).map((it: TransferItem) => (
+                <tr key={it.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
+                  <td className="px-3 py-2 text-xs font-mono">{it.barcode || '—'}</td>
+                  <td className="px-3 py-2 text-end font-semibold">{it.quantity}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {transfer.status === 'in_transit' && (
+          <div className="px-5 py-3 border-t flex justify-end gap-2">
+            {canCancel && (
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+                {t('transfers.cancel')}
+              </button>
+            )}
+            {canReceive && (
+              <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+                {t('transfers.receive')}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
