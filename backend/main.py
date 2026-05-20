@@ -1,12 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2.extras
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel
-from auth import create_token, verify_password
+from auth import create_token, verify_password, verify_token
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
+from tenant_ctx import set_current_schema
 from inventory import router as inventory_router, log_movement
 from purchasing import router as purchasing_router
 from customers import router as customers_router
@@ -21,6 +22,79 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ─── Tenant resolution middleware ───────────────────────────────────────────
+# Reads the JWT, looks up the tenant's Postgres schema, and stores it in a
+# contextvar so get_db_connection() routes queries to the correct schema.
+# FAIL CLOSED: any tenant-scoped request with an unresolvable / suspended /
+# missing tenant is rejected here, before it can fall through to 'public'.
+
+from fastapi.responses import JSONResponse  # noqa: E402
+from tenant_ctx import reset_current_schema  # noqa: E402
+from platform_db import get_tenant_by_slug  # noqa: E402
+
+
+def _needs_tenant(path: str) -> bool:
+    """Returns True if this path runs in tenant context."""
+    if not path.startswith("/api/"):
+        return False
+    if path == "/api/auth/login":
+        return False
+    if path.startswith("/api/platform/"):
+        return False
+    return True
+
+
+@app.middleware("http")
+async def tenant_middleware(request: Request, call_next):
+    """Resolve tenant from JWT and set the contextvar for the request.
+
+    Always reset the contextvar in finally so no value leaks between requests
+    that share a worker / async task. Fail closed on any unresolvable tenant.
+    """
+    path = request.url.path
+
+    # Always start each request with a clean tenant context.
+    token = set_current_schema(None)
+    try:
+        if not _needs_tenant(path):
+            return await call_next(request)
+
+        auth = request.headers.get("authorization", "")
+        if not auth.lower().startswith("bearer "):
+            return await call_next(request)  # no token -> deps will 401
+
+        payload = verify_token(auth[7:])
+        if not payload:
+            return await call_next(request)  # bad token -> deps will 401
+
+        if payload.get("scope") == "platform":
+            return await call_next(request)  # platform token -> deps will 403
+
+        slug = payload.get("tenant_slug")
+        if not slug:
+            return JSONResponse(
+                {"detail": "Token is missing tenant context"}, status_code=401
+            )
+
+        # Per-request lookup on the UNIQUE-indexed slug column. Cheap, and
+        # eliminates every cache-staleness bug (suspend/delete take effect
+        # immediately for already-issued JWTs).
+        tenant = get_tenant_by_slug(slug)
+        if not tenant:
+            return JSONResponse({"detail": "Tenant not found"}, status_code=401)
+        if tenant["status"] != "active":
+            return JSONResponse(
+                {"detail": "This account is suspended. Please contact support."},
+                status_code=403,
+            )
+
+        set_current_schema(tenant["schema_name"])
+        return await call_next(request)
+    finally:
+        reset_current_schema(token)
+
+
 app.include_router(inventory_router)
 app.include_router(purchasing_router)
 app.include_router(customers_router)
@@ -32,26 +106,25 @@ from shifts import router as shifts_router
 app.include_router(shifts_router)
 from hr import router as hr_router
 app.include_router(hr_router)
+from platform_api import router as platform_router
+app.include_router(platform_router)
 
 
 @app.on_event("startup")
 def _ensure_schema():
     """Self-heal: idempotently create any missing tables on every boot.
 
-    Prevents production errors like `relation "stock_movements" does not exist`
-    when a deploy ships new tables but `init_db.py` was not (re)run.
+    Bootstraps the control-plane (platform schema + default super-admin +
+    default tenant pointing to the existing public schema), then runs the
+    tenant init SQL against every tenant schema.
     """
     try:
         import os, sys
         sys.path.insert(0, os.path.dirname(__file__))
-        import init_db  # noqa: F401  (executing the module's SQL block)
-        from db import get_db_connection
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute(init_db.SQL)
-        conn.commit()
-        conn.close()
-        print("[startup] schema verified")
+        from platform_db import bootstrap_platform, apply_schema_to_all_tenants
+        bootstrap_platform()
+        result = apply_schema_to_all_tenants()
+        print(f"[startup] tenant schemas verified: {result}")
     except Exception as e:
         print(f"[startup] schema check failed (non-fatal): {e}")
 
@@ -59,13 +132,19 @@ def _ensure_schema():
 # ─── AUTH ────────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
+    tenant_slug: str = "fratelanza"
     username: str
     password: str
 
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest):
-    conn = get_db_connection()
+    tenant = get_tenant_by_slug(req.tenant_slug.strip().lower())
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
+    if tenant["status"] != "active":
+        raise HTTPException(status_code=403, detail="This account is suspended. Please contact support.")
+    conn = get_db_connection(schema=tenant["schema_name"])
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         "SELECT * FROM users WHERE username = %s AND status = 'active'",
@@ -74,8 +153,10 @@ def login(req: LoginRequest):
     user = cur.fetchone()
     conn.close()
     if not user or not verify_password(req.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
     token = create_token({
+        "scope": "tenant",
+        "tenant_slug": tenant["slug"],
         "user_id": user["id"],
         "username": user["username"],
         "role": user["role"],
@@ -92,6 +173,11 @@ def login(req: LoginRequest):
             "name_en": user["name_en"],
             "role": user["role"],
             "branch_id": user["branch_id"],
+        },
+        "tenant": {
+            "slug": tenant["slug"],
+            "name": tenant["name"],
+            "plan": tenant.get("plan"),
         },
     }
 

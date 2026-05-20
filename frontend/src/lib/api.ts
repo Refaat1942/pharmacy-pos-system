@@ -127,8 +127,8 @@ export interface DashboardSummary {
 // ─── API calls ──────────────────────────────────────────────────────────────
 
 export const authAPI = {
-  login: (username: string, password: string) =>
-    api.post('/auth/login', { username, password }),
+  login: (tenant_slug: string, username: string, password: string) =>
+    api.post('/auth/login', { tenant_slug, username, password }),
   me: () => api.get('/auth/me'),
 }
 

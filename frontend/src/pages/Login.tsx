@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Eye, EyeOff, Loader2, Globe, Pill } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Globe, Pill, Building2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { authAPI } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -10,6 +10,9 @@ export default function Login() {
   const { t } = useTranslation()
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [tenantSlug, setTenantSlug] = useState(
+    localStorage.getItem('pharma_tenant_slug') || 'fratelanza'
+  )
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -21,11 +24,14 @@ export default function Login() {
     setLoading(true)
     setError('')
     try {
-      const { data } = await authAPI.login(username, password)
+      const slug = tenantSlug.trim().toLowerCase()
+      const { data } = await authAPI.login(slug, username, password)
+      localStorage.setItem('pharma_tenant_slug', slug)
+      if (data.tenant) localStorage.setItem('pharma_tenant', JSON.stringify(data.tenant))
       login(data.token, data.user)
       navigate('/')
-    } catch {
-      setError(t('login.error'))
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || t('login.error'))
     } finally {
       setLoading(false)
     }
@@ -64,6 +70,24 @@ export default function Login() {
           )}
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1.5">
+              <Building2 size={14} className="text-pharma-600" />
+              {t('login.pharmacy_code')}
+            </label>
+            <input
+              type="text"
+              value={tenantSlug}
+              onChange={(e) => setTenantSlug(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pharma-500 focus:border-transparent transition-all bg-gray-50 font-mono lowercase"
+              placeholder="e.g. fratelanza"
+              required
+              autoCapitalize="none"
+              autoCorrect="off"
+            />
+            <p className="text-xs text-gray-400 mt-1">{t('login.pharmacy_code_hint')}</p>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               {t('login.username')}
             </label>
@@ -74,7 +98,7 @@ export default function Login() {
               className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-pharma-500 focus:border-transparent transition-all bg-gray-50"
               placeholder="admin"
               required
-              autoFocus
+              autoFocus={!!tenantSlug}
             />
           </div>
 

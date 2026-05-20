@@ -8,7 +8,9 @@
     "password": "Password",
     "sign_in": "Sign In",
     "signing_in": "Signing in...",
-    "error": "Invalid username or password"
+    "error": "Invalid username or password",
+    "pharmacy_code": "Pharmacy Code",
+    "pharmacy_code_hint": "Your pharmacy's unique code (provided when you signed up)"
   },
   "nav": {
     "pos": "Point of Sale",

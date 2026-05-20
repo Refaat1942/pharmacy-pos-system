@@ -17,6 +17,13 @@ import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import Shifts from './pages/Shifts'
 import HR from './pages/HR'
+import PlatformLogin from './pages/PlatformLogin'
+import Platform from './pages/Platform'
+
+function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem('platform_token')
+  return token ? <>{children}</> : <Navigate to="/platform/login" replace />
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -49,6 +56,8 @@ function AppRoutes() {
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/shifts" element={<ProtectedRoute><Shifts /></ProtectedRoute>} />
       <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
+      <Route path="/platform/login" element={<PlatformLogin />} />
+      <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
