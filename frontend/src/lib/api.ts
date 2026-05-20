@@ -171,8 +171,16 @@ export const salesAPI = {
     seller_id?: number
     notes?: string
   }) => api.post<SaleResponse>('/sales', data),
-  list: (limit?: number, offset?: number) =>
-    api.get<Invoice[]>('/sales', { params: { limit, offset } }),
+  list: (params: {
+    limit?: number; offset?: number;
+    date_from?: string; date_to?: string;
+    type?: string; seller_id?: number;
+  } = {}) => api.get<Invoice[]>('/sales', { params }),
+  aggregate: (params: {
+    date_from?: string; date_to?: string;
+    type?: string; seller_id?: number;
+  } = {}) => api.get<{ count: number; gross: number; discount: number; net: number }>(
+    '/sales/aggregate', { params }),
   get: (id: number) => api.get<SaleResponse>(`/sales/${id}`),
   processReturn: (
     invoiceId: number,
@@ -181,8 +189,49 @@ export const salesAPI = {
   ) => api.post(`/sales/${invoiceId}/return`, { items, reason }),
 }
 
+export interface ReturnRow {
+  id: number
+  original_invoice_id: number
+  return_invoice_number: string
+  type: string
+  total_returned: number
+  reason: string | null
+  seller_id: number | null
+  branch_id: number | null
+  created_at: string
+  invoice_number: string | null
+  sale_type: string | null
+  sale_net: number | null
+  seller_name_en: string | null
+  seller_name_ar: string | null
+}
+
+export const returnsAPI = {
+  list: (params: { date_from?: string; date_to?: string; limit?: number; offset?: number } = {}) =>
+    api.get<ReturnRow[]>('/returns', { params }),
+}
+
+export interface SalesSeriesPoint { date: string; sales: number; invoices: number }
+export interface TopProduct { id: number; name_en: string; name_ar: string; qty: number; revenue: number }
+export interface TopSeller { id: number; name_en: string; name_ar: string; sales: number; invoices: number }
+export interface DashboardAlerts {
+  near_expiry_count: number
+  expired_count: number
+  low_stock_count: number
+  returns_today: number
+  sales_today: number
+  returns_ratio: number
+  returns_high: boolean
+}
+
 export const dashboardAPI = {
   summary: () => api.get<DashboardSummary>('/dashboard/summary'),
+  series: (days = 7) => api.get<SalesSeriesPoint[]>('/dashboard/sales-series', { params: { days } }),
+  topProducts: (limit = 5, days = 30) =>
+    api.get<TopProduct[]>('/dashboard/top-products', { params: { limit, days } }),
+  topSellers: (limit = 3, days = 30) =>
+    api.get<TopSeller[]>('/dashboard/top-sellers', { params: { limit, days } }),
+  alerts: () => api.get<DashboardAlerts>('/dashboard/alerts'),
 }
 
 export interface Branch {

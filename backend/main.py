@@ -413,15 +413,32 @@ def create_sale(req: SaleRequest,
 
 @app.get("/api/sales")
 def list_sales(limit: int = 50, offset: int = 0,
+               date_from: Optional[str] = None,
+               date_to: Optional[str] = None,
+               type: Optional[str] = None,
+               seller_id: Optional[int] = None,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    where = ""
-    params = []
+    conds = []
+    params: list = []
     if active_branch is not None:
-        where = " WHERE i.branch_id = %s"
+        conds.append("i.branch_id = %s")
         params.append(active_branch)
+    if date_from:
+        conds.append("DATE(i.created_at) >= %s")
+        params.append(date_from)
+    if date_to:
+        conds.append("DATE(i.created_at) <= %s")
+        params.append(date_to)
+    if type:
+        conds.append("i.type = %s")
+        params.append(type)
+    if seller_id:
+        conds.append("i.seller_id = %s")
+        params.append(seller_id)
+    where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(
         f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
@@ -436,6 +453,86 @@ def list_sales(limit: int = 50, offset: int = 0,
     invoices = cur.fetchall()
     conn.close()
     return [dict(i) for i in invoices]
+
+
+@app.get("/api/returns")
+def list_returns(limit: int = 200, offset: int = 0,
+                 date_from: Optional[str] = None,
+                 date_to: Optional[str] = None,
+                 current_user=Depends(get_current_user),
+                 active_branch=Depends(get_active_branch_id)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Defensive: require r.branch_id == i.branch_id so any mislabeled rows
+    # cannot leak into the wrong branch's listing.
+    conds = ["(i.id IS NULL OR i.branch_id = r.branch_id)"]
+    params: list = []
+    if active_branch is not None:
+        conds.append("r.branch_id = %s")
+        conds.append("(i.id IS NULL OR i.branch_id = %s)")
+        params.extend([active_branch, active_branch])
+    if date_from:
+        conds.append("DATE(r.created_at) >= %s")
+        params.append(date_from)
+    if date_to:
+        conds.append("DATE(r.created_at) <= %s")
+        params.append(date_to)
+    where = " WHERE " + " AND ".join(conds)
+    params += [limit, offset]
+    cur.execute(
+        f"""SELECT r.*, i.invoice_number, i.type AS sale_type, i.net_total AS sale_net,
+                   u.name_en AS seller_name_en, u.name_ar AS seller_name_ar
+            FROM returns r
+            LEFT JOIN invoices i ON r.original_invoice_id = i.id
+            LEFT JOIN users u ON r.seller_id = u.id
+            {where}
+            ORDER BY r.created_at DESC LIMIT %s OFFSET %s""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@app.get("/api/sales/aggregate")
+def sales_aggregate(date_from: Optional[str] = None,
+                    date_to: Optional[str] = None,
+                    type: Optional[str] = None,
+                    seller_id: Optional[int] = None,
+                    current_user=Depends(get_current_user),
+                    active_branch=Depends(get_active_branch_id)):
+    """Aggregate KPIs for sales without pagination; used by Returns ratio etc."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conds = ["status='completed'"]
+    params: list = []
+    if active_branch is not None:
+        conds.append("branch_id = %s"); params.append(active_branch)
+    if date_from:
+        conds.append("DATE(created_at) >= %s"); params.append(date_from)
+    if date_to:
+        conds.append("DATE(created_at) <= %s"); params.append(date_to)
+    if type:
+        conds.append("type = %s"); params.append(type)
+    if seller_id:
+        conds.append("seller_id = %s"); params.append(seller_id)
+    where = " WHERE " + " AND ".join(conds)
+    cur.execute(
+        f"""SELECT COUNT(*) AS cnt,
+                   COALESCE(SUM(subtotal),0) AS gross,
+                   COALESCE(SUM(discount),0) AS discount,
+                   COALESCE(SUM(net_total),0) AS net
+              FROM invoices{where}""",
+        params,
+    )
+    row = cur.fetchone()
+    conn.close()
+    return {
+        "count": int(row["cnt"]),
+        "gross": float(row["gross"]),
+        "discount": float(row["discount"]),
+        "net": float(row["net"]),
+    }
 
 
 def _assert_invoice_branch_access(cur, invoice_id: int, current_user):
@@ -489,6 +586,15 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         _assert_invoice_branch_access(cur, invoice_id, current_user)
+        # Always tag the return with the ORIGINAL INVOICE's branch (not the
+        # operator's profile branch). Admins may operate across branches; the
+        # return must remain accounted to the branch that owns the invoice.
+        cur.execute("SELECT branch_id FROM invoices WHERE id=%s", (invoice_id,))
+        inv_row = cur.fetchone()
+        if not inv_row:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        return_branch_id = inv_row["branch_id"]
+
         cur.execute("SELECT COUNT(*) AS cnt FROM returns")
         count = cur.fetchone()["cnt"]
         return_number = f"RET-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
@@ -507,7 +613,7 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
                (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id)
                VALUES (%s,%s,'partial',%s,%s,%s,%s) RETURNING *""",
             (invoice_id, return_number, total_returned, req.reason,
-             current_user.get("user_id"), current_user.get("branch_id")),
+             current_user.get("user_id"), return_branch_id),
         )
         ret = cur.fetchone()
 
@@ -570,7 +676,7 @@ def dashboard_summary(current_user=Depends(get_current_user),
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     today = date.today()
     branch_clause = ""
-    branch_params = []
+    branch_params: list = []
     if active_branch is not None:
         branch_clause = " AND branch_id = %s"
         branch_params = [active_branch]
@@ -598,6 +704,171 @@ def dashboard_summary(current_user=Depends(get_current_user),
         "returns_total": float(returns_data["total"]),
         "net_sales": net,
         "low_stock_count": int(low_stock["cnt"]),
+    }
+
+
+@app.get("/api/dashboard/sales-series")
+def dashboard_sales_series(days: int = 7,
+                           current_user=Depends(get_current_user),
+                           active_branch=Depends(get_active_branch_id)):
+    """Daily sales for last N days (default 7)."""
+    days = max(1, min(days, 90))
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_clause = ""
+    params: list = [days - 1]
+    if active_branch is not None:
+        branch_clause = " AND i.branch_id = %s"
+        params.append(active_branch)
+    cur.execute(
+        f"""WITH days AS (
+              SELECT generate_series(CURRENT_DATE - %s::int, CURRENT_DATE, '1 day')::date AS d
+            )
+            SELECT d::text AS date,
+                   COALESCE(SUM(i.net_total) FILTER (WHERE i.status='completed'), 0) AS sales,
+                   COUNT(i.id) FILTER (WHERE i.status='completed') AS invoices
+              FROM days
+              LEFT JOIN invoices i ON DATE(i.created_at) = d{branch_clause}
+             GROUP BY d
+             ORDER BY d""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{"date": r["date"], "sales": float(r["sales"]), "invoices": int(r["invoices"])} for r in rows]
+
+
+@app.get("/api/dashboard/top-products")
+def dashboard_top_products(limit: int = 5, days: int = 30,
+                           current_user=Depends(get_current_user),
+                           active_branch=Depends(get_active_branch_id)):
+    limit = max(1, min(limit, 50))
+    days = max(1, min(days, 365))
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_clause = ""
+    params: list = [days - 1]
+    if active_branch is not None:
+        branch_clause = " AND i.branch_id = %s"
+        params.append(active_branch)
+    params.append(limit)
+    cur.execute(
+        f"""SELECT p.id, p.name_en, p.name_ar,
+                   COALESCE(SUM(ii.quantity), 0) AS qty,
+                   COALESCE(SUM(ii.total), 0) AS revenue
+              FROM invoice_items ii
+              JOIN invoices i ON ii.invoice_id = i.id AND i.status='completed'
+              JOIN products p ON ii.product_id = p.id
+             WHERE DATE(i.created_at) >= CURRENT_DATE - %s::int{branch_clause}
+             GROUP BY p.id, p.name_en, p.name_ar
+             ORDER BY qty DESC
+             LIMIT %s""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{
+        "id": r["id"], "name_en": r["name_en"], "name_ar": r["name_ar"],
+        "qty": int(r["qty"]), "revenue": float(r["revenue"]),
+    } for r in rows]
+
+
+@app.get("/api/dashboard/top-sellers")
+def dashboard_top_sellers(limit: int = 3, days: int = 30,
+                          current_user=Depends(get_current_user),
+                          active_branch=Depends(get_active_branch_id)):
+    limit = max(1, min(limit, 20))
+    days = max(1, min(days, 365))
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_clause = ""
+    params: list = [days - 1]
+    if active_branch is not None:
+        branch_clause = " AND i.branch_id = %s"
+        params.append(active_branch)
+    params.append(limit)
+    cur.execute(
+        f"""SELECT u.id, u.name_en, u.name_ar,
+                   COALESCE(SUM(i.net_total), 0) AS sales,
+                   COUNT(i.id) AS invoices
+              FROM invoices i
+              JOIN users u ON i.seller_id = u.id
+             WHERE i.status='completed'
+               AND DATE(i.created_at) >= CURRENT_DATE - %s::int{branch_clause}
+             GROUP BY u.id, u.name_en, u.name_ar
+             ORDER BY sales DESC
+             LIMIT %s""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [{
+        "id": r["id"], "name_en": r["name_en"], "name_ar": r["name_ar"],
+        "sales": float(r["sales"]), "invoices": int(r["invoices"]),
+    } for r in rows]
+
+
+@app.get("/api/dashboard/alerts")
+def dashboard_alerts(current_user=Depends(get_current_user),
+                     active_branch=Depends(get_active_branch_id)):
+    """Operational alerts: near-expiry, low-stock, high returns."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_clause = ""
+    branch_params: list = []
+    if active_branch is not None:
+        branch_clause = " AND branch_id = %s"
+        branch_params = [active_branch]
+
+    # Near-expiry within 60 days, stock>0
+    cur.execute(
+        f"""SELECT COUNT(*) AS cnt FROM products
+            WHERE active=true AND stock > 0 AND expiry_date IS NOT NULL
+              AND expiry_date <= CURRENT_DATE + INTERVAL '60 days'
+              AND expiry_date >= CURRENT_DATE{branch_clause}""",
+        branch_params,
+    )
+    near_expiry = int(cur.fetchone()["cnt"])
+
+    # Already expired with stock
+    cur.execute(
+        f"""SELECT COUNT(*) AS cnt FROM products
+            WHERE active=true AND stock > 0 AND expiry_date IS NOT NULL
+              AND expiry_date < CURRENT_DATE{branch_clause}""",
+        branch_params,
+    )
+    expired = int(cur.fetchone()["cnt"])
+
+    # Low stock
+    low_clause = "stock <= min_stock AND active=true"
+    if active_branch is not None:
+        low_clause += " AND branch_id = %s"
+    cur.execute(f"SELECT COUNT(*) AS cnt FROM products WHERE {low_clause}", branch_params)
+    low_stock = int(cur.fetchone()["cnt"])
+
+    # Returns ratio: today's returns ÷ today's sales (>10% is high)
+    today = date.today()
+    cur.execute(
+        f"SELECT COALESCE(SUM(net_total),0) AS total FROM invoices WHERE DATE(created_at)=%s AND status='completed'{branch_clause}",
+        [today, *branch_params],
+    )
+    sales_today = float(cur.fetchone()["total"])
+    cur.execute(
+        f"SELECT COALESCE(SUM(total_returned),0) AS total FROM returns WHERE DATE(created_at)=%s{branch_clause}",
+        [today, *branch_params],
+    )
+    returns_today = float(cur.fetchone()["total"])
+    returns_ratio = (returns_today / sales_today) if sales_today > 0 else 0.0
+
+    conn.close()
+    return {
+        "near_expiry_count": near_expiry,
+        "expired_count": expired,
+        "low_stock_count": low_stock,
+        "returns_today": returns_today,
+        "sales_today": sales_today,
+        "returns_ratio": round(returns_ratio, 4),
+        "returns_high": returns_ratio > 0.10,
     }
 
 

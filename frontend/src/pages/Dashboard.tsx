@@ -1,0 +1,279 @@
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import {
+  TrendingUp, ShoppingCart, RotateCcw, AlertTriangle, Package,
+  Calendar as CalendarIcon, Users, BarChart3, Loader2,
+} from 'lucide-react'
+import Header from '../components/Header'
+import i18n from '../lib/i18n'
+import { dashboardAPI } from '../lib/api'
+import type {
+  DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts,
+} from '../lib/api'
+
+export default function Dashboard() {
+  const { t } = useTranslation()
+  const lang = i18n.language
+
+  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [series, setSeries] = useState<SalesSeriesPoint[]>([])
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([])
+  const [topSellers, setTopSellers] = useState<TopSeller[]>([])
+  const [alerts, setAlerts] = useState<DashboardAlerts | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const loadAll = () => {
+    setLoading(true)
+    Promise.all([
+      dashboardAPI.summary(),
+      dashboardAPI.series(7),
+      dashboardAPI.topProducts(5, 30),
+      dashboardAPI.topSellers(3, 30),
+      dashboardAPI.alerts(),
+    ])
+      .then(([s, sr, tp, ts, al]) => {
+        setSummary(s.data); setSeries(sr.data); setTopProducts(tp.data)
+        setTopSellers(ts.data); setAlerts(al.data)
+      })
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadAll()
+    const onBranchChange = () => loadAll()
+    window.addEventListener('branch-changed', onBranchChange)
+    return () => window.removeEventListener('branch-changed', onBranchChange)
+  }, [])
+
+  const egp = t('sales.egp')
+
+  // Chart scaling
+  const maxSales = Math.max(1, ...series.map((p) => p.sales))
+
+  const fmtDay = (d: string) =>
+    new Date(d).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', {
+      weekday: 'short', day: 'numeric',
+    })
+
+  return (
+    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
+      <Header />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{t('dashboard.title')}</h1>
+              <p className="text-sm text-gray-500 mt-0.5">{t('dashboard.subtitle')}</p>
+            </div>
+            <button
+              onClick={loadAll}
+              className="text-sm text-pharma-700 hover:text-pharma-800 font-semibold"
+            >
+              {t('common.refresh')}
+            </button>
+          </div>
+
+          {loading && !summary ? (
+            <div className="flex items-center justify-center py-24 text-gray-400">
+              <Loader2 size={24} className="animate-spin me-2" />
+              {t('common.loading')}
+            </div>
+          ) : (
+            <>
+              {/* KPI cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KpiCard
+                  icon={<TrendingUp size={18} />}
+                  label={t('dashboard.today_sales')}
+                  value={`${egp} ${(summary?.today_sales ?? 0).toFixed(2)}`}
+                  tone="pharma"
+                />
+                <KpiCard
+                  icon={<ShoppingCart size={18} />}
+                  label={t('dashboard.invoice_count')}
+                  value={String(summary?.invoice_count ?? 0)}
+                  tone="blue"
+                />
+                <KpiCard
+                  icon={<RotateCcw size={18} />}
+                  label={t('dashboard.returns_total')}
+                  value={`${egp} ${(summary?.returns_total ?? 0).toFixed(2)}`}
+                  tone="amber"
+                />
+                <KpiCard
+                  icon={<BarChart3 size={18} />}
+                  label={t('dashboard.net_sales')}
+                  value={`${egp} ${(summary?.net_sales ?? 0).toFixed(2)}`}
+                  tone="green"
+                />
+              </div>
+
+              {/* Alerts */}
+              {alerts && (alerts.expired_count > 0 || alerts.near_expiry_count > 0 ||
+                          alerts.low_stock_count > 0 || alerts.returns_high) && (
+                <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-2">
+                  <h2 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                    <AlertTriangle size={16} className="text-amber-500" />
+                    {t('dashboard.alerts')}
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {alerts.expired_count > 0 && (
+                      <AlertRow tone="red" icon={<CalendarIcon size={14} />}
+                        text={`${alerts.expired_count} ${t('dashboard.alert_expired')}`} />
+                    )}
+                    {alerts.near_expiry_count > 0 && (
+                      <AlertRow tone="amber" icon={<CalendarIcon size={14} />}
+                        text={`${alerts.near_expiry_count} ${t('dashboard.alert_near_expiry')}`} />
+                    )}
+                    {alerts.low_stock_count > 0 && (
+                      <AlertRow tone="amber" icon={<Package size={14} />}
+                        text={`${alerts.low_stock_count} ${t('dashboard.alert_low_stock')}`} />
+                    )}
+                    {alerts.returns_high && (
+                      <AlertRow tone="red" icon={<RotateCcw size={14} />}
+                        text={`${t('dashboard.alert_high_returns')} (${(alerts.returns_ratio * 100).toFixed(1)}%)`} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Chart */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                <h2 className="text-sm font-bold text-gray-700 mb-4">{t('dashboard.last_7_days')}</h2>
+                <div className="flex items-end gap-3 h-48">
+                  {series.map((p) => {
+                    const h = (p.sales / maxSales) * 100
+                    return (
+                      <div key={p.date} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="text-[10px] font-semibold text-gray-500 tabular-nums">
+                          {p.sales > 0 ? p.sales.toFixed(0) : ''}
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-t-md flex-1 flex flex-col justify-end">
+                          <div
+                            className="w-full bg-gradient-to-t from-pharma-600 to-pharma-400 rounded-t-md transition-all"
+                            style={{ height: `${h}%`, minHeight: p.sales > 0 ? '4px' : '0' }}
+                            title={`${p.date}: ${p.sales}`}
+                          />
+                        </div>
+                        <div className="text-[10px] text-gray-500 mt-1 whitespace-nowrap">
+                          {fmtDay(p.date)}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Top products + Top sellers */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                  <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+                    <Package size={16} className="text-pharma-600" />
+                    {t('dashboard.top_products')}
+                  </h2>
+                  {topProducts.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-6 text-center">{t('common.no_data')}</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[11px] uppercase text-gray-400 border-b">
+                          <th className="text-start py-2 font-semibold">#</th>
+                          <th className="text-start py-2 font-semibold">{t('dashboard.product')}</th>
+                          <th className="text-end py-2 font-semibold">{t('dashboard.qty')}</th>
+                          <th className="text-end py-2 font-semibold">{t('dashboard.revenue')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topProducts.map((p, idx) => (
+                          <tr key={p.id} className="border-b border-gray-50">
+                            <td className="py-2 text-gray-400 text-xs tabular-nums">{idx + 1}</td>
+                            <td className="py-2 text-gray-800 font-medium">
+                              {lang === 'ar' ? p.name_ar : p.name_en}
+                            </td>
+                            <td className="py-2 text-end font-bold tabular-nums">{p.qty}</td>
+                            <td className="py-2 text-end text-pharma-700 tabular-nums">
+                              {egp} {p.revenue.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                  <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
+                    <Users size={16} className="text-pharma-600" />
+                    {t('dashboard.top_sellers')}
+                  </h2>
+                  {topSellers.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-6 text-center">{t('common.no_data')}</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[11px] uppercase text-gray-400 border-b">
+                          <th className="text-start py-2 font-semibold">#</th>
+                          <th className="text-start py-2 font-semibold">{t('dashboard.seller')}</th>
+                          <th className="text-end py-2 font-semibold">{t('dashboard.invoices')}</th>
+                          <th className="text-end py-2 font-semibold">{t('dashboard.sales')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topSellers.map((s, idx) => (
+                          <tr key={s.id} className="border-b border-gray-50">
+                            <td className="py-2 text-gray-400 text-xs tabular-nums">{idx + 1}</td>
+                            <td className="py-2 text-gray-800 font-medium">
+                              {lang === 'ar' ? s.name_ar : s.name_en}
+                            </td>
+                            <td className="py-2 text-end tabular-nums">{s.invoices}</td>
+                            <td className="py-2 text-end text-pharma-700 font-bold tabular-nums">
+                              {egp} {s.sales.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function KpiCard({ icon, label, value, tone }: {
+  icon: React.ReactNode; label: string; value: string;
+  tone: 'pharma' | 'blue' | 'amber' | 'green';
+}) {
+  const tones: Record<string, string> = {
+    pharma: 'bg-pharma-50 border-pharma-200 text-pharma-700',
+    blue: 'bg-blue-50 border-blue-200 text-blue-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+    green: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+  }
+  return (
+    <div className={`rounded-2xl border p-4 ${tones[tone]}`}>
+      <div className="flex items-center gap-2 mb-1 opacity-80">
+        {icon}
+        <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <p className="text-xl font-bold tabular-nums">{value}</p>
+    </div>
+  )
+}
+
+function AlertRow({ tone, icon, text }: { tone: 'red' | 'amber'; icon: React.ReactNode; text: string }) {
+  const tones: Record<string, string> = {
+    red: 'bg-red-50 border-red-200 text-red-700',
+    amber: 'bg-amber-50 border-amber-200 text-amber-700',
+  }
+  return (
+    <div className={`flex items-center gap-2 border rounded-xl px-3 py-2 text-sm font-medium ${tones[tone]}`}>
+      {icon}
+      <span>{text}</span>
+    </div>
+  )
+}

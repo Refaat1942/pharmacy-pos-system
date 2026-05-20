@@ -19,7 +19,9 @@
     "expiry": "Expiry",
     "purchases": "Purchases",
     "suppliers": "Suppliers",
-    "customers": "Customers"
+    "customers": "Customers",
+    "dashboard": "Dashboard",
+    "returns": "Returns"
   },
   "inventory": {
     "title": "Inventory & Stock",
@@ -221,7 +223,16 @@
     "return_confirm": "Confirm Return",
     "return_reason": "Reason for return",
     "return_qty": "Return Qty",
-    "original_qty": "Original Qty"
+    "original_qty": "Original Qty",
+    "filters": "Filters",
+    "date_from": "Date from",
+    "date_to": "Date to",
+    "apply": "Apply",
+    "reset": "Reset",
+    "kpi_gross": "Gross",
+    "kpi_discount": "Discount",
+    "kpi_net": "Net Revenue",
+    "return": "Return"
   },
   "common": {
     "loading": "Loading...",
@@ -236,7 +247,10 @@
     "edit": "Edit",
     "delete": "Delete",
     "active": "Active",
-    "notes": "Notes"
+    "notes": "Notes",
+    "all": "All",
+    "refresh": "Refresh",
+    "no_data": "No data"
   },
   "branch": {
     "switch": "Switch Branch",
@@ -415,6 +429,40 @@
     "invoice_required": "Please select an invoice to apply the payment to",
     "authorized_branches": "Branches Authorized for Account Sales",
     "authorized_branches_hint": "Non-admin staff can only sell to this customer at these branches."
+  },
+  "dashboard": {
+    "title": "Operational Dashboard",
+    "subtitle": "Daily performance — read only",
+    "today_sales": "Today's Sales",
+    "invoice_count": "Invoices Today",
+    "returns_total": "Returns Today",
+    "net_sales": "Net Sales",
+    "last_7_days": "Last 7 days sales",
+    "top_products": "Top 5 Products (30d)",
+    "top_sellers": "Top 3 Sellers (30d)",
+    "product": "Product",
+    "qty": "Qty",
+    "revenue": "Revenue",
+    "seller": "Seller",
+    "invoices": "Invoices",
+    "sales": "Sales",
+    "alerts": "Alerts",
+    "alert_expired": "expired items still in stock",
+    "alert_near_expiry": "items expiring within 60 days",
+    "alert_low_stock": "items at or below minimum stock",
+    "alert_high_returns": "Returns ratio higher than normal today"
+  },
+  "returns": {
+    "title": "Returns",
+    "count": "Returns",
+    "value": "Returned Value",
+    "ratio": "Return Ratio",
+    "return_no": "Return #",
+    "invoice_no": "Original Invoice",
+    "date": "Date",
+    "type": "Type",
+    "reason": "Reason",
+    "empty": "No returns recorded"
   },
   "regions": {
     "select": "-- Select region --",

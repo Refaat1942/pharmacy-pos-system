@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Eye, RotateCcw, X, Loader2, TrendingUp } from 'lucide-react'
+import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter } from 'lucide-react'
 import Header from '../components/Header'
-import { salesAPI } from '../lib/api'
-import type { Invoice, SaleResponse } from '../lib/api'
+import { salesAPI, employeesAPI } from '../lib/api'
+import type { Invoice, SaleResponse, Employee } from '../lib/api'
 import i18n from '../lib/i18n'
 
 export default function Sales() {
@@ -20,9 +20,23 @@ export default function Sales() {
   const [returnLoading, setReturnLoading] = useState(false)
   const [returnSuccess, setReturnSuccess] = useState(false)
 
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [sellerFilter, setSellerFilter] = useState('')
+  const [employees, setEmployees] = useState<Employee[]>([])
+
   const loadInvoices = () => {
+    setLoading(true)
     salesAPI
-      .list(100, 0)
+      .list({
+        limit: 200,
+        offset: 0,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        type: typeFilter || undefined,
+        seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
+      })
       .then((r) => {
         setInvoices(r.data)
         setLoading(false)
@@ -32,7 +46,14 @@ export default function Sales() {
 
   useEffect(() => {
     loadInvoices()
+    employeesAPI.list().then((r) => setEmployees(r.data)).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const resetFilters = () => {
+    setDateFrom(''); setDateTo(''); setTypeFilter(''); setSellerFilter('')
+    setTimeout(loadInvoices, 0)
+  }
 
   const handleView = async (id: number) => {
     const { data } = await salesAPI.get(id)
@@ -100,9 +121,10 @@ export default function Sales() {
     digital: t('sales.digital'),
   }
 
-  const totalRevenue = invoices
-    .filter((i) => i.status === 'completed')
-    .reduce((sum, i) => sum + i.net_total, 0)
+  const completed = invoices.filter((i) => i.status === 'completed')
+  const totalRevenue = completed.reduce((sum, i) => sum + i.net_total, 0)
+  const totalDiscount = completed.reduce((sum, i) => sum + (i.discount || 0), 0)
+  const totalGross = completed.reduce((sum, i) => sum + (i.subtotal || 0), 0)
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
@@ -118,15 +140,70 @@ export default function Sales() {
                 {invoices.length} {t('payment.items')}
               </p>
             </div>
-            <div className="flex items-center gap-2 bg-pharma-50 border border-pharma-200 rounded-xl px-4 py-2.5">
-              <TrendingUp size={16} className="text-pharma-600" />
-              <div>
-                <p className="text-xs text-pharma-600 font-medium">Total Revenue</p>
-                <p className="text-sm font-bold text-pharma-800 tabular-nums">
-                  {t('sales.egp')} {totalRevenue.toFixed(2)}
-                </p>
+            <div className="flex items-center gap-3">
+              <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-center">
+                <p className="text-[10px] text-gray-500 font-medium uppercase">{t('sales.kpi_gross')}</p>
+                <p className="text-sm font-bold text-gray-700 tabular-nums">{t('sales.egp')} {totalGross.toFixed(2)}</p>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-center">
+                <p className="text-[10px] text-gray-500 font-medium uppercase">{t('sales.kpi_discount')}</p>
+                <p className="text-sm font-bold text-amber-600 tabular-nums">{t('sales.egp')} {totalDiscount.toFixed(2)}</p>
+              </div>
+              <div className="flex items-center gap-2 bg-pharma-50 border border-pharma-200 rounded-xl px-4 py-2.5">
+                <TrendingUp size={16} className="text-pharma-600" />
+                <div>
+                  <p className="text-xs text-pharma-600 font-medium">{t('sales.kpi_net')}</p>
+                  <p className="text-sm font-bold text-pharma-800 tabular-nums">
+                    {t('sales.egp')} {totalRevenue.toFixed(2)}
+                  </p>
+                </div>
               </div>
             </div>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
+            <div className="flex items-center gap-1.5 text-gray-500 text-xs font-semibold uppercase">
+              <Filter size={14} /> {t('sales.filters')}
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_from')}</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_to')}</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.type')}</label>
+              <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                <option value="">{t('common.all')}</option>
+                <option value="cash">{t('sales.cash_sale')}</option>
+                <option value="delivery">{t('sales.delivery')}</option>
+                <option value="digital">{t('sales.digital')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.seller')}</label>
+              <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                <option value="">{t('common.all')}</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>{lang === 'ar' ? e.name_ar : e.name_en}</option>
+                ))}
+              </select>
+            </div>
+            <button onClick={loadInvoices}
+              className="bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">
+              {t('sales.apply')}
+            </button>
+            <button onClick={resetFilters}
+              className="text-gray-500 hover:text-gray-700 text-sm font-medium">
+              {t('sales.reset')}
+            </button>
           </div>
 
           {loading ? (
