@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ShoppingCart, History, LogOut, Globe, Clock, Package, ArrowRightLeft } from 'lucide-react'
+import { ShoppingCart, History, LogOut, Globe, Clock, Package, ArrowRightLeft, Calendar } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useEffect, useState } from 'react'
 import i18n from '../lib/i18n'
@@ -87,6 +87,17 @@ export default function Header() {
         >
           <ArrowRightLeft size={15} />
           <span className="hidden md:block">{t('nav.transfers')}</span>
+        </Link>
+        <Link
+          to="/expiry"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+            location.pathname === '/expiry'
+              ? 'bg-pharma-600 text-white'
+              : 'text-white/70 hover:text-white hover:bg-white/10'
+          }`}
+        >
+          <Calendar size={15} />
+          <span className="hidden md:block">{t('nav.expiry')}</span>
         </Link>
       </nav>
 

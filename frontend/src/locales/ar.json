@@ -112,7 +112,8 @@
     "sales": "سجل المبيعات",
     "inventory": "المخزون",
     "logout": "تسجيل الخروج",
-    "transfers": "التحويلات"
+    "transfers": "التحويلات",
+    "expiry": "الصلاحية"
   },
   "pos": {
     "search_placeholder": "بحث بالاسم أو الباركود...",
@@ -264,5 +265,27 @@
     "confirm_cancel": "إلغاء التحويل وإعادة المخزون للفرع المصدر؟",
     "fill_required": "اختر الفروع وأضف صنفاً واحداً على الأقل",
     "same_branch_error": "الفرع المصدر والهدف يجب أن يختلفا"
+  },
+  "expiry": {
+    "title": "إدارة الصلاحية",
+    "tab_near": "قارب على الانتهاء",
+    "tab_expired": "منتهي الصلاحية",
+    "within_days": "خلال (أيام)",
+    "export": "تصدير إكسل",
+    "empty": "لا توجد أصناف",
+    "ago": "منذ",
+    "stat_expired_count": "أصناف منتهية",
+    "stat_expired_value": "قيمة المخزون المنتهي",
+    "stat_near_count": "أصناف قاربت على الانتهاء (≤ {{days}}ي)",
+    "stat_near_value": "قيمة الأصناف القاربة (≤ {{days}}ي)",
+    "col_barcode": "الباركود",
+    "col_name": "المنتج",
+    "col_category": "الفئة",
+    "col_branch": "الفرع",
+    "col_stock": "المخزون",
+    "col_cost": "التكلفة",
+    "col_expiry": "تاريخ الصلاحية",
+    "col_days_left": "الأيام المتبقية",
+    "col_loss_value": "قيمة الخسارة"
   }
 }

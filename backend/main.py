@@ -259,8 +259,9 @@ def create_sale(req: SaleRequest,
         if not cur.fetchone():
             raise HTTPException(status_code=400, detail=f"Branch {branch_id} does not exist")
 
+        today = date.today()
         for item in req.items:
-            cur.execute("SELECT branch_id, active FROM products WHERE id=%s", (item.product_id,))
+            cur.execute("SELECT branch_id, active, expiry_date, name_en FROM products WHERE id=%s", (item.product_id,))
             p = cur.fetchone()
             if not p or not p["active"]:
                 raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
@@ -268,6 +269,12 @@ def create_sale(req: SaleRequest,
                 raise HTTPException(
                     status_code=400,
                     detail=f"Product {item.product_id} belongs to branch {p['branch_id']}, not active branch {branch_id}",
+                )
+            # Block selling expired items (sales only; returns are allowed)
+            if req.type != "return" and p["expiry_date"] and p["expiry_date"] < today:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot sell expired product '{p['name_en']}' (expired on {p['expiry_date']})",
                 )
 
         cur.execute(
@@ -324,6 +331,9 @@ def create_sale(req: SaleRequest,
         cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
         items = cur.fetchall()
         return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

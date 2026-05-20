@@ -793,3 +793,89 @@ def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+# ─── EXPIRY MANAGEMENT ──────────────────────────────────────────────────────
+
+@router.get("/expiry")
+def expiry_report(
+    status: str = "near",           # "near" | "expired" | "all"
+    days: int = 30,                 # threshold for "near"
+    branch_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
+    """Expiry report: products by expiry status."""
+    from datetime import timedelta
+    today = date.today()
+    cutoff = today + timedelta(days=days)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    where = ["p.active = true", "p.expiry_date IS NOT NULL"]
+    params: list = []
+    if status == "expired":
+        where.append("p.expiry_date < %s")
+        params.append(today)
+    elif status == "near":
+        where.append("p.expiry_date >= %s AND p.expiry_date <= %s")
+        params += [today, cutoff]
+    # restrict by branch
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub is None:
+            raise HTTPException(status_code=403, detail="No branch assigned to this user")
+        where.append("p.branch_id = %s")
+        params.append(ub)
+    elif branch_id is not None:
+        where.append("p.branch_id = %s")
+        params.append(branch_id)
+
+    sql = f"""SELECT p.id, p.barcode, p.name_ar, p.name_en, p.category, p.unit,
+                     p.stock, p.price, p.cost, p.expiry_date, p.branch_id,
+                     b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                     (p.expiry_date - CURRENT_DATE) AS days_left,
+                     (p.stock * COALESCE(p.cost, 0)) AS loss_value
+              FROM products p
+              LEFT JOIN branches b ON p.branch_id = b.id
+              WHERE {' AND '.join(where)}
+              ORDER BY p.expiry_date ASC
+              LIMIT 1000"""
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.get("/expiry/summary")
+def expiry_summary(days: int = 30,
+                   branch_id: Optional[int] = None,
+                   current_user=Depends(get_current_user)):
+    from datetime import timedelta
+    today = date.today()
+    cutoff = today + timedelta(days=days)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    branch_filter = ""
+    params: list = []
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub is None:
+            raise HTTPException(status_code=403, detail="No branch assigned to this user")
+        branch_filter = " AND branch_id = %s"
+        params.append(ub)
+    elif branch_id is not None:
+        branch_filter = " AND branch_id = %s"
+        params.append(branch_id)
+
+    cur.execute(
+        f"""SELECT
+              COUNT(*) FILTER (WHERE expiry_date < %s) AS expired_count,
+              COALESCE(SUM(stock * COALESCE(cost,0)) FILTER (WHERE expiry_date < %s), 0) AS expired_value,
+              COUNT(*) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s) AS near_count,
+              COALESCE(SUM(stock * COALESCE(cost,0)) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s), 0) AS near_value
+            FROM products
+            WHERE active = true AND expiry_date IS NOT NULL{branch_filter}""",
+        [today, today, today, cutoff, today, cutoff] + params,
+    )
+    row = cur.fetchone()
+    conn.close()
+    return dict(row)

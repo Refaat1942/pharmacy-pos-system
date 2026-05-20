@@ -209,6 +209,38 @@ export interface Transfer {
   items?: TransferItem[]
 }
 
+export interface ExpiryItem {
+  id: number
+  barcode: string | null
+  name_ar: string
+  name_en: string
+  category: string | null
+  unit: string | null
+  stock: number
+  price: number
+  cost: number | null
+  expiry_date: string
+  branch_id: number | null
+  branch_name_en: string | null
+  branch_name_ar: string | null
+  days_left: number
+  loss_value: number
+}
+
+export interface ExpirySummary {
+  expired_count: number
+  expired_value: number
+  near_count: number
+  near_value: number
+}
+
+export const expiryAPI = {
+  list: (params: { status: 'near' | 'expired' | 'all'; days?: number; branch_id?: number }) =>
+    api.get<ExpiryItem[]>('/inventory/expiry', { params }),
+  summary: (params: { days?: number; branch_id?: number } = {}) =>
+    api.get<ExpirySummary>('/inventory/expiry/summary', { params }),
+}
+
 export const transfersAPI = {
   list: (status?: string) => api.get<Transfer[]>('/inventory/transfers', { params: { status } }),
   get: (id: number) => api.get<Transfer>(`/inventory/transfers/${id}`),

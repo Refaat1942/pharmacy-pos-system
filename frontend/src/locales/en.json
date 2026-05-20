@@ -15,7 +15,8 @@
     "sales": "Sales History",
     "inventory": "Inventory",
     "logout": "Logout",
-    "transfers": "Transfers"
+    "transfers": "Transfers",
+    "expiry": "Expiry"
   },
   "inventory": {
     "title": "Inventory & Stock",
@@ -264,5 +265,27 @@
     "confirm_cancel": "Cancel this transfer and restore stock to source branch?",
     "fill_required": "Please select branches and add at least one item",
     "same_branch_error": "Source and destination must differ"
+  },
+  "expiry": {
+    "title": "Expiry Management",
+    "tab_near": "Near Expiry",
+    "tab_expired": "Expired",
+    "within_days": "Within (days)",
+    "export": "Export Excel",
+    "empty": "No items match",
+    "ago": "ago",
+    "stat_expired_count": "Expired Items",
+    "stat_expired_value": "Expired Stock Value",
+    "stat_near_count": "Near-Expiry Items (≤ {{days}}d)",
+    "stat_near_value": "Near-Expiry Value (≤ {{days}}d)",
+    "col_barcode": "Barcode",
+    "col_name": "Product",
+    "col_category": "Category",
+    "col_branch": "Branch",
+    "col_stock": "Stock",
+    "col_cost": "Cost",
+    "col_expiry": "Expiry Date",
+    "col_days_left": "Days Left",
+    "col_loss_value": "Loss Value"
   }
 }

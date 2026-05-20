@@ -83,6 +83,21 @@ export default function POS() {
 
   const addToCart = useCallback((product: Product) => {
     if (product.stock <= 0) return
+    // Expiry guard: block expired, confirm near-expiry (<=30 days)
+    if (product.expiry_date) {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const exp = new Date(product.expiry_date)
+      const diffDays = Math.floor((exp.getTime() - today.getTime()) / 86400000)
+      if (diffDays < 0) {
+        alert(`${product.name_en} — expired on ${product.expiry_date}. Cannot sell expired products.`)
+        return
+      }
+      if (diffDays <= 30) {
+        const ok = confirm(`⚠️ ${product.name_en} expires in ${diffDays} day(s) (${product.expiry_date}). Add anyway?`)
+        if (!ok) return
+      }
+    }
     setCartItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id)
       if (existing) {

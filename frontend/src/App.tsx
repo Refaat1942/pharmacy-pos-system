@@ -7,6 +7,7 @@ import POS from './pages/POS'
 import Sales from './pages/Sales'
 import Inventory from './pages/Inventory'
 import Transfers from './pages/Transfers'
+import Expiry from './pages/Expiry'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -29,6 +30,7 @@ function AppRoutes() {
       <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
       <Route path="/transfers" element={<ProtectedRoute><Transfers /></ProtectedRoute>} />
+      <Route path="/expiry" element={<ProtectedRoute><Expiry /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
