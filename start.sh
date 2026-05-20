@@ -7,9 +7,11 @@ echo "=== PharmaPOS v2.0 Starting ==="
 echo "Installing backend dependencies..."
 pip install -q fastapi uvicorn psycopg2-binary "python-jose[cryptography]" "passlib[bcrypt]" python-multipart requests 2>&1 | tail -3
 
-# ── Seed database ──
-echo "Seeding database..."
+# ── Initialize schema + seed ──
+echo "Initializing database schema..."
 cd backend
+python init_db.py 2>&1 | tail -3 || true
+echo "Seeding database..."
 python seed.py 2>/dev/null || true
 cd ..
 

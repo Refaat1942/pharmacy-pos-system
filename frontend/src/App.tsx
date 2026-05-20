@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import Login from './pages/Login'
 import POS from './pages/POS'
 import Sales from './pages/Sales'
+import Inventory from './pages/Inventory'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth()
@@ -23,22 +24,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <POS />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/sales"
-        element={
-          <ProtectedRoute>
-            <Sales />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/" element={<ProtectedRoute><POS /></ProtectedRoute>} />
+      <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
+      <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

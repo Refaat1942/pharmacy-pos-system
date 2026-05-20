@@ -1,13 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import psycopg2.extras
-import os
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel
-from auth import create_token, verify_token, hash_password, verify_password
+from auth import create_token, verify_password
 from db import get_db_connection
+from deps import get_current_user
+from inventory import router as inventory_router, log_movement
 
 app = FastAPI(title="PharmaPOS API")
 
@@ -19,15 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-security = HTTPBearer()
-
-
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    payload = verify_token(token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return payload
+app.include_router(inventory_router)
 
 
 # ─── AUTH ────────────────────────────────────────────────────────────────────
@@ -123,17 +115,30 @@ class ProductCreate(BaseModel):
 def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute(
-        """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-        (req.barcode, req.name_ar, req.name_en, req.category, req.unit,
-         req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
-         current_user.get("branch_id")),
-    )
-    product = cur.fetchone()
-    conn.commit()
-    conn.close()
-    return dict(product)
+    try:
+        branch_id = current_user.get("branch_id")
+        cur.execute(
+            """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (req.barcode, req.name_ar, req.name_en, req.category, req.unit,
+             req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
+             branch_id),
+        )
+        product = cur.fetchone()
+        if req.stock and req.stock > 0:
+            log_movement(
+                cur, product["id"], branch_id, "initial",
+                req.stock, req.stock,
+                reference_type="initial", reason="Initial stock on item creation",
+                user_id=current_user.get("user_id"),
+            )
+        conn.commit()
+        return dict(product)
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 # ─── CUSTOMERS ───────────────────────────────────────────────────────────────
@@ -240,8 +245,15 @@ def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
         invoice_id = invoice["id"]
 
         for item in req.items:
-            cur.execute("SELECT name_ar, name_en, barcode FROM products WHERE id=%s", (item.product_id,))
+            if item.quantity <= 0:
+                raise HTTPException(status_code=400, detail=f"Invalid quantity for product {item.product_id}")
+            cur.execute("SELECT name_ar, name_en, barcode, stock, branch_id, active FROM products WHERE id=%s FOR UPDATE",
+                        (item.product_id,))
             prod = cur.fetchone()
+            if not prod or not prod["active"]:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            if int(prod["stock"]) < item.quantity:
+                raise HTTPException(status_code=400, detail=f"Insufficient stock for {prod['name_en']} (have {prod['stock']}, need {item.quantity})")
             item_total = item.quantity * item.unit_price - item.discount
             cur.execute(
                 """INSERT INTO invoice_items
@@ -251,19 +263,28 @@ def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, item.discount, item_total),
             )
-            cur.execute("UPDATE products SET stock=stock-%s WHERE id=%s", (item.quantity, item.product_id))
+            new_stock = int(prod["stock"]) - item.quantity
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
+                        (new_stock, item.product_id))
+            log_movement(
+                cur, item.product_id, prod["branch_id"] or branch_id, "sale",
+                -item.quantity, new_stock,
+                reference_type="invoice", reference_id=invoice_id,
+                reason=f"Sale {invoice_number}",
+                user_id=seller_id,
+            )
 
         conn.commit()
         cur.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
         full_invoice = cur.fetchone()
         cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
         items = cur.fetchall()
-        conn.close()
         return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
     except Exception as e:
         conn.rollback()
-        conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 @app.get("/api/sales")
@@ -327,8 +348,11 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 
         total_returned = 0.0
         for item in req.items:
-            cur.execute("SELECT unit_price FROM invoice_items WHERE id=%s", (item.invoice_item_id,))
+            cur.execute("SELECT unit_price FROM invoice_items WHERE id=%s AND invoice_id=%s",
+                        (item.invoice_item_id, invoice_id))
             inv_item = cur.fetchone()
+            if not inv_item:
+                raise HTTPException(status_code=404, detail="Invoice item not found on this invoice")
             total_returned += float(inv_item["unit_price"]) * item.quantity
 
         cur.execute(
@@ -341,8 +365,21 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         ret = cur.fetchone()
 
         for item in req.items:
-            cur.execute("SELECT * FROM invoice_items WHERE id=%s", (item.invoice_item_id,))
+            if item.quantity <= 0:
+                raise HTTPException(status_code=400, detail="Invalid return quantity")
+            cur.execute(
+                """SELECT ii.*, COALESCE((
+                       SELECT SUM(ri.quantity) FROM return_items ri WHERE ri.invoice_item_id = ii.id
+                   ), 0) AS already_returned
+                   FROM invoice_items ii WHERE ii.id=%s AND ii.invoice_id=%s""",
+                (item.invoice_item_id, invoice_id),
+            )
             inv_item = cur.fetchone()
+            if not inv_item:
+                raise HTTPException(status_code=404, detail="Invoice item not found on this invoice")
+            remaining = int(inv_item["quantity"]) - int(inv_item["already_returned"])
+            if item.quantity > remaining:
+                raise HTTPException(status_code=400, detail=f"Return qty {item.quantity} exceeds remaining {remaining}")
             item_total = float(inv_item["unit_price"]) * item.quantity
             cur.execute(
                 """INSERT INTO return_items
@@ -351,15 +388,27 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
                 (ret["id"], item.invoice_item_id, inv_item["product_id"],
                  item.quantity, inv_item["unit_price"], item_total),
             )
-            cur.execute("UPDATE products SET stock=stock+%s WHERE id=%s", (item.quantity, inv_item["product_id"]))
+            cur.execute("SELECT stock, branch_id FROM products WHERE id=%s FOR UPDATE",
+                        (inv_item["product_id"],))
+            p = cur.fetchone()
+            new_stock = int(p["stock"]) + item.quantity
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
+                        (new_stock, inv_item["product_id"]))
+            log_movement(
+                cur, inv_item["product_id"], p["branch_id"], "return",
+                item.quantity, new_stock,
+                reference_type="return", reference_id=ret["id"],
+                reason=f"Return {return_number}: {req.reason or ''}".strip(),
+                user_id=current_user.get("user_id"),
+            )
 
         conn.commit()
-        conn.close()
         return dict(ret)
     except Exception as e:
         conn.rollback()
-        conn.close()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 # ─── DASHBOARD ───────────────────────────────────────────────────────────────

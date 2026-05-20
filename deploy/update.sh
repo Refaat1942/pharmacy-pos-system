@@ -16,6 +16,10 @@ info "Installing Python dependencies..."
 source "$APP_DIR/venv/bin/activate"
 pip install -q -r "$APP_DIR/backend/requirements.txt" 2>/dev/null || true
 
+info "Applying database schema migrations..."
+cd "$APP_DIR/backend"
+python init_db.py || true
+
 info "Building frontend..."
 cd "$APP_DIR/frontend"
 npm install --legacy-peer-deps -q

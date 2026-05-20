@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .input {
+    @apply w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 focus:border-pharma-500 outline-none;
+  }
+}
+
 :root {
   font-family: 'Inter', sans-serif;
 }

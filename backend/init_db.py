@@ -1,4 +1,4 @@
-"""Create all database tables. Run once before seeding."""
+"""Create all database tables. Run once before seeding. Idempotent."""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -109,6 +109,24 @@ CREATE TABLE IF NOT EXISTS return_items (
     unit_price DECIMAL(10,2) NOT NULL,
     total DECIMAL(10,2) NOT NULL
 );
+
+-- ─── Inventory Ledger (audit + reports + classification source) ─────────────
+CREATE TABLE IF NOT EXISTS stock_movements (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(id),
+    movement_type VARCHAR(30) NOT NULL,
+    quantity INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reference_type VARCHAR(30),
+    reference_id INTEGER,
+    reason TEXT,
+    user_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_movements_branch ON stock_movements(branch_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_movements_type ON stock_movements(movement_type);
 """
 
 
