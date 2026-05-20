@@ -511,7 +511,7 @@ function HistoryModal({ item, onClose }: { item: Product; onClose: () => void })
                   <td className="px-3 py-1.5 text-xs">{new Date(m.created_at).toLocaleString()}</td>
                   <td className="px-3 py-1.5">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeColor(m.movement_type)}`}>
-                      {t(`inventory.move_${m.movement_type}`, m.movement_type)}
+                      {t(`inventory.move_${m.movement_type}`, { defaultValue: m.movement_type })}
                     </span>
                   </td>
                   <td className={`px-3 py-1.5 text-end font-semibold ${m.quantity > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -604,7 +604,7 @@ function MovementsTab() {
                 <td className="px-3 py-1.5 font-medium">{i18n.language === 'ar' ? m.product_name_ar : m.product_name_en}</td>
                 <td className="px-3 py-1.5">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeColor(m.movement_type)}`}>
-                    {t(`inventory.move_${m.movement_type}`, m.movement_type)}
+                    {t(`inventory.move_${m.movement_type}`, { defaultValue: m.movement_type })}
                   </span>
                 </td>
                 <td className={`px-3 py-1.5 text-end font-semibold ${m.quantity > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
