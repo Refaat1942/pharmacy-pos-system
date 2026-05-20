@@ -1,0 +1,23 @@
+[Unit]
+Description=PharmaPOS FastAPI Backend
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=exec
+User=pharmapos
+Group=pharmapos
+WorkingDirectory=/opt/pharmapos/backend
+EnvironmentFile=/etc/pharmapos.env
+ExecStart=/opt/pharmapos/venv/bin/gunicorn main:app \
+    --workers 4 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --access-logfile /var/log/pharmapos/access.log \
+    --error-logfile /var/log/pharmapos/error.log \
+    --timeout 60
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

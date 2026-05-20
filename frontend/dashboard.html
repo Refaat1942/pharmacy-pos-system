@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f6fa;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin: 0 0 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Dashboard</h1>
+
+    <div class="card">
+        <h2>التاريخ</h2>
+        <div id="date">...</div>
+    </div>
+
+    <div class="card">
+        <h2>إجمالي البيع اليوم</h2>
+        <div id="today_sales">...</div>
+    </div>
+
+    <div class="card">
+        <h2>عدد الفواتير</h2>
+        <div id="invoice_count">...</div>
+    </div>
+
+    <script>
+        fetch("http://127.0.0.1:8000/dashboard/summary")
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("date").innerText = data.date;
+                document.getElementById("today_sales").innerText = data.today_sales;
+                document.getElementById("invoice_count").innerText = data.invoice_count;
+            })
+            .catch(err => {
+                alert("Backend مش شغال");
+                console.error(err);
+            });
+    </script>
+
+</body>
+</html>
