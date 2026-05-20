@@ -9,8 +9,12 @@ APP_DIR="/opt/pharmapos"
 GREEN='\033[0;32m'; NC='\033[0m'
 info() { echo -e "${GREEN}[INFO]${NC}  $1"; }
 
+info "Cleaning stale build artifacts before pull..."
+rm -rf "$APP_DIR/frontend/dist"
+git -C "$APP_DIR" checkout -- . 2>/dev/null || true
+
 info "Pulling latest code..."
-git -C "$APP_DIR" pull 2>/dev/null || true
+git -C "$APP_DIR" pull --rebase --autostash || git -C "$APP_DIR" pull
 
 info "Installing Python dependencies..."
 source "$APP_DIR/venv/bin/activate"
