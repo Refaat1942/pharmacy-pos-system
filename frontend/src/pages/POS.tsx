@@ -1,6 +1,18 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, ShoppingCart, X, Plus, Minus, Tag, AlertTriangle, Package } from 'lucide-react'
+import {
+  Search,
+  ShoppingCart,
+  X,
+  Plus,
+  Minus,
+  Tag,
+  ScanLine,
+  User,
+  UserCircle2,
+  Trash2,
+  CornerDownLeft,
+} from 'lucide-react'
 import Header from '../components/Header'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
@@ -12,10 +24,12 @@ export default function POS() {
   const { t } = useTranslation()
   const lang = i18n.language
 
-  const [products, setProducts] = useState<Product[]>([])
   const [search, setSearch] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState('all')
-  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [results, setResults] = useState<Product[]>([])
+  const [showResults, setShowResults] = useState(false)
+  const [highlight, setHighlight] = useState(0)
+  const [searching, setSearching] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -29,24 +43,6 @@ export default function POS() {
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
 
-  const categories = useMemo(() => {
-    const cats = [...new Set(products.map((p) => p.category).filter(Boolean))]
-    return cats.sort()
-  }, [products])
-
-  const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const q = search.toLowerCase()
-      const matchesSearch =
-        !search ||
-        p.name_ar.toLowerCase().includes(q) ||
-        p.name_en.toLowerCase().includes(q) ||
-        (p.barcode && p.barcode === search)
-      const matchesCat = selectedCategory === 'all' || p.category === selectedCategory
-      return matchesSearch && matchesCat
-    })
-  }, [products, search, selectedCategory])
-
   const subtotal = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
     [cartItems]
@@ -54,36 +50,38 @@ export default function POS() {
   const netTotal = Math.max(0, subtotal - invoiceDiscount)
   const cartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0)
 
-  const reloadProducts = useCallback(() => {
-    productsAPI.search('').then((r) => setProducts(r.data))
-  }, [])
-
   useEffect(() => {
-    productsAPI
-      .search('')
-      .then((r) => {
-        setProducts(r.data)
-        setLoadingProducts(false)
-      })
-      .catch(() => setLoadingProducts(false))
     employeesAPI.list().then((r) => setEmployees(r.data))
     customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
+    searchRef.current?.focus()
   }, [])
 
+  // Debounced search
   useEffect(() => {
-    if (!search) {
-      reloadProducts()
+    if (!search.trim()) {
+      setResults([])
+      setShowResults(false)
       return
     }
+    setSearching(true)
     const timer = setTimeout(() => {
-      productsAPI.search(search).then((r) => setProducts(r.data))
-    }, 250)
+      productsAPI
+        .search(search.trim())
+        .then((r) => {
+          setResults(r.data.slice(0, 12))
+          setShowResults(true)
+          setHighlight(0)
+        })
+        .finally(() => setSearching(false))
+    }, 200)
     return () => clearTimeout(timer)
-  }, [search, reloadProducts])
+  }, [search])
 
   const addToCart = useCallback((product: Product) => {
-    if (product.stock <= 0) return
-    // Expiry guard: block expired, confirm near-expiry (<=30 days)
+    if (product.stock <= 0) {
+      alert(`${product.name_en} — ${t('pos.out_of_stock')}`)
+      return
+    }
     if (product.expiry_date) {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
@@ -108,7 +106,11 @@ export default function POS() {
       }
       return [...prev, { product, quantity: 1, unit_price: product.price, discount: 0 }]
     })
-  }, [])
+    setSearch('')
+    setResults([])
+    setShowResults(false)
+    searchRef.current?.focus()
+  }, [t])
 
   const removeFromCart = useCallback((productId: number) => {
     setCartItems((prev) => prev.filter((i) => i.product.id !== productId))
@@ -124,6 +126,32 @@ export default function POS() {
     )
   }, [removeFromCart])
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showResults || results.length === 0) {
+      if (e.key === 'Enter' && search.trim()) {
+        // Possible barcode scan: if a single exact-barcode match, add it
+        productsAPI.search(search.trim()).then((r) => {
+          const exact = r.data.find((p) => p.barcode === search.trim())
+          if (exact) addToCart(exact)
+        })
+      }
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setHighlight((h) => Math.min(h + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setHighlight((h) => Math.max(h - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const p = results[highlight]
+      if (p) addToCart(p)
+    } else if (e.key === 'Escape') {
+      setShowResults(false)
+    }
+  }
+
   const handleSaleSuccess = (sale: SaleResponse) => {
     setLastSale(sale)
     setShowPaymentModal(false)
@@ -131,286 +159,261 @@ export default function POS() {
     setCartItems([])
     setInvoiceDiscount(0)
     setSelectedCustomer(null)
-    reloadProducts()
   }
 
   const handleNewSale = () => {
     setShowReceiptModal(false)
     setLastSale(null)
+    searchRef.current?.focus()
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-100">
+    <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
       <Header />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* ──────────── Products Panel ──────────── */}
+        {/* ──────────── Main work area: scan + cart ──────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Search */}
-          <div className="px-4 pt-3 pb-2 bg-white border-b border-gray-200 shadow-sm">
-            <div className="relative">
-              <Search
-                size={17}
-                className="absolute start-3.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
-              />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('pos.search_placeholder')}
-                className="w-full ps-10 pe-4 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-pharma-400 focus:bg-white transition-all"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch('')}
-                  className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X size={15} />
-                </button>
+          {/* Scan / search bar */}
+          <div className="px-6 pt-6 pb-4 bg-white border-b border-slate-200">
+            <div className="max-w-3xl mx-auto relative">
+              <div className="relative">
+                <ScanLine
+                  size={22}
+                  className="absolute start-4 top-1/2 -translate-y-1/2 text-pharma-600"
+                />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  onFocus={() => results.length > 0 && setShowResults(true)}
+                  onBlur={() => setTimeout(() => setShowResults(false), 150)}
+                  placeholder={t('pos.search_placeholder')}
+                  className="w-full ps-14 pe-12 py-4 border-2 border-slate-200 rounded-2xl text-base bg-slate-50 focus:outline-none focus:border-pharma-500 focus:bg-white focus:shadow-lg focus:shadow-pharma-100 transition-all placeholder:text-slate-400"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {search ? (
+                  <button
+                    onClick={() => { setSearch(''); setResults([]); searchRef.current?.focus() }}
+                    className="absolute end-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1"
+                    tabIndex={-1}
+                  >
+                    <X size={18} />
+                  </button>
+                ) : (
+                  <kbd className="hidden sm:flex absolute end-4 top-1/2 -translate-y-1/2 items-center gap-1 text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded-md font-mono">
+                    <Search size={10} /> Scan or type
+                  </kbd>
+                )}
+              </div>
+
+              {/* Search results dropdown */}
+              {showResults && (
+                <div className="absolute z-20 inset-x-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[55vh] overflow-y-auto">
+                  {searching && results.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-slate-400">{t('common.loading')}</div>
+                  ) : results.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-slate-400">{t('pos.no_products')}</div>
+                  ) : (
+                    results.map((p, idx) => {
+                      const name = lang === 'ar' ? p.name_ar : p.name_en
+                      const isOut = p.stock <= 0
+                      const isLow = !isOut && p.stock <= p.min_stock
+                      return (
+                        <button
+                          key={p.id}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => addToCart(p)}
+                          disabled={isOut}
+                          className={`w-full flex items-center gap-4 px-5 py-3 text-start border-b border-slate-50 last:border-0 transition-colors ${
+                            idx === highlight ? 'bg-pharma-50' : 'hover:bg-slate-50'
+                          } ${isOut ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          onMouseEnter={() => setHighlight(idx)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-800 text-sm truncate">{name}</p>
+                            <div className="flex items-center gap-3 mt-0.5 text-[11px]">
+                              {p.category && (
+                                <span className="text-pharma-600 font-medium">{p.category}</span>
+                              )}
+                              {p.barcode && (
+                                <span className="text-slate-400 font-mono">{p.barcode}</span>
+                              )}
+                              <span
+                                className={`font-medium ${
+                                  isOut ? 'text-red-500' : isLow ? 'text-amber-600' : 'text-slate-400'
+                                }`}
+                              >
+                                {isOut
+                                  ? t('pos.out_of_stock')
+                                  : `${p.stock} ${t('pos.in_stock')}`}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-end flex-shrink-0">
+                            <p className="text-pharma-700 font-bold tabular-nums">
+                              {t('pos.egp')} {p.price.toFixed(2)}
+                            </p>
+                          </div>
+                          {idx === highlight && !isOut && (
+                            <CornerDownLeft size={14} className="text-pharma-500 flex-shrink-0" />
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
               )}
             </div>
           </div>
 
-          {/* Category pills */}
-          <div className="px-4 py-2 flex gap-2 overflow-x-auto flex-shrink-0 bg-white border-b border-gray-100 shadow-sm">
-            <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-3.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                selectedCategory === 'all'
-                  ? 'bg-pharma-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-              }`}
-            >
-              {t('pos.all_categories')}
-            </button>
-            {categories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all ${
-                  selectedCategory === cat
-                    ? 'bg-pharma-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {/* Product grid */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {loadingProducts ? (
-              <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                {t('common.loading')}
-              </div>
-            ) : filteredProducts.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
-                <Package size={48} className="opacity-20" />
-                <p className="text-sm">{t('pos.no_products')}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2.5">
-                {filteredProducts.map((product) => {
-                  const name = lang === 'ar' ? product.name_ar : product.name_en
-                  const inCart = cartItems.find((i) => i.product.id === product.id)
-                  const isOut = product.stock <= 0
-                  const isLow = !isOut && product.stock <= product.min_stock
-
-                  return (
+          {/* Cart items list */}
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="max-w-3xl mx-auto">
+              {cartItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center py-24 text-slate-300">
+                  <div className="w-24 h-24 rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                    <ShoppingCart size={42} strokeWidth={1.5} />
+                  </div>
+                  <p className="text-slate-500 font-medium mb-1">{t('pos.empty_cart')}</p>
+                  <p className="text-xs text-slate-400 max-w-xs">
+                    {t('pos.search_placeholder')}
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+                    <div className="flex items-center gap-2">
+                      <ShoppingCart size={16} className="text-pharma-600" />
+                      <h2 className="font-bold text-slate-800 text-sm">{t('pos.cart')}</h2>
+                      <span className="bg-pharma-600 text-white text-[10px] font-bold rounded-full px-2 py-0.5">
+                        {cartCount}
+                      </span>
+                    </div>
                     <button
-                      key={product.id}
-                      onClick={() => addToCart(product)}
-                      disabled={isOut}
-                      className={`relative flex flex-col p-3 bg-white rounded-xl border text-start transition-all duration-150 ${
-                        isOut
-                          ? 'opacity-50 cursor-not-allowed border-gray-100'
-                          : inCart
-                          ? 'border-pharma-400 ring-2 ring-pharma-200 shadow-md'
-                          : 'border-gray-100 hover:border-pharma-300 hover:shadow-md active:scale-95'
-                      }`}
+                      onClick={() => { setCartItems([]); setInvoiceDiscount(0) }}
+                      className="text-xs text-slate-400 hover:text-red-500 font-medium flex items-center gap-1 transition-colors"
                     >
-                      {inCart && (
-                        <span className="absolute top-2 end-2 bg-pharma-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow">
-                          {inCart.quantity}
-                        </span>
-                      )}
-                      {isLow && (
-                        <span className="absolute top-2 start-2">
-                          <AlertTriangle size={11} className="text-amber-400" />
-                        </span>
-                      )}
-
-                      <p className="text-[11px] font-bold text-gray-800 leading-tight line-clamp-2 mb-1.5 min-h-[2.2rem]">
-                        {name}
-                      </p>
-
-                      {product.category && (
-                        <span className="inline-block text-[9px] text-pharma-600 bg-pharma-50 px-1.5 py-0.5 rounded-full mb-2 self-start font-medium">
-                          {product.category}
-                        </span>
-                      )}
-
-                      <div className="mt-auto">
-                        <p className="text-pharma-600 font-extrabold text-sm tabular-nums">
-                          {t('pos.egp')} {product.price.toFixed(2)}
-                        </p>
-                        <p
-                          className={`text-[9px] mt-0.5 font-medium ${
-                            isOut
-                              ? 'text-red-500'
-                              : isLow
-                              ? 'text-amber-500'
-                              : 'text-gray-300'
-                          }`}
-                        >
-                          {isOut
-                            ? t('pos.out_of_stock')
-                            : `${product.stock} ${t('pos.in_stock')}`}
-                        </p>
-                      </div>
+                      <Trash2 size={12} /> Clear
                     </button>
-                  )
-                })}
-              </div>
-            )}
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {cartItems.map((item) => {
+                      const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
+                      const itemTotal = item.quantity * item.unit_price - item.discount
+                      return (
+                        <div key={item.product.id} className="px-5 py-3 flex items-center gap-4 hover:bg-slate-50/60 transition-colors">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-slate-800 text-sm truncate">{name}</p>
+                            <p className="text-[11px] text-slate-400 tabular-nums">
+                              {t('pos.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
+                            <button
+                              onClick={() => updateQty(item.product.id, item.quantity - 1)}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <span className="w-8 text-center text-sm font-bold text-slate-800 tabular-nums">
+                              {item.quantity}
+                            </span>
+                            <button
+                              onClick={() => updateQty(item.product.id, item.quantity + 1)}
+                              disabled={item.quantity >= item.product.stock}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 disabled:opacity-30 transition-all"
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
+                          <div className="w-24 text-end font-bold text-pharma-700 tabular-nums text-sm">
+                            {t('pos.egp')} {itemTotal.toFixed(2)}
+                          </div>
+                          <button
+                            onClick={() => removeFromCart(item.product.id)}
+                            className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* ──────────── Cart Panel ──────────── */}
-        <div className="w-[340px] xl:w-[360px] flex-shrink-0 flex flex-col border-s border-gray-200 bg-white shadow-xl">
-          {/* Cart header */}
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShoppingCart size={17} className="text-pharma-600" />
-              <h2 className="font-bold text-gray-800 text-sm">{t('pos.cart')}</h2>
-              {cartCount > 0 && (
-                <span className="bg-pharma-600 text-white text-[10px] font-bold rounded-full px-2 py-0.5 shadow-sm">
-                  {cartCount}
-                </span>
-              )}
-            </div>
-            {cartItems.length > 0 && (
-              <button
-                onClick={() => {
-                  setCartItems([])
-                  setInvoiceDiscount(0)
+        {/* ──────────── Summary sidebar ──────────── */}
+        <aside className="w-[340px] xl:w-[380px] flex-shrink-0 flex flex-col border-s border-slate-200 bg-white shadow-xl">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+              {t('payment.summary')}
+            </h3>
+          </div>
+
+          {/* Seller / Customer */}
+          <div className="px-5 py-4 space-y-3 border-b border-slate-100">
+            <div>
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                <UserCircle2 size={13} /> {t('pos.seller')}
+              </label>
+              <select
+                value={selectedSeller?.id ?? ''}
+                onChange={(e) => {
+                  const emp = employees.find((em) => em.id === parseInt(e.target.value))
+                  setSelectedSeller(emp || null)
                 }}
-                className="text-xs text-red-400 hover:text-red-600 font-medium transition-colors"
+                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-slate-50 text-slate-700"
               >
-                Clear
-              </button>
-            )}
+                <option value="">{t('pos.select_seller')}</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {lang === 'ar' ? e.name_ar : e.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
+                <User size={13} /> {t('pos.customer')}
+              </label>
+              <select
+                value={selectedCustomer?.id ?? ''}
+                onChange={(e) => {
+                  const cust = customers.find((c) => c.id === parseInt(e.target.value))
+                  setSelectedCustomer(cust || null)
+                }}
+                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-slate-50 text-slate-700"
+              >
+                <option value="">{t('pos.walk_in')}</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Cart items */}
-          <div className="flex-1 overflow-y-auto">
-            {cartItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-200 gap-3 p-8">
-                <ShoppingCart size={52} />
-                <p className="text-sm text-gray-400">{t('pos.empty_cart')}</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {cartItems.map((item) => {
-                  const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
-                  const itemTotal = item.quantity * item.unit_price - item.discount
-                  return (
-                    <div key={item.product.id} className="px-4 py-3 cart-item-enter">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="text-xs font-semibold text-gray-800 leading-tight flex-1 line-clamp-2">
-                          {name}
-                        </p>
-                        <button
-                          onClick={() => removeFromCart(item.product.id)}
-                          className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 p-0.5"
-                        >
-                          <X size={13} />
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => updateQty(item.product.id, item.quantity - 1)}
-                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-red-100 hover:text-red-600 text-gray-600 transition-all"
-                          >
-                            <Minus size={11} />
-                          </button>
-                          <span className="w-8 text-center text-sm font-bold text-gray-800 tabular-nums">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() => updateQty(item.product.id, item.quantity + 1)}
-                            disabled={item.quantity >= item.product.stock}
-                            className="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-100 hover:bg-pharma-100 hover:text-pharma-700 disabled:opacity-30 text-gray-600 transition-all"
-                          >
-                            <Plus size={11} />
-                          </button>
-                        </div>
-                        <div className="text-end">
-                          <p className="text-sm font-bold text-pharma-700 tabular-nums">
-                            {t('pos.egp')} {itemTotal.toFixed(2)}
-                          </p>
-                          <p className="text-[10px] text-gray-400 tabular-nums">
-                            × {item.unit_price.toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Seller / Customer selectors */}
-          <div className="px-4 py-3 border-t border-gray-100 space-y-2">
-            <select
-              value={selectedSeller?.id ?? ''}
-              onChange={(e) => {
-                const emp = employees.find((em) => em.id === parseInt(e.target.value))
-                setSelectedSeller(emp || null)
-              }}
-              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-pharma-400 bg-gray-50 text-gray-700"
-            >
-              <option value="">{t('pos.select_seller')}</option>
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {lang === 'ar' ? e.name_ar : e.name_en}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={selectedCustomer?.id ?? ''}
-              onChange={(e) => {
-                const cust = customers.find((c) => c.id === parseInt(e.target.value))
-                setSelectedCustomer(cust || null)
-              }}
-              className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-pharma-400 bg-gray-50 text-gray-700"
-            >
-              <option value="">{t('pos.select_customer')}</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Totals & checkout */}
-          <div className="px-4 pt-3 pb-4 border-t border-gray-200 bg-gray-50 space-y-2.5">
-            <div className="flex justify-between text-sm text-gray-500">
-              <span>{t('pos.subtotal')}</span>
-              <span className="font-semibold text-gray-700 tabular-nums">
+          {/* Totals */}
+          <div className="flex-1 px-5 py-4 space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">{t('pos.subtotal')}</span>
+              <span className="font-semibold text-slate-800 tabular-nums">
                 {t('pos.egp')} {subtotal.toFixed(2)}
               </span>
             </div>
 
             <div className="flex items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 text-xs text-gray-500 font-medium flex-shrink-0">
-                <Tag size={12} />
-                {t('pos.discount')}
+              <label className="flex items-center gap-1.5 text-sm text-slate-500">
+                <Tag size={13} /> {t('pos.discount')}
               </label>
               <input
                 type="number"
@@ -418,28 +421,38 @@ export default function POS() {
                 onChange={(e) =>
                   setInvoiceDiscount(Math.max(0, parseFloat(e.target.value) || 0))
                 }
-                className="w-28 text-end text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-pharma-400 bg-white"
+                className="w-28 text-end text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white"
                 placeholder="0.00"
                 min={0}
               />
             </div>
 
-            <div className="flex justify-between items-baseline border-t border-gray-200 pt-2">
-              <span className="font-bold text-gray-800 text-sm">{t('pos.total')}</span>
-              <span className="text-pharma-700 font-extrabold text-xl tabular-nums">
-                {t('pos.egp')} {netTotal.toFixed(2)}
+            <div className="border-t border-dashed border-slate-200 pt-3 mt-3" />
+
+            <div className="flex justify-between items-baseline">
+              <span className="font-bold text-slate-800 text-sm uppercase tracking-wide">
+                {t('pos.total')}
+              </span>
+              <span className="text-pharma-700 font-extrabold text-3xl tabular-nums leading-none">
+                {netTotal.toFixed(2)}
               </span>
             </div>
+            <p className="text-end text-[10px] text-slate-400 uppercase tracking-wider -mt-1">
+              {t('pos.egp')}
+            </p>
+          </div>
 
+          {/* Checkout */}
+          <div className="px-5 pb-5">
             <button
               onClick={() => setShowPaymentModal(true)}
               disabled={cartItems.length === 0}
-              className="w-full bg-pharma-600 hover:bg-pharma-700 active:bg-pharma-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-pharma-300/40 text-sm tracking-wide"
+              className="w-full bg-gradient-to-br from-pharma-600 to-pharma-700 hover:from-pharma-700 hover:to-pharma-800 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-pharma-500/30 text-base tracking-wide"
             >
               {t('pos.checkout')} →
             </button>
           </div>
-        </div>
+        </aside>
       </div>
 
       {showPaymentModal && (
