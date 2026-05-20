@@ -1,9 +1,9 @@
 {
-  "app_name": "Fratelanza Pharmacies",
-  "app_subtitle": "ERP System",
+  "app_name": "Fratelanza ERP",
+  "app_subtitle": "Management System",
   "login": {
     "title": "Welcome Back",
-    "subtitle": "Sign in to Fratelanza ERP",
+    "subtitle": "Sign in to Fratelanza ERP Management System",
     "username": "Username",
     "password": "Password",
     "sign_in": "Sign In",
