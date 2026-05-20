@@ -119,7 +119,7 @@ export default function Login() {
           </button>
 
           <p className="text-center text-xs text-gray-400">
-            PharmaPOS v2.0
+            Fratelanza Pharmacies ERP v1.0
           </p>
         </form>
       </div>
