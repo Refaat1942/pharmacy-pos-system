@@ -8,6 +8,8 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('pharma_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  const activeBranch = localStorage.getItem('pharma_active_branch')
+  if (activeBranch) config.headers['X-Active-Branch'] = activeBranch
   return config
 })
 
@@ -162,4 +164,16 @@ export const salesAPI = {
 
 export const dashboardAPI = {
   summary: () => api.get<DashboardSummary>('/dashboard/summary'),
+}
+
+export interface Branch {
+  id: number
+  name_ar: string
+  name_en: string
+  address?: string
+  phone?: string
+}
+
+export const branchesAPI = {
+  list: () => api.get<Branch[]>('/branches'),
 }

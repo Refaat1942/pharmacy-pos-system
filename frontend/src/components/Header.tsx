@@ -4,6 +4,7 @@ import { ShoppingCart, History, LogOut, Globe, Clock, Package } from 'lucide-rea
 import { useAuth } from '../lib/auth'
 import { useEffect, useState } from 'react'
 import i18n from '../lib/i18n'
+import BranchSwitcher from './BranchSwitcher'
 
 export default function Header() {
   const { t } = useTranslation()
@@ -88,6 +89,8 @@ export default function Header() {
           second: '2-digit',
         })}
       </div>
+
+      <BranchSwitcher />
 
       <button
         onClick={toggleLang}

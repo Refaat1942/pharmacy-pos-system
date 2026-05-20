@@ -6,7 +6,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from auth import create_token, verify_password
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, get_active_branch_id
 from inventory import router as inventory_router, log_movement
 
 app = FastAPI(title="PharmaPOS API")
@@ -70,20 +70,41 @@ def get_me(current_user=Depends(get_current_user)):
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
 @app.get("/api/products")
-def search_products(q: str = "", current_user=Depends(get_current_user)):
+def search_products(q: str = "",
+                    current_user=Depends(get_current_user),
+                    active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     search = f"%{q}%"
+    where = ["active = true", "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode = %s)"]
+    params = [search, search, q]
+    if active_branch is not None:
+        where.append("(branch_id = %s OR branch_id IS NULL)")
+        params.append(active_branch)
     cur.execute(
-        """SELECT * FROM products
-           WHERE active = true
-             AND (name_ar ILIKE %s OR name_en ILIKE %s OR barcode = %s)
-           ORDER BY name_en LIMIT 60""",
-        (search, search, q),
+        f"SELECT * FROM products WHERE {' AND '.join(where)} ORDER BY name_en LIMIT 60",
+        params,
     )
     products = cur.fetchall()
     conn.close()
     return [dict(p) for p in products]
+
+
+@app.get("/api/branches")
+def list_branches(current_user=Depends(get_current_user)):
+    """List branches visible to the user. Non-admins only see their own."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if current_user.get("role") == "admin":
+        cur.execute("SELECT id, name_ar, name_en, address, phone FROM branches ORDER BY id")
+    else:
+        cur.execute(
+            "SELECT id, name_ar, name_en, address, phone FROM branches WHERE id=%s",
+            (current_user.get("branch_id"),),
+        )
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/products/{product_id}")
@@ -213,7 +234,9 @@ class SaleRequest(BaseModel):
 
 
 @app.post("/api/sales")
-def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
+def create_sale(req: SaleRequest,
+                current_user=Depends(get_current_user),
+                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -229,7 +252,23 @@ def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
             change = max(0.0, req.cash_amount - net_total)
 
         seller_id = req.seller_id or current_user.get("user_id")
-        branch_id = current_user.get("branch_id")
+        branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+        if branch_id is None:
+            raise HTTPException(status_code=400, detail="No active branch selected")
+        cur.execute("SELECT id FROM branches WHERE id=%s", (branch_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=400, detail=f"Branch {branch_id} does not exist")
+
+        for item in req.items:
+            cur.execute("SELECT branch_id, active FROM products WHERE id=%s", (item.product_id,))
+            p = cur.fetchone()
+            if not p or not p["active"]:
+                raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            if p["branch_id"] is not None and p["branch_id"] != branch_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Product {item.product_id} belongs to branch {p['branch_id']}, not active branch {branch_id}",
+                )
 
         cur.execute(
             """INSERT INTO invoices
@@ -252,6 +291,11 @@ def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
             prod = cur.fetchone()
             if not prod or not prod["active"]:
                 raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+            if prod["branch_id"] is not None and prod["branch_id"] != branch_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Product {prod['name_en']} belongs to a different branch",
+                )
             if int(prod["stock"]) < item.quantity:
                 raise HTTPException(status_code=400, detail=f"Insufficient stock for {prod['name_en']} (have {prod['stock']}, need {item.quantity})")
             item_total = item.quantity * item.unit_price - item.discount
@@ -288,17 +332,26 @@ def create_sale(req: SaleRequest, current_user=Depends(get_current_user)):
 
 
 @app.get("/api/sales")
-def list_sales(limit: int = 50, offset: int = 0, current_user=Depends(get_current_user)):
+def list_sales(limit: int = 50, offset: int = 0,
+               current_user=Depends(get_current_user),
+               active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    where = ""
+    params = []
+    if active_branch is not None:
+        where = " WHERE i.branch_id = %s"
+        params.append(active_branch)
+    params += [limit, offset]
     cur.execute(
-        """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                  c.name AS customer_name
-           FROM invoices i
-           LEFT JOIN users u ON i.seller_id = u.id
-           LEFT JOIN customers c ON i.customer_id = c.id
-           ORDER BY i.created_at DESC LIMIT %s OFFSET %s""",
-        (limit, offset),
+        f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                   c.name AS customer_name
+            FROM invoices i
+            LEFT JOIN users u ON i.seller_id = u.id
+            LEFT JOIN customers c ON i.customer_id = c.id
+            {where}
+            ORDER BY i.created_at DESC LIMIT %s OFFSET %s""",
+        params,
     )
     invoices = cur.fetchall()
     conn.close()
@@ -414,21 +467,30 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 # ─── DASHBOARD ───────────────────────────────────────────────────────────────
 
 @app.get("/api/dashboard/summary")
-def dashboard_summary(current_user=Depends(get_current_user)):
+def dashboard_summary(current_user=Depends(get_current_user),
+                      active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     today = date.today()
+    branch_clause = ""
+    branch_params = []
+    if active_branch is not None:
+        branch_clause = " AND branch_id = %s"
+        branch_params = [active_branch]
     cur.execute(
-        "SELECT COALESCE(SUM(net_total),0) AS total, COUNT(*) AS cnt FROM invoices WHERE DATE(created_at)=%s AND status='completed'",
-        (today,),
+        f"SELECT COALESCE(SUM(net_total),0) AS total, COUNT(*) AS cnt FROM invoices WHERE DATE(created_at)=%s AND status='completed'{branch_clause}",
+        [today, *branch_params],
     )
     today_data = cur.fetchone()
     cur.execute(
-        "SELECT COALESCE(SUM(total_returned),0) AS total FROM returns WHERE DATE(created_at)=%s",
-        (today,),
+        f"SELECT COALESCE(SUM(total_returned),0) AS total FROM returns WHERE DATE(created_at)=%s{branch_clause}",
+        [today, *branch_params],
     )
     returns_data = cur.fetchone()
-    cur.execute("SELECT COUNT(*) AS cnt FROM products WHERE stock <= min_stock AND active=true")
+    low_clause = "stock <= min_stock AND active=true"
+    if active_branch is not None:
+        low_clause += " AND branch_id = %s"
+    cur.execute(f"SELECT COUNT(*) AS cnt FROM products WHERE {low_clause}", branch_params)
     low_stock = cur.fetchone()
     conn.close()
     net = float(today_data["total"]) - float(returns_data["total"])

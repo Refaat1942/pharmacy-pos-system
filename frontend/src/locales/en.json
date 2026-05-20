@@ -222,5 +222,10 @@
     "save": "Save",
     "search": "Search",
     "close": "Close"
+  },
+  "branch": {
+    "switch": "Switch Branch",
+    "all": "All Branches",
+    "none": "No branches available"
   }
 }

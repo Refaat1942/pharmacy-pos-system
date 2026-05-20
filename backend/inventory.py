@@ -7,7 +7,7 @@ from datetime import date
 import io
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, get_active_branch_id
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -110,7 +110,8 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
                stock_filter: Optional[str] = None,
                category: Optional[str] = None,
                include_inactive: bool = False,
-               current_user=Depends(get_current_user)):
+               current_user=Depends(get_current_user),
+               active_branch=Depends(get_active_branch_id)):
     """stock_filter: 'low' | 'zero' | 'ok'"""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -122,9 +123,13 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
         where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s)")
         s = f"%{q}%"
         params += [s, s, s]
-    if branch_id:
+    if branch_id is not None and current_user.get("role") != "admin":
+        if branch_id != current_user.get("branch_id"):
+            raise HTTPException(status_code=403, detail="Cross-branch access denied")
+    effective_branch = branch_id if branch_id is not None else active_branch
+    if effective_branch is not None:
         where.append("p.branch_id = %s")
-        params.append(branch_id)
+        params.append(effective_branch)
     if category:
         where.append("p.category = %s")
         params.append(category)
