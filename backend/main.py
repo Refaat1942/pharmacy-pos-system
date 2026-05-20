@@ -26,6 +26,28 @@ app.include_router(purchasing_router)
 app.include_router(customers_router)
 
 
+@app.on_event("startup")
+def _ensure_schema():
+    """Self-heal: idempotently create any missing tables on every boot.
+
+    Prevents production errors like `relation "stock_movements" does not exist`
+    when a deploy ships new tables but `init_db.py` was not (re)run.
+    """
+    try:
+        import os, sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        import init_db  # noqa: F401  (executing the module's SQL block)
+        from db import get_db_connection
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(init_db.SQL)
+        conn.commit()
+        conn.close()
+        print("[startup] schema verified")
+    except Exception as e:
+        print(f"[startup] schema check failed (non-fatal): {e}")
+
+
 # ─── AUTH ────────────────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
