@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DollarSign, Lock, Unlock, FileText, Plus, X, ClipboardList, AlertCircle } from 'lucide-react'
+import { Lock, Unlock, FileText, X, AlertCircle } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -11,6 +11,7 @@ type Shift = {
   opened_at: string; opening_cash: number
   closed_at: string | null; closing_cash: number | null
   expected_cash: number | null; variance: number | null
+  counted_visa: number | null; variance_visa: number | null
   status: 'open' | 'closed'; notes: string | null
   user_name?: string; user_name_en?: string; user_name_ar?: string
   branch_name_en?: string; branch_name_ar?: string
@@ -36,8 +37,10 @@ export default function Shifts() {
   const [reportShift, setReportShift] = useState<{ shift: Shift; breakdown: Breakdown; report_type: string } | null>(null)
   const [showOpen, setShowOpen] = useState(false)
   const [showClose, setShowClose] = useState(false)
+  const [closePreview, setClosePreview] = useState<Breakdown | null>(null)
   const [openingCash, setOpeningCash] = useState('')
   const [countedCash, setCountedCash] = useState('')
+  const [countedVisa, setCountedVisa] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -65,11 +68,25 @@ export default function Shifts() {
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
 
+  const openCloseModal = async () => {
+    if (!current) return
+    setClosePreview(null)
+    setShowClose(true)
+    try {
+      const r = await api.get(`/shifts/${current.id}/report`)
+      setClosePreview(r.data.breakdown)
+    } catch { /* preview is optional */ }
+  }
+
   const closeShift = async () => {
     if (!current) return
     try {
-      const r = await api.post(`/shifts/${current.id}/close`, { counted_cash: parseFloat(countedCash) || 0, notes: notes || null })
-      setShowClose(false); setCountedCash(''); setNotes('')
+      const r = await api.post(`/shifts/${current.id}/close`, {
+        counted_cash: parseFloat(countedCash) || 0,
+        counted_visa: parseFloat(countedVisa) || 0,
+        notes: notes || null,
+      })
+      setShowClose(false); setCountedCash(''); setCountedVisa(''); setNotes(''); setClosePreview(null)
       setReportShift({ shift: r.data, breakdown: r.data.breakdown, report_type: 'Z' })
       await load()
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
@@ -97,7 +114,7 @@ export default function Shifts() {
               <Unlock size={16} /> {t('shifts.open_shift')}
             </button>
           ) : (
-            <button onClick={() => setShowClose(true)} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl">
+            <button onClick={openCloseModal} className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white font-medium px-4 py-2 rounded-xl">
               <Lock size={16} /> {t('shifts.close_shift')}
             </button>
           )}
@@ -115,9 +132,9 @@ export default function Shifts() {
                 <p className="text-2xl font-bold text-slate-800 mt-2">{fmt(current.opening_cash)} <span className="text-sm font-normal text-slate-500">{t('shifts.opening_cash')}</span></p>
                 <p className="text-sm text-slate-500 mt-1">{t('shifts.opened_at')}: {fmtDT(current.opened_at)}</p>
               </div>
-              <button onClick={() => viewReport(current.id)} className="flex items-center gap-2 bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 text-sm font-medium px-3 py-2 rounded-lg">
-                <ClipboardList size={14} /> {t('shifts.x_report')}
-              </button>
+              <div className="text-xs text-emerald-700/70 italic max-w-[180px] text-end">
+                {t('shifts.report_after_close_hint')}
+              </div>
             </div>
           </div>
         )}
@@ -157,9 +174,13 @@ export default function Shifts() {
                       {s.variance != null ? fmt(s.variance) : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <button onClick={() => viewReport(s.id)} className="text-pharma-700 hover:text-pharma-800 text-xs font-medium">
-                        {s.status === 'open' ? t('shifts.x_report') : t('shifts.z_report')}
-                      </button>
+                      {s.status === 'closed' ? (
+                        <button onClick={() => viewReport(s.id)} className="text-pharma-700 hover:text-pharma-800 text-xs font-medium">
+                          {t('shifts.z_report')}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">{t('shifts.report_after_close')}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -187,15 +208,31 @@ export default function Shifts() {
 
         {/* Close shift modal */}
         {showClose && current && (
-          <Modal onClose={() => setShowClose(false)} title={t('shifts.close_shift')}>
+          <Modal onClose={() => { setShowClose(false); setClosePreview(null) }} title={t('shifts.close_shift')}>
             <div className="space-y-3">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-800 flex gap-1.5">
                 <AlertCircle size={14} className="shrink-0 mt-0.5" />
                 {t('shifts.close_warning')}
               </div>
+              {closePreview && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs space-y-1">
+                  <div className="flex justify-between text-slate-600">
+                    <span>{t('shifts.expected_cash')}</span>
+                    <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.expected_cash)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600">
+                    <span>{t('shifts.expected_visa')}</span>
+                    <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.visa_sales)}</span>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-xs text-slate-600">{t('shifts.counted_cash')}</label>
                 <input type="number" value={countedCash} onChange={(e) => setCountedCash(e.target.value)} className="input w-full" autoFocus />
+              </div>
+              <div>
+                <label className="text-xs text-slate-600">{t('shifts.counted_visa')}</label>
+                <input type="number" value={countedVisa} onChange={(e) => setCountedVisa(e.target.value)} className="input w-full" placeholder="0.00" />
               </div>
               <div>
                 <label className="text-xs text-slate-600">{t('common.notes')}</label>
@@ -240,6 +277,15 @@ export default function Shifts() {
                   </>
                 )}
               </div>
+
+              {reportShift.shift.status === 'closed' && (
+                <div className="border-t border-slate-200 pt-3">
+                  <h3 className="text-sm font-semibold mb-2 text-slate-700">{t('shifts.visa_reconciliation')}</h3>
+                  <Line label={t('shifts.expected_visa')} value={fmt(reportShift.breakdown.visa_sales)} bold />
+                  <Line label={t('shifts.counted_visa')} value={fmt(reportShift.shift.counted_visa)} />
+                  <Line label={t('shifts.variance')} value={fmt(reportShift.shift.variance_visa)} variance={Number(reportShift.shift.variance_visa)} />
+                </div>
+              )}
 
               <button onClick={printReport} className="no-print w-full bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium py-2 rounded-lg flex items-center justify-center gap-2">
                 <FileText size={14} /> {t('common.print')}

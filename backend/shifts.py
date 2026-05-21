@@ -17,6 +17,7 @@ class OpenShiftIn(BaseModel):
 
 class CloseShiftIn(BaseModel):
     counted_cash: float = Field(ge=0)
+    counted_visa: float = Field(default=0, ge=0)
     notes: Optional[str] = None
 
 
@@ -126,16 +127,18 @@ def close_shift(
         exp = _compute_expected(cur, shift)
         expected = exp['expected_cash']
         variance = round(body.counted_cash - expected, 2)
+        variance_visa = round(body.counted_visa - exp['visa_sales'], 2)
         cur.execute("""
             UPDATE shifts
             SET closed_at=now(), closing_cash=%s, expected_cash=%s,
-                variance=%s, status='closed',
+                variance=%s, counted_visa=%s, variance_visa=%s,
+                status='closed',
                 notes = COALESCE(NULLIF(%s,''), notes)
             WHERE id=%s RETURNING *
-        """, [body.counted_cash, expected, variance, body.notes, shift_id])
+        """, [body.counted_cash, expected, variance, body.counted_visa, variance_visa, body.notes, shift_id])
         row = dict(cur.fetchone())
         conn.commit()
-        return {**row, "breakdown": exp, "variance": variance, "expected_cash": expected}
+        return {**row, "breakdown": exp, "variance": variance, "expected_cash": expected, "variance_visa": variance_visa}
     finally:
         cur.close(); conn.close()
 

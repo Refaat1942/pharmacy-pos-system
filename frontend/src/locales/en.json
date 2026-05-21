@@ -58,7 +58,12 @@
     "total_sales": "Total Sales",
     "returns": "Returns",
     "cash_in": "Net Cash In",
-    "close_warning": "Closing the shift is irreversible. Verify the cash count first."
+    "close_warning": "Closing the shift is irreversible. Verify the cash count first.",
+    "counted_visa": "Counted Visa",
+    "expected_visa": "Expected Visa",
+    "visa_reconciliation": "Visa Reconciliation",
+    "report_after_close": "Available after close",
+    "report_after_close_hint": "Z report (with cash & visa variance) will appear after closing the shift."
   },
   "hr": {
     "title": "HR & Payroll",

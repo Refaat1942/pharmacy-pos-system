@@ -356,6 +356,10 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2);
 
 -- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
+
+-- Shift Visa reconciliation (counted Visa total + variance vs expected Visa sales)
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS counted_visa  NUMERIC(10,2);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_visa NUMERIC(10,2);
 """
 
 
