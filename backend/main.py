@@ -1,6 +1,10 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import psycopg2.extras
+import os
+import time
+from collections import defaultdict
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel
@@ -12,15 +16,51 @@ from inventory import router as inventory_router, log_movement
 from purchasing import router as purchasing_router
 from customers import router as customers_router
 
-app = FastAPI(title="PharmaPOS API")
+app = FastAPI(title="PharmaPOS API", docs_url=None, redoc_url=None, openapi_url=None) \
+    if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="PharmaPOS API")
+
+# CORS: lock to explicit origins in production, allow wildcard only in dev.
+_cors_env = os.getenv("CORS_ORIGINS", "").strip()
+if _cors_env:
+    _allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+elif os.getenv("ENVIRONMENT") == "production":
+    _allowed_origins = ["https://erp.fratelanza.com"]
+else:
+    _allowed_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Block Host header attacks in production.
+if os.getenv("ENVIRONMENT") == "production":
+    _trusted_hosts = [o.replace("https://", "").replace("http://", "") for o in _allowed_origins if "*" not in o]
+    if _trusted_hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts + ["localhost", "127.0.0.1"])
+
+# Simple in-memory login throttle (per IP+username): 8 failed attempts → 15-min lockout.
+# Resets on successful login. For multi-worker setups this is per-worker (fine for 4 workers).
+_LOGIN_FAILURES: dict = defaultdict(list)  # key -> list[timestamp]
+_LOGIN_MAX_FAILS = 8
+_LOGIN_WINDOW = 15 * 60  # 15 minutes
+
+def _login_throttle_check(key: str) -> None:
+    now = time.time()
+    fails = [t for t in _LOGIN_FAILURES[key] if now - t < _LOGIN_WINDOW]
+    _LOGIN_FAILURES[key] = fails
+    if len(fails) >= _LOGIN_MAX_FAILS:
+        retry = int(_LOGIN_WINDOW - (now - fails[0]))
+        raise HTTPException(status_code=429, detail=f"Too many login attempts. Try again in {retry//60+1} minutes.")
+
+def _login_throttle_record_failure(key: str) -> None:
+    _LOGIN_FAILURES[key].append(time.time())
+
+def _login_throttle_clear(key: str) -> None:
+    _LOGIN_FAILURES.pop(key, None)
 
 
 # ─── Tenant resolution middleware ───────────────────────────────────────────
@@ -138,9 +178,12 @@ class LoginRequest(BaseModel):
 
 
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
+    throttle_key = f"{request.client.host if request.client else 'unknown'}|{req.tenant_slug.strip().lower()}|{req.username.lower()}"
+    _login_throttle_check(throttle_key)
     tenant = get_tenant_by_slug(req.tenant_slug.strip().lower())
     if not tenant:
+        _login_throttle_record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
     from platform_db import is_tenant_live, normalize_features
     live, reason = is_tenant_live(tenant)
@@ -155,7 +198,9 @@ def login(req: LoginRequest):
     user = cur.fetchone()
     conn.close()
     if not user or not verify_password(req.password, user["password_hash"]):
+        _login_throttle_record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
+    _login_throttle_clear(throttle_key)
     token = create_token({
         "scope": "tenant",
         "tenant_slug": tenant["slug"],

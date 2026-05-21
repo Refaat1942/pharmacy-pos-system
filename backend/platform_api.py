@@ -1,7 +1,7 @@
 """Control-plane API: super-admin login + tenant management."""
 from typing import Optional, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from auth import create_token, verify_password, verify_token
@@ -19,10 +19,15 @@ class PlatformLoginIn(BaseModel):
 
 
 @router.post("/auth/login")
-def platform_login(req: PlatformLoginIn):
+def platform_login(req: PlatformLoginIn, request: Request):
+    from main import _login_throttle_check, _login_throttle_record_failure, _login_throttle_clear
+    throttle_key = f"{request.client.host if request.client else 'unknown'}|platform|{req.username.lower()}"
+    _login_throttle_check(throttle_key)
     admin = platform_db.get_super_admin_by_username(req.username)
     if not admin or not verify_password(req.password, admin["password_hash"]):
+        _login_throttle_record_failure(throttle_key)
         raise HTTPException(401, "Invalid credentials")
+    _login_throttle_clear(throttle_key)
     platform_db.touch_super_admin_login(admin["id"])
     token = create_token({
         "scope": "platform",
