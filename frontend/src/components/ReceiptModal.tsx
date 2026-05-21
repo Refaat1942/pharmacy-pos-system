@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Printer, ShoppingCart, X } from 'lucide-react'
+import JsBarcode from 'jsbarcode'
 import type { SaleResponse } from '../lib/api'
 import api from '../lib/api'
 import i18n from '../lib/i18n'
@@ -30,6 +31,11 @@ interface PharmacyProfile {
   show_tax_id?: boolean
   show_seller?: boolean
   show_customer?: boolean
+  show_sale_type?: boolean
+  show_branch?: boolean
+  show_date?: boolean
+  show_time?: boolean
+  show_barcode?: boolean
 }
 
 const paperWidth: Record<string, string> = {
@@ -41,6 +47,7 @@ const paperWidth: Record<string, string> = {
 export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
   const { t } = useTranslation()
   const [profile, setProfile] = useState<PharmacyProfile | null>(null)
+  const barcodeRef = useRef<SVGSVGElement | null>(null)
   const { invoice, items } = sale
 
   useEffect(() => {
@@ -77,11 +84,11 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
 
   const handlePrint = () => window.print()
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US', {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
+  const localeId = lang === 'ar' ? 'ar-EG' : 'en-US'
+  const formatDateOnly = (s: string) =>
+    new Date(s).toLocaleDateString(localeId, { year: 'numeric', month: 'short', day: 'numeric' })
+  const formatTimeOnly = (s: string) =>
+    new Date(s).toLocaleTimeString(localeId, { hour: '2-digit', minute: '2-digit' })
 
   const tr = (k: string) => i18n.getFixedT(lang)(k)
 
@@ -90,7 +97,39 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
     visa: tr('payment.visa'),
     hybrid: tr('payment.hybrid'),
     digital: tr('payment.digital'),
+    account: tr('payment.account'),
   }
+
+  const saleTypeLabel = (typ: string): string => {
+    const k = `receipt.sale_type_${(typ || 'sale').toLowerCase()}`
+    const translated = tr(k)
+    // If i18n returned the key itself (no entry), fall back to the raw type
+    return translated === k ? (typ || tr('receipt.sale_type_sale')) : translated
+  }
+
+  const branchName = lang === 'ar'
+    ? (invoice.branch_name_ar || invoice.branch_name_en || '')
+    : (invoice.branch_name_en || invoice.branch_name_ar || '')
+
+  // Render barcode whenever the toggle / invoice number / paper changes
+  useEffect(() => {
+    if (!barcodeRef.current) return
+    if (profile?.show_barcode === false) return
+    if (!invoice.invoice_number) return
+    try {
+      JsBarcode(barcodeRef.current, invoice.invoice_number, {
+        format: 'CODE128',
+        displayValue: true,
+        fontSize: 11,
+        height: 40,
+        margin: 0,
+        background: '#ffffff',
+        lineColor: '#000000',
+      })
+    } catch {
+      /* swallow — bad chars in invoice number shouldn't break the receipt */
+    }
+  }, [profile?.show_barcode, invoice.invoice_number, paper])
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -146,10 +185,30 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
               <span className="text-gray-500">{tr('receipt.invoice_no')}</span>
               <span className="font-mono font-bold" style={{ color: accent }}>{invoice.invoice_number}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">{tr('receipt.date')}</span>
-              <span className="text-gray-700 text-xs">{formatDate(invoice.created_at)}</span>
-            </div>
+            {profile?.show_sale_type !== false && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('receipt.sale_type')}</span>
+                <span className="text-gray-700">{saleTypeLabel(invoice.type)}</span>
+              </div>
+            )}
+            {profile?.show_branch !== false && branchName && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('receipt.branch')}</span>
+                <span className="text-gray-700">{branchName}</span>
+              </div>
+            )}
+            {profile?.show_date !== false && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('receipt.date')}</span>
+                <span className="text-gray-700 text-xs">{formatDateOnly(invoice.created_at)}</span>
+              </div>
+            )}
+            {profile?.show_time !== false && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('receipt.time')}</span>
+                <span className="text-gray-700 text-xs">{formatTimeOnly(invoice.created_at)}</span>
+              </div>
+            )}
             {profile?.show_seller !== false && invoice.seller_name_en && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{tr('receipt.seller')}</span>
@@ -236,6 +295,13 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
           </div>
 
           <p className="text-center text-xs text-gray-500 pb-2 whitespace-pre-line">{footerText}</p>
+
+          {/* Scannable barcode at the bottom for fast invoice retrieval */}
+          {profile?.show_barcode !== false && (
+            <div className="mt-2 mb-1 flex flex-col items-center" dir="ltr">
+              <svg ref={barcodeRef} />
+            </div>
+          )}
         </div>
 
         {/* Actions */}

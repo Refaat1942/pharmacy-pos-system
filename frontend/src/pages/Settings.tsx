@@ -516,6 +516,14 @@ interface PharmacyProfile {
   show_tax_id: boolean
   show_seller: boolean
   show_customer: boolean
+  show_sale_type: boolean
+  show_branch: boolean
+  show_date: boolean
+  show_time: boolean
+  show_barcode: boolean
+  shift_morning_start: string
+  shift_evening_start: string
+  shift_night_start: string
 }
 
 const EMPTY_PROFILE: PharmacyProfile = {
@@ -525,6 +533,8 @@ const EMPTY_PROFILE: PharmacyProfile = {
   receipt_footer_ar: 'شكراً لزيارتكم', receipt_footer_en: 'Thank you for your visit',
   receipt_language: 'auto', receipt_paper: '80mm', receipt_accent: '#0EA5E9',
   show_logo: true, show_tax_id: true, show_seller: true, show_customer: true,
+  show_sale_type: true, show_branch: true, show_date: true, show_time: true, show_barcode: true,
+  shift_morning_start: '06:00', shift_evening_start: '14:00', shift_night_start: '22:00',
 }
 
 function PharmacyTab() {
@@ -536,7 +546,14 @@ function PharmacyTab() {
 
   useEffect(() => {
     api.get<Partial<PharmacyProfile>>('/settings/profile')
-      .then((r) => setP({ ...EMPTY_PROFILE, ...r.data }))
+      .then((r) => {
+        // Backend returns times as "HH:MM:SS" — trim to "HH:MM" for the time inputs
+        const d: any = { ...r.data }
+        for (const k of ['shift_morning_start', 'shift_evening_start', 'shift_night_start']) {
+          if (d[k] && typeof d[k] === 'string' && d[k].length >= 5) d[k] = d[k].slice(0, 5)
+        }
+        setP({ ...EMPTY_PROFILE, ...d })
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -674,6 +691,28 @@ function PharmacyTab() {
             <Toggle label={t('settings.pharma.show_tax_id')} value={p.show_tax_id} onChange={(v) => set('show_tax_id', v)} />
             <Toggle label={t('settings.pharma.show_seller')} value={p.show_seller} onChange={(v) => set('show_seller', v)} />
             <Toggle label={t('settings.pharma.show_customer')} value={p.show_customer} onChange={(v) => set('show_customer', v)} />
+            <Toggle label={t('settings.pharma.show_sale_type')} value={p.show_sale_type} onChange={(v) => set('show_sale_type', v)} />
+            <Toggle label={t('settings.pharma.show_branch')} value={p.show_branch} onChange={(v) => set('show_branch', v)} />
+            <Toggle label={t('settings.pharma.show_date')} value={p.show_date} onChange={(v) => set('show_date', v)} />
+            <Toggle label={t('settings.pharma.show_time')} value={p.show_time} onChange={(v) => set('show_time', v)} />
+            <Toggle label={t('settings.pharma.show_barcode')} value={p.show_barcode} onChange={(v) => set('show_barcode', v)} />
+          </div>
+        </div>
+
+        {/* Shift schedule (auto-detected on shift open) */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-slate-800 mb-1">{t('settings.pharma.shift_schedule')}</h3>
+          <p className="text-xs text-slate-500 mb-3">{t('settings.pharma.shift_schedule_hint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label={t('settings.pharma.shift_morning_start')}>
+              <input type="time" value={p.shift_morning_start} onChange={(e) => set('shift_morning_start', e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </Field>
+            <Field label={t('settings.pharma.shift_evening_start')}>
+              <input type="time" value={p.shift_evening_start} onChange={(e) => set('shift_evening_start', e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </Field>
+            <Field label={t('settings.pharma.shift_night_start')}>
+              <input type="time" value={p.shift_night_start} onChange={(e) => set('shift_night_start', e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </Field>
           </div>
         </div>
 

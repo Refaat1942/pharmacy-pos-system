@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/shifts", tags=["shifts"])
 class OpenShiftIn(BaseModel):
     opening_cash: float = Field(ge=0)
     notes: Optional[str] = None
+    shift_type: Optional[str] = None  # 'morning' | 'evening' | 'night' (auto if omitted)
 
 
 class CloseShiftIn(BaseModel):
@@ -74,11 +75,34 @@ def open_shift(
         cur.execute("SELECT id FROM branches WHERE id=%s", [active_branch_id])
         if not cur.fetchone():
             raise HTTPException(400, "Branch not found")
+        # Auto-detect shift type from server time if not provided
+        shift_type = (body.shift_type or "").strip().lower() or None
+        if shift_type and shift_type not in ("morning", "evening", "night"):
+            raise HTTPException(400, "shift_type must be morning, evening, or night")
+        if not shift_type:
+            cur.execute(
+                "SELECT shift_morning_start, shift_evening_start, shift_night_start "
+                "FROM pharmacy_profile WHERE id=1"
+            )
+            row = cur.fetchone() or {}
+            from datetime import time as _t
+            m = row.get("shift_morning_start") or _t(6, 0)
+            e = row.get("shift_evening_start") or _t(14, 0)
+            n = row.get("shift_night_start")   or _t(22, 0)
+            now_t = datetime.now().time()
+            # Pick the latest configured start that is <= now. If now is before all starts
+            # (e.g. 02:00 with defaults 06:00/14:00/22:00), wrap around to the latest start
+            # of the previous day — typically the night shift.
+            ranges = sorted([("morning", m), ("evening", e), ("night", n)], key=lambda x: x[1])
+            shift_type = ranges[-1][0]  # wrap-around default
+            for label, start in ranges:
+                if now_t >= start:
+                    shift_type = label
         try:
             cur.execute("""
-                INSERT INTO shifts(user_id, branch_id, opening_cash, notes)
-                VALUES (%s, %s, %s, %s) RETURNING *
-            """, [current_user['user_id'], active_branch_id, body.opening_cash, body.notes])
+                INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type)
+                VALUES (%s, %s, %s, %s, %s) RETURNING *
+            """, [current_user['user_id'], active_branch_id, body.opening_cash, body.notes, shift_type])
             row = dict(cur.fetchone())
             conn.commit()
             return row

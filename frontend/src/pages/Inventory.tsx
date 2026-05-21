@@ -41,6 +41,16 @@ type Movement = {
 
 type Tab = 'items' | 'movements' | 'velocity' | 'alerts'
 
+const STANDARD_CATEGORIES = [
+  'Medicine',
+  'Cosmetics',
+  'Medical Supplies',
+  'Baby Care',
+  'Personal Care',
+  'Supplements',
+  'Other',
+] as const
+
 export default function Inventory() {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
@@ -178,7 +188,8 @@ export default function Inventory() {
                 className="px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500"
               >
                 <option value="">{t('inventory.filter_all_categories')}</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                {STANDARD_CATEGORIES.map(c => <option key={c} value={c}>{t(`inventory.cat_${c}`, c)}</option>)}
+                {categories.filter(c => !(STANDARD_CATEGORIES as readonly string[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <button
                 onClick={() => setShowExcel(true)}
@@ -381,7 +392,18 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input" />
         </Field>
         <Field label={t('inventory.f_category')}>
-          <input value={f.category} onChange={e => setF({ ...f, category: e.target.value })} className="input" />
+          <input
+            list="product-categories-list"
+            value={f.category}
+            onChange={e => setF({ ...f, category: e.target.value })}
+            className="input"
+            placeholder={t('inventory.cat_placeholder') as string}
+          />
+          <datalist id="product-categories-list">
+            {STANDARD_CATEGORIES.map(c => (
+              <option key={c} value={t(`inventory.cat_${c}`, c) as string} />
+            ))}
+          </datalist>
         </Field>
         <Field label={t('inventory.f_name_en') + ' *'}>
           <input required value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} className="input" />
@@ -425,36 +447,36 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         {/* ─── Packaging: 1 Box = N Strips (optional) ─── */}
         <div className="col-span-2 mt-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
           <div className="text-xs font-semibold text-slate-600 mb-2">
-            Packaging — leave pack size = 1 if the item is not sold in smaller units
+            {t('inventory.pack_hint')}
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Sub-unit (Strip / Ampoule / Tablet …)">
+            <Field label={t('inventory.f_sub_unit')}>
               <select
                 value={f.sub_unit}
                 onChange={e => setF({ ...f, sub_unit: e.target.value })}
                 className="input"
               >
-                <option value="">— none —</option>
-                <option value="strip">Strip</option>
-                <option value="ampoule">Ampoule</option>
-                <option value="tablet">Tablet</option>
-                <option value="capsule">Capsule</option>
-                <option value="sachet">Sachet</option>
-                <option value="vial">Vial</option>
-                <option value="piece">Piece</option>
-                <option value="ml">ml</option>
+                <option value="">{t('inventory.sub_unit_none')}</option>
+                <option value="strip">{t('inventory.su_strip')}</option>
+                <option value="ampoule">{t('inventory.su_ampoule')}</option>
+                <option value="tablet">{t('inventory.su_tablet')}</option>
+                <option value="capsule">{t('inventory.su_capsule')}</option>
+                <option value="sachet">{t('inventory.su_sachet')}</option>
+                <option value="vial">{t('inventory.su_vial')}</option>
+                <option value="piece">{t('inventory.su_piece')}</option>
+                <option value="ml">{t('inventory.su_ml')}</option>
               </select>
             </Field>
-            <Field label={`Units per 1 ${f.unit}`}>
+            <Field label={t('inventory.f_units_per', { unit: f.unit })}>
               <input
                 type="number" min={1}
                 value={f.pack_size}
                 onChange={e => setF({ ...f, pack_size: e.target.value })}
                 className="input"
-                placeholder="e.g. 10"
+                placeholder="10"
               />
             </Field>
-            <Field label={`Price per ${f.sub_unit || 'sub-unit'}`}>
+            <Field label={t('inventory.f_price_per', { unit: f.sub_unit || t('inventory.sub_unit_word') })}>
               <input
                 type="number" step="0.01"
                 value={f.sub_price}
@@ -471,7 +493,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           </div>
           {f.sub_unit && parseInt(f.pack_size) > 1 && (
             <p className="text-[11px] text-slate-500 mt-2">
-              1 {f.unit} = {f.pack_size} {f.sub_unit}. Stock will be tracked in <b>{f.sub_unit}</b>.
+              1 {f.unit} = {f.pack_size} {f.sub_unit}. {t('inventory.stock_tracked_in', { unit: f.sub_unit })}
             </p>
           )}
         </div>

@@ -17,6 +17,8 @@ PROFILE_FIELDS = [
     "receipt_footer_ar", "receipt_footer_en", "receipt_language",
     "receipt_paper", "receipt_accent",
     "show_logo", "show_tax_id", "show_seller", "show_customer",
+    "show_sale_type", "show_branch", "show_date", "show_time", "show_barcode",
+    "shift_morning_start", "shift_evening_start", "shift_night_start",
 ]
 
 
@@ -39,6 +41,14 @@ class ProfilePatch(BaseModel):
     show_tax_id: Optional[bool] = None
     show_seller: Optional[bool] = None
     show_customer: Optional[bool] = None
+    show_sale_type: Optional[bool] = None
+    show_branch: Optional[bool] = None
+    show_date: Optional[bool] = None
+    show_time: Optional[bool] = None
+    show_barcode: Optional[bool] = None
+    shift_morning_start: Optional[str] = None   # 'HH:MM'
+    shift_evening_start: Optional[str] = None
+    shift_night_start:   Optional[str] = None
 
 
 def _ensure_profile_row(cur):
@@ -96,6 +106,12 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
         import re
         if not re.fullmatch(r"#[0-9A-Fa-f]{6}", data["receipt_accent"]):
             raise HTTPException(400, "receipt_accent must be a 6-digit hex color like #0EA5E9")
+
+    import re as _re
+    for k in ("shift_morning_start", "shift_evening_start", "shift_night_start"):
+        if k in data and data[k]:
+            if not _re.fullmatch(r"\d{1,2}:\d{2}", str(data[k])):
+                raise HTTPException(400, f"{k} must be in HH:MM format")
 
     if not data:
         return {"ok": True}

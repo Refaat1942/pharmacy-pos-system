@@ -114,6 +114,8 @@ export interface Invoice {
   status: string
   notes: string
   created_at: string
+  branch_name_en?: string | null
+  branch_name_ar?: string | null
 }
 
 export interface SaleResponse {

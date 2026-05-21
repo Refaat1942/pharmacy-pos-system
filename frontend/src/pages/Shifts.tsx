@@ -6,6 +6,8 @@ import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 
+type ShiftType = 'morning' | 'evening' | 'night'
+
 type Shift = {
   id: number; user_id: number; branch_id: number
   opened_at: string; opening_cash: number
@@ -13,6 +15,7 @@ type Shift = {
   expected_cash: number | null; variance: number | null
   counted_visa: number | null; variance_visa: number | null
   status: 'open' | 'closed'; notes: string | null
+  shift_type: ShiftType | null
   user_name?: string; user_name_en?: string; user_name_ar?: string
   branch_name_en?: string; branch_name_ar?: string
 }
@@ -25,7 +28,34 @@ type Breakdown = {
 }
 
 const fmt = (n: any) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Always show sign so excess = "+12.34" and shortage = "-12.34" are unmistakable.
+const fmtSigned = (n: any) => {
+  const v = Number(n || 0)
+  const abs = Math.abs(v).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return v > 0 ? `+${abs}` : v < 0 ? `−${abs}` : abs
+}
 const fmtDT = (s: string | null) => s ? new Date(s).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US') : '—'
+
+// Pick the shift label whose configured start time is the most recent one that is <= now.
+function pickShiftType(now: Date, m: string, e: string, n: string): ShiftType {
+  const mins = (hm: string) => {
+    const [h, mn] = hm.split(':').map(Number)
+    return (h || 0) * 60 + (mn || 0)
+  }
+  const nowMin = now.getHours() * 60 + now.getMinutes()
+  const ranges: { type: ShiftType; start: number }[] = ([
+    { type: 'morning' as ShiftType, start: mins(m) },
+    { type: 'evening' as ShiftType, start: mins(e) },
+    { type: 'night'   as ShiftType, start: mins(n) },
+  ]).sort((a, b) => a.start - b.start)
+  // Wrap-around: if now is before all configured starts, treat as still inside
+  // the latest (previous-day) segment — typically the night shift.
+  let picked: ShiftType = ranges[ranges.length - 1].type
+  for (const r of ranges) {
+    if (nowMin >= r.start) picked = r.type
+  }
+  return picked
+}
 
 export default function Shifts() {
   const { t } = useTranslation()
@@ -44,6 +74,9 @@ export default function Shifts() {
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [shiftType, setShiftType] = useState<ShiftType>('morning')
+  const [autoDetected, setAutoDetected] = useState(true)
+  const [schedule, setSchedule] = useState({ m: '06:00', e: '14:00', n: '22:00' })
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -61,9 +94,33 @@ export default function Shifts() {
 
   useEffect(() => { load() }, [])
 
+  // Fetch shift schedule from pharmacy profile once, so we can auto-detect type
+  useEffect(() => {
+    api.get('/settings/profile').then((r) => {
+      const d = r.data || {}
+      const trim = (s: any) => (typeof s === 'string' && s.length >= 5 ? s.slice(0, 5) : s)
+      const m = trim(d.shift_morning_start) || '06:00'
+      const e = trim(d.shift_evening_start) || '14:00'
+      const n = trim(d.shift_night_start) || '22:00'
+      setSchedule({ m, e, n })
+    }).catch(() => {})
+  }, [])
+
+  // Re-detect shift type every time the open modal opens
+  useEffect(() => {
+    if (!showOpen) return
+    const detected = pickShiftType(new Date(), schedule.m, schedule.e, schedule.n)
+    setShiftType(detected)
+    setAutoDetected(true)
+  }, [showOpen, schedule])
+
   const openShift = async () => {
     try {
-      await api.post('/shifts/open', { opening_cash: parseFloat(openingCash) || 0, notes: notes || null })
+      await api.post('/shifts/open', {
+        opening_cash: parseFloat(openingCash) || 0,
+        notes: notes || null,
+        shift_type: shiftType,
+      })
       setShowOpen(false); setOpeningCash(''); setNotes(''); await load()
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
@@ -171,7 +228,12 @@ export default function Shifts() {
                     <td className="px-4 py-2.5 text-end font-mono">{fmt(s.opening_cash)}</td>
                     <td className="px-4 py-2.5 text-end font-mono">{s.closing_cash != null ? fmt(s.closing_cash) : '—'}</td>
                     <td className={`px-4 py-2.5 text-end font-mono font-semibold ${s.variance == null ? '' : Number(s.variance) === 0 ? 'text-emerald-700' : Number(s.variance) > 0 ? 'text-blue-700' : 'text-red-600'}`}>
-                      {s.variance != null ? fmt(s.variance) : '—'}
+                      {s.variance != null ? fmtSigned(s.variance) : '—'}
+                      {s.variance != null && Number(s.variance) !== 0 && (
+                        <span className="ms-1 text-[10px] font-normal uppercase tracking-wide opacity-70">
+                          {Number(s.variance) > 0 ? t('shifts.excess') : t('shifts.shortage')}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-center">
                       {s.status === 'closed' ? (
@@ -193,6 +255,21 @@ export default function Shifts() {
         {showOpen && (
           <Modal onClose={() => setShowOpen(false)} title={t('shifts.open_shift')}>
             <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-600">{t('shifts.shift_type')}</label>
+                <select
+                  value={shiftType}
+                  onChange={(e) => { setShiftType(e.target.value as ShiftType); setAutoDetected(false) }}
+                  className="input w-full"
+                >
+                  <option value="morning">{t('shifts.shift_type_morning')}</option>
+                  <option value="evening">{t('shifts.shift_type_evening')}</option>
+                  <option value="night">{t('shifts.shift_type_night')}</option>
+                </select>
+                {autoDetected && (
+                  <p className="text-[11px] text-emerald-600 mt-1">✓ {t('shifts.auto_detected')}</p>
+                )}
+              </div>
               <div>
                 <label className="text-xs text-slate-600">{t('shifts.opening_cash')}</label>
                 <input type="number" value={openingCash} onChange={(e) => setOpeningCash(e.target.value)} className="input w-full" autoFocus />
@@ -252,6 +329,9 @@ export default function Shifts() {
                 <div><span className="text-slate-400">{t('shifts.branch')}:</span> {i18n.language === 'ar' ? reportShift.shift.branch_name_ar : reportShift.shift.branch_name_en}</div>
                 <div><span className="text-slate-400">{t('shifts.opened_at')}:</span> {fmtDT(reportShift.shift.opened_at)}</div>
                 <div><span className="text-slate-400">{t('shifts.closed_at')}:</span> {fmtDT(reportShift.shift.closed_at)}</div>
+                {reportShift.shift.shift_type && (
+                  <div><span className="text-slate-400">{t('shifts.shift_type')}:</span> {t(`shifts.shift_type_${reportShift.shift.shift_type}`)}</div>
+                )}
               </div>
 
               <div className="border-t border-slate-200 pt-3">
@@ -300,10 +380,22 @@ export default function Shifts() {
 
 function Line({ label, value, bold, negative, variance }: { label: string; value: any; bold?: boolean; negative?: boolean; variance?: number }) {
   const color = variance != null ? (variance === 0 ? 'text-emerald-700' : variance > 0 ? 'text-blue-700' : 'text-red-600') : negative ? 'text-red-600' : 'text-slate-800'
+  // For variance rows, render with explicit sign (+ for excess, − for shortage) and a label suffix
+  // so a non-technical user immediately sees whether the drawer is over or short.
+  const isVariance = variance != null
+  const display = isVariance ? fmtSigned(variance) : (negative && Number(value) > 0 ? `−${value}` : value)
+  const suffixKey = isVariance ? (variance === 0 ? 'shifts.match' : variance > 0 ? 'shifts.excess' : 'shifts.shortage') : null
   return (
     <div className="flex justify-between py-1 text-sm">
       <span className="text-slate-600">{label}</span>
-      <span className={`font-mono tabular-nums ${color} ${bold ? 'font-bold' : ''}`}>{negative && Number(value) > 0 ? '−' : ''}{value}</span>
+      <span className={`font-mono tabular-nums ${color} ${bold ? 'font-bold' : ''}`}>
+        {display}
+        {suffixKey && (
+          <span className="ms-1 text-[10px] font-normal uppercase tracking-wide opacity-70">
+            {i18n.t(suffixKey)}
+          </span>
+        )}
+      </span>
     </div>
   )
 }

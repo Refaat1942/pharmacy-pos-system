@@ -608,7 +608,17 @@ def create_sale(req: SaleRequest,
             )
 
         conn.commit()
-        cur.execute("SELECT * FROM invoices WHERE id=%s", (invoice_id,))
+        cur.execute(
+            """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                      c.name AS customer_name,
+                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+               FROM invoices i
+               LEFT JOIN users u ON i.seller_id = u.id
+               LEFT JOIN customers c ON i.customer_id = c.id
+               LEFT JOIN branches b ON i.branch_id = b.id
+               WHERE i.id=%s""",
+            (invoice_id,),
+        )
         full_invoice = cur.fetchone()
         cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
         items = cur.fetchall()
@@ -654,10 +664,12 @@ def list_sales(limit: int = 50, offset: int = 0,
     params += [limit, offset]
     cur.execute(
         f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                   c.name AS customer_name
+                   c.name AS customer_name,
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
             FROM invoices i
             LEFT JOIN users u ON i.seller_id = u.id
             LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN branches b ON i.branch_id = b.id
             {where}
             ORDER BY i.created_at DESC LIMIT %s OFFSET %s""",
         params,
@@ -766,10 +778,12 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     _assert_invoice_branch_access(cur, invoice_id, current_user)
     cur.execute(
         """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                  c.name AS customer_name
+                  c.name AS customer_name,
+                  b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
            FROM invoices i
            LEFT JOIN users u ON i.seller_id = u.id
            LEFT JOIN customers c ON i.customer_id = c.id
+           LEFT JOIN branches b ON i.branch_id = b.id
            WHERE i.id=%s""",
         (invoice_id,),
     )

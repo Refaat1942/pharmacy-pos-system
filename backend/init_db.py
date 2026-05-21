@@ -392,6 +392,17 @@ CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
 -- Shift Visa reconciliation (counted Visa total + variance vs expected Visa sales)
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS counted_visa  NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_visa NUMERIC(10,2);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS shift_type    VARCHAR(20);
+
+-- Receipt display toggles + barcode + customizable shift windows
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_sale_type BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_branch    BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_date      BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_time      BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_barcode   BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_morning_start TIME DEFAULT '06:00';
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_evening_start TIME DEFAULT '14:00';
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_night_start   TIME DEFAULT '22:00';
 """
 
 
