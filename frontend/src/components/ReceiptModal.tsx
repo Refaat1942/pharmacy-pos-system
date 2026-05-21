@@ -235,20 +235,37 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-gray-50">
-                  <td className="py-2.5">
-                    <p className="font-medium text-gray-800 leading-tight">
-                      {lang === 'ar' ? item.product_name_ar : item.product_name_en}
-                    </p>
-                    <p className="text-[11px] text-gray-400 tabular-nums">
-                      {tr('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
-                    </p>
-                  </td>
-                  <td className="py-2.5 text-center text-gray-700 font-medium">{item.quantity}</td>
-                  <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums">{item.total.toFixed(2)}</td>
-                </tr>
-              ))}
+              {items.map((item) => {
+                const rawUnit = (item.unit_label || '').toString().trim()
+                const unitKey = `units.${rawUnit.toLowerCase()}`
+                const translatedUnit = rawUnit ? tr(unitKey) : ''
+                // Fall back to the raw label if no translation entry exists for it
+                const unitDisplay = !rawUnit
+                  ? ''
+                  : (translatedUnit === unitKey ? rawUnit : translatedUnit)
+                return (
+                  <tr key={item.id} className="border-b border-gray-50">
+                    <td className="py-2.5">
+                      <p className="font-medium text-gray-800 leading-tight">
+                        {lang === 'ar' ? item.product_name_ar : item.product_name_en}
+                      </p>
+                      <p className="text-[11px] text-gray-400 tabular-nums">
+                        {tr('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
+                        {unitDisplay ? ` ${unitDisplay}` : ''}
+                      </p>
+                    </td>
+                    <td className="py-2.5 text-center text-gray-700 font-medium">
+                      <span className="tabular-nums">{item.quantity}</span>
+                      {unitDisplay && (
+                        <div className="text-[10px] text-gray-400 font-normal leading-none mt-0.5">
+                          {unitDisplay}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums">{item.total.toFixed(2)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
 

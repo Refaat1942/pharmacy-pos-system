@@ -92,6 +92,7 @@ export interface InvoiceItem {
   unit_price: number
   discount: number
   total: number
+  unit_label?: string | null
 }
 
 export interface Invoice {
