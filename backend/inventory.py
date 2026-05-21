@@ -886,3 +886,92 @@ def expiry_summary(days: int = 30,
     row = cur.fetchone()
     conn.close()
     return dict(row)
+
+
+@router.get("/branch-stock")
+def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)):
+    """Aggregated per-branch stock balances. Groups products that share the
+    same barcode (or, when barcode is empty, the same EN+AR name) and returns
+    one row per product family with a breakdown of stock across all branches.
+    Admins see every branch; non-admins are restricted to their own branch."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        is_admin = current_user.get("role") == "admin"
+        user_branch = current_user.get("branch_id")
+        if not is_admin and user_branch is None:
+            raise HTTPException(status_code=403, detail="No branch assigned to this user")
+
+        if is_admin:
+            cur.execute("SELECT id, name_en, name_ar FROM branches ORDER BY id")
+        else:
+            cur.execute("SELECT id, name_en, name_ar FROM branches WHERE id=%s", [user_branch])
+        branches = [dict(r) for r in cur.fetchall()]
+
+        where = ["p.active = true"]
+        params: list = []
+        if q:
+            where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s)")
+            like = f"%{q}%"
+            params += [like, like, like]
+        if not is_admin:
+            where.append("p.branch_id = %s")
+            params.append(user_branch)
+
+        cur.execute(
+            f"""WITH grouped AS (
+                  SELECT
+                    COALESCE(NULLIF(p.barcode,''), 'name:' || p.name_en || '::' || p.name_ar) AS key,
+                    p.branch_id,
+                    SUM(p.stock)::int       AS branch_stock,
+                    SUM(p.min_stock)::int   AS branch_min,
+                    MIN(p.id)               AS product_id,
+                    MAX(p.barcode)          AS barcode,
+                    MAX(p.name_en)          AS name_en,
+                    MAX(p.name_ar)          AS name_ar,
+                    MAX(p.category)         AS category,
+                    MAX(p.unit)             AS unit
+                  FROM products p
+                  WHERE {' AND '.join(where)}
+                  GROUP BY key, p.branch_id
+                )
+                SELECT
+                  key,
+                  MAX(barcode)   AS barcode,
+                  MAX(name_en)   AS name_en,
+                  MAX(name_ar)   AS name_ar,
+                  MAX(category)  AS category,
+                  MAX(unit)      AS unit,
+                  SUM(branch_stock)::int AS total_stock,
+                  SUM(branch_min)::int   AS total_min,
+                  json_agg(json_build_object(
+                    'branch_id',  branch_id,
+                    'product_id', product_id,
+                    'stock',      branch_stock,
+                    'min_stock',  branch_min
+                  ) ORDER BY branch_id) AS rows
+                FROM grouped
+                GROUP BY key
+                ORDER BY MAX(name_en), key
+                LIMIT 1000""",
+            params,
+        )
+        items = []
+        for r in cur.fetchall():
+            d = dict(r)
+            by_branch = {row["branch_id"]: row for row in d.pop("rows", []) if row.get("branch_id") is not None}
+            d["branches"] = [
+                {
+                    "branch_id": b["id"],
+                    "branch_name_en": b["name_en"],
+                    "branch_name_ar": b["name_ar"],
+                    "stock": int((by_branch.get(b["id"]) or {}).get("stock") or 0),
+                    "min_stock": int((by_branch.get(b["id"]) or {}).get("min_stock") or 0),
+                    "product_id": (by_branch.get(b["id"]) or {}).get("product_id"),
+                }
+                for b in branches
+            ]
+            items.append(d)
+        return {"branches": branches, "items": items}
+    finally:
+        cur.close(); conn.close()

@@ -15,6 +15,9 @@
   "inventory": {
     "title": "المخزون والأصناف",
     "tab_items": "الأصناف",
+    "tab_branch_stock": "أرصدة الفروع",
+    "bs_total": "الإجمالي",
+    "bs_hint": "أرصدة المخزون لكل فرع عبر جميع الفروع",
     "tab_movements": "حركة المخزون",
     "tab_velocity": "سريع / بطيء / راكد",
     "tab_alerts": "تنبيهات الاستهلاك",
@@ -244,7 +247,18 @@
     "clock_code": "كود الحضور",
     "open_clock": "شاشة الحضور",
     "print_cards": "طباعة بطاقات QR",
-    "scan_to_clock": "امسح للدخول/الخروج"
+    "scan_to_clock": "امسح للدخول/الخروج",
+    "tab_performance": "الأداء",
+    "date_from": "من",
+    "date_to": "إلى",
+    "perf_seller": "البائع",
+    "perf_invoices": "الفواتير",
+    "perf_items": "الأصناف المباعة",
+    "perf_avg_ticket": "متوسط الفاتورة",
+    "perf_revenue": "الإيرادات",
+    "perf_share": "نسبة الإيرادات",
+    "perf_top": "الأكثر مبيعًا",
+    "no_sales_in_range": "لا توجد مبيعات في هذه الفترة"
   },
   "clock": {
     "title": "ساعة حضور الموظفين",

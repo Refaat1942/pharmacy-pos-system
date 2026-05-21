@@ -369,3 +369,61 @@ def delete_slip(slip_id: int, current_user=Depends(get_current_user)):
         conn.commit(); return {"ok": True}
     finally:
         cur.close(); conn.close()
+
+
+# ─── Sales performance (top sellers) ───────────────────────────────────────
+@router.get("/performance")
+def sales_performance(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user=Depends(get_current_user),
+):
+    """Aggregate sales by seller (user) for a date range. Returns invoice
+    count, items sold, gross revenue, average ticket and rank. Joins users
+    so we can show the cashier's display name in either language."""
+    _require_admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        where = ["i.status = 'completed'", "i.seller_id IS NOT NULL"]
+        params: list = []
+        if date_from:
+            where.append("i.created_at::date >= %s"); params.append(date_from)
+        if date_to:
+            where.append("i.created_at::date <= %s"); params.append(date_to)
+        cur.execute(
+            f"""WITH scoped AS (
+                  SELECT i.id, i.seller_id, i.net_total
+                  FROM invoices i
+                  WHERE {' AND '.join(where)}
+                )
+                SELECT
+                  s.seller_id,
+                  u.username,
+                  u.name_en AS seller_name_en,
+                  u.name_ar AS seller_name_ar,
+                  u.role    AS seller_role,
+                  COUNT(s.id)::int                       AS invoices,
+                  COALESCE(SUM(s.net_total),0)::float    AS revenue,
+                  COALESCE(AVG(s.net_total),0)::float    AS avg_ticket,
+                  COALESCE(SUM(ii.qty),0)::int           AS items_sold
+                FROM scoped s
+                LEFT JOIN users u ON u.id = s.seller_id
+                LEFT JOIN (
+                  SELECT invoice_id, SUM(quantity) AS qty
+                  FROM invoice_items GROUP BY invoice_id
+                ) ii ON ii.invoice_id = s.id
+                GROUP BY s.seller_id, u.username, u.name_en, u.name_ar, u.role
+                ORDER BY revenue DESC, invoices DESC, s.seller_id ASC""",
+            params,
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        totals = {
+            "invoices": sum(r["invoices"] for r in rows),
+            "revenue": sum(r["revenue"] for r in rows),
+            "items_sold": sum(r["items_sold"] for r in rows),
+            "sellers": len(rows),
+        }
+        return {"rows": rows, "totals": totals}
+    finally:
+        cur.close(); conn.close()

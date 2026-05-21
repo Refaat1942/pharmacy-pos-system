@@ -124,7 +124,18 @@
     "clock_code": "Clock Code",
     "open_clock": "Clock Screen",
     "print_cards": "Print QR Cards",
-    "scan_to_clock": "Scan to clock in/out"
+    "scan_to_clock": "Scan to clock in/out",
+    "tab_performance": "Performance",
+    "date_from": "From",
+    "date_to": "To",
+    "perf_seller": "Seller",
+    "perf_invoices": "Invoices",
+    "perf_items": "Items Sold",
+    "perf_avg_ticket": "Avg Ticket",
+    "perf_revenue": "Revenue",
+    "perf_share": "Share of Revenue",
+    "perf_top": "Top seller",
+    "no_sales_in_range": "No sales in this date range"
   },
   "clock": {
     "title": "Employee Time Clock",
@@ -249,6 +260,9 @@
   "inventory": {
     "title": "Inventory & Stock",
     "tab_items": "Items",
+    "tab_branch_stock": "Branch Stock",
+    "bs_total": "Total",
+    "bs_hint": "Per-branch balances across all branches",
     "tab_movements": "Stock Movements",
     "tab_velocity": "Fast / Slow / Dead",
     "tab_alerts": "Consumption Alerts",

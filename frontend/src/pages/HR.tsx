@@ -25,7 +25,7 @@ export default function HR() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll'>('employees')
+  const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>('employees')
 
   if (!isAdmin) {
     return (
@@ -47,7 +47,7 @@ export default function HR() {
         </div>
 
         <div className="flex gap-1 border-b border-slate-200">
-          {(['employees', 'attendance', 'payroll'] as const).map((k) => (
+          {(['employees', 'attendance', 'payroll', 'performance'] as const).map((k) => (
             <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? 'border-pharma-600 text-pharma-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               {t(`hr.tab_${k}`)}
             </button>
@@ -57,6 +57,7 @@ export default function HR() {
         {tab === 'employees' && <EmployeesTab />}
         {tab === 'attendance' && <AttendanceTab />}
         {tab === 'payroll' && <PayrollTab />}
+        {tab === 'performance' && <PerformanceTab />}
       </div>
     </Layout>
   )
@@ -422,6 +423,112 @@ function PayrollTab() {
           </div>
         </Modal>
       )}
+    </div>
+  )
+}
+
+type SellerRow = {
+  seller_id: number
+  username: string | null
+  seller_name_en: string | null
+  seller_name_ar: string | null
+  seller_role: string | null
+  invoices: number
+  revenue: number
+  avg_ticket: number
+  items_sold: number
+}
+
+function PerformanceTab() {
+  const { t } = useTranslation()
+  const start = (() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10) })()
+  const [from, setFrom] = useState(start)
+  const [to, setTo] = useState(today())
+  const [rows, setRows] = useState<SellerRow[]>([])
+  const [totals, setTotals] = useState<{ invoices: number; revenue: number; items_sold: number; sellers: number }>({ invoices: 0, revenue: 0, items_sold: 0, sellers: 0 })
+  const [loading, setLoading] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/hr/performance', { params: { date_from: from, date_to: to } })
+      setRows(data.rows); setTotals(data.totals)
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [from, to])
+
+  const max = Math.max(1, ...rows.map(r => r.revenue))
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-wrap gap-3 items-end">
+        <Field label={t('hr.date_from')}>
+          <input type="date" className="input" value={from} onChange={e => setFrom(e.target.value)} />
+        </Field>
+        <Field label={t('hr.date_to')}>
+          <input type="date" className="input" value={to} onChange={e => setTo(e.target.value)} />
+        </Field>
+        <div className="ms-auto grid grid-cols-3 gap-3">
+          <PerfStat label={t('hr.perf_invoices')} value={totals.invoices.toLocaleString()} />
+          <PerfStat label={t('hr.perf_items')} value={totals.items_sold.toLocaleString()} />
+          <PerfStat label={t('hr.perf_revenue')} value={fmt(totals.revenue)} />
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-3 py-2.5 text-center w-12">#</th>
+              <th className="px-3 py-2.5 text-start">{t('hr.perf_seller')}</th>
+              <th className="px-3 py-2.5 text-end">{t('hr.perf_invoices')}</th>
+              <th className="px-3 py-2.5 text-end">{t('hr.perf_items')}</th>
+              <th className="px-3 py-2.5 text-end">{t('hr.perf_avg_ticket')}</th>
+              <th className="px-3 py-2.5 text-end">{t('hr.perf_revenue')}</th>
+              <th className="px-3 py-2.5 text-start w-1/4">{t('hr.perf_share')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">…</td></tr>}
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('hr.no_sales_in_range')}</td></tr>
+            )}
+            {rows.map((r, idx) => {
+              const name = (i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en) || r.username || `#${r.seller_id}`
+              const pct = (r.revenue / max) * 100
+              return (
+                <tr key={r.seller_id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-3 py-2.5 text-center">
+                    {idx === 0 ? <span title={t('hr.perf_top') as string}>👑</span> : <span className="text-slate-400">{idx + 1}</span>}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium text-slate-800">{name}</div>
+                    {r.seller_role && <div className="text-[11px] text-slate-400 capitalize">{r.seller_role}</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-end font-mono">{r.invoices.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-end font-mono">{r.items_sold.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 text-end font-mono">{fmt(r.avg_ticket)}</td>
+                  <td className="px-3 py-2.5 text-end font-mono font-semibold">{fmt(r.revenue)}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-pharma-500 to-emerald-500" style={{ width: `${pct}%` }} />
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function PerfStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-slate-50 rounded-lg px-3 py-2 text-end">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="font-bold text-slate-800 text-base">{value}</div>
     </div>
   )
 }

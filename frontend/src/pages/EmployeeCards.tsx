@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import QRCode from 'qrcode'
+import JsBarcode from 'jsbarcode'
 import { Printer } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -88,16 +89,30 @@ export default function EmployeeCards() {
             {e.role && <div className="text-xs text-slate-500 capitalize">{e.role}</div>}
             <div className="my-3">
               {qrs[e.clock_code!] ? (
-                <img src={qrs[e.clock_code!]} alt={e.clock_code!} className="w-44 h-44" />
+                <img src={qrs[e.clock_code!]} alt={e.clock_code!} className="w-40 h-40" />
               ) : (
-                <div className="w-44 h-44 bg-slate-100 animate-pulse rounded" />
+                <div className="w-40 h-40 bg-slate-100 animate-pulse rounded" />
               )}
             </div>
-            <div className="font-mono text-[11px] text-slate-700 break-all">{e.clock_code}</div>
+            <Barcode value={e.clock_code!} />
+            <div className="font-mono text-[11px] text-slate-700 break-all mt-1">{e.clock_code}</div>
             <div className="text-[10px] text-slate-400 mt-1">{t('hr.scan_to_clock')}</div>
           </div>
         ))}
       </div>
     </div>
   )
+}
+
+function Barcode({ value }: { value: string }) {
+  const ref = useRef<SVGSVGElement>(null)
+  useEffect(() => {
+    if (!ref.current || !value) return
+    try {
+      JsBarcode(ref.current, value, {
+        format: 'CODE128', width: 1.4, height: 40, displayValue: false, margin: 0,
+      })
+    } catch {}
+  }, [value])
+  return <svg ref={ref} className="w-44 h-12" />
 }
