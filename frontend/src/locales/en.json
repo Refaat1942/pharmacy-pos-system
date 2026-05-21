@@ -120,7 +120,21 @@
     "role_manager": "Manager",
     "role_accountant": "Accountant",
     "role_delivery": "Delivery",
-    "role_cleaner": "Cleaner"
+    "role_cleaner": "Cleaner",
+    "clock_code": "Clock Code",
+    "open_clock": "Clock Screen",
+    "print_cards": "Print QR Cards",
+    "scan_to_clock": "Scan to clock in/out"
+  },
+  "clock": {
+    "title": "Employee Time Clock",
+    "prompt": "Scan your QR card or type your code, then press Enter",
+    "placeholder": "EMP-0000-XXXXXX",
+    "waiting": "Waiting for scan…",
+    "checked_in_at": "Checked in at {{time}}",
+    "checked_out_at": "Checked out at {{time}}",
+    "unknown_code": "Unknown employee code",
+    "hint": "This screen can be left open on a tablet near the entrance."
   },
   "reports": {
     "title": "Reports & Analytics",

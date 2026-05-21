@@ -3,9 +3,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import date, datetime, time
+import hashlib
+import secrets
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user
+
+
+def _generate_clock_code(eid: int, name: str) -> str:
+    """Deterministic-ish, short, scanner-friendly employee code."""
+    raw = f"{eid}|{name}|{secrets.token_hex(4)}"
+    short = hashlib.md5(raw.encode("utf-8")).hexdigest()[:6].upper()
+    return f"EMP-{eid:04d}-{short}"
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
@@ -59,7 +68,81 @@ def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, [body.name, body.role, body.branch_id, body.base_salary, body.hire_date,
               body.phone, body.national_id, body.notes, body.active])
-        row = dict(cur.fetchone()); conn.commit(); return row
+        row = dict(cur.fetchone())
+        # Assign a unique clock_code now that we know the new id
+        code = _generate_clock_code(row["id"], body.name)
+        cur.execute(
+            "UPDATE employees SET clock_code=%s WHERE id=%s RETURNING *",
+            [code, row["id"]],
+        )
+        row = dict(cur.fetchone())
+        conn.commit(); return row
+    finally:
+        cur.close(); conn.close()
+
+
+# ─── Self-service clock-in / clock-out ─────────────────────────────────────
+class ClockIn(BaseModel):
+    code: str = Field(min_length=3, max_length=60)
+
+
+@router.post("/clock")
+def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
+    """Toggle attendance for the employee owning `code`. First scan of the day
+    creates a check-in; second scan sets check-out and computes hours. Any
+    authenticated tenant user can call this so a shared tablet near the door
+    works regardless of which cashier is logged in."""
+    code = (body.code or "").strip().upper()
+    if not code:
+        raise HTTPException(400, "Code required")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT id, name, role, branch_id, active FROM employees WHERE UPPER(clock_code)=%s",
+            [code],
+        )
+        emp = cur.fetchone()
+        if not emp:
+            raise HTTPException(404, "Unknown employee code")
+        if not emp["active"]:
+            raise HTTPException(400, "Employee is inactive")
+        today = date.today()
+        now_t = datetime.now().time().replace(microsecond=0)
+        actor_id = current_user.get("id") if isinstance(current_user, dict) else getattr(current_user, "id", None)
+        cur.execute(
+            """INSERT INTO attendance(employee_id, work_date, check_in, status, punched_by_user_id, punched_at)
+               VALUES (%s, %s, %s, 'present', %s, now())
+               ON CONFLICT (employee_id, work_date) DO NOTHING
+               RETURNING *""",
+            [emp["id"], today, now_t, actor_id],
+        )
+        inserted = cur.fetchone()
+        if inserted:
+            row = dict(inserted)
+            action = "check_in"
+        else:
+            cur.execute(
+                "SELECT * FROM attendance WHERE employee_id=%s AND work_date=%s FOR UPDATE",
+                [emp["id"], today],
+            )
+            existing = cur.fetchone()
+            hours = _calc_hours(existing["check_in"], now_t)
+            cur.execute(
+                """UPDATE attendance
+                      SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=now()
+                    WHERE id=%s RETURNING *""",
+                [now_t, hours, actor_id, existing["id"]],
+            )
+            row = dict(cur.fetchone())
+            action = "check_out" if existing["check_out"] is None else "check_out_updated"
+        conn.commit()
+        return {
+            "action": action,
+            "employee": {"id": emp["id"], "name": emp["name"], "role": emp["role"]},
+            "attendance": row,
+            "time": now_t.strftime("%H:%M"),
+        }
     finally:
         cur.close(); conn.close()
 

@@ -240,7 +240,21 @@
     "role_manager": "مدير فرع",
     "role_accountant": "محاسب",
     "role_delivery": "مندوب توصيل",
-    "role_cleaner": "عامل نظافة"
+    "role_cleaner": "عامل نظافة",
+    "clock_code": "كود الحضور",
+    "open_clock": "شاشة الحضور",
+    "print_cards": "طباعة بطاقات QR",
+    "scan_to_clock": "امسح للدخول/الخروج"
+  },
+  "clock": {
+    "title": "ساعة حضور الموظفين",
+    "prompt": "امسح بطاقة QR أو اكتب كودك ثم اضغط Enter",
+    "placeholder": "EMP-0000-XXXXXX",
+    "waiting": "في انتظار المسح…",
+    "checked_in_at": "تم تسجيل الدخول الساعة {{time}}",
+    "checked_out_at": "تم تسجيل الخروج الساعة {{time}}",
+    "unknown_code": "كود موظف غير معروف",
+    "hint": "يمكن ترك هذه الشاشة مفتوحة على جهاز لوحي بجوار المدخل."
   },
   "reports": {
     "title": "التقارير والتحليلات",

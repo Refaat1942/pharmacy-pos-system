@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert } from 'lucide-react'
+import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert, QrCode, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -10,6 +10,7 @@ type Employee = {
   id: number; name: string; role: string | null; branch_id: number | null
   base_salary: number; hire_date: string | null; phone: string | null
   national_id: string | null; active: boolean; notes: string | null
+  clock_code: string | null
   branch_name_en?: string; branch_name_ar?: string
 }
 type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null }
@@ -95,7 +96,13 @@ function EmployeesTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <a href="/clock" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
+          <QrCode size={14} /> {t('hr.open_clock')}
+        </a>
+        <a href="/hr/cards" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
+          <Printer size={14} /> {t('hr.print_cards')}
+        </a>
         <button onClick={() => setEditing({ active: true, base_salary: 0 })} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
           <UserPlus size={14} /> {t('hr.add_employee')}
         </button>
@@ -110,12 +117,13 @@ function EmployeesTab() {
               <th className="px-3 py-2.5 text-end">{t('hr.base_salary')}</th>
               <th className="px-3 py-2.5 text-start">{t('hr.hire_date')}</th>
               <th className="px-3 py-2.5 text-start">{t('hr.phone')}</th>
+              <th className="px-3 py-2.5 text-start">{t('hr.clock_code')}</th>
               <th className="px-3 py-2.5 text-center">{t('hr.status')}</th>
               <th className="px-3 py-2.5 text-center">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_employees')}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('hr.no_employees')}</td></tr>}
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-medium">{r.name}</td>
@@ -124,6 +132,7 @@ function EmployeesTab() {
                 <td className="px-3 py-2.5 text-end font-mono">{fmt(r.base_salary)}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.hire_date || '—'}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.phone || '—'}</td>
+                <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{r.clock_code || '—'}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                     {r.active ? t('hr.active') : t('hr.inactive')}

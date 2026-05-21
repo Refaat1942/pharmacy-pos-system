@@ -17,6 +17,8 @@ import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import Shifts from './pages/Shifts'
 import HR from './pages/HR'
+import Clock from './pages/Clock'
+import EmployeeCards from './pages/EmployeeCards'
 import PlatformLogin from './pages/PlatformLogin'
 import Platform from './pages/Platform'
 
@@ -56,6 +58,8 @@ function AppRoutes() {
       <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
       <Route path="/shifts" element={<ProtectedRoute><Shifts /></ProtectedRoute>} />
       <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
+      <Route path="/hr/cards" element={<ProtectedRoute><EmployeeCards /></ProtectedRoute>} />
+      <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

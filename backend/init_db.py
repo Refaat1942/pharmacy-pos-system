@@ -403,6 +403,16 @@ ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_barcode   BOOLEAN DEF
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_morning_start TIME DEFAULT '06:00';
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_evening_start TIME DEFAULT '14:00';
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_night_start   TIME DEFAULT '22:00';
+
+-- Employee clock code for QR/barcode self-service attendance
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS clock_code VARCHAR(40);
+CREATE UNIQUE INDEX IF NOT EXISTS employees_clock_code_key ON employees(clock_code) WHERE clock_code IS NOT NULL;
+-- Backfill stable codes for any employees that don't have one yet
+UPDATE employees
+   SET clock_code = 'EMP-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(name,'') || 'fratelanza'), 1, 6)
+ WHERE clock_code IS NULL;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_by_user_id INTEGER;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_at TIMESTAMP;
 """
 
 
