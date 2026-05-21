@@ -20,6 +20,9 @@ type Product = {
   active: boolean
   branch_name_en?: string
   branch_name_ar?: string
+  pack_size?: number | null
+  sub_unit?: string | null
+  sub_price?: number | null
 }
 
 type Movement = {
