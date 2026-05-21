@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowRightLeft, Plus, Check, X, Eye, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, Plus, Check, X, Eye, Trash2, ScanLine } from 'lucide-react'
 import Layout from '../components/Layout'
 import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../lib/api'
 import api from '../lib/api'
@@ -197,6 +197,13 @@ interface CartLine {
   barcode: string
   stock: number
   quantity: number
+  unit: string
+  sub_unit?: string | null
+  pack_size?: number | null
+}
+
+function unitLabel(l: { unit: string; sub_unit?: string | null; pack_size?: number | null }) {
+  return (l.pack_size && l.pack_size > 1 && l.sub_unit) ? l.sub_unit : (l.unit || 'unit')
 }
 
 function CreateTransferModal({
@@ -217,6 +224,11 @@ function CreateTransferModal({
   const [results, setResults] = useState<any[]>([])
   const [lines, setLines] = useState<CartLine[]>([])
   const [saving, setSaving] = useState(false)
+  const [scan, setScan] = useState('')
+  const [scanError, setScanError] = useState('')
+  const scanRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { scanRef.current?.focus() }, [fromBranch])
 
   useEffect(() => {
     if (!fromBranch) {
@@ -232,20 +244,59 @@ function CreateTransferModal({
     return () => clearTimeout(timer)
   }, [search, fromBranch])
 
-  const addLine = (p: any) => {
-    if (lines.find((l) => l.product_id === p.id)) return
-    setLines([...lines, {
-      product_id: p.id,
-      name_en: p.name_en,
-      name_ar: p.name_ar,
-      barcode: p.barcode,
-      stock: p.stock,
-      quantity: 1,
-    }])
+  const addLine = (p: any, qty = 1) => {
+    setLines((prev) => {
+      const existing = prev.find((l) => l.product_id === p.id)
+      if (existing) {
+        const next = Math.min(p.stock, existing.quantity + qty)
+        return prev.map((l) => l.product_id === p.id ? { ...l, quantity: next } : l)
+      }
+      return [...prev, {
+        product_id: p.id,
+        name_en: p.name_en,
+        name_ar: p.name_ar,
+        barcode: p.barcode,
+        stock: p.stock,
+        quantity: Math.min(p.stock, qty) || 1,
+        unit: p.unit,
+        sub_unit: p.sub_unit,
+        pack_size: p.pack_size,
+      }]
+    })
   }
   const updateQty = (pid: number, qty: number) =>
     setLines(lines.map((l) => l.product_id === pid ? { ...l, quantity: qty } : l))
   const removeLine = (pid: number) => setLines(lines.filter((l) => l.product_id !== pid))
+
+  const handleScan = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return
+    e.preventDefault()
+    const code = scan.trim()
+    if (!code || !fromBranch) return
+    setScanError('')
+    try {
+      const r = await api.get('/inventory/items', { params: { q: code, branch_id: fromBranch } })
+      const norm = code.toLowerCase()
+      const exact = r.data.find((p: any) => (p.barcode || '').trim().toLowerCase() === norm)
+      let p = exact || (r.data.length === 1 ? r.data[0] : null)
+      if (!p) {
+        setScanError(
+          r.data.length > 1
+            ? (t('transfers.scan_ambiguous') as string)
+            : (t('transfers.scan_not_found') as string)
+        )
+        return
+      }
+      if (Number(p.stock) <= 0) {
+        setScanError(t('transfers.scan_no_stock') as string)
+        return
+      }
+      addLine(p, 1)
+      setScan('')
+    } catch {
+      setScanError(t('transfers.scan_not_found') as string)
+    }
+  }
 
   const submit = async () => {
     if (!fromBranch || !toBranch || lines.length === 0) {
@@ -326,6 +377,27 @@ function CreateTransferModal({
           </div>
 
           <div className="border-t pt-4 mt-2">
+            <label className="text-xs text-slate-600 font-medium flex items-center gap-1">
+              <ScanLine size={14} className="text-pharma-600" />
+              {t('transfers.scan')}
+            </label>
+            <div className="flex gap-2 mt-1">
+              <input
+                ref={scanRef}
+                value={scan}
+                onChange={(e) => { setScan(e.target.value); setScanError('') }}
+                onKeyDown={handleScan}
+                disabled={!fromBranch}
+                className="input flex-1 font-mono"
+                placeholder={t('transfers.scan_placeholder') as string}
+                autoComplete="off"
+              />
+            </div>
+            {scanError && <div className="text-xs text-red-600 mt-1">{scanError}</div>}
+            <p className="text-[11px] text-slate-400 mt-1">{t('transfers.scan_hint')}</p>
+          </div>
+
+          <div className="border-t pt-4 mt-4">
             <label className="text-xs text-slate-600 font-medium">{t('transfers.add_products')}</label>
             <input
               value={search}
@@ -340,10 +412,10 @@ function CreateTransferModal({
                   <button
                     key={p.id}
                     onClick={() => addLine(p)}
-                    className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between"
+                    className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between gap-2"
                   >
-                    <span>{i18n.language === 'ar' ? p.name_ar : p.name_en}</span>
-                    <span className="text-xs text-slate-500">{p.barcode} · {t('transfers.stock')}: {p.stock}</span>
+                    <span className="flex-1 truncate">{i18n.language === 'ar' ? p.name_ar : p.name_en}</span>
+                    <span className="text-xs text-slate-500 shrink-0">{p.barcode} · {t('transfers.stock')}: {p.stock} {unitLabel(p)}</span>
                   </button>
                 ))}
               </div>
@@ -355,18 +427,21 @@ function CreateTransferModal({
             {lines.length === 0 && <div className="text-sm text-slate-400 py-3 text-center">{t('transfers.no_items')}</div>}
             {lines.map((l) => (
               <div key={l.product_id} className="flex items-center gap-2 py-2 border-b border-slate-100">
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
-                  <div className="text-xs text-slate-500">{l.barcode} · {t('transfers.stock')}: {l.stock}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
+                  <div className="text-xs text-slate-500">{l.barcode} · {t('transfers.stock')}: {l.stock} {unitLabel(l)}</div>
                 </div>
-                <input
-                  type="number"
-                  min={1}
-                  max={l.stock}
-                  value={l.quantity}
-                  onChange={(e) => updateQty(l.product_id, Math.max(1, Math.min(l.stock, Number(e.target.value))))}
-                  className="input w-20 text-end"
-                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={l.stock}
+                    value={l.quantity}
+                    onChange={(e) => updateQty(l.product_id, Math.max(1, Math.min(l.stock, Number(e.target.value))))}
+                    className="input w-20 text-end"
+                  />
+                  <span className="text-xs text-slate-500 w-12">{unitLabel(l)}</span>
+                </div>
                 <button onClick={() => removeLine(l.product_id)} className="p-1.5 hover:bg-red-100 rounded text-red-600">
                   <Trash2 size={14} />
                 </button>
@@ -435,7 +510,9 @@ function TransferDetailModal({
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.barcode || '—'}</td>
-                  <td className="px-3 py-2 text-end font-semibold">{it.quantity}</td>
+                  <td className="px-3 py-2 text-end font-semibold">
+                    {it.quantity} <span className="text-xs font-normal text-slate-500">{it.unit_label || ''}</span>
+                  </td>
                 </tr>
               ))}
             </tbody>

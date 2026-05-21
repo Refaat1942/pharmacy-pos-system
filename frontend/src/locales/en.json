@@ -487,7 +487,13 @@
     "confirm_receive": "Mark this transfer as received and update destination stock?",
     "confirm_cancel": "Cancel this transfer and restore stock to source branch?",
     "fill_required": "Please select branches and add at least one item",
-    "same_branch_error": "Source and destination must differ"
+    "same_branch_error": "Source and destination must differ",
+    "scan": "Scan barcode",
+    "scan_placeholder": "Scan or type a barcode and press Enter",
+    "scan_hint": "Tip: focus this field and use a USB/Bluetooth scanner — each scan adds 1 unit.",
+    "scan_not_found": "Product not found in source branch",
+    "scan_no_stock": "Product is out of stock in source branch",
+    "scan_ambiguous": "Multiple products matched — please refine the barcode or use search below"
   },
   "expiry": {
     "title": "Expiry Management",

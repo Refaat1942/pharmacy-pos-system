@@ -260,6 +260,7 @@ export interface TransferItem {
   product_name_ar: string | null
   product_name_en: string | null
   quantity: number
+  unit_label?: string | null
 }
 
 export interface Transfer {

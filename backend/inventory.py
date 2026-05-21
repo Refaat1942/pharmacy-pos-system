@@ -557,7 +557,7 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
             if it.quantity <= 0:
                 raise HTTPException(status_code=400, detail="Quantity must be positive")
             cur.execute(
-                "SELECT id, stock, branch_id, barcode, name_ar, name_en FROM products WHERE id=%s FOR UPDATE",
+                "SELECT id, stock, branch_id, barcode, name_ar, name_en, unit, sub_unit, pack_size FROM products WHERE id=%s FOR UPDATE",
                 (it.product_id,),
             )
             p = cur.fetchone()
@@ -575,11 +575,14 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
                 )
             new_stock = int(p["stock"]) - it.quantity
             cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, p["id"]))
+            # Use sub_unit when pack_size > 1 (stock is tracked in sub-units), else main unit.
+            unit_label = (p.get("sub_unit") if (p.get("pack_size") or 1) > 1 and p.get("sub_unit")
+                          else p.get("unit") or "unit")
             cur.execute(
                 """INSERT INTO stock_transfer_items
-                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity)
-                   VALUES (%s,%s,%s,%s,%s,%s)""",
-                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], it.quantity),
+                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity, unit_label)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], it.quantity, unit_label),
             )
             log_movement(
                 cur, p["id"], req.from_branch_id, "transfer_out",
