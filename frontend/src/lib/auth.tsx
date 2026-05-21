@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
 
 interface AuthUser {
   id: number
@@ -26,9 +26,12 @@ interface AuthContextType {
   logout: () => void
   isAuthenticated: boolean
   hasFeature: (key: string) => boolean
+  refreshTenant: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
+
+const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() =>
@@ -57,9 +60,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem('pharma_token')
     localStorage.removeItem('pharma_user')
+    localStorage.removeItem('pharma_tenant')
     setToken(null)
     setUser(null)
+    setTenant(null)
   }, [])
+
+  const refreshTenant = useCallback(async () => {
+    const t = localStorage.getItem('pharma_token')
+    if (!t) return
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${t}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        // Token expired or tenant suspended — force re-login.
+        localStorage.removeItem('pharma_token')
+        localStorage.removeItem('pharma_user')
+        localStorage.removeItem('pharma_tenant')
+        setToken(null); setUser(null); setTenant(null)
+        return
+      }
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.tenant) {
+        const next: TenantInfo = {
+          slug: data.tenant.slug,
+          name: data.tenant.name,
+          plan: data.tenant.plan,
+          features: data.tenant.features || [],
+          subscription_start: data.tenant.subscription_start,
+          subscription_end: data.tenant.subscription_end,
+        }
+        // If tenant was deactivated server-side, log the user out.
+        if (data.tenant.active === false) {
+          localStorage.removeItem('pharma_token')
+          localStorage.removeItem('pharma_user')
+          localStorage.removeItem('pharma_tenant')
+          setToken(null); setUser(null); setTenant(null)
+          return
+        }
+        localStorage.setItem('pharma_tenant', JSON.stringify(next))
+        setTenant(next)
+      }
+    } catch {
+      /* network blip — keep cached features */
+    }
+  }, [])
+
+  // Refresh on mount, every 60s, and whenever the window regains focus.
+  useEffect(() => {
+    if (!token) return
+    refreshTenant()
+    const id = setInterval(refreshTenant, 60_000)
+    const onFocus = () => refreshTenant()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [token, refreshTenant])
 
   const hasFeature = useCallback((key: string) => {
     // No tenant yet (legacy session) → allow; backend gate is the source of truth.
@@ -71,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [tenant])
 
   return (
-    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature }}>
+    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature, refreshTenant }}>
       {children}
     </AuthContext.Provider>
   )

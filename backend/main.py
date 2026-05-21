@@ -234,7 +234,26 @@ def login(req: LoginRequest, request: Request):
 
 @app.get("/api/auth/me")
 def get_me(current_user=Depends(get_current_user)):
-    return current_user
+    # Return fresh tenant info too, so the frontend can react to feature/plan
+    # changes made in the super-admin without forcing a logout.
+    from platform_db import get_tenant_by_slug, normalize_features, is_tenant_live
+    slug = current_user.get("tenant_slug")
+    tenant_payload = None
+    if slug:
+        t = get_tenant_by_slug(slug)
+        if t:
+            live, reason = is_tenant_live(t)
+            tenant_payload = {
+                "slug": t["slug"],
+                "name": t["name"],
+                "plan": t.get("plan"),
+                "features": normalize_features(t.get("features")),
+                "subscription_start": t["subscription_start"].isoformat() if t.get("subscription_start") else None,
+                "subscription_end": t["subscription_end"].isoformat() if t.get("subscription_end") else None,
+                "active": live,
+                "inactive_reason": None if live else reason,
+            }
+    return {**current_user, "tenant": tenant_payload}
 
 
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────
