@@ -147,7 +147,7 @@ function UsersTab() {
             </thead>
             <tbody>
               {users.map((u) => {
-                const name = i18n.language === 'ar' ? u.name_ar : u.name_en
+                const name = (i18n.language === 'ar' ? u.name_ar : u.name_en) || u.name_en || u.name_ar || u.username
                 const branch = i18n.language === 'ar' ? u.branch_name_ar : u.branch_name_en
                 return (
                   <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/50">

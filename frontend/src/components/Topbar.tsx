@@ -49,7 +49,7 @@ export default function Topbar() {
         className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
       >
         <Globe size={14} />
-        {i18n.language === 'ar' ? 'EN' : 'عر'}
+        {i18n.language === 'ar' ? 'EN' : 'عربي'}
       </button>
 
       <div className="flex items-center gap-2 ps-3 border-s border-slate-200">
