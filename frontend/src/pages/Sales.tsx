@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search } from 'lucide-react'
 import Layout from '../components/Layout'
 import { salesAPI, employeesAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee } from '../lib/api'
@@ -24,7 +25,11 @@ export default function Sales() {
   const [dateTo, setDateTo] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [sellerFilter, setSellerFilter] = useState('')
+  const [invoiceSearch, setInvoiceSearch] = useState('')
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const refundMode = searchParams.get('refund') === '1'
+  const refundFocusRef = useRef<HTMLInputElement>(null)
 
   const loadInvoices = () => {
     setLoading(true)
@@ -49,6 +54,12 @@ export default function Sales() {
     employeesAPI.list().then((r) => setEmployees(r.data)).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (refundMode) {
+      setTimeout(() => refundFocusRef.current?.focus(), 50)
+    }
+  }, [refundMode])
 
   const resetFilters = () => {
     setDateFrom(''); setDateTo(''); setTypeFilter(''); setSellerFilter('')
@@ -126,12 +137,16 @@ export default function Sales() {
   const totalDiscount = completed.reduce((sum, i) => sum + (i.discount || 0), 0)
   const totalGross = completed.reduce((sum, i) => sum + (i.subtotal || 0), 0)
 
+  const visibleInvoices = invoiceSearch.trim()
+    ? invoices.filter((i) => (i.invoice_number || '').toLowerCase().includes(invoiceSearch.trim().toLowerCase()))
+    : invoices
+
   return (
     <Layout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
           {/* Page header */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{t('sales.title')}</h1>
               <p className="text-sm text-gray-500 mt-0.5">
@@ -157,6 +172,41 @@ export default function Sales() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Refund mode banner */}
+          {refundMode && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-start gap-3">
+              <RotateCcw size={18} className="text-amber-700 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-800">{t('sales.refund_banner_title')}</p>
+                <p className="text-xs text-amber-700/80 mt-0.5">{t('sales.refund_banner_hint')}</p>
+              </div>
+              <button
+                onClick={() => setSearchParams({})}
+                className="text-amber-700 hover:text-amber-900 p-1 rounded-lg hover:bg-amber-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* Receipt # quick search */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-3 mb-3 flex items-center gap-3">
+            <Search size={16} className="text-slate-400 ms-1" />
+            <input
+              ref={refundFocusRef}
+              type="text"
+              value={invoiceSearch}
+              onChange={(e) => setInvoiceSearch(e.target.value)}
+              placeholder={t('sales.search_invoice_placeholder')}
+              className="flex-1 text-sm bg-transparent focus:outline-none placeholder:text-slate-400"
+            />
+            {invoiceSearch && (
+              <button onClick={() => setInvoiceSearch('')} className="text-slate-400 hover:text-slate-700 p-1">
+                <X size={14} />
+              </button>
+            )}
           </div>
 
           {/* Filters */}
@@ -209,10 +259,15 @@ export default function Sales() {
               <Loader2 size={24} className="animate-spin me-2" />
               {t('common.loading')}
             </div>
-          ) : invoices.length === 0 ? (
+          ) : visibleInvoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-3">
               <TrendingUp size={48} className="opacity-20" />
-              <p>{t('sales.no_sales')}</p>
+              <p>{invoiceSearch ? t('sales.no_search_match') : t('sales.no_sales')}</p>
+              {invoiceSearch && (
+                <button onClick={() => setInvoiceSearch('')} className="text-xs text-pharma-700 hover:underline">
+                  {t('sales.clear_search')}
+                </button>
+              )}
             </div>
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -243,7 +298,7 @@ export default function Sales() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {invoices.map((inv) => (
+                    {visibleInvoices.map((inv) => (
                       <tr
                         key={inv.id}
                         className="hover:bg-gray-50/80 transition-colors"

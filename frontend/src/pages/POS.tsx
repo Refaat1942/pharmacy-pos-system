@@ -12,7 +12,9 @@ import {
   UserCircle2,
   Trash2,
   CornerDownLeft,
+  RotateCcw,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
@@ -192,8 +194,25 @@ export default function POS() {
       <div className="flex-1 flex overflow-hidden">
         {/* ──────────── Main work area: scan + cart ──────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header strip: title + refund-receipt shortcut */}
+          <div className="px-6 pt-5 pb-2 bg-white">
+            <div className="max-w-3xl mx-auto flex items-center justify-between">
+              <div>
+                <h1 className="text-lg font-bold text-slate-800 leading-tight">{t('nav.pos')}</h1>
+                <p className="text-[11px] text-slate-400 mt-0.5">{t('pos.header_hint')}</p>
+              </div>
+              <Link
+                to="/sales?refund=1"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"
+                title={t('pos.refund_receipt_hint')}
+              >
+                <RotateCcw size={14} /> {t('pos.refund_receipt')}
+              </Link>
+            </div>
+          </div>
+
           {/* Scan / search bar */}
-          <div className="px-6 pt-6 pb-4 bg-white border-b border-slate-200">
+          <div className="px-6 pb-4 bg-white border-b border-slate-200">
             <div className="max-w-3xl mx-auto relative">
               <div className="relative">
                 <ScanLine
