@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2 } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -41,7 +41,7 @@ const roleClass: Record<string, string> = {
 export default function Settings() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [tab, setTab] = useState<'users' | 'branches'>('users')
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy'>('users')
 
   if (user?.role !== 'admin') {
     return (
@@ -65,9 +65,12 @@ export default function Settings() {
         <div className="flex border-b border-slate-200 mb-5">
           <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
           <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
+          <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
         </div>
 
-        {tab === 'users' ? <UsersTab /> : <BranchesTab />}
+        {tab === 'users' && <UsersTab />}
+        {tab === 'branches' && <BranchesTab />}
+        {tab === 'pharmacy' && <PharmacyTab />}
       </div>
     </Layout>
   )
@@ -487,6 +490,254 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
       {children}
+    </div>
+  )
+}
+
+
+// ---------------- Pharmacy / Receipt Tab ----------------
+
+interface PharmacyProfile {
+  name_ar: string
+  name_en: string
+  address_ar: string
+  address_en: string
+  phone: string
+  tax_id: string
+  logo_data_url: string
+  receipt_header_ar: string
+  receipt_header_en: string
+  receipt_footer_ar: string
+  receipt_footer_en: string
+  receipt_language: 'auto' | 'ar' | 'en'
+  receipt_paper: '58mm' | '80mm' | 'A4'
+  receipt_accent: string
+  show_logo: boolean
+  show_tax_id: boolean
+  show_seller: boolean
+  show_customer: boolean
+}
+
+const EMPTY_PROFILE: PharmacyProfile = {
+  name_ar: '', name_en: '', address_ar: '', address_en: '',
+  phone: '', tax_id: '', logo_data_url: '',
+  receipt_header_ar: '', receipt_header_en: '',
+  receipt_footer_ar: 'شكراً لزيارتكم', receipt_footer_en: 'Thank you for your visit',
+  receipt_language: 'auto', receipt_paper: '80mm', receipt_accent: '#0EA5E9',
+  show_logo: true, show_tax_id: true, show_seller: true, show_customer: true,
+}
+
+function PharmacyTab() {
+  const { t } = useTranslation()
+  const [p, setP] = useState<PharmacyProfile>(EMPTY_PROFILE)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+
+  useEffect(() => {
+    api.get<Partial<PharmacyProfile>>('/settings/profile')
+      .then((r) => setP({ ...EMPTY_PROFILE, ...r.data }))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const set = <K extends keyof PharmacyProfile>(k: K, v: PharmacyProfile[K]) =>
+    setP((prev) => ({ ...prev, [k]: v }))
+
+  const onLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 500_000) {
+      alert(t('settings.pharma.logo_too_big'))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => set('logo_data_url', String(reader.result || ''))
+    reader.readAsDataURL(file)
+  }
+
+  const save = async () => {
+    setSaving(true); setSavedMsg('')
+    try {
+      await api.put('/settings/profile', p)
+      setSavedMsg(t('settings.pharma.saved'))
+      setTimeout(() => setSavedMsg(''), 2500)
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="text-slate-500 text-sm">{t('common.loading')}</div>
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Form (2 cols) */}
+      <div className="lg:col-span-2 space-y-5">
+        {/* Branding */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <Receipt size={16} /> {t('settings.pharma.branding')}
+          </h3>
+
+          {/* Logo */}
+          <div className="flex items-start gap-4 mb-5">
+            <div className="w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden bg-slate-50 shrink-0">
+              {p.logo_data_url ? (
+                <img src={p.logo_data_url} alt="logo" className="max-w-full max-h-full object-contain" />
+              ) : (
+                <span className="text-xs text-slate-400 text-center px-2">{t('settings.pharma.no_logo')}</span>
+              )}
+            </div>
+            <div className="flex-1">
+              <label className="inline-flex items-center gap-2 px-3 py-2 bg-pharma-50 text-pharma-700 border border-pharma-200 rounded-lg text-sm font-medium cursor-pointer hover:bg-pharma-100">
+                <Upload size={14} />
+                {t('settings.pharma.upload_logo')}
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onLogoChange} />
+              </label>
+              {p.logo_data_url && (
+                <button onClick={() => set('logo_data_url', '')} className="ms-2 inline-flex items-center gap-1 px-3 py-2 text-red-600 border border-red-200 rounded-lg text-sm hover:bg-red-50">
+                  <Trash2 size={14} /> {t('settings.pharma.remove_logo')}
+                </button>
+              )}
+              <p className="text-xs text-slate-400 mt-2">{t('settings.pharma.logo_hint')}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label={t('settings.pharma.name_ar')}>
+              <input dir="rtl" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.name_ar} onChange={(e) => set('name_ar', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.name_en')}>
+              <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.name_en} onChange={(e) => set('name_en', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.address_ar')}>
+              <input dir="rtl" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.address_ar} onChange={(e) => set('address_ar', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.address_en')}>
+              <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.address_en} onChange={(e) => set('address_en', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.phone')}>
+              <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.phone} onChange={(e) => set('phone', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.tax_id')}>
+              <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.tax_id} onChange={(e) => set('tax_id', e.target.value)} />
+            </Field>
+          </div>
+        </div>
+
+        {/* Receipt design */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-slate-800 mb-4">{t('settings.pharma.receipt_design')}</h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <Field label={t('settings.pharma.language')}>
+              <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_language} onChange={(e) => set('receipt_language', e.target.value as any)}>
+                <option value="auto">{t('settings.pharma.lang_auto')}</option>
+                <option value="ar">العربية</option>
+                <option value="en">English</option>
+              </select>
+            </Field>
+            <Field label={t('settings.pharma.paper')}>
+              <select className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_paper} onChange={(e) => set('receipt_paper', e.target.value as any)}>
+                <option value="58mm">58 mm</option>
+                <option value="80mm">80 mm</option>
+                <option value="A4">A4</option>
+              </select>
+            </Field>
+            <Field label={t('settings.pharma.accent')}>
+              <div className="flex gap-2 items-center">
+                <input type="color" value={p.receipt_accent} onChange={(e) => set('receipt_accent', e.target.value)} className="w-12 h-9 border border-slate-300 rounded-lg cursor-pointer" />
+                <input value={p.receipt_accent} onChange={(e) => set('receipt_accent', e.target.value)} className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono" />
+              </div>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <Field label={t('settings.pharma.header_ar')}>
+              <textarea dir="rtl" rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_header_ar} onChange={(e) => set('receipt_header_ar', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.header_en')}>
+              <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_header_en} onChange={(e) => set('receipt_header_en', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.footer_ar')}>
+              <textarea dir="rtl" rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_footer_ar} onChange={(e) => set('receipt_footer_ar', e.target.value)} />
+            </Field>
+            <Field label={t('settings.pharma.footer_en')}>
+              <textarea rows={2} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.receipt_footer_en} onChange={(e) => set('receipt_footer_en', e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+            <Toggle label={t('settings.pharma.show_logo')} value={p.show_logo} onChange={(v) => set('show_logo', v)} />
+            <Toggle label={t('settings.pharma.show_tax_id')} value={p.show_tax_id} onChange={(v) => set('show_tax_id', v)} />
+            <Toggle label={t('settings.pharma.show_seller')} value={p.show_seller} onChange={(v) => set('show_seller', v)} />
+            <Toggle label={t('settings.pharma.show_customer')} value={p.show_customer} onChange={(v) => set('show_customer', v)} />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button onClick={save} disabled={saving} className="px-5 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm shadow">
+            {saving ? t('common.saving') : t('settings.pharma.save')}
+          </button>
+          {savedMsg && <span className="text-sm text-emerald-600 font-medium">✓ {savedMsg}</span>}
+        </div>
+      </div>
+
+      {/* Live preview */}
+      <div className="lg:col-span-1">
+        <div className="sticky top-4">
+          <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t('settings.pharma.preview')}</h3>
+          <ReceiptPreview profile={p} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer p-2 border border-slate-200 rounded-lg hover:bg-slate-50">
+      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} className="rounded" />
+      <span className="text-xs text-slate-700">{label}</span>
+    </label>
+  )
+}
+
+function ReceiptPreview({ profile: p }: { profile: PharmacyProfile }) {
+  const lang: 'ar' | 'en' = p.receipt_language === 'auto'
+    ? (i18n.language === 'ar' ? 'ar' : 'en')
+    : p.receipt_language
+  const dir = lang === 'ar' ? 'rtl' : 'ltr'
+  const name = lang === 'ar' ? (p.name_ar || p.name_en || '—') : (p.name_en || p.name_ar || '—')
+  const address = lang === 'ar' ? (p.address_ar || p.address_en) : (p.address_en || p.address_ar)
+  const header = lang === 'ar' ? p.receipt_header_ar : p.receipt_header_en
+  const footer = lang === 'ar' ? p.receipt_footer_ar : p.receipt_footer_en
+  const t = (ar: string, en: string) => lang === 'ar' ? ar : en
+
+  return (
+    <div dir={dir} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm text-xs" style={{ fontFamily: 'monospace' }}>
+      <div className="text-center mb-3">
+        {p.show_logo && p.logo_data_url && (
+          <img src={p.logo_data_url} alt="" className="mx-auto mb-2 max-h-14 max-w-[120px] object-contain" />
+        )}
+        <div className="font-bold text-sm">{name}</div>
+        {address && <div className="text-[10px] text-slate-500">{address}</div>}
+        {p.phone && <div className="text-[10px] text-slate-500">{p.phone}</div>}
+        {p.show_tax_id && p.tax_id && <div className="text-[10px] text-slate-500">{t('الرقم الضريبي', 'Tax ID')}: {p.tax_id}</div>}
+        {header && <div className="text-[10px] text-slate-600 mt-1 whitespace-pre-line">{header}</div>}
+      </div>
+      <div className="border-t border-dashed border-slate-300 my-2"></div>
+      <div className="flex justify-between"><span>{t('فاتورة رقم', 'Invoice #')}</span><span style={{ color: p.receipt_accent }}>INV-001</span></div>
+      {p.show_seller && <div className="flex justify-between"><span>{t('البائع', 'Seller')}</span><span>Demo</span></div>}
+      {p.show_customer && <div className="flex justify-between"><span>{t('العميل', 'Customer')}</span><span>—</span></div>}
+      <div className="border-t border-dashed border-slate-300 my-2"></div>
+      <div className="flex justify-between"><span>{t('باراسيتامول', 'Paracetamol')} × 2</span><span>50.00</span></div>
+      <div className="flex justify-between"><span>{t('فيتامين سي', 'Vitamin C')} × 1</span><span>30.00</span></div>
+      <div className="border-t border-dashed border-slate-300 my-2"></div>
+      <div className="flex justify-between font-bold"><span>{t('الصافي', 'Net Total')}</span><span style={{ color: p.receipt_accent }}>{t('ج.م', 'EGP')} 80.00</span></div>
+      <div className="text-center text-[10px] text-slate-500 mt-3 whitespace-pre-line">{footer}</div>
     </div>
   )
 }

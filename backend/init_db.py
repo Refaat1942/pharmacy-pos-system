@@ -6,6 +6,31 @@ from db import get_db_connection
 
 
 SQL = """
+CREATE TABLE IF NOT EXISTS pharmacy_profile (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    name_ar VARCHAR(150),
+    name_en VARCHAR(150),
+    address_ar TEXT,
+    address_en TEXT,
+    phone VARCHAR(40),
+    tax_id VARCHAR(60),
+    logo_data_url TEXT,
+    receipt_header_ar TEXT,
+    receipt_header_en TEXT,
+    receipt_footer_ar TEXT DEFAULT 'شكراً لزيارتكم',
+    receipt_footer_en TEXT DEFAULT 'Thank you for your visit',
+    receipt_language VARCHAR(10) DEFAULT 'auto',
+    receipt_paper VARCHAR(10) DEFAULT '80mm',
+    receipt_accent VARCHAR(20) DEFAULT '#0EA5E9',
+    show_logo BOOLEAN DEFAULT true,
+    show_tax_id BOOLEAN DEFAULT true,
+    show_seller BOOLEAN DEFAULT true,
+    show_customer BOOLEAN DEFAULT true,
+    updated_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT pharmacy_profile_singleton CHECK (id = 1)
+);
+INSERT INTO pharmacy_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS branches (
     id SERIAL PRIMARY KEY,
     name_ar VARCHAR(100) NOT NULL,

@@ -8,6 +8,120 @@ from auth import hash_password
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
+
+# ---------------- Pharmacy Profile / Receipt Branding ----------------
+
+PROFILE_FIELDS = [
+    "name_ar", "name_en", "address_ar", "address_en", "phone", "tax_id",
+    "logo_data_url", "receipt_header_ar", "receipt_header_en",
+    "receipt_footer_ar", "receipt_footer_en", "receipt_language",
+    "receipt_paper", "receipt_accent",
+    "show_logo", "show_tax_id", "show_seller", "show_customer",
+]
+
+
+class ProfilePatch(BaseModel):
+    name_ar: Optional[str] = None
+    name_en: Optional[str] = None
+    address_ar: Optional[str] = None
+    address_en: Optional[str] = None
+    phone: Optional[str] = None
+    tax_id: Optional[str] = None
+    logo_data_url: Optional[str] = None  # data: URI, max ~500 KB
+    receipt_header_ar: Optional[str] = None
+    receipt_header_en: Optional[str] = None
+    receipt_footer_ar: Optional[str] = None
+    receipt_footer_en: Optional[str] = None
+    receipt_language: Optional[str] = None  # 'auto' | 'ar' | 'en'
+    receipt_paper: Optional[str] = None     # '58mm' | '80mm' | 'A4'
+    receipt_accent: Optional[str] = None    # hex color
+    show_logo: Optional[bool] = None
+    show_tax_id: Optional[bool] = None
+    show_seller: Optional[bool] = None
+    show_customer: Optional[bool] = None
+
+
+def _ensure_profile_row(cur):
+    cur.execute(
+        "INSERT INTO pharmacy_profile (id) VALUES (1) ON CONFLICT (id) DO NOTHING"
+    )
+
+
+@router.get("/profile")
+def get_profile(current_user: dict = Depends(get_current_user)):
+    """Anyone signed in can read the profile (needed to render receipts)."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        _ensure_profile_row(cur)
+        conn.commit()
+        cur.execute(
+            f"SELECT {', '.join(PROFILE_FIELDS)} FROM pharmacy_profile WHERE id = 1"
+        )
+        return dict(cur.fetchone() or {})
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.put("/profile")
+def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_user)):
+    _admin(current_user)
+    data = body.model_dump(exclude_unset=True)
+
+    # Validate logo if provided. SVG is rejected because data:image/svg+xml
+    # can carry executable script and would be rendered as stored XSS.
+    if "logo_data_url" in data and data["logo_data_url"]:
+        url = data["logo_data_url"]
+        allowed_prefixes = (
+            "data:image/png;base64,",
+            "data:image/jpeg;base64,",
+            "data:image/jpg;base64,",
+            "data:image/webp;base64,",
+        )
+        if not url.startswith(allowed_prefixes):
+            raise HTTPException(
+                400,
+                "Logo must be a base64-encoded PNG, JPEG, or WebP data URI (SVG not allowed).",
+            )
+        if len(url) > 700_000:
+            raise HTTPException(400, "Logo too large (max ~500 KB). Please resize.")
+
+    if "receipt_language" in data and data["receipt_language"] not in ("auto", "ar", "en"):
+        raise HTTPException(400, "receipt_language must be auto, ar, or en")
+    if "receipt_paper" in data and data["receipt_paper"] not in ("58mm", "80mm", "A4"):
+        raise HTTPException(400, "receipt_paper must be 58mm, 80mm, or A4")
+
+    if "receipt_accent" in data and data["receipt_accent"]:
+        import re
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", data["receipt_accent"]):
+            raise HTTPException(400, "receipt_accent must be a 6-digit hex color like #0EA5E9")
+
+    if not data:
+        return {"ok": True}
+
+    fields = []
+    values = []
+    for k, v in data.items():
+        fields.append(f"{k} = %s")
+        values.append(v)
+    fields.append("updated_at = NOW()")
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        _ensure_profile_row(cur)
+        cur.execute(
+            f"UPDATE pharmacy_profile SET {', '.join(fields)} WHERE id = 1",
+            values,
+        )
+        conn.commit()
+        return {"ok": True}
+    finally:
+        cur.close()
+        conn.close()
+
+
 ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier"}
 
 
