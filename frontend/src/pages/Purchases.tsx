@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Package, Plus, Eye, Check, X, Trash2 } from 'lucide-react'
+import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown } from 'lucide-react'
 import Layout from '../components/Layout'
-import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem } from '../lib/api'
+import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 
@@ -17,6 +17,7 @@ export default function Purchases() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('')
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [replenishing, setReplenishing] = useState(false)
   const [viewing, setViewing] = useState<PurchaseOrder | null>(null)
 
   const load = () => {
@@ -60,9 +61,18 @@ export default function Purchases() {
             <Package className="text-pharma-600" />
             {t('purchases.title')}
           </h1>
-          <button onClick={() => setCreating(true)} className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-            <Plus size={16} />{t('purchases.new')}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setReplenishing(true)}
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+              title={t('purchases.replenish_hint') as string}
+            >
+              <AlertTriangle size={16} />{t('purchases.replenish')}
+            </button>
+            <button onClick={() => setCreating(true)} className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+              <Plus size={16} />{t('purchases.new')}
+            </button>
+          </div>
         </div>
 
         <div className="mb-4 flex gap-2">
@@ -132,6 +142,14 @@ export default function Purchases() {
           branches={branches}
           onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); load() }}
+        />
+      )}
+      {replenishing && (
+        <ReplenishmentModal
+          suppliers={suppliers}
+          branches={branches}
+          onClose={() => setReplenishing(false)}
+          onSaved={() => { setReplenishing(false); load() }}
         />
       )}
       {viewing && (
@@ -377,6 +395,303 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canManage }: {
             </button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────── Replenishment / Auto-PO ───────────
+
+interface ReplLine extends ReplenishmentItem {
+  selected: boolean
+  qty: number
+  cost: number
+}
+
+function ReplenishmentModal({
+  suppliers, branches, onClose, onSaved,
+}: { suppliers: Supplier[]; branches: Branch[]; onClose: () => void; onSaved: () => void }) {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  const [branchId, setBranchId] = useState<number | ''>(user?.branch_id || '')
+  const [supplierFilter, setSupplierFilter] = useState<number | ''>('')
+  const [onlyZero, setOnlyZero] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [lines, setLines] = useState<ReplLine[]>([])
+  const [poSupplier, setPoSupplier] = useState<number | ''>('')
+  const [notes, setNotes] = useState('')
+  const [working, setWorking] = useState(false)
+
+  const load = () => {
+    setLoading(true)
+    purchasesAPI.replenishment({
+      branch_id: branchId ? Number(branchId) : undefined,
+      supplier_id: supplierFilter ? Number(supplierFilter) : undefined,
+      only_zero: onlyZero || undefined,
+    })
+      .then((r) => setLines(r.data.map((it) => ({
+        ...it,
+        selected: true,
+        qty: it.suggested_quantity,
+        cost: Number(it.cost) || 0,
+      }))))
+      .catch(() => setLines([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [branchId, supplierFilter, onlyZero])
+
+  const update = (id: number, patch: Partial<ReplLine>) =>
+    setLines((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l))
+  const toggleAll = (v: boolean) => setLines((prev) => prev.map((l) => ({ ...l, selected: v })))
+
+  // When a PO supplier is chosen, lock out lines that belong to a *different* supplier
+  // (lines with no supplier set remain selectable since they're "unassigned").
+  useEffect(() => {
+    if (!poSupplier) return
+    setLines((prev) => prev.map((l) => (
+      l.supplier_id && l.supplier_id !== Number(poSupplier)
+        ? { ...l, selected: false }
+        : l
+    )))
+  }, [poSupplier])
+
+  const selected = lines.filter((l) => l.selected && l.qty > 0)
+  const totalCost = useMemo(
+    () => selected.reduce((s, l) => s + l.qty * l.cost, 0),
+    [selected],
+  )
+  const allSelected = lines.length > 0 && lines.every((l) => l.selected)
+
+  // Group by supplier for visual grouping
+  const groups = useMemo(() => {
+    const m = new Map<string, ReplLine[]>()
+    lines.forEach((l) => {
+      const key = l.supplier_name || t('purchases.unassigned_supplier') as string
+      if (!m.has(key)) m.set(key, [])
+      m.get(key)!.push(l)
+    })
+    return Array.from(m.entries())
+  }, [lines, t])
+
+  const downloadExcel = async () => {
+    if (selected.length === 0) { alert(t('purchases.repl_select_items')); return }
+    setWorking(true)
+    try {
+      const res = await purchasesAPI.exportReplenishment({
+        supplier_id: poSupplier ? Number(poSupplier) : undefined,
+        branch_id: branchId ? Number(branchId) : undefined,
+        notes: notes || undefined,
+        items: selected.map((l) => ({ product_id: l.id, quantity: l.qty, unit_cost: l.cost })),
+      })
+      const blob = new Blob([res.data as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const sup = suppliers.find((s) => s.id === Number(poSupplier))
+      a.download = `PO_${(sup?.name || 'all').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    } finally { setWorking(false) }
+  }
+
+  const createDraftPO = async () => {
+    if (!poSupplier) { alert(t('purchases.repl_need_supplier')); return }
+    if (!branchId) { alert(t('purchases.repl_need_branch')); return }
+    if (selected.length === 0) { alert(t('purchases.repl_select_items')); return }
+    setWorking(true)
+    try {
+      const r = await purchasesAPI.create({
+        supplier_id: Number(poSupplier),
+        branch_id: Number(branchId),
+        notes: notes || undefined,
+        items: selected.map((l) => ({
+          product_id: l.id,
+          barcode: l.barcode || undefined,
+          product_name_ar: l.name_ar,
+          product_name_en: l.name_en,
+          quantity: l.qty,
+          unit_cost: l.cost,
+          expiry_date: undefined,
+        })),
+      })
+      alert(`${t('purchases.repl_po_created')}: ${r.data.po_number}`)
+      onSaved()
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Error')
+    } finally { setWorking(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg flex items-center gap-2">
+            <AlertTriangle className="text-amber-500" size={20} />
+            {t('purchases.replenish_title')}
+          </h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+
+        {/* Filters */}
+        <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('purchases.branch')}</label>
+            <select
+              value={branchId}
+              onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')}
+              disabled={!isAdmin}
+              className="input w-full mt-1"
+            >
+              <option value="">{t('purchases.all_branches')}</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('purchases.filter_supplier')}</label>
+            <select
+              value={supplierFilter}
+              onChange={(e) => {
+                const v = e.target.value ? Number(e.target.value) : ''
+                setSupplierFilter(v)
+                // Mirror filter into the PO supplier so the draft PO + Excel header are consistent
+                if (v) setPoSupplier(v)
+              }}
+              className="input w-full mt-1"
+            >
+              <option value="">{t('purchases.all_suppliers')}</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
+              <input type="checkbox" checked={onlyZero} onChange={(e) => setOnlyZero(e.target.checked)} />
+              {t('purchases.only_out_of_stock')}
+            </label>
+          </div>
+          <div className="flex items-end justify-end text-xs text-slate-500">
+            {lines.length} {t('purchases.items_need')}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {loading && <div className="text-center py-10 text-slate-400">{t('common.loading')}</div>}
+          {!loading && lines.length === 0 && (
+            <div className="text-center py-10 text-slate-400">
+              <Check size={32} className="mx-auto mb-2 text-emerald-500" />
+              {t('purchases.repl_all_ok')}
+            </div>
+          )}
+          {!loading && lines.length > 0 && (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100 text-xs uppercase text-slate-600 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 w-8">
+                    <input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} />
+                  </th>
+                  <th className="px-3 py-2 text-start">{t('purchases.col_name')}</th>
+                  <th className="px-3 py-2 text-start">{t('purchases.col_barcode')}</th>
+                  <th className="px-3 py-2 text-end">{t('purchases.in_stock')}</th>
+                  <th className="px-3 py-2 text-end">{t('purchases.min_stock')}</th>
+                  <th className="px-3 py-2 text-end">{t('purchases.order_qty')}</th>
+                  <th className="px-3 py-2 text-end">{t('purchases.cost')}</th>
+                  <th className="px-3 py-2 text-end">{t('purchases.line_total')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map(([sup, gLines]) => (
+                  <>
+                    <tr key={`g-${sup}`} className="bg-slate-50">
+                      <td colSpan={8} className="px-3 py-1.5 text-xs font-semibold text-slate-600">{sup}</td>
+                    </tr>
+                    {gLines.map((l) => (
+                      <tr key={l.id} className={`border-t border-slate-100 ${l.stock <= 0 ? 'bg-red-50/40' : ''}`}>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" checked={l.selected} onChange={(e) => update(l.id, { selected: e.target.checked })} />
+                        </td>
+                        <td className="px-3 py-2">{i18n.language === 'ar' ? l.name_ar : l.name_en}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-slate-500">{l.barcode || '—'}</td>
+                        <td className={`px-3 py-2 text-end ${l.stock <= 0 ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>
+                          {l.stock} {l.unit_label}
+                        </td>
+                        <td className="px-3 py-2 text-end text-slate-500">{l.min_stock}</td>
+                        <td className="px-3 py-2 text-end">
+                          <input
+                            type="number"
+                            min={1}
+                            value={l.qty}
+                            onChange={(e) => update(l.id, { qty: Math.max(1, Number(e.target.value)) })}
+                            className="input w-20 text-end"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-end">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={l.cost}
+                            onChange={(e) => update(l.id, { cost: Math.max(0, Number(e.target.value)) })}
+                            className="input w-24 text-end"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-end font-semibold">{(l.qty * l.cost).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Action bar */}
+        <div className="border-t bg-slate-50 px-5 py-3 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('purchases.supplier')}</label>
+            <select
+              value={poSupplier}
+              onChange={(e) => setPoSupplier(e.target.value ? Number(e.target.value) : '')}
+              className="input w-full mt-1"
+            >
+              <option value="">--</option>
+              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="md:col-span-2">
+            <label className="text-xs text-slate-600 font-medium">{t('purchases.notes_optional')}</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full mt-1" />
+          </div>
+          <div className="text-end">
+            <div className="text-xs text-slate-500">{t('purchases.selected_total')}</div>
+            <div className="text-lg font-bold text-pharma-700">{totalCost.toFixed(2)}</div>
+          </div>
+        </div>
+
+        <div className="px-5 py-3 border-t flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">
+            {t('common.cancel')}
+          </button>
+          <button
+            onClick={downloadExcel}
+            disabled={working || selected.length === 0}
+            className="px-4 py-2 text-sm rounded-lg border border-emerald-200 bg-white text-emerald-700 font-medium hover:bg-emerald-50 disabled:opacity-50 flex items-center gap-2"
+          >
+            <FileDown size={14} />
+            {t('purchases.download_excel')}
+          </button>
+          <button
+            onClick={createDraftPO}
+            disabled={working || selected.length === 0 || !poSupplier}
+            className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50"
+          >
+            {working ? t('common.saving') : t('purchases.create_draft_po')}
+          </button>
+        </div>
       </div>
     </div>
   )

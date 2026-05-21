@@ -387,6 +387,34 @@ export const purchasesAPI = {
   }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number }>('/purchase-orders', data),
   receive: (id: number) => api.post(`/purchase-orders/${id}/receive`),
   cancel: (id: number) => api.post(`/purchase-orders/${id}/cancel`),
+  replenishment: (params: { branch_id?: number; supplier_id?: number; only_zero?: boolean } = {}) =>
+    api.get<ReplenishmentItem[]>('/purchase-orders/replenishment', { params }),
+  exportReplenishment: (data: {
+    supplier_id?: number
+    branch_id?: number
+    notes?: string
+    items: { product_id: number; quantity: number; unit_cost: number }[]
+  }) => api.post('/purchase-orders/replenishment/export', data, { responseType: 'blob' }),
+}
+
+export interface ReplenishmentItem {
+  id: number
+  barcode: string | null
+  name_ar: string
+  name_en: string
+  unit: string | null
+  sub_unit: string | null
+  pack_size: number | null
+  unit_label: string
+  stock: number
+  min_stock: number
+  cost: number
+  branch_id: number
+  supplier_id: number | null
+  supplier_name: string | null
+  branch_name_en: string | null
+  branch_name_ar: string | null
+  suggested_quantity: number
 }
 
 export const expiryAPI = {

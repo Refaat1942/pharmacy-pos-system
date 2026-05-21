@@ -385,6 +385,10 @@ ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
 -- Snapshot unit on transfer items (so detail view stays correct even if product unit changes).
 ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
 
+-- Optional preferred supplier per product (used by auto-replenishment PO).
+ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+
 -- Shift Visa reconciliation (counted Visa total + variance vs expected Visa sales)
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS counted_visa  NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_visa NUMERIC(10,2);

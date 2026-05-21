@@ -1,5 +1,6 @@
 """Purchasing & Suppliers module — suppliers, POs, supplier payments & statements."""
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
@@ -202,6 +203,22 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 raise HTTPException(status_code=400, detail="Quantity must be positive")
             if it.unit_cost < 0:
                 raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
+        # Supplier consistency: if any selected product has a preferred supplier set,
+        # it must match the PO's supplier (NULL = unassigned, allowed). Prevents
+        # the replenishment flow (or any UI) from sending mixed-supplier POs.
+        product_ids = [int(i.product_id) for i in req.items if i.product_id]
+        if product_ids:
+            cur.execute(
+                "SELECT id, supplier_id FROM products WHERE id = ANY(%s)",
+                (product_ids,),
+            )
+            mismatched = [int(r["id"]) for r in cur.fetchall()
+                          if r["supplier_id"] not in (None, req.supplier_id)]
+            if mismatched:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
+                )
         subtotal = sum(i.quantity * i.unit_cost for i in req.items)
         total = subtotal - req.discount + req.tax
         if total < 0:
@@ -566,3 +583,274 @@ def supplier_statement(supplier_id: int,
         "transactions": txns,
         "balance": round(running, 2),
     }
+
+
+# ─── REPLENISHMENT (auto-PO from low-stock) ──────────────────────────────
+
+@router.get("/purchase-orders/replenishment")
+def replenishment_list(
+    branch_id: Optional[int] = None,
+    supplier_id: Optional[int] = None,
+    only_zero: bool = False,
+    current_user=Depends(get_current_user),
+    active_branch=Depends(get_active_branch_id),
+):
+    """List items that need replenishment (stock <= min_stock).
+    Non-admins are constrained to their own branch."""
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub is None:
+            raise HTTPException(status_code=403, detail="No branch assigned")
+        if branch_id is not None and branch_id != ub:
+            raise HTTPException(status_code=403, detail="Cross-branch access denied")
+        branch_id = ub
+    eff_branch = branch_id if branch_id is not None else active_branch
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    where = ["p.active = true"]
+    params: list = []
+    if eff_branch is not None:
+        where.append("p.branch_id = %s")
+        params.append(eff_branch)
+    if supplier_id is not None:
+        where.append("p.supplier_id = %s")
+        params.append(supplier_id)
+    if only_zero:
+        where.append("p.stock <= 0")
+    else:
+        where.append("p.stock <= p.min_stock")
+
+    sql = (
+        "SELECT p.id, p.barcode, p.name_ar, p.name_en, p.unit, p.sub_unit, p.pack_size, "
+        "       p.stock, p.min_stock, p.cost, p.branch_id, p.supplier_id, "
+        "       s.name AS supplier_name, "
+        "       b.name_en AS branch_name_en, b.name_ar AS branch_name_ar "
+        "FROM products p "
+        "LEFT JOIN suppliers s ON p.supplier_id = s.id "
+        "LEFT JOIN branches  b ON p.branch_id  = b.id "
+        "WHERE " + " AND ".join(where) +
+        " ORDER BY (p.stock <= 0) DESC, COALESCE(s.name, 'zz') ASC, p.name_en ASC"
+    )
+    cur.execute(sql, params)
+    rows = []
+    for r in cur.fetchall():
+        d = dict(r)
+        # Suggested order qty = bring stock back to 2× min_stock, with a sane floor.
+        target = max(int(d.get("min_stock") or 0) * 2, int(d.get("min_stock") or 0) + 1, 1)
+        suggested = max(target - int(d.get("stock") or 0), 1)
+        d["suggested_quantity"] = suggested
+        d["unit_label"] = (
+            d.get("sub_unit") if (d.get("pack_size") or 1) > 1 and d.get("sub_unit")
+            else (d.get("unit") or "unit")
+        )
+        rows.append(d)
+    conn.close()
+    return rows
+
+
+class ReplenishItemIn(BaseModel):
+    product_id: int
+    quantity: int
+    unit_cost: float = 0
+
+
+class ReplenishExportIn(BaseModel):
+    supplier_id: Optional[int] = None  # for header only
+    branch_id: Optional[int] = None    # for header only
+    notes: Optional[str] = None
+    items: List[ReplenishItemIn]
+
+
+@router.post("/purchase-orders/replenishment/export")
+def replenishment_export(req: ReplenishExportIn,
+                         current_user=Depends(get_current_user)):
+    """Build a supplier-ready Excel order sheet from the chosen replenishment items."""
+    if not req.items:
+        raise HTTPException(status_code=400, detail="No items selected")
+
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+    def _safe(v):
+        """Neutralize Excel/CSV formula injection on user/DB strings.
+        Order matters: strip control chars and leading whitespace FIRST, then check
+        the first visible character so an attacker can't smuggle '\\x01=SUM(...)'."""
+        if v is None:
+            return ""
+        s = str(v)
+        # Drop control chars (allow tab/newline) — openpyxl rejects most anyway.
+        s = "".join(ch for ch in s if ch in ("\n", "\t") or ord(ch) >= 32)
+        s = s.lstrip(" \t\n")
+        if s and s[0] in ("=", "+", "-", "@"):
+            s = "'" + s
+        return s
+
+    # Fail closed for non-admins without a branch.
+    if current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub is None:
+            raise HTTPException(status_code=403, detail="No branch assigned")
+        if req.branch_id is not None and req.branch_id != ub:
+            raise HTTPException(status_code=403, detail="Cross-branch access denied")
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Snapshot pharmacy + supplier + branch info for the sheet header.
+        cur.execute("SELECT name_ar, name_en, phone, address_ar, address_en, tax_id FROM pharmacy_profile WHERE id=1")
+        prof = cur.fetchone() or {}
+
+        sup = None
+        if req.supplier_id:
+            cur.execute("SELECT id, name, contact_person, phone, email, address FROM suppliers WHERE id=%s",
+                        (req.supplier_id,))
+            sup = cur.fetchone()
+            if not sup:
+                raise HTTPException(status_code=400, detail="Invalid supplier")
+
+        branch = None
+        if req.branch_id:
+            cur.execute("SELECT name_en, name_ar FROM branches WHERE id=%s", (req.branch_id,))
+            branch = cur.fetchone()
+
+        # Fetch each product line with safe parameterized lookup.
+        ids = [int(i.product_id) for i in req.items]
+        cur.execute(
+            "SELECT id, barcode, name_ar, name_en, unit, sub_unit, pack_size, stock, min_stock, cost, branch_id, supplier_id "
+            "FROM products WHERE id = ANY(%s)",
+            (ids,),
+        )
+        by_id = {int(r["id"]): dict(r) for r in cur.fetchall()}
+        # Every requested product must exist (otherwise silent drops).
+        for pid in ids:
+            if pid not in by_id:
+                raise HTTPException(status_code=404, detail=f"Product {pid} not found")
+
+        # Non-admins: every line must belong to their branch.
+        if current_user.get("role") != "admin":
+            ub = current_user.get("branch_id")
+            for pid, p in by_id.items():
+                if p["branch_id"] != ub:
+                    raise HTTPException(status_code=403, detail="Cross-branch product in selection")
+
+        # If supplier was specified, all selected products must belong to that supplier
+        # so the supplier-addressed Excel is operationally correct.
+        if req.supplier_id:
+            mismatched = [int(pid) for pid, p in by_id.items()
+                          if p.get("supplier_id") not in (None, req.supplier_id)]
+            if mismatched:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Some selected items belong to a different supplier (ids: {mismatched[:10]})",
+                )
+    finally:
+        conn.close()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Purchase Order"
+
+    bold = Font(bold=True, size=12)
+    title = Font(bold=True, size=16, color="FFFFFF")
+    fill = PatternFill("solid", fgColor="0F766E")
+    thin = Side(border_style="thin", color="CBD5E1")
+    border = Border(top=thin, bottom=thin, left=thin, right=thin)
+    center = Alignment(horizontal="center", vertical="center")
+
+    # Title row
+    ws.merge_cells("A1:G1")
+    ws["A1"] = "Purchase Order / أمر شراء"
+    ws["A1"].font = title
+    ws["A1"].fill = fill
+    ws["A1"].alignment = center
+    ws.row_dimensions[1].height = 28
+
+    row = 3
+    def kv(label: str, value):
+        nonlocal row
+        ws.cell(row=row, column=1, value=label).font = bold
+        ws.cell(row=row, column=2, value=_safe(value) or "—")
+        row += 1
+
+    kv("Pharmacy", prof.get("name_en") or prof.get("name_ar"))
+    if prof.get("phone"): kv("Pharmacy phone", prof.get("phone"))
+    if prof.get("tax_id"): kv("Tax ID", prof.get("tax_id"))
+    if branch: kv("Branch", branch.get("name_en") or branch.get("name_ar"))
+    kv("Date", date.today().isoformat())
+
+    if sup:
+        row += 1
+        ws.cell(row=row, column=1, value="── Supplier ──").font = bold
+        row += 1
+        kv("Supplier", sup.get("name"))
+        if sup.get("contact_person"): kv("Contact", sup.get("contact_person"))
+        if sup.get("phone"):          kv("Phone",   sup.get("phone"))
+        if sup.get("email"):          kv("Email",   sup.get("email"))
+        if sup.get("address"):        kv("Address", sup.get("address"))
+
+    if req.notes:
+        row += 1
+        ws.cell(row=row, column=1, value="Notes").font = bold
+        ws.cell(row=row, column=2, value=_safe(req.notes))
+        row += 1
+
+    row += 2
+    headers = ["#", "Barcode", "Product (EN)", "Product (AR)", "Unit",
+               "Order Qty", "Unit Cost", "Line Total"]
+    for c, h in enumerate(headers, start=1):
+        cell = ws.cell(row=row, column=c, value=h)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = fill
+        cell.alignment = center
+        cell.border = border
+    row += 1
+
+    grand_total = 0.0
+    for idx, it in enumerate(req.items, start=1):
+        if it.quantity <= 0:
+            raise HTTPException(status_code=400, detail="Quantity must be positive")
+        if it.unit_cost < 0:
+            raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
+        p = by_id.get(int(it.product_id))
+        if not p:
+            raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
+        unit_label = (p.get("sub_unit") if (p.get("pack_size") or 1) > 1 and p.get("sub_unit")
+                      else (p.get("unit") or "unit"))
+        line_total = round(it.quantity * it.unit_cost, 2)
+        grand_total += line_total
+        values = [idx, _safe(p.get("barcode")), _safe(p.get("name_en")), _safe(p.get("name_ar")),
+                  _safe(unit_label), it.quantity, round(it.unit_cost, 2), line_total]
+        for c, v in enumerate(values, start=1):
+            cell = ws.cell(row=row, column=c, value=v)
+            cell.border = border
+            if c in (1, 5, 6):
+                cell.alignment = center
+        row += 1
+
+    # Grand total row
+    ws.cell(row=row, column=7, value="Total").font = bold
+    ws.cell(row=row, column=7).alignment = Alignment(horizontal="right")
+    tcell = ws.cell(row=row, column=8, value=round(grand_total, 2))
+    tcell.font = bold
+    tcell.fill = PatternFill("solid", fgColor="ECFDF5")
+    tcell.border = border
+
+    # Column widths
+    widths = [5, 18, 32, 32, 10, 12, 12, 14]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    # Filename: ASCII-safe, no path/quote chars so the Content-Disposition header is safe.
+    raw = (sup["name"] if sup else "all")
+    sup_part = "".join(c if (c.isalnum() or c in ("-", "_")) else "_" for c in str(raw))[:40] or "all"
+    filename = f"PO_{sup_part}_{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
