@@ -236,7 +236,11 @@
     "mark_paid": "تأكيد الدفع",
     "confirm_pay": "تأكيد دفع هذا الإيصال؟ لا يمكن التراجع.",
     "slip_draft": "مسودة",
-    "slip_paid": "مدفوع"
+    "slip_paid": "مدفوع",
+    "role_manager": "مدير فرع",
+    "role_accountant": "محاسب",
+    "role_delivery": "مندوب توصيل",
+    "role_cleaner": "عامل نظافة"
   },
   "reports": {
     "title": "التقارير والتحليلات",

@@ -116,7 +116,11 @@
     "mark_paid": "Mark as Paid",
     "confirm_pay": "Mark this slip as paid? This cannot be undone.",
     "slip_draft": "Draft",
-    "slip_paid": "Paid"
+    "slip_paid": "Paid",
+    "role_manager": "Manager",
+    "role_accountant": "Accountant",
+    "role_delivery": "Delivery",
+    "role_cleaner": "Cleaner"
   },
   "reports": {
     "title": "Reports & Analytics",

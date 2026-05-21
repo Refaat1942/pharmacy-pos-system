@@ -143,7 +143,23 @@ function EmployeesTab() {
         <Modal onClose={() => setEditing(null)} title={editing.id ? t('hr.edit_employee') : t('hr.add_employee')}>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('hr.name')}><input className="input w-full" value={editing.name || ''} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
-            <Field label={t('hr.role')}><input className="input w-full" value={editing.role || ''} onChange={(e) => setEditing({ ...editing, role: e.target.value })} placeholder="Pharmacist / Assistant…" /></Field>
+            <Field label={t('hr.role')}>
+              <select
+                className="input w-full"
+                value={editing.role || ''}
+                onChange={(e) => setEditing({ ...editing, role: e.target.value })}
+              >
+                <option value="">—</option>
+                <option value="pharmacist">{t('settings.role_pharmacist')}</option>
+                <option value="assistant">{t('settings.role_assistant')}</option>
+                <option value="cashier">{t('settings.role_cashier')}</option>
+                <option value="manager">{t('hr.role_manager')}</option>
+                <option value="accountant">{t('hr.role_accountant')}</option>
+                <option value="delivery">{t('hr.role_delivery')}</option>
+                <option value="cleaner">{t('hr.role_cleaner')}</option>
+                <option value="admin">{t('settings.role_admin')}</option>
+              </select>
+            </Field>
             <Field label={t('hr.branch')}>
               <select className="input w-full" value={editing.branch_id || ''} onChange={(e) => setEditing({ ...editing, branch_id: e.target.value ? Number(e.target.value) : null })}>
                 <option value="">—</option>
