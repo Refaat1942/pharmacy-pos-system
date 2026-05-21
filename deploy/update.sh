@@ -11,10 +11,18 @@ info() { echo -e "${GREEN}[INFO]${NC}  $1"; }
 
 info "Cleaning stale build artifacts before pull..."
 rm -rf "$APP_DIR/frontend/dist"
+
+# After harden.sh, $APP_DIR is owned by the 'pharmapos' user, not root.
+# Whitelist it so git doesn't refuse with "dubious ownership".
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 git -C "$APP_DIR" checkout -- . 2>/dev/null || true
 
 info "Pulling latest code..."
 git -C "$APP_DIR" pull --rebase --autostash || git -C "$APP_DIR" pull
+
+# Restore ownership in case git/npm/pip wrote files as root.
+chown -R pharmapos:pharmapos "$APP_DIR" 2>/dev/null || true
 
 info "Installing Python dependencies..."
 source "$APP_DIR/venv/bin/activate"
