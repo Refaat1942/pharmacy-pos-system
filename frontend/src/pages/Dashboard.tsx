@@ -2,14 +2,25 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, ShoppingCart, RotateCcw, AlertTriangle, Package,
-  Calendar as CalendarIcon, Users, BarChart3, Loader2,
+  Calendar as CalendarIcon, Users, BarChart3, Loader2, Percent, DollarSign,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import i18n from '../lib/i18n'
-import { dashboardAPI } from '../lib/api'
+import api, { dashboardAPI } from '../lib/api'
 import type {
-  DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts,
+  DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts, PnlSummary,
 } from '../lib/api'
+
+type Period = 'today' | 'month' | 'year'
+const todayStr = () => new Date().toISOString().slice(0, 10)
+const monthStartStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10) }
+const yearStartStr = () => { const d = new Date(); return `${d.getFullYear()}-01-01` }
+function periodRange(p: Period): { date_from: string; date_to: string } {
+  const to = todayStr()
+  if (p === 'today') return { date_from: to, date_to: to }
+  if (p === 'month') return { date_from: monthStartStr(), date_to: to }
+  return { date_from: yearStartStr(), date_to: to }
+}
 
 export default function Dashboard() {
   const { t } = useTranslation()
@@ -21,6 +32,9 @@ export default function Dashboard() {
   const [topSellers, setTopSellers] = useState<TopSeller[]>([])
   const [alerts, setAlerts] = useState<DashboardAlerts | null>(null)
   const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState<Period>('month')
+  const [pnl, setPnl] = useState<PnlSummary | null>(null)
+  const [pnlLoading, setPnlLoading] = useState(false)
 
   const loadAll = () => {
     setLoading(true)
@@ -38,12 +52,24 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }
 
+  const loadPnl = (p: Period) => {
+    setPnlLoading(true)
+    api.get<PnlSummary>('/reports/pnl', { params: periodRange(p) })
+      .then((r) => setPnl(r.data))
+      .catch(() => setPnl(null))
+      .finally(() => setPnlLoading(false))
+  }
+
   useEffect(() => {
     loadAll()
-    const onBranchChange = () => loadAll()
+    loadPnl(period)
+    const onBranchChange = () => { loadAll(); loadPnl(period) }
     window.addEventListener('branch-changed', onBranchChange)
     return () => window.removeEventListener('branch-changed', onBranchChange)
+     
   }, [])
+
+  useEffect(() => { loadPnl(period) }, [period])
 
   const egp = t('sales.egp')
 
@@ -105,6 +131,64 @@ export default function Dashboard() {
                   value={`${egp} ${(summary?.net_sales ?? 0).toFixed(2)}`}
                   tone="green"
                 />
+              </div>
+
+              {/* Overall profit margin */}
+              <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                  <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                    <Percent size={16} className="text-emerald-600" />
+                    {t('dashboard.profit_margin')}
+                  </h2>
+                  <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                    {(['today', 'month', 'year'] as Period[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setPeriod(p)}
+                        className={`px-3 py-1 text-xs font-semibold rounded-md transition ${
+                          period === p ? 'bg-white text-pharma-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {t(`dashboard.period_${p}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {pnlLoading && !pnl ? (
+                  <div className="flex items-center justify-center py-6 text-gray-400">
+                    <Loader2 size={18} className="animate-spin me-2" />
+                    {t('common.loading')}
+                  </div>
+                ) : !pnl || pnl.net_revenue <= 0 ? (
+                  <p className="text-xs text-gray-400 py-6 text-center">{t('common.no_data')}</p>
+                ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <KpiCard
+                      icon={<DollarSign size={18} />}
+                      label={t('dashboard.net_revenue')}
+                      value={`${egp} ${pnl.net_revenue.toFixed(2)}`}
+                      tone="blue"
+                    />
+                    <KpiCard
+                      icon={<Package size={18} />}
+                      label={t('dashboard.cogs')}
+                      value={`${egp} ${pnl.cogs.toFixed(2)}`}
+                      tone="amber"
+                    />
+                    <KpiCard
+                      icon={<TrendingUp size={18} />}
+                      label={t('dashboard.gross_profit')}
+                      value={`${egp} ${pnl.gross_profit.toFixed(2)}`}
+                      tone="green"
+                    />
+                    <KpiCard
+                      icon={<Percent size={18} />}
+                      label={t('dashboard.margin_pct')}
+                      value={`${pnl.margin_pct.toFixed(2)}%`}
+                      tone="pharma"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Alerts */}

@@ -133,6 +133,20 @@ export interface DashboardSummary {
   low_stock_count: number
 }
 
+export interface PnlSummary {
+  date_from: string
+  date_to: string
+  gross_revenue: number
+  total_discount: number
+  returns_value: number
+  net_revenue: number
+  cogs: number
+  gross_profit: number
+  margin_pct: number
+  invoice_count: number
+  returns_count: number
+}
+
 // ─── API calls ──────────────────────────────────────────────────────────────
 
 export const authAPI = {

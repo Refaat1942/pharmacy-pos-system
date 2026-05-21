@@ -781,7 +781,15 @@
     "alert_expired": "expired items still in stock",
     "alert_near_expiry": "items expiring within 60 days",
     "alert_low_stock": "items at or below minimum stock",
-    "alert_high_returns": "Returns ratio higher than normal today"
+    "alert_high_returns": "Returns ratio higher than normal today",
+    "profit_margin": "Overall Profit Margin",
+    "period_today": "Today",
+    "period_month": "This Month",
+    "period_year": "This Year",
+    "net_revenue": "Net Revenue",
+    "cogs": "Cost of Goods",
+    "gross_profit": "Gross Profit",
+    "margin_pct": "Margin %"
   },
   "returns": {
     "title": "Returns",

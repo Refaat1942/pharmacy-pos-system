@@ -781,7 +781,15 @@
     "alert_expired": "صنف منتهي الصلاحية ولا يزال بالمخزون",
     "alert_near_expiry": "صنف قارب على الانتهاء خلال 60 يوم",
     "alert_low_stock": "صنف وصل أو نزل عن الحد الأدنى",
-    "alert_high_returns": "نسبة المرتجعات اليوم أعلى من الطبيعي"
+    "alert_high_returns": "نسبة المرتجعات اليوم أعلى من الطبيعي",
+    "profit_margin": "إجمالي هامش الربح",
+    "period_today": "اليوم",
+    "period_month": "هذا الشهر",
+    "period_year": "هذه السنة",
+    "net_revenue": "صافي الإيرادات",
+    "cogs": "تكلفة البضاعة",
+    "gross_profit": "إجمالي الربح",
+    "margin_pct": "نسبة الربح"
   },
   "returns": {
     "title": "المرتجعات",
