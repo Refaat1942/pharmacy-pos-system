@@ -91,7 +91,9 @@ def update_product(product_id: int, req: ProductUpdate,
 @router.delete("/products/{product_id}")
 def delete_product(product_id: int,
                    current_user=Depends(get_current_user)):
-    """Soft delete — sets active=false."""
+    """Soft delete — sets active=false. Admin only."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:

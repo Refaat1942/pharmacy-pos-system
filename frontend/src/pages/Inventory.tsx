@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
+import { useAuth } from '../lib/auth'
 
 type Product = {
   id: number
@@ -66,6 +67,8 @@ const STANDARD_CATEGORIES = [
 export default function Inventory() {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const [tab, setTab] = useState<Tab>('items')
   const [items, setItems] = useState<Product[]>([])
@@ -281,7 +284,7 @@ export default function Inventory() {
                               <IconBtn onClick={() => setAdjustItem(it)} title={t('inventory.adjust') as string} color="amber"><Sliders size={14} /></IconBtn>
                               <IconBtn onClick={() => setHistoryItem(it)} title={t('inventory.history') as string} color="slate"><History size={14} /></IconBtn>
                               <IconBtn onClick={() => setEditItem(it)} title={t('inventory.edit') as string} color="blue"><Edit2 size={14} /></IconBtn>
-                              <IconBtn onClick={() => onDelete(it.id)} title={t('inventory.delete') as string} color="red"><Trash2 size={14} /></IconBtn>
+                              {isAdmin && <IconBtn onClick={() => onDelete(it.id)} title={t('inventory.delete') as string} color="red"><Trash2 size={14} /></IconBtn>}
                             </div>
                           </td>
                         </tr>
