@@ -42,6 +42,9 @@ export interface Product {
   min_stock: number
   expiry_date: string
   active: boolean
+  pack_size?: number
+  sub_unit?: string | null
+  sub_price?: number | null
 }
 
 export interface Employee {
@@ -74,6 +77,9 @@ export interface CartItem {
   quantity: number
   unit_price: number
   discount: number
+  // 'pack' = sell as main unit (Box), 'sub' = sell as inner unit (Strip).
+  // When pack_size <= 1 this is always 'pack'.
+  unit_type?: 'pack' | 'sub'
 }
 
 export interface InvoiceItem {

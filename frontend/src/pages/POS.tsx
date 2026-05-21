@@ -77,6 +77,12 @@ export default function POS() {
     return () => clearTimeout(timer)
   }, [search])
 
+  // Stock check helper: given a cart line, max allowed quantity for its unit_type.
+  const maxQty = useCallback((p: Product, unit_type: 'pack' | 'sub') => {
+    const pack = Math.max(1, p.pack_size || 1)
+    return unit_type === 'sub' ? p.stock : Math.floor(p.stock / pack)
+  }, [])
+
   const addToCart = useCallback((product: Product) => {
     if (product.stock <= 0) {
       alert(`${product.name_en} — ${t('pos.out_of_stock')}`)
@@ -99,18 +105,32 @@ export default function POS() {
     setCartItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id)
       if (existing) {
-        if (existing.quantity >= product.stock) return prev
+        if (existing.quantity >= maxQty(product, existing.unit_type || 'pack')) return prev
         return prev.map((i) =>
           i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
         )
       }
-      return [...prev, { product, quantity: 1, unit_price: product.price, discount: 0 }]
+      return [...prev, { product, quantity: 1, unit_price: product.price, discount: 0, unit_type: 'pack' }]
     })
     setSearch('')
     setResults([])
     setShowResults(false)
     searchRef.current?.focus()
-  }, [t])
+  }, [t, maxQty])
+
+  // Toggle a cart line between "pack" and "sub" units.
+  const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
+    setCartItems((prev) => prev.map((i) => {
+      if (i.product.id !== productId) return i
+      const pack = Math.max(1, i.product.pack_size || 1)
+      const price = ut === 'sub'
+        ? (i.product.sub_price != null ? Number(i.product.sub_price) : i.product.price / pack)
+        : i.product.price
+      // Clamp quantity to new max.
+      const max = ut === 'sub' ? i.product.stock : Math.floor(i.product.stock / pack)
+      return { ...i, unit_type: ut, unit_price: price, quantity: Math.min(i.quantity, Math.max(1, max)) }
+    }))
+  }, [])
 
   const removeFromCart = useCallback((productId: number) => {
     setCartItems((prev) => prev.filter((i) => i.product.id !== productId))
@@ -302,13 +322,38 @@ export default function POS() {
                     {cartItems.map((item) => {
                       const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
                       const itemTotal = item.quantity * item.unit_price - item.discount
+                      const pack = Math.max(1, item.product.pack_size || 1)
+                      const hasSub = pack > 1 && !!item.product.sub_unit
+                      const ut = item.unit_type || 'pack'
+                      const max = maxQty(item.product, ut)
+                      const unitLabel = ut === 'sub' ? item.product.sub_unit : item.product.unit
                       return (
                         <div key={item.product.id} className="px-5 py-3 flex items-center gap-4 hover:bg-slate-50/60 transition-colors">
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-slate-800 text-sm truncate">{name}</p>
                             <p className="text-[11px] text-slate-400 tabular-nums">
-                              {t('pos.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
+                              {t('pos.egp')} {item.unit_price.toFixed(2)} × {item.quantity} {unitLabel}
                             </p>
+                            {hasSub && (
+                              <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
+                                <button
+                                  onClick={() => setUnitType(item.product.id, 'pack')}
+                                  className={`px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide ${
+                                    ut === 'pack' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                  }`}
+                                >
+                                  {item.product.unit}
+                                </button>
+                                <button
+                                  onClick={() => setUnitType(item.product.id, 'sub')}
+                                  className={`px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide ${
+                                    ut === 'sub' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                                  }`}
+                                >
+                                  {item.product.sub_unit}
+                                </button>
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
                             <button
@@ -322,7 +367,7 @@ export default function POS() {
                             </span>
                             <button
                               onClick={() => updateQty(item.product.id, item.quantity + 1)}
-                              disabled={item.quantity >= item.product.stock}
+                              disabled={item.quantity >= max}
                               className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 disabled:opacity-30 transition-all"
                             >
                               <Plus size={13} />

@@ -343,6 +343,19 @@ BEGIN
         ALTER TABLE products ADD CONSTRAINT products_barcode_branch_key UNIQUE (barcode, branch_id);
     END IF;
 END $$;
+
+-- Migration: multi-unit packaging (e.g. 1 Box = 10 Strips)
+--   unit       = main / outer pack unit (Box, Pack, Bottle …)
+--   sub_unit   = inner unit (Strip, Ampoule, Tablet …) — optional
+--   pack_size  = how many sub_units in one pack (default 1 = no subdivision)
+--   sub_price  = price per sub_unit (optional; default = price / pack_size)
+-- Stock is tracked in SUB-UNITS when pack_size > 1; otherwise in main units.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_unit  VARCHAR(30);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2);
+
+-- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
 """
 
 

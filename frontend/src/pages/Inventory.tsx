@@ -225,7 +225,14 @@ export default function Inventory() {
                           <td className="px-3 py-2 font-mono text-xs text-slate-600">{it.barcode || '—'}</td>
                           <td className="px-3 py-2 font-medium">{isAr ? it.name_ar : it.name_en}</td>
                           <td className="px-3 py-2 text-slate-600">{it.category || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{it.unit}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {it.unit}
+                            {it.pack_size && it.pack_size > 1 && it.sub_unit && (
+                              <div className="text-[10px] text-slate-400">
+                                1 {it.unit} = {it.pack_size} {it.sub_unit}
+                              </div>
+                            )}
+                          </td>
                           <td className="px-3 py-2 text-end font-medium">{Number(it.price).toFixed(2)}</td>
                           <td className="px-3 py-2 text-end text-slate-600">{it.cost ? Number(it.cost).toFixed(2) : '—'}</td>
                           <td className="px-3 py-2 text-center">
@@ -234,6 +241,12 @@ export default function Inventory() {
                               isLow ? 'bg-amber-100 text-amber-700' :
                               'bg-emerald-100 text-emerald-700'
                             }`}>{it.stock}</span>
+                            {it.pack_size && it.pack_size > 1 && it.sub_unit && (
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                {Math.floor(it.stock / it.pack_size)} {it.unit}
+                                {it.stock % it.pack_size > 0 && ` + ${it.stock % it.pack_size} ${it.sub_unit}`}
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-center text-slate-500">{it.min_stock}</td>
                           <td className="px-3 py-2 text-end">
@@ -318,6 +331,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     stock: item?.stock?.toString() || '0',
     min_stock: item?.min_stock?.toString() || '5',
     expiry_date: item?.expiry_date || '',
+    pack_size: item?.pack_size?.toString() || '1',
+    sub_unit: item?.sub_unit || '',
+    sub_price: item?.sub_price != null ? String(item.sub_price) : '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -337,6 +353,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         cost: f.cost ? parseFloat(f.cost) : null,
         min_stock: parseInt(f.min_stock) || 0,
         expiry_date: f.expiry_date || null,
+        pack_size: Math.max(1, parseInt(f.pack_size) || 1),
+        sub_unit: f.sub_unit || null,
+        sub_price: f.sub_price ? parseFloat(f.sub_price) : null,
       }
       if (item) {
         await api.put(`/inventory/products/${item.id}`, payload)
@@ -399,6 +418,61 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         <Field label={t('inventory.f_min_stock')}>
           <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
         </Field>
+
+        {/* ─── Packaging: 1 Box = N Strips (optional) ─── */}
+        <div className="col-span-2 mt-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
+          <div className="text-xs font-semibold text-slate-600 mb-2">
+            Packaging — leave pack size = 1 if the item is not sold in smaller units
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Sub-unit (Strip / Ampoule / Tablet …)">
+              <select
+                value={f.sub_unit}
+                onChange={e => setF({ ...f, sub_unit: e.target.value })}
+                className="input"
+              >
+                <option value="">— none —</option>
+                <option value="strip">Strip</option>
+                <option value="ampoule">Ampoule</option>
+                <option value="tablet">Tablet</option>
+                <option value="capsule">Capsule</option>
+                <option value="sachet">Sachet</option>
+                <option value="vial">Vial</option>
+                <option value="piece">Piece</option>
+                <option value="ml">ml</option>
+              </select>
+            </Field>
+            <Field label={`Units per 1 ${f.unit}`}>
+              <input
+                type="number" min={1}
+                value={f.pack_size}
+                onChange={e => setF({ ...f, pack_size: e.target.value })}
+                className="input"
+                placeholder="e.g. 10"
+              />
+            </Field>
+            <Field label={`Price per ${f.sub_unit || 'sub-unit'}`}>
+              <input
+                type="number" step="0.01"
+                value={f.sub_price}
+                onChange={e => setF({ ...f, sub_price: e.target.value })}
+                className="input"
+                placeholder={
+                  f.price && f.pack_size && parseInt(f.pack_size) > 1
+                    ? (parseFloat(f.price) / parseInt(f.pack_size)).toFixed(2)
+                    : 'auto'
+                }
+                disabled={!f.sub_unit || parseInt(f.pack_size) <= 1}
+              />
+            </Field>
+          </div>
+          {f.sub_unit && parseInt(f.pack_size) > 1 && (
+            <p className="text-[11px] text-slate-500 mt-2">
+              1 {f.unit} = {f.pack_size} {f.sub_unit}. Stock will be tracked in <b>{f.sub_unit}</b>.
+            </p>
+          )}
+        </div>
+
         {error && <div className="col-span-2 text-red-600 text-sm">{error}</div>}
         <div className="col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-100">
           <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('common.cancel')}</button>

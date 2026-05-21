@@ -255,6 +255,9 @@ class ProductCreate(BaseModel):
     stock: int = 0
     min_stock: int = 5
     expiry_date: Optional[date] = None
+    pack_size: Optional[int] = 1
+    sub_unit: Optional[str] = None
+    sub_price: Optional[float] = None
 
 
 @app.post("/api/products")
@@ -264,11 +267,11 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
     try:
         branch_id = current_user.get("branch_id")
         cur.execute(
-            """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (req.barcode, req.name_ar, req.name_en, req.category, req.unit,
              req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
-             branch_id),
+             branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price),
         )
         product = cur.fetchone()
         if req.stock and req.stock > 0:
@@ -371,6 +374,8 @@ class InvoiceItemInput(BaseModel):
     quantity: int
     unit_price: float
     discount: float = 0.0
+    # "pack" (main unit, default) or "sub" (inner unit when pack_size > 1)
+    unit_type: Optional[str] = "pack"
 
 
 class SaleRequest(BaseModel):
@@ -484,8 +489,12 @@ def create_sale(req: SaleRequest,
         for item in req.items:
             if item.quantity <= 0:
                 raise HTTPException(status_code=400, detail=f"Invalid quantity for product {item.product_id}")
-            cur.execute("SELECT name_ar, name_en, barcode, stock, branch_id, active FROM products WHERE id=%s FOR UPDATE",
-                        (item.product_id,))
+            cur.execute(
+                """SELECT name_ar, name_en, barcode, stock, branch_id, active,
+                          unit, sub_unit, COALESCE(pack_size,1) AS pack_size
+                   FROM products WHERE id=%s FOR UPDATE""",
+                (item.product_id,),
+            )
             prod = cur.fetchone()
             if not prod or not prod["active"]:
                 raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
@@ -494,25 +503,43 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {prod['name_en']} belongs to a different branch",
                 )
-            if int(prod["stock"]) < item.quantity:
-                raise HTTPException(status_code=400, detail=f"Insufficient stock for {prod['name_en']} (have {prod['stock']}, need {item.quantity})")
+            # Resolve how many *stock units* this line consumes.
+            # Stock is tracked in sub-units when pack_size > 1; otherwise pack_size = 1
+            # and "pack" and "sub" are identical.
+            pack_size = max(1, int(prod["pack_size"] or 1))
+            unit_type = (item.unit_type or "pack").lower()
+            if unit_type == "sub" and pack_size > 1:
+                stock_used = item.quantity
+                unit_label = prod["sub_unit"] or "unit"
+            else:
+                stock_used = item.quantity * pack_size
+                unit_label = prod["unit"] or "unit"
+            if int(prod["stock"]) < stock_used:
+                # Show shortage in the unit the cashier picked, for clarity.
+                have = int(prod["stock"]) if unit_type != "pack" or pack_size == 1 \
+                    else int(prod["stock"]) // pack_size
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient stock for {prod['name_en']} (have {have} {unit_label}, need {item.quantity})",
+                )
             item_total = item.quantity * item.unit_price - item.discount
             cur.execute(
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
-                    barcode, quantity, unit_price, discount, total)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    barcode, quantity, unit_price, discount, total, unit_label)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
-                 prod["barcode"], item.quantity, item.unit_price, item.discount, item_total),
+                 prod["barcode"], item.quantity, item.unit_price, item.discount,
+                 item_total, unit_label),
             )
-            new_stock = int(prod["stock"]) - item.quantity
+            new_stock = int(prod["stock"]) - stock_used
             cur.execute("UPDATE products SET stock=%s WHERE id=%s",
                         (new_stock, item.product_id))
             log_movement(
                 cur, item.product_id, prod["branch_id"] or branch_id, "sale",
-                -item.quantity, new_stock,
+                -stock_used, new_stock,
                 reference_type="invoice", reference_id=invoice_id,
-                reason=f"Sale {invoice_number}",
+                reason=f"Sale {invoice_number} ({item.quantity} {unit_label})",
                 user_id=seller_id,
             )
 

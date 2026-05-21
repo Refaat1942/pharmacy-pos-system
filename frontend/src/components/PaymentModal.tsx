@@ -74,6 +74,7 @@ export default function PaymentModal({
           quantity: item.quantity,
           unit_price: item.unit_price,
           discount: item.discount,
+          unit_type: item.unit_type || 'pack',
         })),
         discount: invoiceDiscount,
         cash_amount:
