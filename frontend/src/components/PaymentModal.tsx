@@ -47,6 +47,7 @@ export default function PaymentModal({
   const hybridDiff = hybridSum - netTotal
 
   const isValid = () => {
+    if (!selectedSeller) return false
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= netTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     if (paymentMethod === 'account') return !!selectedCustomer
@@ -54,6 +55,10 @@ export default function PaymentModal({
   }
 
   const handleSubmit = async () => {
+    if (!selectedSeller) {
+      setError(t('payment.seller_required') as string)
+      return
+    }
     if (!isValid()) {
       setError(
         paymentMethod === 'cash'
@@ -117,6 +122,18 @@ export default function PaymentModal({
         <div className="flex flex-1 overflow-hidden">
           {/* ── Left: payment form ── */}
           <div className="flex-1 p-6 overflow-y-auto space-y-5">
+            {/* Salesperson confirmation */}
+            <div className={`p-3 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-1 ${selectedSeller ? 'text-emerald-700' : 'text-red-700'}`}>
+                {t('payment.salesperson')}
+              </p>
+              <p className={`text-base font-bold ${selectedSeller ? 'text-emerald-900' : 'text-red-900'}`}>
+                {selectedSeller
+                  ? (lang === 'ar' ? selectedSeller.name_ar : selectedSeller.name_en)
+                  : t('payment.seller_required')}
+              </p>
+            </div>
+
             {/* Sale type */}
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">

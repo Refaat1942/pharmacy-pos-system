@@ -499,7 +499,13 @@ def create_sale(req: SaleRequest,
                     detail=f"Credit limit exceeded for {cust['name']} (balance {current_bal:.2f} + sale {net_total:.2f} > limit {limit:.2f})",
                 )
 
-        seller_id = req.seller_id or current_user.get("user_id")
+        if not req.seller_id:
+            raise HTTPException(status_code=400, detail="Salesperson is required — select who is making this sale")
+        cur.execute("SELECT id, status FROM users WHERE id=%s", (req.seller_id,))
+        _seller = cur.fetchone()
+        if not _seller or _seller.get("status") != "active":
+            raise HTTPException(status_code=400, detail="Selected salesperson is not active")
+        seller_id = req.seller_id
         branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
         if branch_id is None:
             raise HTTPException(status_code=400, detail="No active branch selected")
