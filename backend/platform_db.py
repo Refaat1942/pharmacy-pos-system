@@ -140,6 +140,16 @@ def bootstrap_platform() -> None:
                 ["fratelanza", "Fratelanza Pharmacy", "public"],
             )
             print("[platform] seeded default tenant 'fratelanza' -> public schema")
+
+        _default_on = [f["key"] for f in FEATURES_CATALOG if f.get("default")]
+        for fkey in _default_on:
+            cur.execute(
+                """UPDATE platform.tenants
+                   SET features = COALESCE(features, '[]'::jsonb) || to_jsonb(%s::text)
+                   WHERE features IS NOT NULL
+                     AND NOT (features @> to_jsonb(%s::text))""",
+                [fkey, fkey],
+            )
     finally:
         conn.close()
 
