@@ -94,12 +94,14 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 function UsersTab() {
   const { t } = useTranslation()
+  const { user: me } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
   const [branches, setBranches] = useState<BranchRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<UserRow | null>(null)
   const [creating, setCreating] = useState(false)
   const [pwUser, setPwUser] = useState<UserRow | null>(null)
+  const [deleting, setDeleting] = useState<UserRow | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -174,6 +176,11 @@ function UsersTab() {
                       <button onClick={() => setEditing(u)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md ms-1" title={t('common.edit')}>
                         <Pencil size={14} />
                       </button>
+                      {me?.id !== u.id && (
+                        <button onClick={() => setDeleting(u)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-md ms-1" title={t('common.delete')}>
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -191,6 +198,22 @@ function UsersTab() {
       )}
       {pwUser && (
         <PasswordModal user={pwUser} onClose={() => setPwUser(null)} onSaved={() => setPwUser(null)} />
+      )}
+      {deleting && (
+        <DangerDeleteModal
+          title={t('settings.delete_user_title')}
+          warningLines={[
+            t('settings.delete_user_warn1', { username: deleting.username }),
+            t('settings.delete_user_warn2'),
+          ]}
+          confirmWord={deleting.username}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            const r = await api.delete(`/settings/users/${deleting.id}`)
+            setDeleting(null); load()
+            if (r?.data?.deactivated) alert(r.data.message)
+          }}
+        />
       )}
     </div>
   )
@@ -362,6 +385,7 @@ function BranchesTab() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<BranchRow | null>(null)
   const [creating, setCreating] = useState(false)
+  const [deleting, setDeleting] = useState<BranchRow | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -404,9 +428,14 @@ function BranchesTab() {
                       <p className="text-[10px] text-slate-400 uppercase tracking-wider">ID #{b.id}</p>
                     </div>
                   </div>
-                  <button onClick={() => setEditing(b)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md">
-                    <Pencil size={14} />
-                  </button>
+                  <div className="flex gap-1">
+                    <button onClick={() => setEditing(b)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md">
+                      <Pencil size={14} />
+                    </button>
+                    <button onClick={() => setDeleting(b)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-md">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 {b.address && <p className="text-xs text-slate-500 mt-1">{b.address}</p>}
                 {b.phone && <p className="text-xs text-slate-500 font-mono">{b.phone}</p>}
@@ -422,6 +451,68 @@ function BranchesTab() {
 
       {creating && <BranchModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />}
       {editing && <BranchModal branch={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {deleting && (
+        <DangerDeleteModal
+          title={t('settings.delete_branch_title')}
+          warningLines={[
+            t('settings.delete_branch_warn1', { name: i18n.language === 'ar' ? deleting.name_ar : deleting.name_en }),
+            t('settings.delete_branch_warn2'),
+          ]}
+          confirmWord={(i18n.language === 'ar' ? deleting.name_ar : deleting.name_en) || deleting.name_en}
+          onClose={() => setDeleting(null)}
+          onConfirm={async () => {
+            await api.delete(`/settings/branches/${deleting.id}`)
+            setDeleting(null); load()
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function DangerDeleteModal({ title, warningLines, confirmWord, onClose, onConfirm }: {
+  title: string
+  warningLines: string[]
+  confirmWord: string
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const ok = typed.trim() === confirmWord.trim()
+  const run = async () => {
+    if (!ok) return
+    setBusy(true); setError(null)
+    try { await onConfirm() }
+    catch (e: any) { setError(e?.response?.data?.detail || 'Error'); setBusy(false) }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border-2 border-red-300">
+        <div className="px-5 py-3 border-b border-red-200 flex items-center justify-between bg-red-50">
+          <h3 className="font-bold text-red-700 flex items-center gap-2"><ShieldAlert size={18} /> {title}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-red-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 space-y-1.5">
+            {warningLines.map((l, i) => (
+              <p key={i} className="text-sm text-red-800 leading-relaxed">{l}</p>
+            ))}
+          </div>
+          <Field label={t('settings.type_to_confirm', { word: confirmWord })}>
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} className="input w-full font-mono" autoFocus placeholder={confirmWord} />
+          </Field>
+          {error && <div className="text-sm text-red-700 bg-red-50 border border-red-300 rounded-lg p-2">{error}</div>}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button onClick={run} disabled={!ok || busy} className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">
+            {busy ? t('common.saving') : t('common.delete')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

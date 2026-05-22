@@ -248,6 +248,39 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
         conn.close()
 
 
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
+    _admin(current_user)
+    if int(current_user.get("user_id") or 0) == int(user_id):
+        raise HTTPException(400, "You cannot delete your own account")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, username, role, status FROM users WHERE id=%s FOR UPDATE", (user_id,))
+        target = cur.fetchone()
+        if not target:
+            raise HTTPException(404, "User not found")
+        if target["role"] == "admin" and target["status"] == "active":
+            cur.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND status='active' AND id<>%s FOR UPDATE", (user_id,))
+            others = cur.fetchone()["n"]
+            if others < 1:
+                conn.rollback()
+                raise HTTPException(400, "Cannot delete the last active admin")
+        try:
+            cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+            conn.commit()
+            return {"ok": True, "deleted": True, "deactivated": False}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            cur.execute("UPDATE users SET status='inactive' WHERE id=%s", (user_id,))
+            conn.commit()
+            return {"ok": True, "deleted": False, "deactivated": True,
+                    "message": "User has linked records (sales, shifts, etc.) and was deactivated instead of deleted."}
+    finally:
+        cur.close()
+        conn.close()
+
+
 @router.put("/users/{user_id}/password")
 def reset_password(user_id: int, body: PasswordReset, current_user: dict = Depends(get_current_user)):
     _admin(current_user)
@@ -308,6 +341,34 @@ def create_branch(body: BranchIn, current_user: dict = Depends(get_current_user)
         bid = cur.fetchone()['id']
         conn.commit()
         return {"id": bid, "ok": True}
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.delete("/branches/{branch_id}")
+def delete_branch(branch_id: int, current_user: dict = Depends(get_current_user)):
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, name_en FROM branches WHERE id=%s", (branch_id,))
+        b = cur.fetchone()
+        if not b:
+            raise HTTPException(404, "Branch not found")
+        cur.execute("SELECT COUNT(*) AS n FROM users WHERE branch_id=%s", (branch_id,))
+        if cur.fetchone()["n"] > 0:
+            raise HTTPException(400, "Branch still has users assigned. Move or remove them first.")
+        cur.execute("SELECT COUNT(*) AS n FROM products WHERE branch_id=%s", (branch_id,))
+        if cur.fetchone()["n"] > 0:
+            raise HTTPException(400, "Branch still has products / stock. Transfer or remove them first.")
+        try:
+            cur.execute("DELETE FROM branches WHERE id=%s", (branch_id,))
+            conn.commit()
+            return {"ok": True, "deleted": True}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            raise HTTPException(409, "Branch has linked historical records (sales, purchases, etc.) and cannot be deleted.")
     finally:
         cur.close()
         conn.close()
