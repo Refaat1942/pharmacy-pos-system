@@ -43,6 +43,41 @@ body {
 }
 .cart-item-enter { animation: slideIn 0.15s ease-out; }
 
+@keyframes pharmacyNameIn {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.96); letter-spacing: 0.15em; filter: blur(4px); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.02); letter-spacing: 0.02em; filter: blur(0); }
+  100% { opacity: 1; transform: translateY(0) scale(1); letter-spacing: 0; filter: blur(0); }
+}
+@keyframes pharmacyShine {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.pharmacy-name-anim {
+  animation: pharmacyNameIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: linear-gradient(90deg, #0f766e 0%, #10b981 40%, #34d399 50%, #10b981 60%, #0f766e 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.pharmacy-name-anim.shine {
+  animation: pharmacyNameIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both,
+             pharmacyShine 6s linear 0.9s infinite;
+}
+.pharmacy-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 9999px;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  animation: pharmacyPulse 2s ease-out infinite;
+}
+@keyframes pharmacyPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
 /* Print styles */
 @media print {
   body > * { visibility: hidden !important; }

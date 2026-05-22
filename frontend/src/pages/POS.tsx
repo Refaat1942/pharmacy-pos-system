@@ -19,6 +19,7 @@ import Layout from '../components/Layout'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
 import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
+import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse } from '../lib/api'
 import i18n from '../lib/i18n'
 
@@ -44,6 +45,18 @@ export default function POS() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
+
+  const [pharmacyName, setPharmacyName] = useState<string>('')
+  useEffect(() => {
+    api.get<{ name_en?: string | null; name_ar?: string | null }>('/settings/profile')
+      .then((r) => {
+        const n = lang === 'ar'
+          ? (r.data.name_ar || r.data.name_en || '')
+          : (r.data.name_en || r.data.name_ar || '')
+        setPharmacyName(n || '')
+      })
+      .catch(() => setPharmacyName(''))
+  }, [lang])
 
   const subtotal = useMemo(
     () => cartItems.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
@@ -198,9 +211,24 @@ export default function POS() {
           {/* Header strip: title + refund-receipt shortcut */}
           <div className="px-6 pt-5 pb-2 bg-white">
             <div className="max-w-3xl mx-auto flex items-center justify-between">
-              <div>
-                <h1 className="text-lg font-bold text-slate-800 leading-tight">{t('nav.pos')}</h1>
-                <p className="text-[11px] text-slate-400 mt-0.5">{t('pos.header_hint')}</p>
+              <div className="min-w-0">
+                {pharmacyName ? (
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="pharmacy-dot" aria-hidden="true" />
+                    <h1
+                      key={pharmacyName + lang}
+                      className="pharmacy-name-anim shine text-xl sm:text-2xl font-extrabold leading-tight tracking-tight truncate"
+                      title={pharmacyName}
+                    >
+                      {pharmacyName}
+                    </h1>
+                  </div>
+                ) : (
+                  <h1 className="text-lg font-bold text-slate-800 leading-tight">{t('nav.pos')}</h1>
+                )}
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {pharmacyName ? `${t('nav.pos')} • ${t('pos.header_hint')}` : t('pos.header_hint')}
+                </p>
               </div>
               <Link
                 to="/sales?refund=1"
