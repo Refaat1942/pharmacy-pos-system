@@ -138,7 +138,7 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
         conn.close()
 
 
-ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier"}
+ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier", "branch"}
 
 
 def _admin(user):
