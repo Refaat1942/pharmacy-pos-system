@@ -29,7 +29,7 @@ interface BranchRow {
   product_count: number
 }
 
-const ROLES = ['admin', 'pharmacist', 'assistant', 'cashier']
+const ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'branch']
 
 const roleClass: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700 border-purple-200',

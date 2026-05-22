@@ -378,7 +378,8 @@
     "role_admin": "مدير",
     "role_pharmacist": "صيدلي",
     "role_assistant": "مساعد",
-    "role_cashier": "كاشير"
+    "role_cashier": "كاشير",
+    "role_branch": "حساب الفرع"
   },
   "pos": {
     "search_placeholder": "بحث بالاسم أو الباركود...",

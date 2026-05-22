@@ -33,11 +33,14 @@ const NAV: NavItem[] = [
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true },
 ]
 
+const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts'])
+
 export default function Sidebar() {
   const { t } = useTranslation()
   const location = useLocation()
   const { user, hasFeature } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isBranch = user?.role === 'branch'
 
   return (
     <aside className="w-56 flex-shrink-0 bg-slate-900 text-white flex flex-col h-screen shadow-2xl z-20">
@@ -57,6 +60,7 @@ export default function Sidebar() {
         {NAV.filter((n) => {
           if (n.adminOnly && !isAdmin) return false
           if (n.roles && !n.roles.includes(user?.role || '')) return false
+          if (isBranch && (!n.feature || !BRANCH_ALLOWED.has(n.feature))) return false
           if (n.feature && !hasFeature(n.feature)) return false
           return true
         }).map(({ to, labelKey, Icon }) => {

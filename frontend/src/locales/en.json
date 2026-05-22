@@ -255,7 +255,8 @@
     "role_admin": "Admin",
     "role_pharmacist": "Pharmacist",
     "role_assistant": "Assistant",
-    "role_cashier": "Cashier"
+    "role_cashier": "Cashier",
+    "role_branch": "Branch Terminal"
   },
   "inventory": {
     "title": "Inventory & Stock",
