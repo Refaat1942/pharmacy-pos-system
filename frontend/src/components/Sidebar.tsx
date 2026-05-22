@@ -41,6 +41,7 @@ export default function Sidebar() {
   const { user, hasFeature } = useAuth()
   const isAdmin = user?.role === 'admin'
   const isBranch = user?.role === 'branch'
+  const userPerms = !isAdmin && Array.isArray(user?.permissions) ? new Set(user!.permissions as string[]) : null
 
   return (
     <aside className="w-56 flex-shrink-0 bg-slate-900 text-white flex flex-col h-screen shadow-2xl z-20">
@@ -62,6 +63,7 @@ export default function Sidebar() {
           if (n.roles && !n.roles.includes(user?.role || '')) return false
           if (isBranch && (!n.feature || !BRANCH_ALLOWED.has(n.feature))) return false
           if (n.feature && !hasFeature(n.feature)) return false
+          if (userPerms && n.feature && !userPerms.has(n.feature)) return false
           return true
         }).map(({ to, labelKey, Icon }) => {
           const active = location.pathname === to

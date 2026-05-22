@@ -220,6 +220,7 @@ def login(req: LoginRequest, request: Request):
             "name_en": user["name_en"],
             "role": user["role"],
             "branch_id": user["branch_id"],
+            "permissions": user.get("permissions"),
         },
         "tenant": {
             "slug": tenant["slug"],
@@ -253,7 +254,37 @@ def get_me(current_user=Depends(get_current_user)):
                 "active": live,
                 "inactive_reason": None if live else reason,
             }
-    return {**current_user, "tenant": tenant_payload}
+    user_payload = None
+    uid = current_user.get("user_id")
+    if uid and slug:
+        try:
+            t = get_tenant_by_slug(slug)
+            if t:
+                uconn = get_db_connection(schema=t["schema_name"])
+                ucur = uconn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                ucur.execute(
+                    "SELECT id, username, name_ar, name_en, role, branch_id, permissions, status FROM users WHERE id=%s",
+                    (uid,),
+                )
+                row = ucur.fetchone()
+                uconn.close()
+                if row:
+                    if row.get("status") and row["status"] != "active":
+                        raise HTTPException(status_code=401, detail="Account is inactive")
+                    user_payload = {
+                        "id": row["id"],
+                        "username": row["username"],
+                        "name_ar": row["name_ar"],
+                        "name_en": row["name_en"],
+                        "role": row["role"],
+                        "branch_id": row["branch_id"],
+                        "permissions": row.get("permissions"),
+                    }
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    return {**current_user, "tenant": tenant_payload, "user": user_payload}
 
 
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────

@@ -390,6 +390,8 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES sup
 CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
 
 -- Shift Visa reconciliation (counted Visa total + variance vs expected Visa sales)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
+
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS counted_visa  NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_visa NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS shift_type    VARCHAR(20);

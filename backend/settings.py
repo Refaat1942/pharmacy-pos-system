@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user
@@ -148,6 +148,29 @@ def _admin(user):
 
 # ---------------- Users ----------------
 
+ALL_FEATURES = {
+    "dashboard", "pos", "sales", "returns", "inventory", "transfers",
+    "expiry", "purchases", "customers", "suppliers", "reports",
+    "shifts", "hr",
+}
+
+
+def _clean_permissions(value):
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise HTTPException(400, "permissions must be a list")
+    cleaned = []
+    seen = set()
+    for v in value:
+        if not isinstance(v, str):
+            continue
+        v = v.strip()
+        if v in ALL_FEATURES and v not in seen:
+            cleaned.append(v); seen.add(v)
+    return cleaned
+
+
 class UserIn(BaseModel):
     username: str
     name_ar: str
@@ -155,7 +178,8 @@ class UserIn(BaseModel):
     role: str
     branch_id: Optional[int] = None
     salary: Optional[float] = None
-    password: Optional[str] = None  # required for create
+    password: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 
 class UserPatch(BaseModel):
@@ -165,6 +189,7 @@ class UserPatch(BaseModel):
     branch_id: Optional[int] = None
     salary: Optional[float] = None
     status: Optional[str] = None
+    permissions: Optional[List[str]] = None
 
 
 class PasswordReset(BaseModel):
@@ -180,6 +205,7 @@ def list_users(current_user: dict = Depends(get_current_user)):
         cur.execute("""
             SELECT u.id, u.username, u.name_ar, u.name_en, u.role,
                    u.branch_id, u.salary, COALESCE(u.status,'active') AS status,
+                   u.permissions,
                    b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                    u.created_at
             FROM users u
@@ -206,12 +232,14 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
         cur.execute("SELECT 1 FROM users WHERE username = %s", (body.username,))
         if cur.fetchone():
             raise HTTPException(400, "Username already exists")
+        perms = _clean_permissions(body.permissions) if body.permissions is not None else None
         cur.execute("""
-            INSERT INTO users (username, password_hash, name_ar, name_en, role, branch_id, salary, status)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,'active')
+            INSERT INTO users (username, password_hash, name_ar, name_en, role, branch_id, salary, status, permissions)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,'active',%s)
             RETURNING id
         """, (body.username, pw, body.name_ar, body.name_en, body.role,
-              body.branch_id, body.salary))
+              body.branch_id, body.salary,
+              psycopg2.extras.Json(perms) if perms is not None else None))
         uid = cur.fetchone()['id']
         conn.commit()
         return {"id": uid, "ok": True}
@@ -230,6 +258,11 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
             raise HTTPException(400, "Invalid role")
         if k == "status" and v not in ("active", "inactive"):
             raise HTTPException(400, "Invalid status")
+        if k == "permissions":
+            cleaned = _clean_permissions(v)
+            fields.append("permissions = %s")
+            values.append(psycopg2.extras.Json(cleaned) if cleaned is not None else None)
+            continue
         fields.append(f"{k} = %s")
         values.append(v)
     if not fields:

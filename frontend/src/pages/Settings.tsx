@@ -15,9 +15,17 @@ interface UserRow {
   branch_id: number | null
   salary: number | null
   status: string
+  permissions: string[] | null
   branch_name_en: string | null
   branch_name_ar: string | null
 }
+
+const ALL_FEATURES = [
+  'dashboard', 'pos', 'sales', 'returns', 'inventory', 'transfers',
+  'expiry', 'purchases', 'customers', 'suppliers', 'reports', 'shifts', 'hr',
+] as const
+
+const BRANCH_ROLE_FEATURES = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr'])
 
 interface BranchRow {
   id: number
@@ -234,6 +242,14 @@ function UserModal({ user, branches, onClose, onSaved }: {
     status: user?.status || 'active',
     password: '',
   })
+  const [customPerms, setCustomPerms] = useState<boolean>(Array.isArray(user?.permissions))
+  const [perms, setPerms] = useState<Set<string>>(
+    new Set(Array.isArray(user?.permissions) ? (user!.permissions as string[]) : [])
+  )
+  const togglePerm = (f: string) => {
+    setPerms(prev => { const n = new Set(prev); if (n.has(f)) n.delete(f); else n.add(f); return n })
+  }
+  const showPerms = form.role !== 'admin'
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -246,6 +262,11 @@ function UserModal({ user, branches, onClose, onSaved }: {
         role: form.role,
         branch_id: form.branch_id ? Number(form.branch_id) : null,
         salary: form.salary ? Number(form.salary) : null,
+      }
+      if (form.role !== 'admin') {
+        payload.permissions = customPerms ? Array.from(perms) : null
+      } else {
+        payload.permissions = null
       }
       if (isEdit) {
         payload.status = form.status
@@ -320,6 +341,42 @@ function UserModal({ user, branches, onClose, onSaved }: {
             <Field label={t('settings.password')}>
               <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input w-full" autoComplete="new-password" />
             </Field>
+          )}
+          {showPerms && (
+            <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/60">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={customPerms}
+                  onChange={(e) => setCustomPerms(e.target.checked)}
+                  className="rounded"
+                />
+                <span className="text-sm font-medium text-slate-700">{t('settings.custom_permissions')}</span>
+              </label>
+              <p className="text-xs text-slate-500 mt-1 mb-2">
+                {customPerms ? t('settings.custom_permissions_on_hint') : t('settings.custom_permissions_off_hint')}
+              </p>
+              {customPerms && (
+                <div className="grid grid-cols-2 gap-1.5 mt-2">
+                  {ALL_FEATURES.map(f => {
+                    const isBranchRole = form.role === 'branch'
+                    const blocked = isBranchRole && !BRANCH_ROLE_FEATURES.has(f)
+                    return (
+                      <label key={f} className={`flex items-center gap-2 px-2 py-1 rounded ${blocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={perms.has(f) && !blocked}
+                          disabled={blocked}
+                          onChange={() => togglePerm(f)}
+                          className="rounded"
+                        />
+                        <span className="text-sm text-slate-700">{t(`nav.${f}`)}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )}
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
         </div>

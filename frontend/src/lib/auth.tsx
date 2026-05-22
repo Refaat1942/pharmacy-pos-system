@@ -7,6 +7,7 @@ interface AuthUser {
   name_en: string
   role: string
   branch_id: number
+  permissions?: string[] | null
 }
 
 export interface TenantInfo {
@@ -102,6 +103,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         localStorage.setItem('pharma_tenant', JSON.stringify(next))
         setTenant(next)
+      }
+      if (data?.user) {
+        const nextUser: AuthUser = {
+          id: data.user.id,
+          username: data.user.username,
+          name_ar: data.user.name_ar,
+          name_en: data.user.name_en,
+          role: data.user.role,
+          branch_id: data.user.branch_id,
+          permissions: data.user.permissions ?? null,
+        }
+        localStorage.setItem('pharma_user', JSON.stringify(nextUser))
+        setUser(nextUser)
       }
     } catch {
       /* network blip — keep cached features */
