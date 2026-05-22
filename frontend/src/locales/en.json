@@ -18,6 +18,7 @@
     "inventory": "Inventory",
     "logout": "Logout",
     "transfers": "Transfers",
+    "branches_stock": "Branches Stock",
     "expiry": "Expiry",
     "purchases": "Purchases",
     "suppliers": "Suppliers",

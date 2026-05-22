@@ -7,6 +7,7 @@ import POS from './pages/POS'
 import Sales from './pages/Sales'
 import Inventory from './pages/Inventory'
 import Transfers from './pages/Transfers'
+import BranchesStock from './pages/BranchesStock'
 import Expiry from './pages/Expiry'
 import Suppliers from './pages/Suppliers'
 import Purchases from './pages/Purchases'
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
       <Route path="/transfers" element={<ProtectedRoute><Transfers /></ProtectedRoute>} />
+      <Route path="/branches-stock" element={<ProtectedRoute><BranchesStock /></ProtectedRoute>} />
       <Route path="/expiry" element={<ProtectedRoute><Expiry /></ProtectedRoute>} />
       <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
       <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />

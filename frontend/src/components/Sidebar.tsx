@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
-  LineChart, DollarSign, UsersRound,
+  LineChart, DollarSign, UsersRound, Layers,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 
@@ -23,6 +23,7 @@ const NAV: NavItem[] = [
   { to: '/returns',   labelKey: 'nav.returns',    Icon: RotateCcw,    feature: 'returns' },
   { to: '/inventory', labelKey: 'nav.inventory',  Icon: Package,      feature: 'inventory' },
   { to: '/transfers', labelKey: 'nav.transfers',  Icon: ArrowRightLeft, feature: 'transfers' },
+  { to: '/branches-stock', labelKey: 'nav.branches_stock', Icon: Layers, feature: 'branches_stock' },
   { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
@@ -33,7 +34,7 @@ const NAV: NavItem[] = [
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true },
 ]
 
-const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr'])
+const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock'])
 
 export default function Sidebar() {
   const { t } = useTranslation()

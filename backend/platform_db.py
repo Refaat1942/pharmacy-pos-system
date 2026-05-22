@@ -27,6 +27,7 @@ FEATURES_CATALOG = [
     {"key": "returns",    "label": "Returns",              "default": True},
     {"key": "inventory",  "label": "Inventory",            "default": True},
     {"key": "transfers",  "label": "Branch Transfers",     "default": False},
+    {"key": "branches_stock", "label": "Branches Stock Overview", "default": True},
     {"key": "expiry",     "label": "Expiry Tracking",      "default": True},
     {"key": "purchases",  "label": "Purchase Orders",      "default": True},
     {"key": "suppliers",  "label": "Suppliers",            "default": True},

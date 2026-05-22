@@ -150,8 +150,8 @@ def _admin(user):
 
 ALL_FEATURES = {
     "dashboard", "pos", "sales", "returns", "inventory", "transfers",
-    "expiry", "purchases", "customers", "suppliers", "reports",
-    "shifts", "hr",
+    "branches_stock", "expiry", "purchases", "customers", "suppliers",
+    "reports", "shifts", "hr",
 }
 
 

@@ -21,11 +21,11 @@ interface UserRow {
 }
 
 const ALL_FEATURES = [
-  'dashboard', 'pos', 'sales', 'returns', 'inventory', 'transfers',
+  'dashboard', 'pos', 'sales', 'returns', 'inventory', 'transfers', 'branches_stock',
   'expiry', 'purchases', 'customers', 'suppliers', 'reports', 'shifts', 'hr',
 ] as const
 
-const BRANCH_ROLE_FEATURES = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr'])
+const BRANCH_ROLE_FEATURES = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock'])
 
 interface BranchRow {
   id: number
