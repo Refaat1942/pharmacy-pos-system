@@ -147,7 +147,7 @@ export default function Transfers() {
                           <Check size={14} />
                         </button>
                       )}
-                      {t2.status === 'in_transit' && (user?.role === 'admin' || user?.branch_id === t2.from_branch_id) && (
+                      {t2.status === 'in_transit' && user?.role === 'admin' && (
                         <button
                           onClick={() => handleCancel(t2.id)}
                           className="p-1.5 hover:bg-red-100 rounded text-red-700"
@@ -183,7 +183,7 @@ export default function Transfers() {
           onReceive={() => handleReceive(viewing.id)}
           onCancel={() => handleCancel(viewing.id)}
           canReceive={user?.role === 'admin' || user?.branch_id === viewing.to_branch_id}
-          canCancel={user?.role === 'admin' || user?.branch_id === viewing.from_branch_id}
+          canCancel={user?.role === 'admin'}
         />
       )}
     </Layout>

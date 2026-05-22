@@ -758,6 +758,8 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
 
 @router.post("/transfers/{transfer_id}/cancel")
 def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -767,10 +769,6 @@ def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Transfer not found")
         if t["status"] != "in_transit":
             raise HTTPException(status_code=400, detail=f"Cannot cancel transfer in status '{t['status']}'")
-        # Only admin OR member of source branch can cancel
-        if current_user.get("role") != "admin":
-            if current_user.get("branch_id") != t["from_branch_id"]:
-                raise HTTPException(status_code=403, detail="Only source branch can cancel")
 
         cur.execute("SELECT * FROM stock_transfer_items WHERE transfer_id=%s", (transfer_id,))
         items = cur.fetchall()

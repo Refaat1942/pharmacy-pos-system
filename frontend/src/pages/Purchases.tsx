@@ -118,14 +118,14 @@ export default function Purchases() {
                         <Eye size={14} />
                       </button>
                       {po.status === 'draft' && (user?.role === 'admin' || user?.branch_id === po.branch_id) && (
-                        <>
-                          <button onClick={() => handleReceive(po.id)} className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700" title={t('purchases.receive') as string}>
-                            <Check size={14} />
-                          </button>
-                          <button onClick={() => handleCancel(po.id)} className="p-1.5 hover:bg-red-100 rounded text-red-700" title={t('purchases.cancel') as string}>
-                            <Trash2 size={14} />
-                          </button>
-                        </>
+                        <button onClick={() => handleReceive(po.id)} className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700" title={t('purchases.receive') as string}>
+                          <Check size={14} />
+                        </button>
+                      )}
+                      {po.status === 'draft' && user?.role === 'admin' && (
+                        <button onClick={() => handleCancel(po.id)} className="p-1.5 hover:bg-red-100 rounded text-red-700" title={t('purchases.cancel') as string}>
+                          <Trash2 size={14} />
+                        </button>
                       )}
                     </div>
                   </td>
@@ -158,7 +158,8 @@ export default function Purchases() {
           onClose={() => setViewing(null)}
           onReceive={() => handleReceive(viewing.id)}
           onCancel={() => handleCancel(viewing.id)}
-          canManage={user?.role === 'admin' || user?.branch_id === viewing.branch_id}
+          canReceive={user?.role === 'admin' || user?.branch_id === viewing.branch_id}
+          canCancel={user?.role === 'admin'}
         />
       )}
     </Layout>
@@ -334,8 +335,8 @@ function CreatePOModal({
   )
 }
 
-function PODetailModal({ po, onClose, onReceive, onCancel, canManage }: {
-  po: PurchaseOrder; onClose: () => void; onReceive: () => void; onCancel: () => void; canManage: boolean
+function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel }: {
+  po: PurchaseOrder; onClose: () => void; onReceive: () => void; onCancel: () => void; canReceive: boolean; canCancel: boolean
 }) {
   const { t } = useTranslation()
   return (
@@ -385,14 +386,18 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canManage }: {
             <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{Number(po.total).toFixed(2)}</b></div>
           </div>
         </div>
-        {po.status === 'draft' && canManage && (
+        {po.status === 'draft' && (canReceive || canCancel) && (
           <div className="px-5 py-3 border-t flex justify-end gap-2">
-            <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
-              {t('purchases.cancel')}
-            </button>
-            <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
-              {t('purchases.receive')}
-            </button>
+            {canCancel && (
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+                {t('purchases.cancel')}
+              </button>
+            )}
+            {canReceive && (
+              <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+                {t('purchases.receive')}
+              </button>
+            )}
           </div>
         )}
       </div>

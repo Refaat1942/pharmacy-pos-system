@@ -454,6 +454,8 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
 
 @router.post("/purchase-orders/{po_id}/cancel")
 def cancel_po(po_id: int, current_user=Depends(get_current_user)):
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -463,7 +465,6 @@ def cancel_po(po_id: int, current_user=Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="PO not found")
         if po["status"] != "draft":
             raise HTTPException(status_code=400, detail=f"Cannot cancel PO in status '{po['status']}'")
-        _assert_po_branch_access(current_user, po["branch_id"])
         cur.execute(
             "UPDATE purchase_orders SET status='cancelled', cancelled_at=NOW() WHERE id=%s",
             (po_id,),
