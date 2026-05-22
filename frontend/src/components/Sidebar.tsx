@@ -29,11 +29,11 @@ const NAV: NavItem[] = [
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
-  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       adminOnly: true },
+  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       roles: ['admin', 'branch'] },
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true },
 ]
 
-const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts'])
+const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr'])
 
 export default function Sidebar() {
   const { t } = useTranslation()

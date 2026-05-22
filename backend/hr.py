@@ -24,6 +24,11 @@ def _require_admin(user):
         raise HTTPException(403, "Admin only")
 
 
+def _require_admin_or_branch(user):
+    if user.get('role') not in ('admin', 'branch'):
+        raise HTTPException(403, "Admin or branch user only")
+
+
 # ─── Employees ─────────────────────────────────────────────────────────────
 class EmployeeIn(BaseModel):
     name: str = Field(min_length=1)
@@ -39,7 +44,7 @@ class EmployeeIn(BaseModel):
 
 @router.get("/employees")
 def list_employees(active_only: bool = False, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_admin_or_branch(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -196,14 +201,14 @@ def _calc_hours(ci: Optional[time], co: Optional[time]) -> Optional[float]:
     return round(mins / 60.0, 2)
 
 
-@router.get("/attendance")
+@router.get("/attendance")  
 def list_attendance(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     employee_id: Optional[int] = None,
     current_user=Depends(get_current_user),
 ):
-    _require_admin(current_user)
+    _require_admin_or_branch(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -224,7 +229,7 @@ def list_attendance(
 
 @router.post("/attendance")
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_admin_or_branch(current_user)
     hours = _calc_hours(body.check_in, body.check_out)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

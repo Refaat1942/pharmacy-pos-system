@@ -25,9 +25,15 @@ export default function HR() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>('employees')
+  const isBranch = user?.role === 'branch'
+  const allowedTabs = isAdmin
+    ? (['employees', 'attendance', 'payroll', 'performance'] as const)
+    : (['attendance'] as const)
+  const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>(
+    isAdmin ? 'employees' : 'attendance'
+  )
 
-  if (!isAdmin) {
+  if (!isAdmin && !isBranch) {
     return (
       <Layout>
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
@@ -47,17 +53,17 @@ export default function HR() {
         </div>
 
         <div className="flex gap-1 border-b border-slate-200">
-          {(['employees', 'attendance', 'payroll', 'performance'] as const).map((k) => (
+          {allowedTabs.map((k) => (
             <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? 'border-pharma-600 text-pharma-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               {t(`hr.tab_${k}`)}
             </button>
           ))}
         </div>
 
-        {tab === 'employees' && <EmployeesTab />}
+        {tab === 'employees' && isAdmin && <EmployeesTab />}
         {tab === 'attendance' && <AttendanceTab />}
-        {tab === 'payroll' && <PayrollTab />}
-        {tab === 'performance' && <PerformanceTab />}
+        {tab === 'payroll' && isAdmin && <PayrollTab />}
+        {tab === 'performance' && isAdmin && <PerformanceTab />}
       </div>
     </Layout>
   )
@@ -199,6 +205,8 @@ function EmployeesTab() {
 
 function AttendanceTab() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [employees, setEmployees] = useState<Employee[]>([])
   const [rows, setRows] = useState<Att[]>([])
   const [date, setDate] = useState(today())
@@ -264,7 +272,11 @@ function AttendanceTab() {
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : r.status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{t(`hr.status_${r.status}`)}</span>
                 </td>
                 <td className="px-3 py-2.5 text-center">
-                  <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                  {isAdmin ? (
+                    <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}
