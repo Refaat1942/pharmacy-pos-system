@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2 } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import BarcodeDesigner from '../components/BarcodeDesigner'
+import BulkBarcodePrint from '../components/BulkBarcodePrint'
 import { useAuth } from '../lib/auth'
 
 type Product = {
@@ -84,6 +85,22 @@ export default function Inventory() {
   const [adjustItem, setAdjustItem] = useState<Product | null>(null)
   const [historyItem, setHistoryItem] = useState<Product | null>(null)
   const [showExcel, setShowExcel] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [showBulkPrint, setShowBulkPrint] = useState(false)
+
+  const toggleOne = (id: number) => {
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  const toggleAll = () => {
+    setSelected(s => {
+      const visibleIds = items.map(i => i.id)
+      const allSelected = visibleIds.every(id => s.has(id))
+      if (allSelected) {
+        const n = new Set(s); visibleIds.forEach(id => n.delete(id)); return n
+      }
+      const n = new Set(s); visibleIds.forEach(id => n.add(id)); return n
+    })
+  }
 
   const loadItems = async () => {
     setLoading(true)
@@ -216,6 +233,15 @@ export default function Inventory() {
                 {t('inventory.bulk_upload')}
               </button>
               <button
+                onClick={() => setShowBulkPrint(true)}
+                disabled={selected.size === 0}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-pharma-200 text-pharma-700 hover:bg-pharma-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium"
+              >
+                <Printer size={15} />
+                {t('bulk_barcode.open')}
+                {selected.size > 0 && <span className="ms-1 px-1.5 py-0.5 bg-pharma-600 text-white text-[10px] rounded-full">{selected.size}</span>}
+              </button>
+              <button
                 onClick={() => setShowCreate(true)}
                 className="flex items-center gap-1.5 px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg text-sm font-medium shadow-sm"
               >
@@ -230,6 +256,11 @@ export default function Inventory() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
+                      <Th className="w-8 text-center">
+                        <input type="checkbox"
+                          checked={items.length > 0 && items.every(i => selected.has(i.id))}
+                          onChange={toggleAll} />
+                      </Th>
                       <Th>{t('inventory.col_barcode')}</Th>
                       <Th>{t('inventory.col_name')}</Th>
                       <Th>{t('inventory.col_category')}</Th>
@@ -243,16 +274,19 @@ export default function Inventory() {
                   </thead>
                   <tbody>
                     {loading && (
-                      <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
+                      <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
                     )}
                     {!loading && items.length === 0 && (
-                      <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                      <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
                     )}
                     {items.map(it => {
                       const isZero = it.stock <= 0
                       const isLow = !isZero && it.stock <= it.min_stock
                       return (
                         <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
+                          <td className="px-3 py-2 text-center">
+                            <input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleOne(it.id)} />
+                          </td>
                           <td className="px-3 py-2 font-mono text-xs text-slate-600">{it.barcode || '—'}</td>
                           <td className="px-3 py-2 font-medium">{isAr ? it.name_ar : it.name_en}</td>
                           <td className="px-3 py-2 text-slate-600">{it.category || '—'}</td>
@@ -309,6 +343,18 @@ export default function Inventory() {
       {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSaved={() => { setAdjustItem(null); loadItems() }} />}
       {historyItem && <HistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
       {showExcel && <ExcelUploadModal onClose={() => setShowExcel(false)} onDone={() => { setShowExcel(false); loadItems() }} />}
+      {showBulkPrint && (
+        <BulkBarcodePrint
+          items={items.filter(i => selected.has(i.id)).map(i => ({
+            id: i.id,
+            barcode: i.barcode,
+            name: isAr ? i.name_ar : i.name_en,
+            price: i.price,
+          }))}
+          currency={t('pos.egp') as string}
+          onClose={() => setShowBulkPrint(false)}
+        />
+      )}
     </Layout>
   )
 }

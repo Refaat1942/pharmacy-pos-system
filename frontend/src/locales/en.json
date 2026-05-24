@@ -46,6 +46,27 @@
     "invalid_for_type": "Value does not match the selected type's format",
     "open": "Design barcode"
   },
+  "bulk_barcode": {
+    "title": "Print barcodes",
+    "subtitle": "{{n}} item(s) selected · {{total}} label(s) to print",
+    "open": "Print barcodes",
+    "size": "Label size",
+    "size_sm": "Small (5/row)",
+    "size_md": "Medium (3/row)",
+    "size_lg": "Large (2/row)",
+    "type": "Code style",
+    "type_auto": "Auto (1D)",
+    "type_qr": "QR",
+    "show_name": "Show name",
+    "show_price": "Show price",
+    "item": "Item",
+    "barcode": "Barcode",
+    "qty": "Quantity",
+    "none": "No items with a barcode selected",
+    "skipped": "{{n}} selected item(s) skipped (no barcode)",
+    "print": "Print ({{n}})",
+    "selected": "{{n}} selected"
+  },
   "nav": {
     "pos": "Point of Sale",
     "sales": "Sales History",
