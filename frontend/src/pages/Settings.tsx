@@ -5,6 +5,8 @@ import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import PhoneField from '../components/PhoneField'
+import { isValidPhone } from '../lib/phone'
 
 interface UserRow {
   id: number
@@ -587,6 +589,7 @@ function BranchModal({ branch, onClose, onSaved }: { branch?: BranchRow; onClose
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
+    if (!isValidPhone(form.phone)) { setError(t('validation.phone_invalid')); return }
     setSaving(true); setError(null)
     try {
       const payload = { ...form, address: form.address || null, phone: form.phone || null }
@@ -618,7 +621,7 @@ function BranchModal({ branch, onClose, onSaved }: { branch?: BranchRow; onClose
             <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="input w-full" />
           </Field>
           <Field label={t('settings.phone')}>
-            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input w-full" />
+            <PhoneField value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} className="input w-full" />
           </Field>
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
         </div>
@@ -722,6 +725,7 @@ function PharmacyTab() {
   }
 
   const save = async () => {
+    if (!isValidPhone(p.phone)) { alert(t('validation.phone_invalid')); return }
     setSaving(true); setSavedMsg('')
     try {
       await api.put('/settings/profile', p)
@@ -784,7 +788,7 @@ function PharmacyTab() {
               <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.address_en} onChange={(e) => set('address_en', e.target.value)} />
             </Field>
             <Field label={t('settings.pharma.phone')}>
-              <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.phone} onChange={(e) => set('phone', e.target.value)} />
+              <PhoneField value={p.phone} onChange={(v) => set('phone', v)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </Field>
             <Field label={t('settings.pharma.tax_id')}>
               <input className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" value={p.tax_id} onChange={(e) => set('tax_id', e.target.value)} />

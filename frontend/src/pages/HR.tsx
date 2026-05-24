@@ -5,6 +5,8 @@ import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import PhoneField from '../components/PhoneField'
+import { isValidPhone } from '../lib/phone'
 
 type Employee = {
   id: number; name: string; role: string | null; branch_id: number | null
@@ -83,6 +85,7 @@ function EmployeesTab() {
 
   const save = async () => {
     if (!editing?.name) return
+    if (!isValidPhone(editing.phone)) { alert(t('validation.phone_invalid')); return }
     try {
       const body = {
         name: editing.name, role: editing.role || null, branch_id: editing.branch_id || null,
@@ -184,7 +187,7 @@ function EmployeesTab() {
             </Field>
             <Field label={t('hr.base_salary')}><input type="number" className="input w-full" value={editing.base_salary ?? 0} onChange={(e) => setEditing({ ...editing, base_salary: Number(e.target.value) })} /></Field>
             <Field label={t('hr.hire_date')}><input type="date" className="input w-full" value={editing.hire_date || ''} onChange={(e) => setEditing({ ...editing, hire_date: e.target.value })} /></Field>
-            <Field label={t('hr.phone')}><input className="input w-full" value={editing.phone || ''} onChange={(e) => setEditing({ ...editing, phone: e.target.value })} /></Field>
+            <Field label={t('hr.phone')}><PhoneField className="input w-full" value={editing.phone || ''} onChange={(v) => setEditing({ ...editing, phone: v })} /></Field>
             <Field label={t('hr.national_id')}><input className="input w-full" value={editing.national_id || ''} onChange={(e) => setEditing({ ...editing, national_id: e.target.value })} /></Field>
             <Field label={t('hr.status')}>
               <select className="input w-full" value={editing.active === false ? '0' : '1'} onChange={(e) => setEditing({ ...editing, active: e.target.value === '1' })}>

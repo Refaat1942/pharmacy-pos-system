@@ -4,6 +4,8 @@ import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-reac
 import Layout from '../components/Layout'
 import RegionSelect from '../components/RegionSelect'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
+import PhoneField from '../components/PhoneField'
+import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
 import { regionLabel } from '../lib/regions'
 import i18n from '../lib/i18n'
@@ -148,6 +150,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
   }
   const save = async () => {
     if (!f.name?.trim()) { alert(t('customers.name_required')); return }
+    if (!isValidPhone(f.phone)) { alert(t('validation.phone_invalid')); return }
     setSaving(true)
     try {
       const payload = { ...f, branch_ids: Array.from(selectedBranches) }
@@ -173,7 +176,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('customers.col_phone')}</label>
-              <input value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} className="input mt-1 w-full" />
+              <PhoneField value={f.phone || ''} onChange={(v) => setF({ ...f, phone: v })} />
             </div>
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('customers.col_email')}</label>

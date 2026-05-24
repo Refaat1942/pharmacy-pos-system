@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
 import Layout from '../components/Layout'
 import { suppliersAPI, Supplier } from '../lib/api'
+import PhoneField from '../components/PhoneField'
+import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
 import RegionSelect from '../components/RegionSelect'
 import { regionLabel } from '../lib/regions'
@@ -162,6 +164,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; 
   const [saving, setSaving] = useState(false)
   const save = async () => {
     if (!f.name?.trim()) { alert(t('suppliers.name_required')); return }
+    if (!isValidPhone((f as any).phone)) { alert(t('validation.phone_invalid')); return }
     setSaving(true)
     try {
       if (f.id) await suppliersAPI.update(f.id, f)
@@ -182,7 +185,6 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; 
           {[
             ['name', t('suppliers.col_name')],
             ['contact_person', t('suppliers.col_contact')],
-            ['phone', t('suppliers.col_phone')],
             ['email', t('suppliers.col_email')],
           ].map(([k, label]) => (
             <div key={k as string}>
@@ -194,6 +196,10 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; 
               />
             </div>
           ))}
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_phone')}</label>
+            <PhoneField value={(f as any).phone || ''} onChange={(v) => setF({ ...f, phone: v })} />
+          </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_region')}</label>
             <RegionSelect value={(f as any).region} onChange={(v) => setF({ ...f, ...({ region: v } as any) })} className="mt-1 w-full" />

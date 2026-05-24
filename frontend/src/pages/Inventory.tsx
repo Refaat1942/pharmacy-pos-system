@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2 } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
+import BarcodeDesigner from '../components/BarcodeDesigner'
 import { useAuth } from '../lib/auth'
 
 type Product = {
@@ -368,6 +369,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -406,7 +408,13 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     <Modal onClose={onClose} title={item ? t('inventory.edit_item') : t('inventory.add_item')}>
       <form onSubmit={submit} className="grid grid-cols-2 gap-4">
         <Field label={t('inventory.f_barcode')}>
-          <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input" />
+          <div className="flex gap-2">
+            <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" />
+            <button type="button" onClick={() => setShowBarcodeDesigner(true)}
+              className="px-3 py-2 text-xs rounded-lg border border-pharma-200 text-pharma-700 bg-pharma-50 hover:bg-pharma-100 inline-flex items-center gap-1 whitespace-nowrap">
+              <Wand2 size={13} /> {t('barcode_studio.open')}
+            </button>
+          </div>
         </Field>
         <Field label={t('inventory.f_category')}>
           <input
@@ -523,6 +531,14 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           </button>
         </div>
       </form>
+      {showBarcodeDesigner && (
+        <BarcodeDesigner
+          initialValue={f.barcode}
+          productName={f.name_en || f.name_ar}
+          onClose={() => setShowBarcodeDesigner(false)}
+          onUse={(v) => { setF({ ...f, barcode: v }); setShowBarcodeDesigner(false) }}
+        />
+      )}
     </Modal>
   )
 }
