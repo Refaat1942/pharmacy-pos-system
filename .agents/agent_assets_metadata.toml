@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "3dFevCKNzdeYrqjghfOGu"
+uri = "file://docs/USER_MANUAL_EN.md"
+type = "text"
+title = "User Manual (English)"
+
+[[outputs]]
+id = "Ijx9In--sKXkM1-zL77pv"
+uri = "file://docs/USER_MANUAL_AR.md"
+type = "text"
+title = "دليل المستخدم (عربي)"
