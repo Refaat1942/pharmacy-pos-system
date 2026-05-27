@@ -42,8 +42,9 @@ export default function PaymentModal({
     else if (paymentMethod === 'digital') setPaymentMethod('cash')
   }
 
+  const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
-  const effectiveTotal = netTotal + (saleType === 'delivery' ? deliveryFeeNum : 0)
+  const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
   const change =
     paymentMethod === 'cash' && cashAmount
       ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
@@ -54,7 +55,7 @@ export default function PaymentModal({
 
   const isValid = () => {
     if (!selectedSeller) return false
-    if (saleType === 'delivery') {
+    if (needsDelivery) {
       if (!deliveryAddress.trim()) return false
       if (!deliveryCustomerName.trim()) return false
       if (!deliveryCustomerPhone.trim()) return false
@@ -70,7 +71,7 @@ export default function PaymentModal({
       setError(t('payment.seller_required') as string)
       return
     }
-    if (saleType === 'delivery' && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
+    if (needsDelivery && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
       setError(t('payment.delivery_required') as string)
       return
     }
@@ -111,10 +112,10 @@ export default function PaymentModal({
             : undefined,
         customer_id: selectedCustomer?.id,
         seller_id: selectedSeller?.id,
-        delivery_address: saleType === 'delivery' ? deliveryAddress.trim() : undefined,
-        delivery_fee: saleType === 'delivery' ? deliveryFeeNum : undefined,
-        delivery_customer_name: saleType === 'delivery' ? deliveryCustomerName.trim() : undefined,
-        delivery_customer_phone: saleType === 'delivery' ? deliveryCustomerPhone.trim() : undefined,
+        delivery_address: needsDelivery ? deliveryAddress.trim() : undefined,
+        delivery_fee: needsDelivery ? deliveryFeeNum : undefined,
+        delivery_customer_name: needsDelivery ? deliveryCustomerName.trim() : undefined,
+        delivery_customer_phone: needsDelivery ? deliveryCustomerPhone.trim() : undefined,
       })
       onSuccess(data)
     } catch (e: any) {
@@ -181,7 +182,7 @@ export default function PaymentModal({
             </div>
 
             {/* Delivery details */}
-            {saleType === 'delivery' && (
+            {needsDelivery && (
               <div className="space-y-3 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
                 <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
                   {t('payment.delivery_details')}
@@ -420,7 +421,7 @@ export default function PaymentModal({
                   <span className="tabular-nums">{invoiceDiscount.toFixed(2)}</span>
                 </div>
               )}
-              {saleType === 'delivery' && deliveryFeeNum > 0 && (
+              {needsDelivery && deliveryFeeNum > 0 && (
                 <div className="flex justify-between text-xs text-amber-700">
                   <span>+ {t('payment.delivery_fee')}</span>
                   <span className="tabular-nums">{deliveryFeeNum.toFixed(2)}</span>
