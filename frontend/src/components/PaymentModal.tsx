@@ -31,6 +31,10 @@ export default function PaymentModal({
   const [cardPart, setCardPart] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [deliveryAddress, setDeliveryAddress] = useState('')
+  const [deliveryFee, setDeliveryFee] = useState('')
+  const [deliveryCustomerName, setDeliveryCustomerName] = useState(selectedCustomer?.name || '')
+  const [deliveryCustomerPhone, setDeliveryCustomerPhone] = useState(selectedCustomer?.phone || '')
 
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
@@ -38,17 +42,24 @@ export default function PaymentModal({
     else if (paymentMethod === 'digital') setPaymentMethod('cash')
   }
 
+  const deliveryFeeNum = parseFloat(deliveryFee) || 0
+  const effectiveTotal = netTotal + (saleType === 'delivery' ? deliveryFeeNum : 0)
   const change =
     paymentMethod === 'cash' && cashAmount
-      ? Math.max(0, parseFloat(cashAmount) - netTotal)
+      ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
       : 0
 
   const hybridSum = (parseFloat(cashPart) || 0) + (parseFloat(cardPart) || 0)
-  const hybridDiff = hybridSum - netTotal
+  const hybridDiff = hybridSum - effectiveTotal
 
   const isValid = () => {
     if (!selectedSeller) return false
-    if (paymentMethod === 'cash') return parseFloat(cashAmount) >= netTotal
+    if (saleType === 'delivery') {
+      if (!deliveryAddress.trim()) return false
+      if (!deliveryCustomerName.trim()) return false
+      if (!deliveryCustomerPhone.trim()) return false
+    }
+    if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     if (paymentMethod === 'account') return !!selectedCustomer
     return true
@@ -59,11 +70,15 @@ export default function PaymentModal({
       setError(t('payment.seller_required') as string)
       return
     }
+    if (saleType === 'delivery' && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
+      setError(t('payment.delivery_required') as string)
+      return
+    }
     if (!isValid()) {
       setError(
         paymentMethod === 'cash'
-          ? `Minimum amount: ${t('receipt.egp')} ${netTotal.toFixed(2)}`
-          : `Amounts must sum to: ${t('receipt.egp')} ${netTotal.toFixed(2)}`
+          ? `Minimum amount: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
+          : `Amounts must sum to: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
       )
       return
     }
@@ -90,12 +105,16 @@ export default function PaymentModal({
             : undefined,
         visa_amount:
           paymentMethod === 'visa'
-            ? netTotal
+            ? effectiveTotal
             : paymentMethod === 'hybrid'
             ? parseFloat(cardPart) || 0
             : undefined,
         customer_id: selectedCustomer?.id,
         seller_id: selectedSeller?.id,
+        delivery_address: saleType === 'delivery' ? deliveryAddress.trim() : undefined,
+        delivery_fee: saleType === 'delivery' ? deliveryFeeNum : undefined,
+        delivery_customer_name: saleType === 'delivery' ? deliveryCustomerName.trim() : undefined,
+        delivery_customer_phone: saleType === 'delivery' ? deliveryCustomerPhone.trim() : undefined,
       })
       onSuccess(data)
     } catch (e: any) {
@@ -161,6 +180,53 @@ export default function PaymentModal({
               </div>
             </div>
 
+            {/* Delivery details */}
+            {saleType === 'delivery' && (
+              <div className="space-y-3 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                  {t('payment.delivery_details')}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={deliveryCustomerName}
+                    onChange={(e) => setDeliveryCustomerName(e.target.value)}
+                    placeholder={t('payment.delivery_customer_name') as string}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400"
+                  />
+                  <input
+                    type="tel"
+                    value={deliveryCustomerPhone}
+                    onChange={(e) => setDeliveryCustomerPhone(e.target.value)}
+                    placeholder={t('payment.delivery_customer_phone') as string}
+                    className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                </div>
+                <textarea
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                  placeholder={t('payment.delivery_address') as string}
+                  rows={2}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400"
+                />
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-semibold text-amber-800 whitespace-nowrap">
+                    {t('payment.delivery_fee')}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.5}
+                    value={deliveryFee}
+                    onChange={(e) => setDeliveryFee(e.target.value)}
+                    placeholder="0.00"
+                    className="flex-1 border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400 font-mono"
+                  />
+                  <span className="text-xs text-amber-700">{t('receipt.egp')}</span>
+                </div>
+              </div>
+            )}
+
             {/* Payment method */}
             {saleType !== 'digital' && (
               <div>
@@ -202,9 +268,9 @@ export default function PaymentModal({
                     value={cashAmount}
                     onChange={(e) => setCashAmount(e.target.value)}
                     className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-4 py-3 text-2xl font-bold text-gray-900 focus:outline-none transition-all"
-                    placeholder={netTotal.toFixed(2)}
+                    placeholder={effectiveTotal.toFixed(2)}
                     autoFocus
-                    min={netTotal}
+                    min={effectiveTotal}
                     step={0.5}
                   />
                 </div>
@@ -225,7 +291,7 @@ export default function PaymentModal({
                 <CreditCard size={36} className="text-blue-500 mx-auto" />
                 <p className="text-sm font-semibold text-blue-700">{t('payment.visa')}</p>
                 <p className="text-3xl font-bold text-blue-900">
-                  {t('receipt.egp')} {netTotal.toFixed(2)}
+                  {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </p>
                 <div className="flex items-center justify-center gap-1.5 text-blue-500 text-sm">
                   <CheckCircle2 size={16} />
@@ -275,8 +341,8 @@ export default function PaymentModal({
                   {Math.abs(hybridDiff) < 0.01
                     ? '✓ Amounts match total'
                     : hybridSum > 0
-                    ? `Remaining: ${t('receipt.egp')} ${(netTotal - hybridSum).toFixed(2)}`
-                    : `Enter amounts totaling ${t('receipt.egp')} ${netTotal.toFixed(2)}`}
+                    ? `Remaining: ${t('receipt.egp')} ${(effectiveTotal - hybridSum).toFixed(2)}`
+                    : `Enter amounts totaling ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`}
                 </div>
               </div>
             )}
@@ -291,7 +357,7 @@ export default function PaymentModal({
                     : t('payment.account_requires_customer')}
                 </p>
                 <p className={`text-2xl font-bold ${selectedCustomer ? 'text-amber-900' : 'text-red-900'}`}>
-                  {t('receipt.egp')} {netTotal.toFixed(2)}
+                  {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </p>
               </div>
             )}
@@ -354,10 +420,16 @@ export default function PaymentModal({
                   <span className="tabular-nums">{invoiceDiscount.toFixed(2)}</span>
                 </div>
               )}
+              {saleType === 'delivery' && deliveryFeeNum > 0 && (
+                <div className="flex justify-between text-xs text-amber-700">
+                  <span>+ {t('payment.delivery_fee')}</span>
+                  <span className="tabular-nums">{deliveryFeeNum.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-sm font-bold text-gray-900 pt-2 border-t border-gray-200">
                 <span>{t('payment.total')}</span>
                 <span className="text-pharma-700 tabular-nums">
-                  {t('receipt.egp')} {netTotal.toFixed(2)}
+                  {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </span>
               </div>
             </div>

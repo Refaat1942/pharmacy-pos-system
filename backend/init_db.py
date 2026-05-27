@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS invoices (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
+ALTER TABLE products ALTER COLUMN name_ar DROP NOT NULL;
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_fee DECIMAL(10,2);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_customer_name VARCHAR(120);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_customer_phone VARCHAR(40);
+
 CREATE TABLE IF NOT EXISTS invoice_items (
     id SERIAL PRIMARY KEY,
     invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,

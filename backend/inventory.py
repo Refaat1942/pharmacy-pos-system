@@ -255,6 +255,64 @@ def create_adjustment(req: AdjustmentRequest,
         conn.close()
 
 
+# ─── CLEAR BRANCH HISTORY (admin, password-protected) ────────────────────
+
+class ClearHistoryRequest(BaseModel):
+    branch_id: int
+    password: str
+
+
+@router.post("/clear-branch-history")
+def clear_branch_history(req: ClearHistoryRequest,
+                          current_user=Depends(get_current_user)):
+    """Wipe a branch's sales history and stock movements; reset product stock
+    to zero. Admin only; requires the caller's password as a final guard."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    from auth import verify_password
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT password_hash FROM users WHERE id=%s",
+                    (current_user.get("user_id"),))
+        u = cur.fetchone()
+        if not u or not verify_password(req.password, u["password_hash"]):
+            raise HTTPException(status_code=403, detail="Incorrect password")
+
+        cur.execute("SELECT id, name_en FROM branches WHERE id=%s", (req.branch_id,))
+        b = cur.fetchone()
+        if not b:
+            raise HTTPException(status_code=404, detail="Branch not found")
+
+        cur.execute("DELETE FROM stock_movements WHERE branch_id=%s", (req.branch_id,))
+        moves = cur.rowcount
+        cur.execute("DELETE FROM returns WHERE branch_id=%s", (req.branch_id,))
+        rets = cur.rowcount
+        cur.execute(
+            """DELETE FROM customer_payments
+               WHERE invoice_id IN (SELECT id FROM invoices WHERE branch_id=%s)""",
+            (req.branch_id,),
+        )
+        pays = cur.rowcount
+        cur.execute("DELETE FROM invoices WHERE branch_id=%s", (req.branch_id,))
+        invs = cur.rowcount
+        cur.execute("UPDATE products SET stock=0 WHERE branch_id=%s", (req.branch_id,))
+        prods = cur.rowcount
+        conn.commit()
+        return {"ok": True, "branch_id": req.branch_id,
+                "deleted_movements": moves, "deleted_returns": rets,
+                "deleted_payments": pays,
+                "deleted_invoices": invs, "reset_products": prods}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 # ─── STOCK MOVEMENT REPORT ─────────────────────────────────────────────────
 
 @router.get("/movements")
@@ -402,8 +460,8 @@ async def bulk_upload(file: UploadFile = File(...),
         try:
             name_en = (r.get("name_en") or "").strip()
             name_ar = (r.get("name_ar") or "").strip()
-            if not name_en or not name_ar:
-                raise ValueError("name_en and name_ar are required")
+            if not name_en:
+                raise ValueError("name_en is required")
             barcode = str(r.get("barcode") or "").strip() or None
             category = (r.get("category") or "").strip() or None
             unit = (r.get("unit") or "box").strip()
@@ -911,9 +969,14 @@ def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)
         where = ["p.active = true"]
         params: list = []
         if q:
-            where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s)")
-            like = f"%{q}%"
-            params += [like, like, like]
+            terms = [t.strip() for t in q.replace(";", ",").replace("|", ",").split(",") if t.strip()]
+            if terms:
+                ors = []
+                for term in terms:
+                    ors.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s)")
+                    like = f"%{term}%"
+                    params += [like, like, like]
+                where.append("(" + " OR ".join(ors) + ")")
         if not is_admin:
             where.append("p.branch_id = %s")
             params.append(user_branch)

@@ -57,7 +57,7 @@ export default function BranchesStock() {
                 type="text"
                 value={q}
                 onChange={e => setQ(e.target.value)}
-                placeholder={t('inventory.search_placeholder') as string}
+                placeholder={t('inventory.bs_multi_search_placeholder') as string}
                 className="w-full ps-10 pe-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>

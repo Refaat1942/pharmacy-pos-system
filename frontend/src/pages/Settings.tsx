@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2 } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -445,6 +445,7 @@ function BranchesTab() {
   const [editing, setEditing] = useState<BranchRow | null>(null)
   const [creating, setCreating] = useState(false)
   const [deleting, setDeleting] = useState<BranchRow | null>(null)
+  const [resetting, setResetting] = useState<BranchRow | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -491,6 +492,9 @@ function BranchesTab() {
                     <button onClick={() => setEditing(b)} className="p-1.5 text-pharma-600 hover:bg-pharma-50 rounded-md">
                       <Pencil size={14} />
                     </button>
+                    <button onClick={() => setResetting(b)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md" title={t('settings.reset_branch') as string}>
+                      <RotateCcw size={14} />
+                    </button>
                     <button onClick={() => setDeleting(b)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-md">
                       <Trash2 size={14} />
                     </button>
@@ -510,6 +514,13 @@ function BranchesTab() {
 
       {creating && <BranchModal onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />}
       {editing && <BranchModal branch={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {resetting && (
+        <ResetBranchModal
+          branch={resetting}
+          onClose={() => setResetting(null)}
+          onDone={() => { setResetting(null); load() }}
+        />
+      )}
       {deleting && (
         <DangerDeleteModal
           title={t('settings.delete_branch_title')}
@@ -571,6 +582,78 @@ function DangerDeleteModal({ title, warningLines, confirmWord, onClose, onConfir
             {busy ? t('common.saving') : t('common.delete')}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ResetBranchModal({ branch, onClose, onDone }: { branch: BranchRow; onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation()
+  const lang = i18n.language
+  const branchName = lang === 'ar' ? (branch.name_ar || branch.name_en) : (branch.name_en || branch.name_ar)
+  const [password, setPassword] = useState('')
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<any>(null)
+  const confirmWord = branchName
+  const ok = typed.trim() === confirmWord.trim() && password.length > 0
+  const run = async () => {
+    if (!ok) return
+    setBusy(true); setError(null)
+    try {
+      const { data } = await api.post('/inventory/clear-branch-history', { branch_id: branch.id, password })
+      setResult(data)
+      setTimeout(() => { onDone() }, 1800)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Error')
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border-2 border-amber-300">
+        <div className="px-5 py-3 border-b border-amber-200 flex items-center justify-between bg-amber-50">
+          <h3 className="font-bold text-amber-700 flex items-center gap-2"><RotateCcw size={18} /> {t('settings.reset_branch_title')}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-amber-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          {!result ? (
+            <>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                <p className="text-sm text-amber-900 font-semibold">{t('settings.reset_branch_warn1', { name: branchName })}</p>
+                <p className="text-xs text-amber-800">{t('settings.reset_branch_warn2')}</p>
+                <ul className="text-xs text-amber-800 list-disc list-inside ms-1 space-y-0.5">
+                  <li>{t('settings.reset_branch_li_invoices')}</li>
+                  <li>{t('settings.reset_branch_li_movements')}</li>
+                  <li>{t('settings.reset_branch_li_returns')}</li>
+                  <li>{t('settings.reset_branch_li_stock')}</li>
+                </ul>
+                <p className="text-xs text-amber-900 font-semibold mt-1">{t('settings.reset_branch_warn3')}</p>
+              </div>
+              <Field label={t('settings.type_to_confirm', { word: confirmWord })}>
+                <input value={typed} onChange={(e) => setTyped(e.target.value)} className="input w-full font-mono" autoFocus placeholder={confirmWord} />
+              </Field>
+              <Field label={t('settings.reset_branch_password')}>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input w-full" placeholder="••••••••" />
+              </Field>
+              {error && <div className="text-sm text-red-700 bg-red-50 border border-red-300 rounded-lg p-2">{error}</div>}
+            </>
+          ) : (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 space-y-1">
+              <p className="font-semibold">{t('settings.reset_branch_done')}</p>
+              <p className="text-xs">{t('settings.reset_branch_summary', { i: result.deleted_invoices, m: result.deleted_movements, p: result.reset_products })}</p>
+            </div>
+          )}
+        </div>
+        {!result && (
+          <div className="px-5 py-3 border-t flex justify-end gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+            <button onClick={run} disabled={!ok || busy} className="px-4 py-2 text-sm rounded-lg bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              {busy ? t('common.saving') : t('settings.reset_branch_confirm')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

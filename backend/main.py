@@ -341,7 +341,7 @@ def get_product(product_id: int, current_user=Depends(get_current_user)):
 
 class ProductCreate(BaseModel):
     barcode: Optional[str] = None
-    name_ar: str
+    name_ar: Optional[str] = None
     name_en: str
     category: Optional[str] = None
     unit: Optional[str] = "box"
@@ -357,6 +357,7 @@ class ProductCreate(BaseModel):
 
 @app.post("/api/products")
 def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
+    req.name_ar = (req.name_ar or "").strip() or None
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -455,7 +456,7 @@ def list_employees(current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT id, name_ar, name_en, role, status FROM users WHERE status='active' ORDER BY name_en"
+        "SELECT id, name_ar, name_en, role, status FROM users WHERE status='active' ORDER BY COALESCE(NULLIF(name_en,''), name_ar)"
     )
     employees = cur.fetchall()
     conn.close()
@@ -484,6 +485,10 @@ class SaleRequest(BaseModel):
     customer_id: Optional[int] = None
     seller_id: Optional[int] = None
     notes: Optional[str] = None
+    delivery_address: Optional[str] = None
+    delivery_fee: Optional[float] = None
+    delivery_customer_name: Optional[str] = None
+    delivery_customer_phone: Optional[str] = None
 
 
 @app.post("/api/sales")
@@ -494,7 +499,8 @@ def create_sale(req: SaleRequest,
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         subtotal = sum(i.quantity * i.unit_price for i in req.items)
-        net_total = subtotal - req.discount
+        delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0
+        net_total = subtotal - req.discount + delivery_fee
 
         cur.execute("SELECT COUNT(*) AS cnt FROM invoices")
         count = cur.fetchone()["cnt"]
@@ -578,11 +584,14 @@ def create_sale(req: SaleRequest,
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
-                change_amount, seller_id, customer_id, branch_id, notes)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                change_amount, seller_id, customer_id, branch_id, notes,
+                delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, req.cash_amount, req.visa_amount,
-             change, seller_id, req.customer_id, branch_id, req.notes),
+             change, seller_id, req.customer_id, branch_id, req.notes,
+             req.delivery_address, delivery_fee or None,
+             req.delivery_customer_name, req.delivery_customer_phone),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]

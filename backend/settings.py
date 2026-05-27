@@ -351,7 +351,7 @@ def list_branches(current_user: dict = Depends(get_current_user)):
         cur.execute("""
             SELECT b.id, b.name_ar, b.name_en, b.address, b.phone, b.created_at,
                    (SELECT COUNT(*) FROM users u WHERE u.branch_id = b.id) AS user_count,
-                   (SELECT COUNT(*) FROM products p WHERE p.branch_id = b.id) AS product_count
+                   (SELECT COUNT(*) FROM products p WHERE p.branch_id = b.id AND p.active = true) AS product_count
             FROM branches b
             ORDER BY b.id
         """)

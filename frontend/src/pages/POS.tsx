@@ -38,6 +38,8 @@ export default function POS() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedSeller, setSelectedSeller] = useState<Employee | null>(null)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerList, setShowCustomerList] = useState(false)
 
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [invoiceDiscount, setInvoiceDiscount] = useState(0)
@@ -410,9 +412,17 @@ export default function POS() {
                             >
                               <Minus size={13} />
                             </button>
-                            <span className="w-8 text-center text-sm font-bold text-slate-800 tabular-nums">
-                              {item.quantity}
-                            </span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={max}
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value || '0', 10)
+                                if (!isNaN(v) && v > 0) updateQty(item.product.id, Math.min(v, max))
+                              }}
+                              className="w-12 text-center text-sm font-bold text-slate-800 tabular-nums bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-pharma-200 rounded"
+                            />
                             <button
                               onClick={() => updateQty(item.product.id, item.quantity + 1)}
                               disabled={item.quantity >= max}
@@ -467,33 +477,78 @@ export default function POS() {
                 }`}
               >
                 <option value="">{t('pos.select_seller')}</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {lang === 'ar' ? e.name_ar : e.name_en}
-                  </option>
-                ))}
+                {employees.map((e) => {
+                  const display = lang === 'ar'
+                    ? (e.name_ar || e.name_en || `#${e.id}`)
+                    : (e.name_en || e.name_ar || `#${e.id}`)
+                  return (
+                    <option key={e.id} value={e.id}>
+                      {display}
+                    </option>
+                  )
+                })}
               </select>
             </div>
 
-            <div>
+            <div className="relative">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
                 <User size={13} /> {t('pos.customer')}
               </label>
-              <select
-                value={selectedCustomer?.id ?? ''}
-                onChange={(e) => {
-                  const cust = customers.find((c) => c.id === parseInt(e.target.value))
-                  setSelectedCustomer(cust || null)
-                }}
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-slate-50 text-slate-700"
-              >
-                <option value="">{t('pos.walk_in')}</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={selectedCustomer ? `${selectedCustomer.name}${selectedCustomer.phone ? ' · ' + selectedCustomer.phone : ''}` : customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value)
+                    setSelectedCustomer(null)
+                    setShowCustomerList(true)
+                  }}
+                  onFocus={() => setShowCustomerList(true)}
+                  onBlur={() => setTimeout(() => setShowCustomerList(false), 200)}
+                  placeholder={t('pos.walk_in') as string}
+                  className="flex-1 text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-slate-50 text-slate-700"
+                />
+                {selectedCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedCustomer(null); setCustomerSearch('') }}
+                    className="text-slate-400 hover:text-red-500 p-1"
+                    title={t('pos.walk_in') as string}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              {showCustomerList && !selectedCustomer && (
+                <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                  {customers
+                    .filter((c) => {
+                      const q = customerSearch.trim().toLowerCase()
+                      if (!q) return true
+                      return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q)
+                    })
+                    .slice(0, 30)
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setSelectedCustomer(c); setCustomerSearch(''); setShowCustomerList(false) }}
+                        className="w-full text-start px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                      >
+                        <div className="font-medium text-slate-800">{c.name}</div>
+                        {c.phone && <div className="text-xs text-slate-500 font-mono">{c.phone}</div>}
+                      </button>
+                    ))}
+                  {customers.filter((c) => {
+                    const q = customerSearch.trim().toLowerCase()
+                    if (!q) return false
+                    return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q)
+                  }).length === 0 && customerSearch.trim() && (
+                    <div className="px-3 py-3 text-xs text-slate-400 text-center">{t('customers.empty')}</div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

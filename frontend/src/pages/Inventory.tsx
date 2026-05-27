@@ -479,8 +479,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         <Field label={t('inventory.f_name_en') + ' *'}>
           <input required value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} className="input" />
         </Field>
-        <Field label={t('inventory.f_name_ar') + ' *'}>
-          <input required value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} className="input" dir="rtl" />
+        <Field label={t('inventory.f_name_ar')}>
+          <input value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} className="input" dir="rtl" />
         </Field>
         <Field label={t('inventory.f_unit')}>
           <select value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} className="input">

@@ -193,6 +193,10 @@ export const salesAPI = {
     customer_id?: number
     seller_id?: number
     notes?: string
+    delivery_address?: string
+    delivery_fee?: number
+    delivery_customer_name?: string
+    delivery_customer_phone?: string
   }) => api.post<SaleResponse>('/sales', data),
   list: (params: {
     limit?: number; offset?: number;
