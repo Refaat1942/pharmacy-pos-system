@@ -77,6 +77,8 @@ export interface CartItem {
   quantity: number
   unit_price: number
   discount: number
+  discount_mode?: 'amount' | 'percent'
+  discount_value?: number
   // 'pack' = sell as main unit (Box), 'sub' = sell as inner unit (Strip).
   // When pack_size <= 1 this is always 'pack'.
   unit_type?: 'pack' | 'sub'

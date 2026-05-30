@@ -31,11 +31,25 @@ interface HeldCart {
   ts: number
   items: CartItem[]
   invoiceDiscount: number
+  invoiceDiscountMode: 'amount' | 'percent'
   customer: Customer | null
   seller: Employee | null
 }
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+const calcLineDiscount = (gross: number, mode: 'amount' | 'percent' | undefined, value: number | undefined): number => {
+  const v = Math.max(0, value || 0)
+  const d = mode === 'percent' ? (gross * v) / 100 : v
+  return Math.min(gross, Math.max(0, +d.toFixed(2)))
+}
+
+const normalizeItem = (i: CartItem): CartItem =>
+  i.discount_value == null && i.discount > 0
+    ? { ...i, discount_mode: 'amount', discount_value: i.discount }
+    : i
+
+const normalizeItems = (items: CartItem[]): CartItem[] => items.map(normalizeItem)
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -54,6 +68,7 @@ export default function POS() {
   const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}`
   const CART_KEY = `pos_cart_${scope}`
   const DISCOUNT_KEY = `pos_discount_${scope}`
+  const DISCMODE_KEY = `pos_discmode_${scope}`
   const SELLER_KEY = `pos_seller_${scope}`
   const CUSTOMER_KEY = `pos_customer_${scope}`
   const HELD_KEY = `pos_held_${scope}`
@@ -73,8 +88,9 @@ export default function POS() {
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerList, setShowCustomerList] = useState(false)
 
-  const [cartItems, setCartItems] = useState<CartItem[]>(() => loadJSON<CartItem[]>(CART_KEY, []))
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => normalizeItems(loadJSON<CartItem[]>(CART_KEY, [])))
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(() => loadJSON<number>(DISCOUNT_KEY, 0))
+  const [invoiceDiscountMode, setInvoiceDiscountMode] = useState<'amount' | 'percent'>(() => loadJSON<'amount' | 'percent'>(DISCMODE_KEY, 'amount'))
 
   const [held, setHeld] = useState<HeldCart[]>(() => loadJSON<HeldCart[]>(HELD_KEY, []))
   const [showHeld, setShowHeld] = useState(false)
@@ -99,22 +115,27 @@ export default function POS() {
     () => cartItems.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
     [cartItems]
   )
-  const netTotal = Math.max(0, subtotal - invoiceDiscount)
+  const effectiveInvoiceDiscount = Math.min(
+    subtotal,
+    Math.max(0, +(invoiceDiscountMode === 'percent' ? (subtotal * invoiceDiscount) / 100 : invoiceDiscount).toFixed(2))
+  )
+  const netTotal = Math.max(0, subtotal - effectiveInvoiceDiscount)
   const cartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0)
 
   useEffect(() => { try { localStorage.setItem(CART_KEY, JSON.stringify(cartItems)) } catch { /* ignore */ } }, [cartItems, CART_KEY])
   useEffect(() => { try { localStorage.setItem(DISCOUNT_KEY, JSON.stringify(invoiceDiscount)) } catch { /* ignore */ } }, [invoiceDiscount, DISCOUNT_KEY])
+  useEffect(() => { try { localStorage.setItem(DISCMODE_KEY, JSON.stringify(invoiceDiscountMode)) } catch { /* ignore */ } }, [invoiceDiscountMode, DISCMODE_KEY])
   useEffect(() => { try { localStorage.setItem(SELLER_KEY, JSON.stringify(selectedSeller)) } catch { /* ignore */ } }, [selectedSeller, SELLER_KEY])
   useEffect(() => { try { localStorage.setItem(CUSTOMER_KEY, JSON.stringify(selectedCustomer)) } catch { /* ignore */ } }, [selectedCustomer, CUSTOMER_KEY])
   useEffect(() => { try { localStorage.setItem(HELD_KEY, JSON.stringify(held)) } catch { /* ignore */ } }, [held, HELD_KEY])
 
   const suspendCurrent = useCallback(() => {
     if (cartItems.length === 0) { alert(t('pos.suspend_none')); return }
-    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, customer: selectedCustomer, seller: selectedSeller }
+    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller }
     setHeld((prev) => [h, ...prev])
     setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setSelectedSeller(null)
     searchRef.current?.focus()
-  }, [cartItems, invoiceDiscount, selectedCustomer, selectedSeller, t])
+  }, [cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, t])
 
   const recallHeld = useCallback((id: string) => {
     if (recallLock.current) return
@@ -125,14 +146,14 @@ export default function POS() {
     setHeld((prev) => {
       let next = prev.filter((x) => x.id !== id)
       if (cartItems.length > 0) {
-        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, customer: selectedCustomer, seller: selectedSeller }, ...next]
+        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller }, ...next]
       }
       return next
     })
-    setCartItems(h.items); setInvoiceDiscount(h.invoiceDiscount); setSelectedCustomer(h.customer); setSelectedSeller(h.seller)
+    setCartItems(normalizeItems(h.items)); setInvoiceDiscount(h.invoiceDiscount); setInvoiceDiscountMode(h.invoiceDiscountMode || 'amount'); setSelectedCustomer(h.customer); setSelectedSeller(h.seller)
     setShowHeld(false)
     searchRef.current?.focus()
-  }, [held, cartItems, invoiceDiscount, selectedCustomer, selectedSeller])
+  }, [held, cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller])
 
   const deleteHeld = useCallback((id: string) => {
     setHeld((prev) => prev.filter((x) => x.id !== id))
@@ -190,10 +211,12 @@ export default function POS() {
       if (existing) {
         if (existing.quantity >= maxQty(product, existing.unit_type || 'pack')) return prev
         return prev.map((i) =>
-          i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
+          i.product.id === product.id
+            ? { ...i, quantity: i.quantity + 1, discount: calcLineDiscount((i.quantity + 1) * i.unit_price, i.discount_mode, i.discount_value) }
+            : i
         )
       }
-      return [...prev, { product, quantity: 1, unit_price: product.price, discount: 0, unit_type: 'pack' }]
+      return [...prev, { product, quantity: 1, unit_price: product.price, discount: 0, discount_mode: 'amount', discount_value: 0, unit_type: 'pack' }]
     })
     setSearch('')
     setResults([])
@@ -209,7 +232,8 @@ export default function POS() {
       const price = ut === 'sub'
         ? (i.product.sub_price != null ? Number(i.product.sub_price) : i.product.price / pack)
         : i.product.price
-      return { ...i, unit_type: ut, unit_price: price, quantity: Math.max(1, i.quantity) }
+      const q = Math.max(1, i.quantity)
+      return { ...i, unit_type: ut, unit_price: price, quantity: q, discount: calcLineDiscount(q * price, i.discount_mode, i.discount_value) }
     }))
   }, [])
 
@@ -223,9 +247,23 @@ export default function POS() {
       return
     }
     setCartItems((prev) =>
-      prev.map((i) => (i.product.id === productId ? { ...i, quantity: qty } : i))
+      prev.map((i) =>
+        i.product.id === productId
+          ? { ...i, quantity: qty, discount: calcLineDiscount(qty * i.unit_price, i.discount_mode, i.discount_value) }
+          : i
+      )
     )
   }, [removeFromCart])
+
+  const setItemDiscount = useCallback((productId: number, mode: 'amount' | 'percent', value: number) => {
+    setCartItems((prev) =>
+      prev.map((i) => {
+        if (i.product.id !== productId) return i
+        const gross = i.quantity * i.unit_price
+        return { ...i, discount_mode: mode, discount_value: value, discount: calcLineDiscount(gross, mode, value) }
+      })
+    )
+  }, [])
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showResults || results.length === 0) {
@@ -467,6 +505,35 @@ export default function POS() {
                                 </button>
                               </div>
                             )}
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={0}
+                                value={item.discount_value || ''}
+                                onChange={(e) => setItemDiscount(item.product.id, item.discount_mode || 'amount', Math.max(0, parseFloat(e.target.value) || 0))}
+                                placeholder={t('pos.item_discount') as string}
+                                className="w-16 text-[11px] text-end border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-pharma-400 bg-white"
+                              />
+                              <div className="inline-flex bg-slate-100 rounded p-0.5">
+                                <button
+                                  onClick={() => setItemDiscount(item.product.id, 'amount', item.discount_value || 0)}
+                                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${(item.discount_mode || 'amount') === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                                  title={t('pos.by_amount') as string}
+                                >
+                                  {t('pos.egp')}
+                                </button>
+                                <button
+                                  onClick={() => setItemDiscount(item.product.id, 'percent', item.discount_value || 0)}
+                                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${item.discount_mode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                                  title={t('pos.by_percent') as string}
+                                >
+                                  %
+                                </button>
+                              </div>
+                              {item.discount > 0 && (
+                                <span className="text-[10px] text-emerald-600 font-semibold tabular-nums">-{item.discount.toFixed(2)}</span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
                             <button
@@ -628,17 +695,41 @@ export default function POS() {
               <label className="flex items-center gap-1.5 text-sm text-slate-500">
                 <Tag size={13} /> {t('pos.discount')}
               </label>
-              <input
-                type="number"
-                value={invoiceDiscount || ''}
-                onChange={(e) =>
-                  setInvoiceDiscount(Math.max(0, parseFloat(e.target.value) || 0))
-                }
-                className="w-28 text-end text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white"
-                placeholder="0.00"
-                min={0}
-              />
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  value={invoiceDiscount || ''}
+                  onChange={(e) =>
+                    setInvoiceDiscount(Math.max(0, parseFloat(e.target.value) || 0))
+                  }
+                  className="w-20 text-end text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white"
+                  placeholder={invoiceDiscountMode === 'percent' ? '0' : '0.00'}
+                  min={0}
+                />
+                <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setInvoiceDiscountMode('amount')}
+                    className={`px-2 py-1 text-xs font-bold rounded ${invoiceDiscountMode === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                    title={t('pos.by_amount') as string}
+                  >
+                    {t('pos.egp')}
+                  </button>
+                  <button
+                    onClick={() => setInvoiceDiscountMode('percent')}
+                    className={`px-2 py-1 text-xs font-bold rounded ${invoiceDiscountMode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                    title={t('pos.by_percent') as string}
+                  >
+                    %
+                  </button>
+                </div>
+              </div>
             </div>
+            {invoiceDiscountMode === 'percent' && effectiveInvoiceDiscount > 0 && (
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>{t('pos.discount')} ({invoiceDiscount}%)</span>
+                <span className="tabular-nums">- {t('pos.egp')} {effectiveInvoiceDiscount.toFixed(2)}</span>
+              </div>
+            )}
 
             <div className="border-t border-dashed border-slate-200 pt-3 mt-3" />
 
@@ -692,7 +783,7 @@ export default function POS() {
         <PaymentModal
           cartItems={cartItems}
           subtotal={subtotal}
-          invoiceDiscount={invoiceDiscount}
+          invoiceDiscount={effectiveInvoiceDiscount}
           netTotal={netTotal}
           selectedSeller={selectedSeller}
           selectedCustomer={selectedCustomer}
@@ -727,7 +818,9 @@ export default function POS() {
                 <div className="text-center text-slate-400 py-12 text-sm">{t('pos.held_empty')}</div>
               ) : (
                 held.map((h) => {
-                  const total = Math.max(0, h.items.reduce((s, i) => s + i.quantity * i.unit_price - i.discount, 0) - h.invoiceDiscount)
+                  const hSub = h.items.reduce((s, i) => s + i.quantity * i.unit_price - i.discount, 0)
+                  const hDisc = h.invoiceDiscountMode === 'percent' ? (hSub * h.invoiceDiscount) / 100 : h.invoiceDiscount
+                  const total = Math.max(0, hSub - Math.min(hSub, Math.max(0, hDisc)))
                   const count = h.items.reduce((s, i) => s + i.quantity, 0)
                   return (
                     <div key={h.id} className="flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5">

@@ -509,7 +509,9 @@
     "held_empty": "No held sales",
     "recall": "Recall",
     "suspend_none": "Add items to the cart before suspending",
-    "items_n": "items"
+    "items_n": "items",
+    "by_amount": "In EGP",
+    "by_percent": "In %"
   },
   "payment": {
     "title": "Complete Payment",
