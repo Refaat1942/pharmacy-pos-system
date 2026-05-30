@@ -24,6 +24,18 @@ Welcome. This guide walks you through every part of the pharmacy system, from lo
 | **Cashier** | POS sales, returns, view their own shift |
 | **Branch account** | Read-only branch overview |
 
+### Locking & unlocking the terminal
+
+To protect the register when you step away, the screen **locks itself automatically after 10 minutes** of no activity. It shows your name so everyone knows whose session is open, and your work stays exactly where you left it.
+
+To unlock and carry on, do **either**:
+- Type your **password**, or
+- **Scan your personal login card** (QR / barcode).
+
+If a different person needs the register, click **Switch user / Log out** on the lock screen to log in fresh.
+
+> Login cards are printed by the admin from **Settings → Users → Print login cards**. Each user has their own card.
+
 ---
 
 ## 2. The Point of Sale (POS) — selling to a customer
@@ -49,6 +61,8 @@ The POS screen is the home screen for cashiers and pharmacists.
 - For **Cash**: type the amount given by the customer — the system shows the change.
 - For **Hybrid**: type how much was paid in cash and how much by card. The two must sum to the total.
 - Click **Confirm** to print the receipt.
+
+> The printed receipt shows the **branch name and address** at the top, so each branch's receipts clearly show where the sale was made. Set each branch's name and address in **Settings → Branches**.
 
 ### Returns
 
@@ -105,6 +119,12 @@ To load hundreds of products at once: **Inventory → Bulk Upload → Download t
 1. **Transfers → New Transfer**.
 2. Choose source branch, destination branch, products and quantities.
 3. Confirm. Stock leaves the source immediately and arrives at the destination.
+
+### Printing a transfer slip
+
+1. Open **Transfers** and click the **eye (view)** icon on the transfer's row.
+2. In the details window, click **Print** (top-right).
+3. A transfer slip prints showing the from/to branches, items and quantities, totals, and signature lines for the sender and receiver.
 
 ### Resetting a branch (admin only — careful)
 
@@ -177,7 +197,7 @@ At the end of the day / shift:
 
 | Section | What you do here |
 |---|---|
-| **Users** | Add / edit / deactivate users, set roles, reset passwords, fine-tune what each user sees |
+| **Users** | Add / edit / deactivate users, set roles, reset passwords, print login cards, fine-tune what each user sees |
 | **Branches** | Add / edit branches, reset branch data |
 | **Pharmacy** | Pharmacy name, tax info, receipt header / footer |
 | **Backup** | Download a backup of your data (recommended weekly) |
@@ -196,6 +216,7 @@ For users and products, prefer **Deactivate** over **Delete**:
 - **Search is your friend** — Arabic or English, partial matches work everywhere.
 - **The language switch (top-right) is per-user** — your choice is remembered next time you log in.
 - **Print receipts only when needed** — every sale is saved electronically and can be reprinted from Sales History anytime.
+- **The branch you're working in is shown in the top bar** — admins can switch branches there; branch staff see their branch name.
 - **If something looks wrong**, do NOT delete it — go back through Sales History or Stock Movements first to understand. Then fix with a return or a stock correction, not by deleting.
 
 ---
