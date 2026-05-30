@@ -117,6 +117,8 @@ export interface Invoice {
   created_at: string
   branch_name_en?: string | null
   branch_name_ar?: string | null
+  branch_address?: string | null
+  branch_phone?: string | null
 }
 
 export interface SaleResponse {

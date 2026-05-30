@@ -62,9 +62,9 @@ export default function BranchSwitcher() {
 
   if (!isAdmin) {
     return (
-      <div className="flex items-center gap-1.5 text-white/70 bg-white/10 px-3 py-1.5 rounded-lg text-sm font-medium">
+      <div className="flex items-center gap-1.5 text-pharma-700 bg-pharma-50 border border-pharma-100 px-3 py-1.5 rounded-lg text-sm font-semibold">
         <Building2 size={14} />
-        <span className="hidden md:block">{label(activeBranch)}</span>
+        <span>{label(activeBranch)}</span>
       </div>
     )
   }
@@ -73,11 +73,11 @@ export default function BranchSwitcher() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-sm font-medium transition-all"
+        className="flex items-center gap-1.5 text-pharma-700 hover:text-pharma-800 bg-pharma-50 hover:bg-pharma-100 border border-pharma-100 px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
         title={t('branch.switch')}
       >
         <Building2 size={14} />
-        <span className="hidden md:block max-w-[140px] truncate">{label(activeBranch)}</span>
+        <span className="max-w-[160px] truncate">{label(activeBranch)}</span>
         <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (

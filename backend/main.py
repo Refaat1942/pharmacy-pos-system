@@ -702,7 +702,8 @@ def create_sale(req: SaleRequest,
         cur.execute(
             """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
                       c.name AS customer_name,
-                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                      b.address AS branch_address, b.phone AS branch_phone
                FROM invoices i
                LEFT JOIN users u ON i.seller_id = u.id
                LEFT JOIN customers c ON i.customer_id = c.id
@@ -756,7 +757,8 @@ def list_sales(limit: int = 50, offset: int = 0,
     cur.execute(
         f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
                    c.name AS customer_name,
-                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                   b.address AS branch_address, b.phone AS branch_phone
             FROM invoices i
             LEFT JOIN users u ON i.seller_id = u.id
             LEFT JOIN customers c ON i.customer_id = c.id
@@ -870,7 +872,8 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     cur.execute(
         """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
                   c.name AS customer_name,
-                  b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+                  b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                  b.address AS branch_address, b.phone AS branch_phone
            FROM invoices i
            LEFT JOIN users u ON i.seller_id = u.id
            LEFT JOIN customers c ON i.customer_id = c.id

@@ -111,6 +111,9 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
     ? (invoice.branch_name_ar || invoice.branch_name_en || '')
     : (invoice.branch_name_en || invoice.branch_name_ar || '')
 
+  const branchAddress = invoice.branch_address || ''
+  const branchPhone = invoice.branch_phone || ''
+
   // Render barcode whenever the toggle / invoice number / paper changes
   useEffect(() => {
     if (!barcodeRef.current) return
@@ -174,6 +177,13 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 {lang === 'ar' ? 'الرقم الضريبي' : 'Tax ID'}: {profile.tax_id}
               </p>
             )}
+            {profile?.show_branch !== false && branchName && (
+              <div className="mt-2 pt-2 border-t border-dashed border-gray-300">
+                <p className="text-sm font-bold text-gray-800">{branchName}</p>
+                {branchAddress && <p className="text-xs text-gray-500 mt-0.5">{branchAddress}</p>}
+                {branchPhone && <p className="text-xs text-gray-500">{branchPhone}</p>}
+              </div>
+            )}
             {headerText && (
               <p className="text-xs text-gray-600 mt-2 whitespace-pre-line">{headerText}</p>
             )}
@@ -189,12 +199,6 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{tr('receipt.sale_type')}</span>
                 <span className="text-gray-700">{saleTypeLabel(invoice.type)}</span>
-              </div>
-            )}
-            {profile?.show_branch !== false && branchName && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">{tr('receipt.branch')}</span>
-                <span className="text-gray-700">{branchName}</span>
               </div>
             )}
             {profile?.show_date !== false && (
