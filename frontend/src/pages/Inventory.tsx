@@ -986,6 +986,22 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     } finally { setUploading(false) }
   }
 
+  const downloadTemplate = async () => {
+    try {
+      const res = await api.get('/inventory/bulk-template', { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'pharmacy_bulk_template.xlsx'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setError(t('inventory.download_failed'))
+    }
+  }
+
   return (
     <Modal onClose={onClose} title={t('inventory.bulk_upload')}>
       <div className="space-y-4 text-sm">
@@ -995,9 +1011,9 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200">
             Code, Material Name, Unit, Small Unit, Small Unit Quantity Per Unit, Quantity, Sales Price, Cost, Category, Min Stock
           </code>
-          <a href="/api/inventory/bulk-template" className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
+          <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}
-          </a>
+          </button>
         </div>
         <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)}
           className="w-full p-2 border border-dashed border-slate-300 rounded-lg" />

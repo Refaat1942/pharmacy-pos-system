@@ -13,9 +13,12 @@ import {
   Trash2,
   CornerDownLeft,
   RotateCcw,
+  Pause,
+  ClipboardList,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import Layout from '../components/Layout'
+import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
 import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
@@ -23,9 +26,38 @@ import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse } from '../lib/api'
 import i18n from '../lib/i18n'
 
+interface HeldCart {
+  id: string
+  ts: number
+  items: CartItem[]
+  invoiceDiscount: number
+  customer: Customer | null
+  seller: Employee | null
+}
+
+const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+function loadJSON<T>(key: string, fallback: T): T {
+  try {
+    const s = localStorage.getItem(key)
+    return s ? (JSON.parse(s) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function POS() {
   const { t } = useTranslation()
   const lang = i18n.language
+  const { user, tenant } = useAuth()
+
+  const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}`
+  const CART_KEY = `pos_cart_${scope}`
+  const DISCOUNT_KEY = `pos_discount_${scope}`
+  const SELLER_KEY = `pos_seller_${scope}`
+  const CUSTOMER_KEY = `pos_customer_${scope}`
+  const HELD_KEY = `pos_held_${scope}`
+  const recallLock = useRef(false)
 
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<Product[]>([])
@@ -36,13 +68,16 @@ export default function POS() {
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [selectedSeller, setSelectedSeller] = useState<Employee | null>(null)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [selectedSeller, setSelectedSeller] = useState<Employee | null>(() => loadJSON<Employee | null>(SELLER_KEY, null))
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerList, setShowCustomerList] = useState(false)
 
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => loadJSON<CartItem[]>(CART_KEY, []))
+  const [invoiceDiscount, setInvoiceDiscount] = useState<number>(() => loadJSON<number>(DISCOUNT_KEY, 0))
+
+  const [held, setHeld] = useState<HeldCart[]>(() => loadJSON<HeldCart[]>(HELD_KEY, []))
+  const [showHeld, setShowHeld] = useState(false)
 
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
@@ -66,6 +101,42 @@ export default function POS() {
   )
   const netTotal = Math.max(0, subtotal - invoiceDiscount)
   const cartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0)
+
+  useEffect(() => { try { localStorage.setItem(CART_KEY, JSON.stringify(cartItems)) } catch { /* ignore */ } }, [cartItems, CART_KEY])
+  useEffect(() => { try { localStorage.setItem(DISCOUNT_KEY, JSON.stringify(invoiceDiscount)) } catch { /* ignore */ } }, [invoiceDiscount, DISCOUNT_KEY])
+  useEffect(() => { try { localStorage.setItem(SELLER_KEY, JSON.stringify(selectedSeller)) } catch { /* ignore */ } }, [selectedSeller, SELLER_KEY])
+  useEffect(() => { try { localStorage.setItem(CUSTOMER_KEY, JSON.stringify(selectedCustomer)) } catch { /* ignore */ } }, [selectedCustomer, CUSTOMER_KEY])
+  useEffect(() => { try { localStorage.setItem(HELD_KEY, JSON.stringify(held)) } catch { /* ignore */ } }, [held, HELD_KEY])
+
+  const suspendCurrent = useCallback(() => {
+    if (cartItems.length === 0) { alert(t('pos.suspend_none')); return }
+    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, customer: selectedCustomer, seller: selectedSeller }
+    setHeld((prev) => [h, ...prev])
+    setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setSelectedSeller(null)
+    searchRef.current?.focus()
+  }, [cartItems, invoiceDiscount, selectedCustomer, selectedSeller, t])
+
+  const recallHeld = useCallback((id: string) => {
+    if (recallLock.current) return
+    const h = held.find((x) => x.id === id)
+    if (!h) return
+    recallLock.current = true
+    setTimeout(() => { recallLock.current = false }, 500)
+    setHeld((prev) => {
+      let next = prev.filter((x) => x.id !== id)
+      if (cartItems.length > 0) {
+        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, customer: selectedCustomer, seller: selectedSeller }, ...next]
+      }
+      return next
+    })
+    setCartItems(h.items); setInvoiceDiscount(h.invoiceDiscount); setSelectedCustomer(h.customer); setSelectedSeller(h.seller)
+    setShowHeld(false)
+    searchRef.current?.focus()
+  }, [held, cartItems, invoiceDiscount, selectedCustomer, selectedSeller])
+
+  const deleteHeld = useCallback((id: string) => {
+    setHeld((prev) => prev.filter((x) => x.id !== id))
+  }, [])
 
   useEffect(() => {
     employeesAPI.list().then((r) => setEmployees(r.data))
@@ -585,7 +656,27 @@ export default function POS() {
           </div>
 
           {/* Checkout */}
-          <div className="px-5 pb-5">
+          <div className="px-5 pb-5 space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={suspendCurrent}
+                disabled={cartItems.length === 0}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-sm transition-all"
+              >
+                <Pause size={15} /> {t('pos.suspend')}
+              </button>
+              <button
+                onClick={() => setShowHeld(true)}
+                className="relative flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-semibold text-sm transition-all"
+              >
+                <ClipboardList size={15} /> {t('pos.held')}
+                {held.length > 0 && (
+                  <span className="absolute -top-1.5 -end-1.5 bg-pharma-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px]">
+                    {held.length}
+                  </span>
+                )}
+              </button>
+            </div>
             <button
               onClick={() => setShowPaymentModal(true)}
               disabled={cartItems.length === 0}
@@ -612,6 +703,58 @@ export default function POS() {
 
       {showReceiptModal && lastSale && (
         <ReceiptModal sale={lastSale} onNewSale={handleNewSale} onClose={handleNewSale} />
+      )}
+
+      {showHeld && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setShowHeld(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <ClipboardList size={18} className="text-pharma-600" /> {t('pos.held_title')}
+              </h3>
+              <button onClick={() => setShowHeld(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {held.length === 0 ? (
+                <div className="text-center text-slate-400 py-12 text-sm">{t('pos.held_empty')}</div>
+              ) : (
+                held.map((h) => {
+                  const total = Math.max(0, h.items.reduce((s, i) => s + i.quantity * i.unit_price - i.discount, 0) - h.invoiceDiscount)
+                  const count = h.items.reduce((s, i) => s + i.quantity, 0)
+                  return (
+                    <div key={h.id} className="flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-slate-800 text-sm truncate">
+                          {h.customer ? h.customer.name : t('pos.walk_in')}
+                        </div>
+                        <div className="text-[11px] text-slate-400 tabular-nums">
+                          {count} {t('pos.items_n')} · {t('pos.egp')} {total.toFixed(2)} · {new Date(h.ts).toLocaleTimeString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => recallHeld(h.id)}
+                        className="px-3 py-1.5 rounded-lg bg-pharma-600 text-white text-xs font-semibold hover:bg-pharma-700"
+                      >
+                        {t('pos.recall')}
+                      </button>
+                      <button onClick={() => deleteHeld(h.id)} className="text-slate-300 hover:text-red-500 p-1">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </Layout>
   )

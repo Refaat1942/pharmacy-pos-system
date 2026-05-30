@@ -70,6 +70,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('pharma_token')
     localStorage.removeItem('pharma_user')
     localStorage.removeItem('pharma_tenant')
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('pos_'))
+        .forEach((k) => localStorage.removeItem(k))
+    } catch { /* ignore */ }
     setToken(null)
     setUser(null)
     setTenant(null)

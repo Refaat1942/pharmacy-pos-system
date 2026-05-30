@@ -473,7 +473,8 @@
     "imported": "imported",
     "updated_count": "updated",
     "errors": "errors",
-    "show_errors": "Show error details"
+    "show_errors": "Show error details",
+    "download_failed": "Could not download the template. Please try again."
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
@@ -501,7 +502,14 @@
     "qty": "Qty",
     "remove": "Remove",
     "unit_price": "Unit Price",
-    "item_discount": "Disc."
+    "item_discount": "Disc.",
+    "suspend": "Suspend",
+    "held": "Held",
+    "held_title": "Held sales",
+    "held_empty": "No held sales",
+    "recall": "Recall",
+    "suspend_none": "Add items to the cart before suspending",
+    "items_n": "items"
   },
   "payment": {
     "title": "Complete Payment",
@@ -542,8 +550,22 @@
     "delivery_required": "Delivery requires customer name, phone and address."
   },
   "common": {
-    "loading": "Loading…",
-    "saving": "Saving…",
+    "loading": "Loading...",
+    "error": "An error occurred. Please try again.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "search": "Search",
+    "close": "Close",
+    "view": "View",
+    "actions": "Actions",
+    "saving": "Saving...",
+    "edit": "Edit",
+    "delete": "Delete",
+    "active": "Active",
+    "notes": "Notes",
+    "all": "All",
+    "refresh": "Refresh",
+    "no_data": "No data",
     "print": "Print"
   },
   "receipt": {
@@ -640,25 +662,6 @@
     "kpi_discount": "Discount",
     "kpi_net": "Net Revenue",
     "return": "Return"
-  },
-  "common": {
-    "loading": "Loading...",
-    "error": "An error occurred. Please try again.",
-    "cancel": "Cancel",
-    "save": "Save",
-    "search": "Search",
-    "close": "Close",
-    "view": "View",
-    "actions": "Actions",
-    "saving": "Saving...",
-    "edit": "Edit",
-    "delete": "Delete",
-    "active": "Active",
-    "notes": "Notes",
-    "all": "All",
-    "refresh": "Refresh",
-    "no_data": "No data",
-    "print": "Print"
   },
   "branch": {
     "switch": "Switch Branch",
