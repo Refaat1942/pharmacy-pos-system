@@ -402,7 +402,7 @@ def velocity_classification(days: int = 90,
 
 # ─── CONSUMPTION-BASED MIN STOCK SUGGESTION ────────────────────────────────
 
-DEFAULT_SUB_UNIT = "Piece"
+DEFAULT_SUB_UNIT = "piece"
 
 
 def _row_get(r, *keys):

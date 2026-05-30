@@ -422,19 +422,23 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     setError('')
     setSaving(true)
     try {
+      const packSize = Math.max(1, parseInt(f.pack_size) || 1)
+      const priceNum = parseFloat(f.price)
       const payload: any = {
         barcode: f.barcode || null,
         name_ar: f.name_ar,
         name_en: f.name_en,
         category: f.category || null,
         unit: f.unit,
-        price: parseFloat(f.price),
+        price: priceNum,
         cost: f.cost ? parseFloat(f.cost) : null,
         min_stock: parseInt(f.min_stock) || 0,
         expiry_date: f.expiry_date || null,
-        pack_size: Math.max(1, parseInt(f.pack_size) || 1),
-        sub_unit: f.sub_unit || null,
-        sub_price: f.sub_price ? parseFloat(f.sub_price) : null,
+        pack_size: packSize,
+        sub_unit: packSize > 1 ? (f.sub_unit || 'piece') : null,
+        sub_price: packSize > 1
+          ? (f.sub_price ? parseFloat(f.sub_price) : Math.round((priceNum / packSize) * 100) / 100)
+          : null,
       }
       if (item) {
         await api.put(`/inventory/products/${item.id}`, payload)
