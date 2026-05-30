@@ -15,10 +15,21 @@ explicit "build now" instruction.
 ## Decisions confirmed by the user
 - **Medicine entry:** clinic types medicine names **freely as text**; the
   pharmacist **matches them to products at the counter** (NOT picking from the
-  product catalog). So prescription lines are free-text (name + qty + optional
-  note), not product_id references.
+  product catalog). So prescription lines are free-text, not product_id refs.
+- **Each line includes dosage/instructions:** name + qty + **dose/directions**
+  free-text (e.g. "1 tablet 3x daily after meals for 7 days"). Clinic "writes
+  the doses and everything."
+- **Prescription header:** patient details (name, optional age/phone) + doctor
+  name + general notes. All shown to the cashier in the POS.
 - **Branch:** the clinic **chooses which branch/location** to send to each time
   (prescription is not tied to a single fixed branch per clinic).
+
+## Link issuance & validity (confirmed)
+- Admin creates each clinic in a "Clinics" admin page; system generates a unique
+  private link per clinic for the admin to share.
+- Link is **valid indefinitely** until the admin acts: **deactivate clinic**
+  (link stops working) or **regenerate link** (new token, old one dies).
+- Optional auto-expiry by date: raised with user, awaiting decision.
 
 ## Architecture notes (from codebase exploration)
 - Multi-tenant: tenant resolved from JWT via `tenant_middleware`; schema set via
