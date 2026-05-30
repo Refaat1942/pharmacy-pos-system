@@ -293,7 +293,7 @@ class UnlockRequest(BaseModel):
 
 
 @app.post("/api/auth/unlock")
-def unlock_terminal(req: UnlockRequest, current_user=Depends(get_current_user)):
+def unlock_terminal(req: UnlockRequest, request: Request, current_user=Depends(get_current_user)):
     """Verify the currently logged-in user to release a locked terminal.
 
     Accepts EITHER the user's password OR their personal card code (scanned
@@ -302,6 +302,8 @@ def unlock_terminal(req: UnlockRequest, current_user=Depends(get_current_user)):
     uid = current_user.get("user_id")
     if not uid:
         raise HTTPException(status_code=401, detail="Missing user context")
+    throttle_key = f"unlock|{request.client.host if request.client else 'unknown'}|{uid}"
+    _login_throttle_check(throttle_key)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -319,11 +321,14 @@ def unlock_terminal(req: UnlockRequest, current_user=Depends(get_current_user)):
     code = (req.card_code or "").strip()
     if pw:
         if verify_password(pw, row["password_hash"]):
+            _login_throttle_clear(throttle_key)
             return {"ok": True}
     if code:
         stored = (row.get("card_code") or "").strip()
         if stored and code.upper() == stored.upper():
+            _login_throttle_clear(throttle_key)
             return {"ok": True}
+    _login_throttle_record_failure(throttle_key)
     raise HTTPException(status_code=401, detail="Incorrect password or card")
 
 
