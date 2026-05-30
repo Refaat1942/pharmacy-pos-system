@@ -989,7 +989,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
           <div>{t('inventory.excel_help_cols')}</div>
           <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200">
-            Code, Material Name, Unit, Small Unit, Quantity, Sales Price, Cost, Category, Min Stock
+            Code, Material Name, Unit, Small Unit, Small Unit Quantity Per Unit, Quantity, Sales Price, Cost, Category, Min Stock
           </code>
           <a href="/api/inventory/bulk-template" className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}

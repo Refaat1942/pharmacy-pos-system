@@ -420,12 +420,13 @@ def bulk_template(current_user=Depends(get_current_user)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
-    headers = ["Code", "Material Name", "Unit", "Small Unit", "Quantity",
+    headers = ["Code", "Material Name", "Unit", "Small Unit",
+               "Small Unit Quantity Per Unit", "Quantity",
                "Sales Price", "Cost", "Category", "Min Stock"]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 500mg", "Box", 10, 100,
-               35.50, 22.00, "Painkillers", 10])
-    ws.append(["7654321098765", "Augmentin 1g", "Box", 14, 50,
+    ws.append(["1234567890123", "Panadol Extra 48 Tab", "Box", "Strip", 4, 100,
+               116.00, 80.00, "Painkillers", 10])
+    ws.append(["7654321098765", "Augmentin 1g", "Box", "Tablet", 14, 50,
                180.00, 130.00, "Antibiotics", 5])
     buf = io.BytesIO()
     wb.save(buf)
@@ -487,19 +488,30 @@ async def bulk_upload(file: UploadFile = File(...),
             cost = float(cost_val) if cost_val not in (None, "") else None
             min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
 
-            pack_raw = _row_get(r, "pack_size", "small unit", "small_unit",
+            pack_raw = _row_get(r, "pack_size", "pack size",
                                 "small unit quantity per unit", "small unit qty per unit",
                                 "small unit per unit", "small unit quantity",
-                                "quantity per unit", "qty per unit",
+                                "units per unit", "quantity per unit", "qty per unit",
                                 "number of small unit", "number of small units",
                                 "small units", "units per pack", "units per box",
-                                "units per 1 box")
+                                "units per 1 box", "units per big unit")
+            sub_unit_name = str(_row_get(r, "small unit", "small_unit", "sub_unit",
+                                         "sub unit", "small unit name",
+                                         "unit classification", "small unit type") or "").strip()
+
+            if pack_raw in (None, "") and sub_unit_name:
+                try:
+                    pack_raw = float(sub_unit_name)
+                    sub_unit_name = ""
+                except ValueError:
+                    pass
+
             pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
             if pack_size < 1:
                 pack_size = 1
+            sub_unit_name = sub_unit_name.lower()
 
             qty_big = float(_row_get(r, "stock", "quantity", "qty") or 0)
-            sub_unit_name = str(_row_get(r, "sub_unit", "small unit name") or "").strip()
 
             if pack_size > 1:
                 sub_unit = sub_unit_name or DEFAULT_SUB_UNIT

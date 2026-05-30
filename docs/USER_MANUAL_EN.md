@@ -108,12 +108,13 @@ The template columns are:
 | **Code** | Barcode / item code (used to match existing items when you re-upload) |
 | **Material Name** | Product name |
 | **Unit** | The big unit (e.g. Box) |
-| **Small Unit** | How many small pieces are in one big unit (e.g. 10). Use **1** if the item isn't split |
+| **Small Unit** | The name of the small unit — e.g. **Strip**, Tablet, Capsule. Leave blank if the item isn't split (defaults to *Piece*) |
+| **Small Unit Quantity Per Unit** | How many small units are in one big unit (e.g. a box of 4 strips → **4**). Use **1** (or leave blank) if the item isn't split |
 | **Quantity** | Stock, counted in **big units** (e.g. number of boxes — fractions like 2.5 are allowed) |
 | **Sales Price** | Selling price of **one big unit** |
 | **Cost, Category, Min Stock** | Optional |
 
-The system automatically works out the price of one small piece (Sales Price ÷ Small Unit) and stores stock in small pieces, so you can sell either a full box or a single piece. The small piece is labelled **Piece** by default — you can rename it (Strip, Tablet…) on each item's card in Inventory afterwards.
+The system automatically works out the price of one small unit (Sales Price ÷ Small Unit Quantity Per Unit) and stores stock in small units, so at the till you can choose to sell either a full box or a single strip. The **Small Unit** column lets you classify it (Strip, Tablet…); if you leave it blank the small unit is labelled *Piece*, and you can still rename it later on each item's card in Inventory.
 
 ---
 
