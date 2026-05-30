@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowRightLeft, Plus, Check, X, Eye, Trash2, ScanLine } from 'lucide-react'
+import { ArrowRightLeft, Plus, Check, X, Eye, Trash2, ScanLine, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../lib/api'
 import api from '../lib/api'
@@ -482,12 +482,30 @@ function TransferDetailModal({
   canCancel: boolean
 }) {
   const { t } = useTranslation()
+  const isAr = i18n.language === 'ar'
+  const dir: 'rtl' | 'ltr' = isAr ? 'rtl' : 'ltr'
+  const tr = (k: string) => i18n.getFixedT(isAr ? 'ar' : 'en')(k)
+  const items = transfer.items || []
+  const totalQty = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
+  const fromName = isAr ? transfer.from_name_ar : transfer.from_name_en
+  const toName = isAr ? transfer.to_name_ar : transfer.to_name_en
+  const sentByName = isAr ? transfer.created_by_name_ar : transfer.created_by_name_en
+  const handlePrint = () => window.print()
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col no-print">
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{transfer.transfer_number}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handlePrint}
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 hover:bg-slate-50 flex items-center gap-1.5 text-slate-700"
+            >
+              <Printer size={15} />
+              {t('transfers.print')}
+            </button>
+            <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+          </div>
         </div>
         <div className="p-5 overflow-auto flex-1">
           <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
@@ -532,6 +550,60 @@ function TransferDetailModal({
             )}
           </div>
         )}
+      </div>
+
+      <div className="receipt-print print-only" dir={dir} style={{ width: '80mm', padding: '4mm', color: '#000', fontSize: '12px', lineHeight: 1.5 }}>
+        <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+          <div style={{ fontWeight: 700, fontSize: '15px' }}>{tr('transfers.slip_title')}</div>
+          <div style={{ fontFamily: 'monospace', fontSize: '13px', marginTop: '2px' }}>{transfer.transfer_number}</div>
+        </div>
+        <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '6px 0', marginBottom: '6px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_from')}</span><b>{fromName}</b></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_to')}</span><b>{toName}</b></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_status')}</span><span>{tr(`transfers.status_${transfer.status}`)}</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_date')}</span><span>{new Date(transfer.created_at).toLocaleString(isAr ? 'ar-EG' : 'en-US')}</span></div>
+          {sentByName && (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.sent_by')}</span><span>{sentByName}</span></div>
+          )}
+        </div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '6px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #000' }}>
+              <th style={{ textAlign: 'start', padding: '2px 0' }}>{tr('transfers.product')}</th>
+              <th style={{ textAlign: 'end', padding: '2px 0', whiteSpace: 'nowrap' }}>{tr('transfers.quantity')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it) => (
+              <tr key={it.id} style={{ borderBottom: '1px dotted #999' }}>
+                <td style={{ padding: '3px 0' }}>
+                  <div>{isAr ? it.product_name_ar : it.product_name_en}</div>
+                  {it.barcode && <div style={{ fontFamily: 'monospace', fontSize: '10px', color: '#444' }}>{it.barcode}</div>}
+                </td>
+                <td style={{ textAlign: 'end', padding: '3px 0', whiteSpace: 'nowrap', fontWeight: 700 }}>
+                  {it.quantity} <span style={{ fontWeight: 400, fontSize: '10px' }}>{it.unit_label || ''}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ borderTop: '1px dashed #000', paddingTop: '6px', marginBottom: '10px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.total_items')}</span><b>{items.length}</b></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.total_qty')}</span><b>{totalQty}</b></div>
+        </div>
+        {transfer.notes && (
+          <div style={{ marginBottom: '10px' }}>
+            <b>{tr('transfers.notes')}: </b>{transfer.notes}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginTop: '18px' }}>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ borderTop: '1px solid #000', paddingTop: '3px', fontSize: '11px' }}>{tr('transfers.sent_by')}</div>
+          </div>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <div style={{ borderTop: '1px solid #000', paddingTop: '3px', fontSize: '11px' }}>{tr('transfers.received_sig')}</div>
+          </div>
+        </div>
       </div>
     </div>
   )

@@ -79,6 +79,7 @@ body {
 }
 
 /* Print styles */
+.print-only { display: none; }
 @media print {
   body > * { visibility: hidden !important; }
   .receipt-print, .receipt-print * { visibility: visible !important; }
@@ -88,5 +89,6 @@ body {
     width: 80mm;
     font-family: 'Cairo', sans-serif;
   }
+  .print-only { display: block !important; }
   .no-print { display: none !important; }
 }

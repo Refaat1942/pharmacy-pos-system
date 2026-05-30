@@ -686,7 +686,13 @@
     "scan_hint": "Tip: focus this field and use a USB/Bluetooth scanner — each scan adds 1 unit.",
     "scan_not_found": "Product not found in source branch",
     "scan_no_stock": "Product is out of stock in source branch",
-    "scan_ambiguous": "Multiple products matched — please refine the barcode or use search below"
+    "scan_ambiguous": "Multiple products matched — please refine the barcode or use search below",
+    "print": "Print",
+    "slip_title": "Stock Transfer",
+    "total_items": "Total items",
+    "total_qty": "Total quantity",
+    "sent_by": "Sent by",
+    "received_sig": "Received by"
   },
   "expiry": {
     "title": "Expiry Management",
