@@ -459,7 +459,21 @@
     "role_pharmacist": "صيدلي",
     "role_assistant": "مساعد",
     "role_cashier": "كاشير",
-    "role_branch": "حساب الفرع"
+    "role_branch": "حساب الفرع",
+    "login_cards": "طباعة بطاقات الدخول",
+    "no_cards": "لا يوجد مستخدمون نشطون لديهم كود بطاقة",
+    "scan_to_unlock": "امسح لفتح قفل الجهاز"
+  },
+  "lock": {
+    "title": "الجهاز مقفل",
+    "signed_in_as": "تم تسجيل الدخول باسم",
+    "password": "كلمة المرور",
+    "unlock": "فتح القفل",
+    "or": "أو",
+    "scan_card": "امسح بطاقتك",
+    "scan_placeholder": "امسح QR / باركود…",
+    "different_user": "تسجيل الدخول بمستخدم آخر",
+    "error": "كلمة المرور أو البطاقة غير صحيحة"
   },
   "pos": {
     "search_placeholder": "بحث بالاسم أو الباركود...",
@@ -529,7 +543,8 @@
   },
   "common": {
     "loading": "جارٍ التحميل…",
-    "saving": "جارٍ الحفظ…"
+    "saving": "جارٍ الحفظ…",
+    "print": "طباعة"
   },
   "receipt": {
     "title": "فاتورة",
@@ -642,6 +657,7 @@
     "notes": "ملاحظات",
     "all": "الكل",
     "refresh": "تحديث",
+    "print": "طباعة",
     "no_data": "لا توجد بيانات"
   },
   "branch": {

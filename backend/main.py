@@ -287,6 +287,46 @@ def get_me(current_user=Depends(get_current_user)):
     return {**current_user, "tenant": tenant_payload, "user": user_payload}
 
 
+class UnlockRequest(BaseModel):
+    password: str | None = None
+    card_code: str | None = None
+
+
+@app.post("/api/auth/unlock")
+def unlock_terminal(req: UnlockRequest, current_user=Depends(get_current_user)):
+    """Verify the currently logged-in user to release a locked terminal.
+
+    Accepts EITHER the user's password OR their personal card code (scanned
+    QR/barcode). The token stays valid the whole time, so this only re-confirms
+    the same person is back at the keyboard."""
+    uid = current_user.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="Missing user context")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT password_hash, card_code, status FROM users WHERE id=%s",
+            (uid,),
+        )
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    if not row or (row.get("status") and row["status"] != "active"):
+        raise HTTPException(status_code=401, detail="Account is inactive")
+
+    pw = (req.password or "").strip()
+    code = (req.card_code or "").strip()
+    if pw:
+        if verify_password(pw, row["password_hash"]):
+            return {"ok": True}
+    if code:
+        stored = (row.get("card_code") or "").strip()
+        if stored and code.upper() == stored.upper():
+            return {"ok": True}
+    raise HTTPException(status_code=401, detail="Incorrect password or card")
+
+
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
 @app.get("/api/products")

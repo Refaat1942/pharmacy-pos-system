@@ -335,7 +335,21 @@
     "role_pharmacist": "Pharmacist",
     "role_assistant": "Assistant",
     "role_cashier": "Cashier",
-    "role_branch": "Branch Terminal"
+    "role_branch": "Branch Terminal",
+    "login_cards": "Print login cards",
+    "no_cards": "No active users with a card code",
+    "scan_to_unlock": "Scan to unlock terminal"
+  },
+  "lock": {
+    "title": "Terminal locked",
+    "signed_in_as": "Signed in as",
+    "password": "Password",
+    "unlock": "Unlock",
+    "or": "or",
+    "scan_card": "Scan your card",
+    "scan_placeholder": "Scan QR / barcode…",
+    "different_user": "Sign in as a different user",
+    "error": "Incorrect password or card"
   },
   "inventory": {
     "title": "Inventory & Stock",
@@ -529,7 +543,8 @@
   },
   "common": {
     "loading": "Loading…",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "print": "Print"
   },
   "receipt": {
     "title": "Invoice",
@@ -642,7 +657,8 @@
     "notes": "Notes",
     "all": "All",
     "refresh": "Refresh",
-    "no_data": "No data"
+    "no_data": "No data",
+    "print": "Print"
   },
   "branch": {
     "switch": "Switch Branch",

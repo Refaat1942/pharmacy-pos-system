@@ -422,6 +422,13 @@ UPDATE employees
  WHERE clock_code IS NULL;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_by_user_id INTEGER;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_at TIMESTAMP;
+
+-- Per-user card code for unlocking a locked terminal by scanning a personal QR/barcode
+ALTER TABLE users ADD COLUMN IF NOT EXISTS card_code VARCHAR(40);
+CREATE UNIQUE INDEX IF NOT EXISTS users_card_code_key ON users(card_code) WHERE card_code IS NOT NULL;
+UPDATE users
+   SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
+ WHERE card_code IS NULL;
 """
 
 

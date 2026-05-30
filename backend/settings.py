@@ -205,7 +205,7 @@ def list_users(current_user: dict = Depends(get_current_user)):
         cur.execute("""
             SELECT u.id, u.username, u.name_ar, u.name_en, u.role,
                    u.branch_id, u.salary, COALESCE(u.status,'active') AS status,
-                   u.permissions,
+                   u.permissions, u.card_code,
                    b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                    u.created_at
             FROM users u

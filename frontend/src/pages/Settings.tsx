@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -133,12 +133,20 @@ function UsersTab() {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
         <h2 className="text-sm font-semibold text-slate-700">{t('settings.user_list')} ({users.length})</h2>
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
-        >
-          <Plus size={15} /> {t('settings.add_user')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => window.open('/settings/login-cards', '_blank')}
+            className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium px-3 py-1.5 rounded-lg"
+          >
+            <Printer size={15} /> {t('settings.login_cards')}
+          </button>
+          <button
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
+          >
+            <Plus size={15} /> {t('settings.add_user')}
+          </button>
+        </div>
       </div>
 
       {loading ? (

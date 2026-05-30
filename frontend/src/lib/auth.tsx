@@ -28,11 +28,16 @@ interface AuthContextType {
   isAuthenticated: boolean
   hasFeature: (key: string) => boolean
   refreshTenant: () => Promise<void>
+  isLocked: boolean
+  lock: () => void
+  unlock: () => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
+
+const IDLE_LOCK_MS = 10 * 60 * 1000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() =>
@@ -46,12 +51,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('pharma_tenant')
     return stored ? JSON.parse(stored) : null
   })
+  const [isLocked, setLocked] = useState<boolean>(() => localStorage.getItem('pharma_locked') === '1')
 
   const login = useCallback((newToken: string, newUser: AuthUser, newTenant?: TenantInfo) => {
     localStorage.setItem('pharma_token', newToken)
     localStorage.setItem('pharma_user', JSON.stringify(newUser))
     setToken(newToken)
     setUser(newUser)
+    localStorage.removeItem('pharma_locked')
+    setLocked(false)
     if (newTenant) {
       localStorage.setItem('pharma_tenant', JSON.stringify(newTenant))
       setTenant(newTenant)
@@ -65,6 +73,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     setUser(null)
     setTenant(null)
+    localStorage.removeItem('pharma_locked')
+    setLocked(false)
+  }, [])
+
+  const lock = useCallback(() => {
+    localStorage.setItem('pharma_locked', '1')
+    setLocked(true)
+  }, [])
+  const unlock = useCallback(() => {
+    localStorage.removeItem('pharma_locked')
+    setLocked(false)
+  }, [])
+
+  // Keep the lock state in sync across all tabs/windows of the same terminal.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pharma_locked') setLocked(e.newValue === '1')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const refreshTenant = useCallback(async () => {
@@ -135,6 +163,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [token, refreshTenant])
 
+  // Auto-lock the terminal after a period of inactivity. Any user activity
+  // resets the countdown. Locking keeps the session alive (token stays valid);
+  // the user just re-confirms via password or personal card.
+  useEffect(() => {
+    if (!token || isLocked) return
+    let timer: ReturnType<typeof setTimeout>
+    const reset = () => {
+      clearTimeout(timer)
+      timer = setTimeout(lock, IDLE_LOCK_MS)
+    }
+    const events: (keyof WindowEventMap)[] = [
+      'mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel',
+    ]
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => {
+      clearTimeout(timer)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [token, isLocked, lock])
+
   const hasFeature = useCallback((key: string) => {
     // No tenant yet (legacy session) → allow; backend gate is the source of truth.
     if (!tenant) return true
@@ -145,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [tenant])
 
   return (
-    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature, refreshTenant }}>
+    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature, refreshTenant, isLocked, lock, unlock }}>
       {children}
     </AuthContext.Provider>
   )

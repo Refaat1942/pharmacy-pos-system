@@ -20,8 +20,10 @@ import Shifts from './pages/Shifts'
 import HR from './pages/HR'
 import Clock from './pages/Clock'
 import EmployeeCards from './pages/EmployeeCards'
+import UserCards from './pages/UserCards'
 import PlatformLogin from './pages/PlatformLogin'
 import Platform from './pages/Platform'
+import LockScreen from './components/LockScreen'
 
 function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('platform_token')
@@ -35,6 +37,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { i18n } = useTranslation()
+  const { isAuthenticated, isLocked } = useAuth()
 
   useEffect(() => {
     const dir = i18n.language === 'ar' ? 'rtl' : 'ltr'
@@ -43,6 +46,8 @@ function AppRoutes() {
   }, [i18n.language])
 
   return (
+    <>
+      {isAuthenticated && isLocked && <LockScreen />}
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute><POS /></ProtectedRoute>} />
@@ -61,11 +66,13 @@ function AppRoutes() {
       <Route path="/shifts" element={<ProtectedRoute><Shifts /></ProtectedRoute>} />
       <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
       <Route path="/hr/cards" element={<ProtectedRoute><EmployeeCards /></ProtectedRoute>} />
+      <Route path="/settings/login-cards" element={<ProtectedRoute><UserCards /></ProtectedRoute>} />
       <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   )
 }
 
