@@ -402,6 +402,17 @@ def velocity_classification(days: int = 90,
 
 # ─── CONSUMPTION-BASED MIN STOCK SUGGESTION ────────────────────────────────
 
+DEFAULT_SUB_UNIT = "Piece"
+
+
+def _row_get(r, *keys):
+    """Return the first non-empty value among the given (lowercased) header keys."""
+    for k in keys:
+        if k in r and r[k] not in (None, ""):
+            return r[k]
+    return None
+
+
 @router.get("/bulk-template")
 def bulk_template(current_user=Depends(get_current_user)):
     """Download a blank Excel template for bulk item upload."""
@@ -409,11 +420,13 @@ def bulk_template(current_user=Depends(get_current_user)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
-    headers = ["barcode", "name_en", "name_ar", "category", "unit",
-               "price", "cost", "stock", "min_stock"]
+    headers = ["Code", "Material Name", "Unit", "Small Unit", "Quantity",
+               "Sales Price", "Cost", "Category", "Min Stock"]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 500mg", "بانادول إكسترا 500مج",
-               "Painkillers", "box", 35.50, 22.00, 100, 10])
+    ws.append(["1234567890123", "Panadol Extra 500mg", "Box", 10, 100,
+               35.50, 22.00, "Painkillers", 10])
+    ws.append(["7654321098765", "Augmentin 1g", "Box", 14, 50,
+               180.00, 130.00, "Antibiotics", 5])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -426,7 +439,8 @@ def bulk_template(current_user=Depends(get_current_user)):
 
 @router.post("/bulk-upload")
 async def bulk_upload(file: UploadFile = File(...),
-                      current_user=Depends(get_current_user)):
+                      current_user=Depends(get_current_user),
+                      active_branch=Depends(get_active_branch_id)):
     """Bulk import items from Excel/CSV. Existing barcodes are updated."""
     from openpyxl import load_workbook
     content = await file.read()
@@ -448,40 +462,67 @@ async def bulk_upload(file: UploadFile = File(...),
             row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
             rows.append(row)
 
+    rows = [{(str(k).strip().lower() if k is not None else ""): v
+             for k, v in row.items()} for row in rows]
+
     inserted = updated = errors = 0
     error_details = []
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    branch_id = current_user.get("branch_id")
+    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
     user_id = current_user.get("user_id")
 
     for idx, r in enumerate(rows, start=2):
         cur.execute("SAVEPOINT row_sp")
         try:
-            name_en = (r.get("name_en") or "").strip()
-            name_ar = (r.get("name_ar") or "").strip()
+            name_en = str(_row_get(r, "name_en", "name", "material name", "item name") or "").strip()
             if not name_en:
-                raise ValueError("name_en is required")
-            barcode = str(r.get("barcode") or "").strip() or None
-            category = (r.get("category") or "").strip() or None
-            unit = (r.get("unit") or "box").strip()
-            price = float(r.get("price") or 0)
-            cost = float(r.get("cost")) if r.get("cost") not in (None, "") else None
-            stock = int(r.get("stock") or 0)
-            min_stock = int(r.get("min_stock") or 5)
+                raise ValueError("Material Name is required")
+            name_ar = str(_row_get(r, "name_ar", "arabic name", "name (arabic)") or "").strip() or name_en
+            barcode = str(_row_get(r, "barcode", "code", "material code", "item code") or "").strip() or None
+            category = str(_row_get(r, "category") or "").strip() or None
+            unit = str(_row_get(r, "unit", "material unit", "big unit", "main unit") or "box").strip()
+            price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
+            cost_val = _row_get(r, "cost", "cost price", "purchase price")
+            cost = float(cost_val) if cost_val not in (None, "") else None
+            min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
+
+            pack_raw = _row_get(r, "pack_size", "small unit", "small_unit",
+                                "number of small unit", "number of small units",
+                                "small units", "units per pack")
+            pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
+            if pack_size < 1:
+                pack_size = 1
+
+            qty_big = float(_row_get(r, "stock", "quantity", "qty") or 0)
+            sub_unit_name = str(_row_get(r, "sub_unit", "small unit name") or "").strip()
+
+            if pack_size > 1:
+                sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
+                sub_price = round(price / pack_size, 2) if price else None
+                stock = int(round(qty_big * pack_size))
+            else:
+                sub_unit = None
+                sub_price = None
+                stock = int(round(qty_big))
 
             existing = None
             if barcode:
-                cur.execute("SELECT id, stock FROM products WHERE barcode=%s", (barcode,))
+                if branch_id is None:
+                    cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id IS NULL", (barcode,))
+                else:
+                    cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s", (barcode, branch_id))
                 existing = cur.fetchone()
 
             if existing:
                 cur.execute(
                     """UPDATE products SET name_en=%s, name_ar=%s, category=%s, unit=%s,
-                       price=%s, cost=%s, min_stock=%s, active=true WHERE id=%s""",
-                    (name_en, name_ar, category, unit, price, cost, min_stock, existing["id"]),
+                       price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
+                       sub_price=%s, active=true WHERE id=%s""",
+                    (name_en, name_ar, category, unit, price, cost, min_stock,
+                     pack_size, sub_unit, sub_price, existing["id"]),
                 )
-                if stock and stock != existing["stock"]:
+                if stock != int(existing["stock"]):
                     delta = stock - int(existing["stock"])
                     cur.execute("UPDATE products SET stock=%s WHERE id=%s", (stock, existing["id"]))
                     log_movement(
@@ -494,10 +535,10 @@ async def bulk_upload(file: UploadFile = File(...),
             else:
                 cur.execute(
                     """INSERT INTO products (barcode, name_ar, name_en, category, unit,
-                       price, cost, stock, min_stock, branch_id)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                       price, cost, stock, min_stock, pack_size, sub_unit, sub_price, branch_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                     (barcode, name_ar, name_en, category, unit,
-                     price, cost, stock, min_stock, branch_id),
+                     price, cost, stock, min_stock, pack_size, sub_unit, sub_price, branch_id),
                 )
                 new_id = cur.fetchone()["id"]
                 if stock > 0:

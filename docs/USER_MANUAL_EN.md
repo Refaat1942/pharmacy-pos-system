@@ -101,6 +101,20 @@ Go to **Expiry** in the menu to see all products expiring soon, sorted by date. 
 
 To load hundreds of products at once: **Inventory → Bulk Upload → Download template → fill the Excel → upload**.
 
+The template columns are:
+
+| Column | Meaning |
+|---|---|
+| **Code** | Barcode / item code (used to match existing items when you re-upload) |
+| **Material Name** | Product name |
+| **Unit** | The big unit (e.g. Box) |
+| **Small Unit** | How many small pieces are in one big unit (e.g. 10). Use **1** if the item isn't split |
+| **Quantity** | Stock, counted in **big units** (e.g. number of boxes — fractions like 2.5 are allowed) |
+| **Sales Price** | Selling price of **one big unit** |
+| **Cost, Category, Min Stock** | Optional |
+
+The system automatically works out the price of one small piece (Sales Price ÷ Small Unit) and stores stock in small pieces, so you can sell either a full box or a single piece. The small piece is labelled **Piece** by default — you can rename it (Strip, Tablet…) on each item's card in Inventory afterwards.
+
 ---
 
 ## 4. Branches — multiple locations
