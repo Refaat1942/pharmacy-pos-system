@@ -669,14 +669,6 @@ def create_sale(req: SaleRequest,
             else:
                 stock_used = item.quantity * pack_size
                 unit_label = prod["unit"] or "unit"
-            if int(prod["stock"]) < stock_used:
-                # Show shortage in the unit the cashier picked, for clarity.
-                have = int(prod["stock"]) if unit_type != "pack" or pack_size == 1 \
-                    else int(prod["stock"]) // pack_size
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient stock for {prod['name_en']} (have {have} {unit_label}, need {item.quantity})",
-                )
             item_total = item.quantity * item.unit_price - item.discount
             cur.execute(
                 """INSERT INTO invoice_items

@@ -94,17 +94,12 @@ export default function POS() {
     return () => clearTimeout(timer)
   }, [search])
 
-  // Stock check helper: given a cart line, max allowed quantity for its unit_type.
-  const maxQty = useCallback((p: Product, unit_type: 'pack' | 'sub') => {
-    const pack = Math.max(1, p.pack_size || 1)
-    return unit_type === 'sub' ? p.stock : Math.floor(p.stock / pack)
+  // Selling is allowed even when stock is zero or negative; replenishment nets it out.
+  const maxQty = useCallback((_p: Product, _unit_type: 'pack' | 'sub') => {
+    return 999999
   }, [])
 
   const addToCart = useCallback((product: Product) => {
-    if (product.stock <= 0) {
-      alert(`${product.name_en} — ${t('pos.out_of_stock')}`)
-      return
-    }
     if (product.expiry_date) {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
@@ -143,9 +138,7 @@ export default function POS() {
       const price = ut === 'sub'
         ? (i.product.sub_price != null ? Number(i.product.sub_price) : i.product.price / pack)
         : i.product.price
-      // Clamp quantity to new max.
-      const max = ut === 'sub' ? i.product.stock : Math.floor(i.product.stock / pack)
-      return { ...i, unit_type: ut, unit_price: price, quantity: Math.min(i.quantity, Math.max(1, max)) }
+      return { ...i, unit_type: ut, unit_price: price, quantity: Math.max(1, i.quantity) }
     }))
   }, [])
 
@@ -295,10 +288,9 @@ export default function POS() {
                           key={p.id}
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => addToCart(p)}
-                          disabled={isOut}
                           className={`w-full flex items-center gap-4 px-5 py-3 text-start border-b border-slate-50 last:border-0 transition-colors ${
                             idx === highlight ? 'bg-pharma-50' : 'hover:bg-slate-50'
-                          } ${isOut ? 'opacity-40 cursor-not-allowed' : ''}`}
+                          }`}
                           onMouseEnter={() => setHighlight(idx)}
                         >
                           <div className="flex-1 min-w-0">
@@ -326,7 +318,7 @@ export default function POS() {
                               {t('pos.egp')} {p.price.toFixed(2)}
                             </p>
                           </div>
-                          {idx === highlight && !isOut && (
+                          {idx === highlight && (
                             <CornerDownLeft size={14} className="text-pharma-500 flex-shrink-0" />
                           )}
                         </button>

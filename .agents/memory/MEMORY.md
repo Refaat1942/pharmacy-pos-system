@@ -1,1 +1,2 @@
 - [Bulk upload unit model](bulk-upload-units.md) — Quantity=big units, Sales Price=per big unit; stock stored in sub-units (Qty×pack_size), sub_price=price/pack_size, sub_unit default "Piece".
+- [Stock policy & dev schema](stock-and-tenant-schema.md) — sales may go negative (POS only); transfer/adjustment stay strict; dev fratelanza data lives in `public` schema, not `tenant_fratelanza`.

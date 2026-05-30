@@ -488,8 +488,12 @@ async def bulk_upload(file: UploadFile = File(...),
             min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
 
             pack_raw = _row_get(r, "pack_size", "small unit", "small_unit",
+                                "small unit quantity per unit", "small unit qty per unit",
+                                "small unit per unit", "small unit quantity",
+                                "quantity per unit", "qty per unit",
                                 "number of small unit", "number of small units",
-                                "small units", "units per pack")
+                                "small units", "units per pack", "units per box",
+                                "units per 1 box")
             pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
             if pack_size < 1:
                 pack_size = 1
