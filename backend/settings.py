@@ -241,6 +241,11 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
               body.branch_id, body.salary,
               psycopg2.extras.Json(perms) if perms is not None else None))
         uid = cur.fetchone()['id']
+        cur.execute("""
+            UPDATE users
+               SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
+             WHERE id = %s AND card_code IS NULL
+        """, (uid,))
         conn.commit()
         return {"id": uid, "ok": True}
     finally:
