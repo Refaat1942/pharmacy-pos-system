@@ -534,6 +534,7 @@ class SaleRequest(BaseModel):
     customer_id: Optional[int] = None
     seller_id: Optional[int] = None
     clinic_id: Optional[int] = None
+    prescription_id: Optional[int] = None
     notes: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_fee: Optional[float] = None
@@ -636,21 +637,38 @@ def create_sale(req: SaleRequest,
             if cur.fetchone():
                 clinic_id = req.clinic_id
 
+        prescription_id = None
+        if req.prescription_id:
+            cur.execute(
+                "SELECT id FROM prescriptions WHERE id=%s AND (branch_id=%s OR branch_id IS NULL)",
+                (req.prescription_id, branch_id),
+            )
+            if cur.fetchone():
+                prescription_id = req.prescription_id
+
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
-                change_amount, seller_id, customer_id, branch_id, clinic_id, notes,
+                change_amount, seller_id, customer_id, branch_id, clinic_id, prescription_id, notes,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, req.cash_amount, req.visa_amount,
-             change, seller_id, req.customer_id, branch_id, clinic_id, req.notes,
+             change, seller_id, req.customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
+
+        if prescription_id and req.type != "return":
+            cur.execute(
+                """UPDATE prescriptions SET status='fulfilled', handled_at=%s, handled_by=%s
+                   WHERE id=%s AND status IN ('pending','loaded')
+                     AND (branch_id=%s OR branch_id IS NULL)""",
+                (datetime.now(), seller_id, prescription_id, branch_id),
+            )
 
         for item in req.items:
             if item.quantity <= 0:

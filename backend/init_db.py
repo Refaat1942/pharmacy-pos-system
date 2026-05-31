@@ -469,6 +469,9 @@ CREATE TABLE IF NOT EXISTS prescription_items (
     dose            TEXT,
     note            TEXT
 );
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS prescription_id INTEGER REFERENCES prescriptions(id);
+CREATE INDEX IF NOT EXISTS invoices_prescription_id_idx ON invoices(prescription_id);
 """
 
 

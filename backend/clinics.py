@@ -130,17 +130,24 @@ def list_prescriptions(status: str = "pending",
                        active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    where = ["p.status = %s"]
-    params: list = [status]
+    where = []
+    params: list = []
+    if status == "active":
+        where.append("p.status IN ('pending','loaded')")
+    else:
+        where.append("p.status = %s")
+        params.append(status)
     if active_branch is not None:
         where.append("(p.branch_id = %s OR p.branch_id IS NULL)")
         params.append(active_branch)
     cur.execute(
         f"""SELECT p.*, c.name AS clinic_name,
-                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                   COALESCE(NULLIF(hu.name_en,''), hu.name_ar, hu.username) AS handled_by_name
               FROM prescriptions p
               JOIN clinics c ON p.clinic_id = c.id
               LEFT JOIN branches b ON p.branch_id = b.id
+              LEFT JOIN users hu ON p.handled_by = hu.id
              WHERE {' AND '.join(where)}
              ORDER BY p.created_at DESC LIMIT 100""",
         params,
@@ -157,22 +164,28 @@ def pending_count(current_user=Depends(get_current_user),
                   active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    where = ["status = 'pending'"]
+    branch_cond = ""
     params: list = []
     if active_branch is not None:
-        where.append("(branch_id = %s OR branch_id IS NULL)")
+        branch_cond = " AND (branch_id = %s OR branch_id IS NULL)"
         params.append(active_branch)
-    cur.execute(f"SELECT COUNT(*) AS cnt FROM prescriptions WHERE {' AND '.join(where)}", params)
-    cnt = int(cur.fetchone()["cnt"])
+    cur.execute(
+        f"""SELECT
+              COUNT(*) FILTER (WHERE status IN ('pending','loaded')) AS active_cnt,
+              COUNT(*) FILTER (WHERE status = 'pending') AS new_cnt
+            FROM prescriptions WHERE TRUE{branch_cond}""",
+        params,
+    )
+    row = cur.fetchone()
     conn.close()
-    return {"count": cnt}
+    return {"count": int(row["active_cnt"]), "new": int(row["new_cnt"])}
 
 
 @router.patch("/prescriptions/{prescription_id}")
 def update_prescription_status(prescription_id: int, status: str,
                                current_user=Depends(get_current_user),
                                active_branch=Depends(get_active_branch_id)):
-    if status not in ("pending", "loaded", "dismissed"):
+    if status not in ("pending", "loaded", "dismissed", "fulfilled"):
         raise HTTPException(status_code=400, detail="Invalid status")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

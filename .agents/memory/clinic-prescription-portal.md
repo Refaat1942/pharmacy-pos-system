@@ -19,12 +19,17 @@ notification bell that loads the lines into the cart.
   to a 404 so the link reveals nothing about validity — do not leak distinct errors.
 
 ## Branch authorization (critical)
-- Prescriptions carry a `branch_id` (nullable). List, count, **and status-update**
-  endpoints must all filter by the caller's `get_active_branch_id` with
-  `(branch_id = %s OR branch_id IS NULL)`; `None` means admin-viewing-all.
-- **Why:** updating by `id` alone is an IDOR — any user in the tenant could flip
-  another branch's prescription status by guessing IDs. The branch predicate in the
-  UPDATE WHERE clause is the access control; keep it in lockstep with the read paths.
+- Prescriptions carry a `branch_id` (nullable). List, count, status-update, **and the
+  sale path that links/fulfills a prescription** must all filter by the caller's
+  resolved branch with `(branch_id = %s OR branch_id IS NULL)`; `None` means
+  admin-viewing-all.
+- The sale path is easy to miss: `create_sale` accepts a client-supplied
+  `prescription_id`, validates it, links it onto the invoice, and flips the
+  prescription to `fulfilled`. BOTH the validation SELECT and the fulfill UPDATE need
+  the branch predicate, and the UPDATE should only transition from `('pending','loaded')`.
+- **Why:** acting by `id` alone is an IDOR — any user in the tenant could fulfill or
+  flip another branch's prescription by guessing IDs. The branch predicate in every
+  WHERE clause is the access control; keep it in lockstep across read AND write paths.
 
 ## POS cart loading
 - Medicine names are free text. Loading tries exact EN/AR/barcode match, else a

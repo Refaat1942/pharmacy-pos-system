@@ -984,6 +984,14 @@
     "dismiss": "Dismiss",
     "dismiss_confirm": "Dismiss this prescription?",
     "doctor": "Dr",
-    "unmatched_notice": "These items had no matching product — please add them manually:"
+    "unmatched_notice": "These items had no matching product — please add them manually:",
+    "in_progress": "In progress",
+    "active_tab": "Active",
+    "dismissed_tab": "Dismissed",
+    "dismissed_by": "Dismissed by",
+    "dismissed_empty": "No dismissed prescriptions.",
+    "restore": "Restore",
+    "notify_title": "New prescription",
+    "notify_body": "{{count}} prescription(s) waiting in the queue"
   }
 }

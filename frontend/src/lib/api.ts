@@ -199,6 +199,7 @@ export const salesAPI = {
     customer_id?: number
     seller_id?: number
     clinic_id?: number
+    prescription_id?: number
     notes?: string
     delivery_address?: string
     delivery_fee?: number
@@ -315,6 +316,8 @@ export interface Prescription {
   notes?: string | null
   status: string
   created_at: string
+  handled_at?: string | null
+  handled_by_name?: string | null
   items: PrescriptionItem[]
 }
 
@@ -328,9 +331,9 @@ export const clinicsAPI = {
 }
 
 export const prescriptionsAPI = {
-  list: (status = 'pending') => api.get<Prescription[]>('/prescriptions', { params: { status } }),
-  count: () => api.get<{ count: number }>('/prescriptions/count'),
-  setStatus: (id: number, status: 'pending' | 'loaded' | 'dismissed') =>
+  list: (status = 'active') => api.get<Prescription[]>('/prescriptions', { params: { status } }),
+  count: () => api.get<{ count: number; new: number }>('/prescriptions/count'),
+  setStatus: (id: number, status: 'pending' | 'loaded' | 'dismissed' | 'fulfilled') =>
     api.patch<{ ok: boolean; status: string }>(`/prescriptions/${id}`, null, { params: { status } }),
 }
 

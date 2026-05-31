@@ -984,6 +984,14 @@
     "dismiss": "تجاهل",
     "dismiss_confirm": "تجاهل هذه الوصفة؟",
     "doctor": "د",
-    "unmatched_notice": "هذه الأصناف لم يتم العثور على منتج مطابق لها — يرجى إضافتها يدويًا:"
+    "unmatched_notice": "هذه الأصناف لم يتم العثور على منتج مطابق لها — يرجى إضافتها يدويًا:",
+    "in_progress": "قيد التحضير",
+    "active_tab": "النشطة",
+    "dismissed_tab": "المتجاهَلة",
+    "dismissed_by": "تجاهلها",
+    "dismissed_empty": "لا توجد وصفات متجاهَلة.",
+    "restore": "استعادة",
+    "notify_title": "وصفة جديدة",
+    "notify_body": "{{count}} وصفة بانتظار التحضير"
   }
 }
