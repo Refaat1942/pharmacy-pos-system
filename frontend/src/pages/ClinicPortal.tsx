@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Stethoscope, Plus, Trash2, Send, CheckCircle2 } from 'lucide-react'
@@ -26,6 +26,11 @@ export default function ClinicPortal() {
   const [done, setDone] = useState(false)
   const [err, setErr] = useState('')
 
+  const [sugg, setSugg] = useState<string[]>([])
+  const [suggRow, setSuggRow] = useState<number | null>(null)
+  const suggTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suggSeq = useRef(0)
+
   useEffect(() => {
     document.documentElement.dir = isAr ? 'rtl' : 'ltr'
   }, [isAr])
@@ -44,6 +49,30 @@ export default function ClinicPortal() {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   const addRow = () => setRows((rs) => [...rs, emptyRow()])
   const removeRow = (i: number) => setRows((rs) => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)
+
+  const onMedicineInput = (i: number, value: string) => {
+    setRow(i, { medicine_name: value })
+    setSuggRow(i)
+    if (suggTimer.current) clearTimeout(suggTimer.current)
+    const q = value.trim()
+    if (q.length < 2) { setSugg([]); return }
+    const seq = ++suggSeq.current
+    suggTimer.current = setTimeout(() => {
+      clinicPortalAPI.products(slug, token, q)
+        .then((r) => {
+          if (seq !== suggSeq.current) return
+          const names = r.data.map((p) => (isAr ? (p.name_ar || p.name_en) : (p.name_en || p.name_ar)))
+          setSugg(Array.from(new Set(names.filter(Boolean))))
+        })
+        .catch(() => { if (seq === suggSeq.current) setSugg([]) })
+    }, 250)
+  }
+
+  const pickSugg = (i: number, name: string) => {
+    setRow(i, { medicine_name: name })
+    setSugg([])
+    setSuggRow(null)
+  }
 
   const branchName = (b: { name_ar: string; name_en: string }) => (isAr ? b.name_ar : b.name_en)
 
@@ -172,9 +201,26 @@ export default function ClinicPortal() {
             {rows.map((r, i) => (
               <div key={i} className="border border-slate-200 rounded-lg p-3 bg-slate-50/50">
                 <div className="grid grid-cols-12 gap-2">
-                  <div className="col-span-12 sm:col-span-6">
+                  <div className="col-span-12 sm:col-span-6 relative">
                     <label className="block text-[11px] font-medium text-slate-500 mb-1">{t('portal.medicine_name')} *</label>
-                    <input value={r.medicine_name} onChange={(e) => setRow(i, { medicine_name: e.target.value })} className="input w-full" />
+                    <input value={r.medicine_name}
+                      onChange={(e) => onMedicineInput(i, e.target.value)}
+                      onFocus={() => setSuggRow(i)}
+                      onBlur={() => setTimeout(() => setSuggRow((cur) => (cur === i ? null : cur)), 150)}
+                      autoComplete="off" className="input w-full" />
+                    {suggRow === i && sugg.length > 0 && (
+                      <ul className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                        {sugg.map((name) => (
+                          <li key={name}>
+                            <button type="button" onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => pickSugg(i, name)}
+                              className="w-full text-start px-3 py-2 text-sm text-slate-700 hover:bg-pharma-50">
+                              {name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <div className="col-span-4 sm:col-span-2">
                     <label className="block text-[11px] font-medium text-slate-500 mb-1">{t('portal.qty')}</label>

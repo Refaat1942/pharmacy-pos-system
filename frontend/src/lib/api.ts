@@ -336,6 +336,10 @@ export interface ClinicPortalInfo {
 export const clinicPortalAPI = {
   info: (slug: string, token: string) =>
     api.get<ClinicPortalInfo>(`/clinic/${encodeURIComponent(slug)}/${encodeURIComponent(token)}`),
+  products: (slug: string, token: string, q: string) =>
+    api.get<{ name_en: string; name_ar: string }[]>(
+      `/clinic/${encodeURIComponent(slug)}/${encodeURIComponent(token)}/products`, { params: { q } },
+    ),
   submit: (
     slug: string,
     token: string,

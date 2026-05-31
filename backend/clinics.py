@@ -258,6 +258,31 @@ def clinic_portal_info(slug: str, token: str):
     }
 
 
+@router.get("/clinic/{slug}/{token}/products")
+def clinic_portal_products(slug: str, token: str, q: str = ""):
+    schema, _clinic = _resolve_clinic(slug, token)
+    term = (q or "").strip()
+    if len(term) < 2:
+        return []
+    ctx = set_current_schema(schema)
+    try:
+        conn = get_db_connection(schema=schema)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        like = f"%{term}%"
+        cur.execute(
+            """SELECT DISTINCT name_en, name_ar FROM products
+                WHERE active = true
+                  AND (name_en ILIKE %s OR name_ar ILIKE %s OR barcode ILIKE %s)
+                ORDER BY name_en LIMIT 10""",
+            (like, like, like),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+    finally:
+        reset_current_schema(ctx)
+    return rows
+
+
 @router.post("/clinic/{slug}/{token}/prescriptions")
 def clinic_portal_submit(slug: str, token: str, req: PublicRxIn):
     schema, clinic = _resolve_clinic(slug, token)
