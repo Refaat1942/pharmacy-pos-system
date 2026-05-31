@@ -8,6 +8,7 @@ interface Props {
 }
 
 const POLL_MS = 15000
+const REPEAT_MS = 60000
 
 export default function PrescriptionBell({ onLoad }: Props) {
   const { t, i18n } = useTranslation()
@@ -26,20 +27,25 @@ export default function PrescriptionBell({ onLoad }: Props) {
       if (!Ctx) return
       const ctx = audioRef.current || new Ctx()
       audioRef.current = ctx
+      if (ctx.state === 'suspended') { ctx.resume().catch(() => { /* ignore */ }) }
       const tone = (freq: number, start: number, dur: number) => {
         const osc = ctx.createOscillator()
         const gain = ctx.createGain()
         osc.connect(gain); gain.connect(ctx.destination)
-        osc.type = 'sine'
+        osc.type = 'square'
         osc.frequency.value = freq
         gain.gain.setValueAtTime(0.0001, ctx.currentTime + start)
-        gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + start + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.6, ctx.currentTime + start + 0.02)
+        gain.gain.setValueAtTime(0.6, ctx.currentTime + start + dur - 0.04)
         gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur)
         osc.start(ctx.currentTime + start)
         osc.stop(ctx.currentTime + start + dur)
       }
-      tone(880, 0, 0.18)
-      tone(1175, 0.16, 0.22)
+      for (let i = 0; i < 4; i++) {
+        const base = i * 0.5
+        tone(988, base, 0.22)
+        tone(1319, base + 0.22, 0.26)
+      }
     } catch { /* ignore */ }
   }, [])
 
@@ -59,6 +65,12 @@ export default function PrescriptionBell({ onLoad }: Props) {
     const id = setInterval(refreshCount, POLL_MS)
     return () => clearInterval(id)
   }, [refreshCount])
+
+  useEffect(() => {
+    if (open || count <= 0) return
+    const id = setInterval(beep, REPEAT_MS)
+    return () => clearInterval(id)
+  }, [open, count, beep])
 
   const loadList = useCallback(() => {
     setLoadingList(true)
