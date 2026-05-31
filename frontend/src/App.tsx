@@ -32,9 +32,25 @@ function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/platform/login" replace />
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth()
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
+const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
+  { path: '/', feature: 'pos' },
+  { path: '/dashboard', feature: 'dashboard' },
+  { path: '/sales', feature: 'sales' },
+  { path: '/inventory', feature: 'inventory' },
+  { path: '/shifts', feature: 'shifts' },
+  { path: '/customers', feature: 'customers' },
+  { path: '/reports', feature: 'reports' },
+  { path: '/clock' },
+]
+
+function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature?: string }) {
+  const { isAuthenticated, hasFeature } = useAuth()
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (feature && !hasFeature(feature)) {
+    const home = FEATURE_HOME_ORDER.find((r) => !r.feature || hasFeature(r.feature))
+    return <Navigate to={home ? home.path : '/clock'} replace />
+  }
+  return <>{children}</>
 }
 
 function AppRoutes() {
@@ -52,24 +68,24 @@ function AppRoutes() {
       {isAuthenticated && isLocked && <LockScreen />}
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<ProtectedRoute><POS /></ProtectedRoute>} />
-      <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
-      <Route path="/inventory" element={<ProtectedRoute><Inventory /></ProtectedRoute>} />
-      <Route path="/transfers" element={<ProtectedRoute><Transfers /></ProtectedRoute>} />
-      <Route path="/branches-stock" element={<ProtectedRoute><BranchesStock /></ProtectedRoute>} />
-      <Route path="/expiry" element={<ProtectedRoute><Expiry /></ProtectedRoute>} />
-      <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
-      <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
-      <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+      <Route path="/" element={<ProtectedRoute feature="pos"><POS /></ProtectedRoute>} />
+      <Route path="/sales" element={<ProtectedRoute feature="sales"><Sales /></ProtectedRoute>} />
+      <Route path="/inventory" element={<ProtectedRoute feature="inventory"><Inventory /></ProtectedRoute>} />
+      <Route path="/transfers" element={<ProtectedRoute feature="transfers"><Transfers /></ProtectedRoute>} />
+      <Route path="/branches-stock" element={<ProtectedRoute feature="branches_stock"><BranchesStock /></ProtectedRoute>} />
+      <Route path="/expiry" element={<ProtectedRoute feature="expiry"><Expiry /></ProtectedRoute>} />
+      <Route path="/suppliers" element={<ProtectedRoute feature="suppliers"><Suppliers /></ProtectedRoute>} />
+      <Route path="/purchases" element={<ProtectedRoute feature="purchases"><Purchases /></ProtectedRoute>} />
+      <Route path="/customers" element={<ProtectedRoute feature="customers"><Customers /></ProtectedRoute>} />
       <Route path="/clinics" element={<ProtectedRoute><Clinics /></ProtectedRoute>} />
-      <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/returns" element={<ProtectedRoute><Returns /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-      <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-      <Route path="/shifts" element={<ProtectedRoute><Shifts /></ProtectedRoute>} />
-      <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
-      <Route path="/hr/cards" element={<ProtectedRoute><EmployeeCards /></ProtectedRoute>} />
-      <Route path="/settings/login-cards" element={<ProtectedRoute><UserCards /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute feature="dashboard"><Dashboard /></ProtectedRoute>} />
+      <Route path="/returns" element={<ProtectedRoute feature="returns"><Returns /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute feature="settings"><Settings /></ProtectedRoute>} />
+      <Route path="/reports" element={<ProtectedRoute feature="reports"><Reports /></ProtectedRoute>} />
+      <Route path="/shifts" element={<ProtectedRoute feature="shifts"><Shifts /></ProtectedRoute>} />
+      <Route path="/hr" element={<ProtectedRoute feature="hr"><HR /></ProtectedRoute>} />
+      <Route path="/hr/cards" element={<ProtectedRoute feature="hr"><EmployeeCards /></ProtectedRoute>} />
+      <Route path="/settings/login-cards" element={<ProtectedRoute feature="settings"><UserCards /></ProtectedRoute>} />
       <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
       <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
