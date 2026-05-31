@@ -14,3 +14,9 @@ POS persists cart/discount/seller/customer/held-sales in `localStorage`. The ter
 
 **Why:** architect flagged cross-user data exposure on shared terminals.
 **How to apply:** build POS storage keys as `pos_<thing>_<tenantSlug>_<userId>_<activeBranch>` (branch from `pharma_active_branch`). Also clear all `pos_*` keys inside `logout()` in `auth.tsx`.
+
+## Any POS attribution field must persist AND ride held-cart suspend/recall
+When you add a field that tags the cart (e.g. originating clinic), it is not enough to hold it in React state. The cart itself persists to scoped `localStorage`, so a partial field silently drops on page refresh; and suspend/recall (held carts) only copies the fields it explicitly lists.
+
+**Why:** clinic stamp was being lost on refresh and on suspend→recall, so prescription-origin sales saved with NULL clinic.
+**How to apply:** for every cart-tagging field — (1) add its own scoped `localStorage` key + persistence `useEffect`, (2) add it to the `HeldCart` interface, (3) copy it in BOTH `suspendCurrent` and `recallHeld` (reset on suspend, restore with `?? null` for old held carts).

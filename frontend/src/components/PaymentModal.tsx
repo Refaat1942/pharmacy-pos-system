@@ -12,13 +12,14 @@ interface Props {
   netTotal: number
   selectedSeller: Employee | null
   selectedCustomer: Customer | null
+  clinicId?: number | null
   onClose: () => void
   onSuccess: (sale: SaleResponse) => void
 }
 
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
-  selectedSeller, selectedCustomer, onClose, onSuccess,
+  selectedSeller, selectedCustomer, clinicId, onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
   const lang = i18n.language
@@ -112,6 +113,7 @@ export default function PaymentModal({
             : undefined,
         customer_id: selectedCustomer?.id,
         seller_id: selectedSeller?.id,
+        clinic_id: clinicId ?? undefined,
         delivery_address: needsDelivery ? deliveryAddress.trim() : undefined,
         delivery_fee: needsDelivery ? deliveryFeeNum : undefined,
         delivery_customer_name: needsDelivery ? deliveryCustomerName.trim() : undefined,

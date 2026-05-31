@@ -236,7 +236,10 @@
     "profit": "Profit",
     "payment_method": "Payment Method",
     "sale_type": "Sale Type",
-    "no_data": "No data for this period"
+    "no_data": "No data for this period",
+    "by_clinic": "Sales by Clinic",
+    "clinic": "Clinic",
+    "no_clinic_sales": "No clinic sales for this period"
   },
   "settings": {
     "title": "Settings",
@@ -512,7 +515,9 @@
     "suspend_none": "Add items to the cart before suspending",
     "items_n": "items",
     "by_amount": "In EGP",
-    "by_percent": "In %"
+    "by_percent": "In %",
+    "from_clinic": "From clinic",
+    "clear_clinic": "Remove clinic"
   },
   "payment": {
     "title": "Complete Payment",
@@ -665,7 +670,8 @@
     "kpi_gross": "Gross",
     "kpi_discount": "Discount",
     "kpi_net": "Net Revenue",
-    "return": "Return"
+    "return": "Return",
+    "clinic": "Clinic"
   },
   "branch": {
     "switch": "Switch Branch",

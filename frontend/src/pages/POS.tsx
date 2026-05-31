@@ -35,6 +35,7 @@ interface HeldCart {
   invoiceDiscountMode: 'amount' | 'percent'
   customer: Customer | null
   seller: Employee | null
+  clinic?: { id: number; name: string } | null
 }
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -72,6 +73,7 @@ export default function POS() {
   const DISCMODE_KEY = `pos_discmode_${scope}`
   const SELLER_KEY = `pos_seller_${scope}`
   const CUSTOMER_KEY = `pos_customer_${scope}`
+  const RXCLINIC_KEY = `pos_rxclinic_${scope}`
   const HELD_KEY = `pos_held_${scope}`
   const recallLock = useRef(false)
 
@@ -90,6 +92,7 @@ export default function POS() {
   const [showCustomerList, setShowCustomerList] = useState(false)
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => normalizeItems(loadJSON<CartItem[]>(CART_KEY, [])))
+  const [rxClinic, setRxClinic] = useState<{ id: number; name: string } | null>(() => loadJSON<{ id: number; name: string } | null>(RXCLINIC_KEY, null))
   const [invoiceDiscount, setInvoiceDiscount] = useState<number>(() => loadJSON<number>(DISCOUNT_KEY, 0))
   const [invoiceDiscountMode, setInvoiceDiscountMode] = useState<'amount' | 'percent'>(() => loadJSON<'amount' | 'percent'>(DISCMODE_KEY, 'amount'))
 
@@ -128,15 +131,16 @@ export default function POS() {
   useEffect(() => { try { localStorage.setItem(DISCMODE_KEY, JSON.stringify(invoiceDiscountMode)) } catch { /* ignore */ } }, [invoiceDiscountMode, DISCMODE_KEY])
   useEffect(() => { try { localStorage.setItem(SELLER_KEY, JSON.stringify(selectedSeller)) } catch { /* ignore */ } }, [selectedSeller, SELLER_KEY])
   useEffect(() => { try { localStorage.setItem(CUSTOMER_KEY, JSON.stringify(selectedCustomer)) } catch { /* ignore */ } }, [selectedCustomer, CUSTOMER_KEY])
+  useEffect(() => { try { localStorage.setItem(RXCLINIC_KEY, JSON.stringify(rxClinic)) } catch { /* ignore */ } }, [rxClinic, RXCLINIC_KEY])
   useEffect(() => { try { localStorage.setItem(HELD_KEY, JSON.stringify(held)) } catch { /* ignore */ } }, [held, HELD_KEY])
 
   const suspendCurrent = useCallback(() => {
     if (cartItems.length === 0) { alert(t('pos.suspend_none')); return }
-    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller }
+    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller, clinic: rxClinic }
     setHeld((prev) => [h, ...prev])
-    setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setSelectedSeller(null)
+    setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setSelectedSeller(null); setRxClinic(null)
     searchRef.current?.focus()
-  }, [cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, t])
+  }, [cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, rxClinic, t])
 
   const recallHeld = useCallback((id: string) => {
     if (recallLock.current) return
@@ -147,14 +151,14 @@ export default function POS() {
     setHeld((prev) => {
       let next = prev.filter((x) => x.id !== id)
       if (cartItems.length > 0) {
-        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller }, ...next]
+        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller, clinic: rxClinic }, ...next]
       }
       return next
     })
-    setCartItems(normalizeItems(h.items)); setInvoiceDiscount(h.invoiceDiscount); setInvoiceDiscountMode(h.invoiceDiscountMode || 'amount'); setSelectedCustomer(h.customer); setSelectedSeller(h.seller)
+    setCartItems(normalizeItems(h.items)); setInvoiceDiscount(h.invoiceDiscount); setInvoiceDiscountMode(h.invoiceDiscountMode || 'amount'); setSelectedCustomer(h.customer); setSelectedSeller(h.seller); setRxClinic(h.clinic ?? null)
     setShowHeld(false)
     searchRef.current?.focus()
-  }, [held, cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller])
+  }, [held, cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, rxClinic])
 
   const deleteHeld = useCallback((id: string) => {
     setHeld((prev) => prev.filter((x) => x.id !== id))
@@ -226,6 +230,7 @@ export default function POS() {
   }, [t, maxQty])
 
   const loadPrescription = useCallback(async (rx: Prescription): Promise<string[]> => {
+    setRxClinic({ id: rx.clinic_id, name: rx.clinic_name })
     const unmatched: string[] = []
     for (const it of rx.items) {
       const name = (it.medicine_name || '').trim()
@@ -334,6 +339,7 @@ export default function POS() {
     setInvoiceDiscount(0)
     setSelectedCustomer(null)
     setSelectedSeller(null)
+    setRxClinic(null)
   }
 
   const handleNewSale = () => {
@@ -501,12 +507,23 @@ export default function POS() {
                       </span>
                     </div>
                     <button
-                      onClick={() => { setCartItems([]); setInvoiceDiscount(0) }}
+                      onClick={() => { setCartItems([]); setInvoiceDiscount(0); setRxClinic(null) }}
                       className="text-xs text-slate-400 hover:text-red-500 font-medium flex items-center gap-1 transition-colors"
                     >
                       <Trash2 size={12} /> Clear
                     </button>
                   </div>
+                  {rxClinic && (
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 mx-3 mt-2 rounded-lg bg-pharma-50 border border-pharma-100">
+                      <span className="text-[11px] font-semibold text-pharma-700 truncate">
+                        {t('pos.from_clinic')}: {rxClinic.name}
+                      </span>
+                      <button onClick={() => setRxClinic(null)}
+                        className="text-pharma-400 hover:text-red-500 shrink-0" title={t('pos.clear_clinic') as string}>
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )}
                   <div className="divide-y divide-slate-100">
                     {cartItems.map((item) => {
                       const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
@@ -825,6 +842,7 @@ export default function POS() {
           netTotal={netTotal}
           selectedSeller={selectedSeller}
           selectedCustomer={selectedCustomer}
+          clinicId={rxClinic?.id ?? null}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={handleSaleSuccess}
         />

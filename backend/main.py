@@ -533,6 +533,7 @@ class SaleRequest(BaseModel):
     visa_amount: Optional[float] = None
     customer_id: Optional[int] = None
     seller_id: Optional[int] = None
+    clinic_id: Optional[int] = None
     notes: Optional[str] = None
     delivery_address: Optional[str] = None
     delivery_fee: Optional[float] = None
@@ -629,16 +630,22 @@ def create_sale(req: SaleRequest,
                     detail=f"Cannot sell expired product '{p['name_en']}' (expired on {p['expiry_date']})",
                 )
 
+        clinic_id = None
+        if req.clinic_id:
+            cur.execute("SELECT id FROM clinics WHERE id=%s", (req.clinic_id,))
+            if cur.fetchone():
+                clinic_id = req.clinic_id
+
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
-                change_amount, seller_id, customer_id, branch_id, notes,
+                change_amount, seller_id, customer_id, branch_id, clinic_id, notes,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, req.cash_amount, req.visa_amount,
-             change, seller_id, req.customer_id, branch_id, req.notes,
+             change, seller_id, req.customer_id, branch_id, clinic_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone),
         )
@@ -727,6 +734,7 @@ def list_sales(limit: int = 50, offset: int = 0,
                date_to: Optional[str] = None,
                type: Optional[str] = None,
                seller_id: Optional[int] = None,
+               clinic_id: Optional[int] = None,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
@@ -748,16 +756,20 @@ def list_sales(limit: int = 50, offset: int = 0,
     if seller_id:
         conds.append("i.seller_id = %s")
         params.append(seller_id)
+    if clinic_id:
+        conds.append("i.clinic_id = %s")
+        params.append(clinic_id)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(
         f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                   c.name AS customer_name,
+                   c.name AS customer_name, cl.name AS clinic_name,
                    b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                    b.address AS branch_address, b.phone AS branch_phone
             FROM invoices i
             LEFT JOIN users u ON i.seller_id = u.id
             LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN clinics cl ON i.clinic_id = cl.id
             LEFT JOIN branches b ON i.branch_id = b.id
             {where}
             ORDER BY i.created_at DESC LIMIT %s OFFSET %s""",
@@ -848,6 +860,51 @@ def sales_aggregate(date_from: Optional[str] = None,
     }
 
 
+@app.get("/api/sales/by-clinic")
+def sales_by_clinic(date_from: Optional[str] = None,
+                    date_to: Optional[str] = None,
+                    current_user=Depends(get_current_user),
+                    active_branch=Depends(get_active_branch_id)):
+    """Per-clinic sales totals for completed, non-return invoices."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conds = ["i.status='completed'", "i.type!='return'", "i.clinic_id IS NOT NULL"]
+    params: list = []
+    if active_branch is not None:
+        conds.append("i.branch_id = %s"); params.append(active_branch)
+    if date_from:
+        conds.append("DATE(i.created_at) >= %s"); params.append(date_from)
+    if date_to:
+        conds.append("DATE(i.created_at) <= %s"); params.append(date_to)
+    where = " WHERE " + " AND ".join(conds)
+    cur.execute(
+        f"""SELECT cl.id AS clinic_id, cl.name AS clinic_name,
+                   COUNT(*) AS invoice_count,
+                   COALESCE(SUM(i.subtotal),0) AS gross,
+                   COALESCE(SUM(i.discount),0) AS discount,
+                   COALESCE(SUM(i.net_total),0) AS net
+              FROM invoices i
+              JOIN clinics cl ON i.clinic_id = cl.id
+              {where}
+              GROUP BY cl.id, cl.name
+              ORDER BY net DESC""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "clinic_id": r["clinic_id"],
+            "clinic_name": r["clinic_name"],
+            "invoice_count": int(r["invoice_count"]),
+            "gross": float(r["gross"]),
+            "discount": float(r["discount"]),
+            "net": float(r["net"]),
+        }
+        for r in rows
+    ]
+
+
 def _assert_invoice_branch_access(cur, invoice_id: int, current_user):
     """Non-admins may only access invoices in their own branch."""
     if current_user.get("role") == "admin":
@@ -867,12 +924,13 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     _assert_invoice_branch_access(cur, invoice_id, current_user)
     cur.execute(
         """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                  c.name AS customer_name,
+                  c.name AS customer_name, cl.name AS clinic_name,
                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                   b.address AS branch_address, b.phone AS branch_phone
            FROM invoices i
            LEFT JOIN users u ON i.seller_id = u.id
            LEFT JOIN customers c ON i.customer_id = c.id
+           LEFT JOIN clinics cl ON i.clinic_id = cl.id
            LEFT JOIN branches b ON i.branch_id = b.id
            WHERE i.id=%s""",
         (invoice_id,),

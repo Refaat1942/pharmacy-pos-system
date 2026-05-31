@@ -111,6 +111,8 @@ export interface Invoice {
   change_amount: number
   seller_id: number
   customer_id: number
+  clinic_id?: number | null
+  clinic_name?: string | null
   seller_name_en: string
   seller_name_ar: string
   customer_name: string
@@ -196,6 +198,7 @@ export const salesAPI = {
     visa_amount?: number
     customer_id?: number
     seller_id?: number
+    clinic_id?: number
     notes?: string
     delivery_address?: string
     delivery_fee?: number
@@ -205,8 +208,11 @@ export const salesAPI = {
   list: (params: {
     limit?: number; offset?: number;
     date_from?: string; date_to?: string;
-    type?: string; seller_id?: number;
+    type?: string; seller_id?: number; clinic_id?: number;
   } = {}) => api.get<Invoice[]>('/sales', { params }),
+  byClinic: (params: { date_from?: string; date_to?: string } = {}) =>
+    api.get<{ clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }[]>(
+      '/sales/by-clinic', { params }),
   aggregate: (params: {
     date_from?: string; date_to?: string;
     type?: string; seller_id?: number;

@@ -442,6 +442,9 @@ CREATE TABLE IF NOT EXISTS clinics (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS clinics_portal_token_key ON clinics(portal_token);
 
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS clinic_id INTEGER REFERENCES clinics(id);
+CREATE INDEX IF NOT EXISTS invoices_clinic_id_idx ON invoices(clinic_id);
+
 -- Prescriptions sent by clinics; cashier loads them into the POS cart
 CREATE TABLE IF NOT EXISTS prescriptions (
     id            SERIAL PRIMARY KEY,

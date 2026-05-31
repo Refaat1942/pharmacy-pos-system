@@ -3,8 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search } from 'lucide-react'
 import Layout from '../components/Layout'
-import { salesAPI, employeesAPI } from '../lib/api'
-import type { Invoice, SaleResponse, Employee } from '../lib/api'
+import { salesAPI, employeesAPI, clinicsAPI } from '../lib/api'
+import type { Invoice, SaleResponse, Employee, Clinic } from '../lib/api'
 import i18n from '../lib/i18n'
 
 export default function Sales() {
@@ -25,8 +25,10 @@ export default function Sales() {
   const [dateTo, setDateTo] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [sellerFilter, setSellerFilter] = useState('')
+  const [clinicFilter, setClinicFilter] = useState('')
   const [invoiceSearch, setInvoiceSearch] = useState('')
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [clinics, setClinics] = useState<Clinic[]>([])
   const [searchParams, setSearchParams] = useSearchParams()
   const refundMode = searchParams.get('refund') === '1'
   const refundFocusRef = useRef<HTMLInputElement>(null)
@@ -41,6 +43,7 @@ export default function Sales() {
         date_to: dateTo || undefined,
         type: typeFilter || undefined,
         seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
+        clinic_id: clinicFilter ? parseInt(clinicFilter) : undefined,
       })
       .then((r) => {
         setInvoices(r.data)
@@ -52,6 +55,13 @@ export default function Sales() {
   useEffect(() => {
     loadInvoices()
     employeesAPI.list().then((r) => setEmployees(r.data)).catch(() => {})
+    clinicsAPI.list()
+      .then((r) => setClinics(r.data))
+      .catch(() => {
+        salesAPI.byClinic()
+          .then((r) => setClinics(r.data.map((c) => ({ id: c.clinic_id, name: c.clinic_name } as Clinic))))
+          .catch(() => {})
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -62,7 +72,7 @@ export default function Sales() {
   }, [refundMode])
 
   const resetFilters = () => {
-    setDateFrom(''); setDateTo(''); setTypeFilter(''); setSellerFilter('')
+    setDateFrom(''); setDateTo(''); setTypeFilter(''); setSellerFilter(''); setClinicFilter('')
     setTimeout(loadInvoices, 0)
   }
 
@@ -244,6 +254,16 @@ export default function Sales() {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.clinic')}</label>
+              <select value={clinicFilter} onChange={(e) => setClinicFilter(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                <option value="">{t('common.all')}</option>
+                {clinics.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
             <button onClick={loadInvoices}
               className="bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">
               {t('sales.apply')}
@@ -282,6 +302,7 @@ export default function Sales() {
                         t('sales.payment'),
                         t('sales.seller'),
                         t('sales.customer'),
+                        t('sales.clinic'),
                         t('sales.total'),
                         t('sales.status'),
                         '',
@@ -289,7 +310,7 @@ export default function Sales() {
                         <th
                           key={i}
                           className={`px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider ${
-                            i === 6 ? 'text-end' : i === 7 ? 'text-center' : 'text-start'
+                            i === 7 ? 'text-end' : i === 8 ? 'text-center' : 'text-start'
                           }`}
                         >
                           {h}
@@ -336,6 +357,9 @@ export default function Sales() {
                         </td>
                         <td className="px-4 py-3 text-gray-600 text-xs">
                           {inv.customer_name || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">
+                          {inv.clinic_name || '—'}
                         </td>
                         <td className="px-4 py-3 text-end font-bold text-pharma-700 tabular-nums">
                           {t('sales.egp')} {inv.net_total.toFixed(2)}

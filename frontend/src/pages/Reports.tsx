@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
-  Package as PackageIcon, BarChart3, Download, ShieldAlert, Calendar,
+  Package as PackageIcon, BarChart3, Download, ShieldAlert, Calendar, Stethoscope,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
@@ -20,6 +20,7 @@ type BranchRow = { branch_id: number; name_en: string; name_ar: string; revenue:
 type PayRow = { payment_method: string; sale_type: string; invoice_count: number; revenue: number }
 type ProdRow = { id: number; name_en: string; name_ar: string; barcode: string | null; category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
 type TrendRow = { month: string; revenue: number; invoice_count: number; cogs: number; profit: number; returns_value: number }
+type ClinicRow = { clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -40,6 +41,7 @@ export default function Reports() {
   const [pays, setPays] = useState<PayRow[]>([])
   const [prods, setProds] = useState<ProdRow[]>([])
   const [trend, setTrend] = useState<TrendRow[]>([])
+  const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +58,7 @@ export default function Reports() {
         api.get('/reports/sales-by-payment', { params }),
         api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
         api.get('/reports/monthly-trend', { params: { months: 12 } }),
+        api.get('/sales/by-clinic', { params }),
       ]
       if (isAdmin) reqs.push(api.get('/reports/sales-by-branch', { params }))
       const results = await Promise.all(reqs)
@@ -64,7 +67,8 @@ export default function Reports() {
       setPays(results[2].data)
       setProds(results[3].data)
       setTrend(results[4].data)
-      if (isAdmin) setBranches(results[5].data)
+      setClinicRows(results[5].data)
+      if (isAdmin) setBranches(results[6].data)
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load reports')
     } finally {
@@ -195,6 +199,33 @@ export default function Reports() {
             />
           </section>
         )}
+
+        {/* Sales by clinic */}
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <SectionHead icon={<Stethoscope size={18} />} title={t('reports.by_clinic')} inline />
+            <button onClick={() => exportCSV('sales-by-clinic.csv', clinicRows, [
+              { key: 'clinic_name', label: 'Clinic' },
+              { key: 'invoice_count', label: 'Invoices' },
+              { key: 'gross', label: 'Gross' },
+              { key: 'discount', label: 'Discount' },
+              { key: 'net', label: 'Net' },
+            ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
+              <Download size={13} /> CSV
+            </button>
+          </div>
+          <DataTable
+            empty={t('reports.no_clinic_sales')}
+            cols={[
+              { key: 'clinic_name', label: t('reports.clinic') },
+              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
+              { key: 'gross', label: t('reports.gross_revenue'), align: 'end', render: (r) => fmt(r.gross) },
+              { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
+              { key: 'net', label: t('reports.net_revenue'), align: 'end', render: (r) => <span className="font-semibold text-slate-800">{fmt(r.net)}</span> },
+            ]}
+            rows={clinicRows}
+          />
+        </section>
 
         {/* Payment breakdown */}
         <section>
