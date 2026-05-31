@@ -9,7 +9,7 @@ from pydantic import BaseModel
 import psycopg2.extras
 
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id
+from deps import get_current_user, get_active_branch_id, requires_feature
 from tenant_ctx import set_current_schema, reset_current_schema
 from platform_db import get_tenant_by_slug, is_tenant_live
 
@@ -34,7 +34,7 @@ class ClinicIn(BaseModel):
     active: bool = True
 
 
-@router.get("/clinics")
+@router.get("/clinics", dependencies=[Depends(requires_feature("clinics"))])
 def list_clinics(current_user=Depends(get_current_user)):
     _admin_only(current_user)
     conn = get_db_connection()
@@ -50,7 +50,7 @@ def list_clinics(current_user=Depends(get_current_user)):
     return rows
 
 
-@router.post("/clinics")
+@router.post("/clinics", dependencies=[Depends(requires_feature("clinics"))])
 def create_clinic(req: ClinicIn, current_user=Depends(get_current_user)):
     _admin_only(current_user)
     name = req.name.strip()
@@ -72,7 +72,7 @@ def create_clinic(req: ClinicIn, current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.put("/clinics/{clinic_id}")
+@router.put("/clinics/{clinic_id}", dependencies=[Depends(requires_feature("clinics"))])
 def update_clinic(clinic_id: int, req: ClinicIn, current_user=Depends(get_current_user)):
     _admin_only(current_user)
     name = req.name.strip()
@@ -96,7 +96,7 @@ def update_clinic(clinic_id: int, req: ClinicIn, current_user=Depends(get_curren
         conn.close()
 
 
-@router.post("/clinics/{clinic_id}/regenerate-token")
+@router.post("/clinics/{clinic_id}/regenerate-token", dependencies=[Depends(requires_feature("clinics"))])
 def regenerate_token(clinic_id: int, current_user=Depends(get_current_user)):
     _admin_only(current_user)
     conn = get_db_connection()
@@ -124,7 +124,7 @@ def _load_items(cur, prescription_id: int):
     return [dict(r) for r in cur.fetchall()]
 
 
-@router.get("/prescriptions")
+@router.get("/prescriptions", dependencies=[Depends(requires_feature("clinics"))])
 def list_prescriptions(status: str = "pending",
                        current_user=Depends(get_current_user),
                        active_branch=Depends(get_active_branch_id)):
@@ -159,7 +159,7 @@ def list_prescriptions(status: str = "pending",
     return rows
 
 
-@router.get("/prescriptions/count")
+@router.get("/prescriptions/count", dependencies=[Depends(requires_feature("clinics"))])
 def pending_count(current_user=Depends(get_current_user),
                   active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
@@ -181,7 +181,7 @@ def pending_count(current_user=Depends(get_current_user),
     return {"count": int(row["active_cnt"]), "new": int(row["new_cnt"])}
 
 
-@router.patch("/prescriptions/{prescription_id}")
+@router.patch("/prescriptions/{prescription_id}", dependencies=[Depends(requires_feature("clinics"))])
 def update_prescription_status(prescription_id: int, status: str,
                                current_user=Depends(get_current_user),
                                active_branch=Depends(get_active_branch_id)):

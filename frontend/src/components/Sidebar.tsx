@@ -27,7 +27,7 @@ const NAV: NavItem[] = [
   { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
-  { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  adminOnly: true },
+  { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  feature: 'clinics', adminOnly: true },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },

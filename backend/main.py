@@ -878,7 +878,7 @@ def sales_aggregate(date_from: Optional[str] = None,
     }
 
 
-@app.get("/api/sales/by-clinic")
+@app.get("/api/sales/by-clinic", dependencies=[Depends(requires_feature("clinics"))])
 def sales_by_clinic(date_from: Optional[str] = None,
                     date_to: Optional[str] = None,
                     current_user=Depends(get_current_user),

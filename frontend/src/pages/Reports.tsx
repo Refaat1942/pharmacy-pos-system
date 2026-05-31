@@ -31,7 +31,7 @@ const fmtInt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'a
 
 export default function Reports() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeature } = useAuth()
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(today())
 
@@ -52,14 +52,17 @@ export default function Reports() {
     setLoading(true); setError(null)
     const params = { date_from: from, date_to: to }
     try {
+      const showClinics = hasFeature('clinics')
       const reqs: Promise<any>[] = [
         api.get('/reports/pnl', { params }),
         api.get('/reports/sales-by-category', { params }),
         api.get('/reports/sales-by-payment', { params }),
         api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
         api.get('/reports/monthly-trend', { params: { months: 12 } }),
-        api.get('/sales/by-clinic', { params }),
       ]
+      const clinicIdx = showClinics ? reqs.length : -1
+      if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
+      const branchIdx = isAdmin ? reqs.length : -1
       if (isAdmin) reqs.push(api.get('/reports/sales-by-branch', { params }))
       const results = await Promise.all(reqs)
       setPnl(results[0].data)
@@ -67,8 +70,8 @@ export default function Reports() {
       setPays(results[2].data)
       setProds(results[3].data)
       setTrend(results[4].data)
-      setClinicRows(results[5].data)
-      if (isAdmin) setBranches(results[6].data)
+      if (clinicIdx >= 0) setClinicRows(results[clinicIdx].data)
+      if (branchIdx >= 0) setBranches(results[branchIdx].data)
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load reports')
     } finally {
@@ -201,6 +204,7 @@ export default function Reports() {
         )}
 
         {/* Sales by clinic */}
+        {hasFeature('clinics') && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<Stethoscope size={18} />} title={t('reports.by_clinic')} inline />
@@ -226,6 +230,7 @@ export default function Reports() {
             rows={clinicRows}
           />
         </section>
+        )}
 
         {/* Payment breakdown */}
         <section>

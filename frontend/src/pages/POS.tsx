@@ -66,7 +66,7 @@ function loadJSON<T>(key: string, fallback: T): T {
 export default function POS() {
   const { t } = useTranslation()
   const lang = i18n.language
-  const { user, tenant } = useAuth()
+  const { user, tenant, hasFeature } = useAuth()
 
   const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}`
   const CART_KEY = `pos_cart_${scope}`
@@ -382,7 +382,7 @@ export default function POS() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <PrescriptionBell onLoad={loadPrescription} />
+                {hasFeature('clinics') && <PrescriptionBell onLoad={loadPrescription} />}
                 <Link
                   to="/sales?refund=1"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"

@@ -36,7 +36,36 @@ notification bell that loads the lines into the cart.
   single-hit search result; unmatched lines are returned and shown to the cashier to
   add manually. Matching never auto-picks among multiple ambiguous results.
 
+## Feature gating
+- `clinics` is a per-tenant feature (FEATURES_CATALOG, default True). The clinics
+  nav/page stay `adminOnly` AND now also require the `clinics` feature.
+- Gate ONLY the authenticated clinics routes (`/api/clinics*`, `/api/prescriptions*`)
+  and `/api/sales/by-clinic` with `requires_feature("clinics")`. NEVER gate the public
+  `/api/clinic/{slug}/{token}*` portal routes — they have no JWT/tenant context, so a
+  router-level gate would 403 them.
+- Endpoints shared with another feature's page (e.g. `/api/sales/by-clinic` used by the
+  Reports page) must be paired with a frontend `hasFeature('clinics')` guard so the
+  page only calls them when the feature is on — otherwise gating 403s break that page.
+- **Why:** `default True` + backfilling existing non-null tenants preserves the old
+  always-on behavior; NULL-features tenants resolve to DEFAULT_FEATURES (which includes
+  clinics) consistently on both `normalize_features` (login) and `requires_feature`.
+
+## Feature rollout (CRITICAL for "closable" features)
+- Default-on features must propagate to existing tenants EXACTLY ONCE, never on every
+  boot. A per-boot backfill of all default-on features silently re-enables anything an
+  admin disabled, making default-on features impossible to permanently turn off.
+- Rule: `bootstrap_platform()` records each propagated key in `platform.feature_rollouts`
+  and skips already-recorded keys on later boots, so per-tenant on/off choices persist.
+- The one-time migration must be concurrency-safe: serialize with a Postgres advisory
+  lock and gate the initial seed on an in-table sentinel row (NOT a `to_regclass`
+  pre-check) — multiple workers can otherwise see the table exist before it is seeded and
+  re-run the full backfill.
+- To force-propagate a genuinely NEW default-on feature to existing tenants (dev AND
+  prod), add its key to `_PENDING_FEATURE_BACKFILL` so it is excluded from the
+  already-rolled-out seed and backfilled once.
+- **Why:** the system cannot distinguish "new feature never seen" from "admin disabled
+  it," so one-time rollout treats current per-tenant state as intentional.
+
 ## Conventions
 - Schema added to `backend/init_db.py` with `IF NOT EXISTS` so
-  `apply_schema_to_all_tenants()` auto-creates it per tenant. Clinics nav/page are
-  `adminOnly` with **no platform feature gate** (works for all tenants).
+  `apply_schema_to_all_tenants()` auto-creates it per tenant.

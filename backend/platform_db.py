@@ -32,6 +32,7 @@ FEATURES_CATALOG = [
     {"key": "purchases",  "label": "Purchase Orders",      "default": True},
     {"key": "suppliers",  "label": "Suppliers",            "default": True},
     {"key": "customers",  "label": "Customers / Accounts", "default": True},
+    {"key": "clinics",    "label": "Clinics & Prescriptions", "default": True},
     {"key": "reports",    "label": "Reports & Analytics",  "default": False},
     {"key": "shifts",     "label": "Cash Shifts",          "default": True},
     {"key": "hr",         "label": "HR & Payroll",         "default": False},
@@ -39,6 +40,9 @@ FEATURES_CATALOG = [
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
+_PENDING_FEATURE_BACKFILL = {"clinics"}
+_FEATURE_ROLLOUT_LOCK = 778001
+_FEATURE_ROLLOUT_SENTINEL = "__seeded__"
 
 
 def is_tenant_live(t: dict) -> tuple[bool, str]:
@@ -141,15 +145,54 @@ def bootstrap_platform() -> None:
             )
             print("[platform] seeded default tenant 'fratelanza' -> public schema")
 
-        _default_on = [f["key"] for f in FEATURES_CATALOG if f.get("default")]
-        for fkey in _default_on:
+        cur.execute("SELECT pg_advisory_lock(%s)", [_FEATURE_ROLLOUT_LOCK])
+        try:
             cur.execute(
-                """UPDATE platform.tenants
-                   SET features = COALESCE(features, '[]'::jsonb) || to_jsonb(%s::text)
-                   WHERE features IS NOT NULL
-                     AND NOT (features @> to_jsonb(%s::text))""",
-                [fkey, fkey],
+                """CREATE TABLE IF NOT EXISTS platform.feature_rollouts (
+                       feature_key TEXT PRIMARY KEY,
+                       rolled_at   TIMESTAMPTZ DEFAULT now()
+                   )"""
             )
+            _default_on = [f["key"] for f in FEATURES_CATALOG if f.get("default")]
+            cur.execute(
+                "SELECT 1 FROM platform.feature_rollouts WHERE feature_key=%s",
+                [_FEATURE_ROLLOUT_SENTINEL],
+            )
+            if cur.fetchone() is None:
+                for fkey in _default_on:
+                    if fkey in _PENDING_FEATURE_BACKFILL:
+                        continue
+                    cur.execute(
+                        "INSERT INTO platform.feature_rollouts(feature_key) VALUES (%s) "
+                        "ON CONFLICT DO NOTHING",
+                        [fkey],
+                    )
+                cur.execute(
+                    "INSERT INTO platform.feature_rollouts(feature_key) VALUES (%s) "
+                    "ON CONFLICT DO NOTHING",
+                    [_FEATURE_ROLLOUT_SENTINEL],
+                )
+            for fkey in _default_on:
+                cur.execute(
+                    "SELECT 1 FROM platform.feature_rollouts WHERE feature_key=%s",
+                    [fkey],
+                )
+                if cur.fetchone():
+                    continue
+                cur.execute(
+                    """UPDATE platform.tenants
+                       SET features = COALESCE(features, '[]'::jsonb) || to_jsonb(%s::text)
+                       WHERE features IS NOT NULL
+                         AND NOT (features @> to_jsonb(%s::text))""",
+                    [fkey, fkey],
+                )
+                cur.execute(
+                    "INSERT INTO platform.feature_rollouts(feature_key) VALUES (%s) "
+                    "ON CONFLICT DO NOTHING",
+                    [fkey],
+                )
+        finally:
+            cur.execute("SELECT pg_advisory_unlock(%s)", [_FEATURE_ROLLOUT_LOCK])
     finally:
         conn.close()
 
