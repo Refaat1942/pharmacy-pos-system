@@ -7,7 +7,7 @@ interface Props {
   onLoad: (rx: Prescription) => Promise<string[]>
 }
 
-const POLL_MS = 15000
+const POLL_MS = 8000
 const REPEAT_MS = 60000
 
 export default function PrescriptionBell({ onLoad }: Props) {
@@ -47,6 +47,29 @@ export default function PrescriptionBell({ onLoad }: Props) {
         tone(1319, base + 0.22, 0.26)
       }
     } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+        if (!Ctx) return
+        const ctx = audioRef.current || new Ctx()
+        audioRef.current = ctx
+        if (ctx.state === 'suspended') ctx.resume().catch(() => { /* ignore */ })
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        gain.gain.value = 0
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.start(); osc.stop(ctx.currentTime + 0.01)
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
   }, [])
 
   const refreshCount = useCallback(() => {
