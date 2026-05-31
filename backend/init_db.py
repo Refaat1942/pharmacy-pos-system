@@ -429,6 +429,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_card_code_key ON users(card_code) WHERE 
 UPDATE users
    SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
  WHERE card_code IS NULL;
+
+-- Contracted clinics that send prescriptions to the POS via a private link
+CREATE TABLE IF NOT EXISTS clinics (
+    id           SERIAL PRIMARY KEY,
+    name         VARCHAR(150) NOT NULL,
+    phone        VARCHAR(40),
+    notes        TEXT,
+    portal_token VARCHAR(64) NOT NULL,
+    active       BOOLEAN DEFAULT true,
+    created_at   TIMESTAMP DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS clinics_portal_token_key ON clinics(portal_token);
+
+-- Prescriptions sent by clinics; cashier loads them into the POS cart
+CREATE TABLE IF NOT EXISTS prescriptions (
+    id            SERIAL PRIMARY KEY,
+    clinic_id     INTEGER NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+    branch_id     INTEGER REFERENCES branches(id),
+    patient_name  VARCHAR(150),
+    patient_phone VARCHAR(40),
+    doctor_name   VARCHAR(150),
+    notes         TEXT,
+    status        VARCHAR(20) DEFAULT 'pending',
+    created_at    TIMESTAMP DEFAULT NOW(),
+    handled_at    TIMESTAMP,
+    handled_by    INTEGER REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS prescriptions_status_idx ON prescriptions(status, branch_id);
+
+CREATE TABLE IF NOT EXISTS prescription_items (
+    id              SERIAL PRIMARY KEY,
+    prescription_id INTEGER NOT NULL REFERENCES prescriptions(id) ON DELETE CASCADE,
+    medicine_name   VARCHAR(250) NOT NULL,
+    quantity        INTEGER DEFAULT 1,
+    dose            TEXT,
+    note            TEXT
+);
 """
 
 

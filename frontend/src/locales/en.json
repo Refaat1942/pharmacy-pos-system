@@ -83,7 +83,8 @@
     "reports": "Reports",
     "shifts": "Cash Drawer",
     "hr": "HR & Payroll",
-    "settings": "Settings"
+    "settings": "Settings",
+    "clinics": "Clinics"
   },
   "shifts": {
     "title": "Cash Drawer / Shifts",
@@ -568,7 +569,8 @@
     "all": "All",
     "refresh": "Refresh",
     "no_data": "No data",
-    "print": "Print"
+    "print": "Print",
+    "admins_only": "Admins only"
   },
   "receipt": {
     "title": "Invoice",
@@ -923,5 +925,59 @@
     "select": "-- Select region --",
     "markaz": "City / Markaz",
     "areas": "Areas (Ismailia City)"
+  },
+  "clinics": {
+    "title": "Clinics",
+    "intro": "Issue a private link to each clinic. Clinics use it to send prescriptions straight to your POS. Links stay valid until you deactivate the clinic or regenerate the link.",
+    "new": "New clinic",
+    "edit": "Edit clinic",
+    "col_name": "Name",
+    "col_phone": "Phone",
+    "col_status": "Status",
+    "col_link": "Portal link",
+    "notes": "Notes",
+    "active": "Active",
+    "inactive": "Inactive",
+    "empty": "No clinics yet.",
+    "copy_link": "Copy link",
+    "copied": "Copied!",
+    "link_disabled": "Inactive — link disabled",
+    "regenerate": "Regenerate link",
+    "regenerate_confirm": "Regenerate the link? The old link will stop working immediately."
+  },
+  "portal": {
+    "subtitle": "Send a prescription",
+    "details": "Prescription details",
+    "branch": "Branch",
+    "choose_branch": "Choose a branch…",
+    "patient_name": "Patient name",
+    "patient_phone": "Patient phone",
+    "doctor_name": "Doctor name",
+    "notes": "Notes",
+    "medicines": "Medicines",
+    "add_medicine": "Add medicine",
+    "medicine_name": "Medicine name",
+    "qty": "Qty",
+    "dose": "Dose / directions",
+    "dose_ph": "e.g. 1 tablet twice daily",
+    "item_note": "Note",
+    "send": "Send prescription",
+    "err_branch": "Please choose a branch.",
+    "err_items": "Please add at least one medicine.",
+    "err_submit": "Could not send. Please try again.",
+    "invalid_title": "Link not valid",
+    "invalid_body": "This link is invalid or has been disabled. Please contact the pharmacy.",
+    "sent_title": "Prescription sent!",
+    "sent_body": "The pharmacy has received it. You can send another if needed.",
+    "new_prescription": "Send another"
+  },
+  "rx": {
+    "title": "Prescriptions",
+    "empty": "No new prescriptions.",
+    "load": "Load into cart",
+    "dismiss": "Dismiss",
+    "dismiss_confirm": "Dismiss this prescription?",
+    "doctor": "Dr",
+    "unmatched_notice": "These items had no matching product — please add them manually:"
   }
 }

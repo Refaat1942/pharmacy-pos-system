@@ -12,6 +12,8 @@ import Expiry from './pages/Expiry'
 import Suppliers from './pages/Suppliers'
 import Purchases from './pages/Purchases'
 import Customers from './pages/Customers'
+import Clinics from './pages/Clinics'
+import ClinicPortal from './pages/ClinicPortal'
 import Dashboard from './pages/Dashboard'
 import Returns from './pages/Returns'
 import Settings from './pages/Settings'
@@ -59,6 +61,7 @@ function AppRoutes() {
       <Route path="/suppliers" element={<ProtectedRoute><Suppliers /></ProtectedRoute>} />
       <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
       <Route path="/customers" element={<ProtectedRoute><Customers /></ProtectedRoute>} />
+      <Route path="/clinics" element={<ProtectedRoute><Clinics /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/returns" element={<ProtectedRoute><Returns /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
@@ -68,6 +71,7 @@ function AppRoutes() {
       <Route path="/hr/cards" element={<ProtectedRoute><EmployeeCards /></ProtectedRoute>} />
       <Route path="/settings/login-cards" element={<ProtectedRoute><UserCards /></ProtectedRoute>} />
       <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
+      <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

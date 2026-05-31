@@ -1,3 +1,1 @@
-- [Bulk upload unit model](bulk-upload-units.md) — Quantity=big units, Sales Price=per big unit; stock stored in sub-units (Qty×pack_size), sub_price=price/pack_size, sub_unit default "Piece".
-- [Stock policy & dev schema](stock-and-tenant-schema.md) — sales may go negative (POS only); transfer/adjustment stay strict; dev fratelanza data lives in `public` schema, not `tenant_fratelanza`.
-- [Frontend auth downloads & POS state](frontend-auth-and-pos-state.md) — protected downloads need blob fetch (Bearer, no cookie); POS localStorage must be scoped per tenant+user+branch & cleared on logout.
+- [Clinic Prescription Portal](clinic-prescription-portal.md) — public no-auth `/api/clinic/{slug}/{token}` resolves tenant by slug; prescription branch predicate is the access control (IDOR guard).

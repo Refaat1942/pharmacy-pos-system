@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
-  LineChart, DollarSign, UsersRound, Layers,
+  LineChart, DollarSign, UsersRound, Layers, Stethoscope,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 
@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
+  { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  adminOnly: true },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },

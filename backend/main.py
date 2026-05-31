@@ -15,6 +15,7 @@ from tenant_ctx import set_current_schema
 from inventory import router as inventory_router, log_movement
 from purchasing import router as purchasing_router
 from customers import router as customers_router
+from clinics import router as clinics_router
 
 app = FastAPI(title="PharmaPOS API", docs_url=None, redoc_url=None, openapi_url=None) \
     if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="PharmaPOS API")
@@ -82,6 +83,8 @@ def _needs_tenant(path: str) -> bool:
         return False
     if path.startswith("/api/platform/"):
         return False
+    if path.startswith("/api/clinic/"):
+        return False
     return True
 
 
@@ -138,6 +141,7 @@ from deps import requires_feature
 app.include_router(inventory_router, dependencies=[Depends(requires_feature("inventory"))])
 app.include_router(purchasing_router, dependencies=[Depends(requires_feature("purchases"))])
 app.include_router(customers_router, dependencies=[Depends(requires_feature("customers"))])
+app.include_router(clinics_router)
 from settings import router as settings_router
 app.include_router(settings_router, dependencies=[Depends(requires_feature("settings"))])
 from reports import router as reports_router

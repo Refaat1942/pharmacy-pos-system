@@ -21,9 +21,10 @@ import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
+import PrescriptionBell from '../components/PrescriptionBell'
 import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
 import api from '../lib/api'
-import type { Product, CartItem, Employee, Customer, SaleResponse } from '../lib/api'
+import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
 
 interface HeldCart {
@@ -224,6 +225,40 @@ export default function POS() {
     searchRef.current?.focus()
   }, [t, maxQty])
 
+  const loadPrescription = useCallback(async (rx: Prescription): Promise<string[]> => {
+    const unmatched: string[] = []
+    for (const it of rx.items) {
+      const name = (it.medicine_name || '').trim()
+      if (!name) continue
+      let product: Product | undefined
+      try {
+        const r = await productsAPI.search(name)
+        const items = r.data || []
+        product = items.find((p) =>
+          p.name_en?.toLowerCase() === name.toLowerCase() ||
+          p.name_ar === name ||
+          p.barcode === name,
+        ) || (items.length === 1 ? items[0] : undefined)
+      } catch { /* ignore */ }
+      if (!product) { unmatched.push(`${it.quantity}× ${name}`); continue }
+      const qty = Math.max(1, it.quantity || 1)
+      const found = product
+      setCartItems((prev) => {
+        const existing = prev.find((i) => i.product.id === found.id)
+        if (existing) {
+          const q = existing.quantity + qty
+          return prev.map((i) =>
+            i.product.id === found.id
+              ? { ...i, quantity: q, discount: calcLineDiscount(q * i.unit_price, i.discount_mode, i.discount_value) }
+              : i,
+          )
+        }
+        return [...prev, { product: found, quantity: qty, unit_price: found.price, discount: 0, discount_mode: 'amount', discount_value: 0, unit_type: 'pack' }]
+      })
+    }
+    return unmatched
+  }, [])
+
   // Toggle a cart line between "pack" and "sub" units.
   const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
     setCartItems((prev) => prev.map((i) => {
@@ -334,13 +369,16 @@ export default function POS() {
                   {pharmacyName ? `${t('nav.pos')} • ${t('pos.header_hint')}` : t('pos.header_hint')}
                 </p>
               </div>
-              <Link
-                to="/sales?refund=1"
-                className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"
-                title={t('pos.refund_receipt_hint')}
-              >
-                <RotateCcw size={14} /> {t('pos.refund_receipt')}
-              </Link>
+              <div className="flex items-center gap-2">
+                <PrescriptionBell onLoad={loadPrescription} />
+                <Link
+                  to="/sales?refund=1"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"
+                  title={t('pos.refund_receipt_hint')}
+                >
+                  <RotateCcw size={14} /> {t('pos.refund_receipt')}
+                </Link>
+              </div>
             </div>
           </div>
 

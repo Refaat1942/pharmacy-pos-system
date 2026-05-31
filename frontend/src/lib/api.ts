@@ -277,6 +277,81 @@ export const branchesAPI = {
   list: () => api.get<Branch[]>('/branches'),
 }
 
+export interface Clinic {
+  id: number
+  name: string
+  phone?: string | null
+  notes?: string | null
+  portal_token: string
+  active: boolean
+  pending_count?: number
+  created_at?: string
+}
+
+export interface PrescriptionItem {
+  id: number
+  medicine_name: string
+  quantity: number
+  dose?: string | null
+  note?: string | null
+}
+
+export interface Prescription {
+  id: number
+  clinic_id: number
+  clinic_name: string
+  branch_id: number | null
+  branch_name_en?: string | null
+  branch_name_ar?: string | null
+  patient_name?: string | null
+  patient_phone?: string | null
+  doctor_name?: string | null
+  notes?: string | null
+  status: string
+  created_at: string
+  items: PrescriptionItem[]
+}
+
+export const clinicsAPI = {
+  list: () => api.get<Clinic[]>('/clinics'),
+  create: (data: { name: string; phone?: string; notes?: string; active?: boolean }) =>
+    api.post<Clinic>('/clinics', data),
+  update: (id: number, data: { name: string; phone?: string; notes?: string; active?: boolean }) =>
+    api.put<Clinic>(`/clinics/${id}`, data),
+  regenerate: (id: number) => api.post<Clinic>(`/clinics/${id}/regenerate-token`, {}),
+}
+
+export const prescriptionsAPI = {
+  list: (status = 'pending') => api.get<Prescription[]>('/prescriptions', { params: { status } }),
+  count: () => api.get<{ count: number }>('/prescriptions/count'),
+  setStatus: (id: number, status: 'pending' | 'loaded' | 'dismissed') =>
+    api.patch<{ ok: boolean; status: string }>(`/prescriptions/${id}`, null, { params: { status } }),
+}
+
+export interface ClinicPortalInfo {
+  clinic: { id: number; name: string }
+  branches: { id: number; name_ar: string; name_en: string }[]
+}
+
+export const clinicPortalAPI = {
+  info: (slug: string, token: string) =>
+    api.get<ClinicPortalInfo>(`/clinic/${encodeURIComponent(slug)}/${encodeURIComponent(token)}`),
+  submit: (
+    slug: string,
+    token: string,
+    data: {
+      branch_id: number
+      patient_name?: string
+      patient_phone?: string
+      doctor_name?: string
+      notes?: string
+      items: { medicine_name: string; quantity: number; dose?: string; note?: string }[]
+    },
+  ) => api.post<{ ok: boolean; id: number }>(
+    `/clinic/${encodeURIComponent(slug)}/${encodeURIComponent(token)}/prescriptions`, data,
+  ),
+}
+
 export interface TransferItem {
   id: number
   source_product_id: number
