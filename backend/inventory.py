@@ -373,14 +373,15 @@ def velocity_classification(days: int = 90,
     cur.execute(
         """SELECT p.id, p.name_ar, p.name_en, p.barcode, p.stock, p.unit, p.price,
                   COALESCE(SUM(ii.quantity) FILTER (
-                      WHERE i.created_at >= NOW() - INTERVAL '%s days'
+                      WHERE i.created_at >= NOW() - (%s * INTERVAL '1 day')
                   ), 0) AS sold_qty
            FROM products p
            LEFT JOIN invoice_items ii ON ii.product_id = p.id
            LEFT JOIN invoices i ON ii.invoice_id = i.id AND i.status='completed'
            WHERE p.active = true
            GROUP BY p.id
-           ORDER BY sold_qty DESC""" % days
+           ORDER BY sold_qty DESC""",
+        [days],
     )
     rows = cur.fetchall()
     conn.close()
