@@ -553,7 +553,7 @@ def create_sale(req: SaleRequest,
         delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0
         net_total = subtotal - req.discount + delivery_fee
 
-        cur.execute("SELECT COUNT(*) AS cnt FROM invoices")
+        cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
         count = cur.fetchone()["cnt"]
         invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
 
@@ -987,9 +987,9 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
             raise HTTPException(status_code=404, detail="Invoice not found")
         return_branch_id = inv_row["branch_id"]
 
-        cur.execute("SELECT COUNT(*) AS cnt FROM returns")
+        cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
         count = cur.fetchone()["cnt"]
-        return_number = f"RET-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
+        return_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
 
         total_returned = 0.0
         for item in req.items:
