@@ -219,18 +219,30 @@ def sales_by_payment(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(f"""
-            SELECT
-              COALESCE(payment_method, 'unknown') AS payment_method,
-              COALESCE(type, 'unknown') AS sale_type,
-              COUNT(*)::int AS invoice_count,
-              SUM(net_total)::float AS revenue
-            FROM invoices i
-            WHERE status = 'completed'
-              AND created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
-              {bf.replace('branch_id', 'i.branch_id')}
-            GROUP BY payment_method, type
+            SELECT * FROM (
+                SELECT
+                  COALESCE(payment_method, 'unknown') AS payment_method,
+                  COALESCE(type, 'unknown') AS sale_type,
+                  COUNT(*)::int AS invoice_count,
+                  SUM(net_total)::float AS revenue
+                FROM invoices i
+                WHERE status = 'completed'
+                  AND created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
+                  {bf.replace('branch_id', 'i.branch_id')}
+                GROUP BY payment_method, type
+                UNION ALL
+                SELECT
+                  'return' AS payment_method,
+                  'return' AS sale_type,
+                  COUNT(*)::int AS invoice_count,
+                  (-SUM(total_returned))::float AS revenue
+                FROM returns r
+                WHERE r.created_at >= %s::date AND r.created_at < (%s::date + INTERVAL '1 day')
+                  {bf.replace('branch_id', 'r.branch_id')}
+                HAVING COUNT(*) > 0
+            ) combined
             ORDER BY revenue DESC
-        """, [df, dt] + bp)
+        """, [df, dt] + bp + [df, dt] + bp)
         return [dict(r) for r in cur.fetchall()]
     finally:
         cur.close()

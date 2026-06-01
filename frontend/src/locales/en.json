@@ -236,6 +236,7 @@
     "profit": "Profit",
     "payment_method": "Payment Method",
     "sale_type": "Sale Type",
+    "return_type": "Return",
     "no_data": "No data for this period",
     "by_clinic": "Sales by Clinic",
     "clinic": "Clinic",
