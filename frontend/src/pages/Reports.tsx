@@ -136,8 +136,25 @@ export default function Reports() {
         {/* P&L summary */}
         {pnl && (
           <section>
-            <SectionHead icon={<DollarSign size={18} />} title={t('reports.pnl_title')}
-              subtitle={`${pnl.date_from} → ${pnl.date_to}`} />
+            <div className="flex items-center justify-between mb-2">
+              <SectionHead icon={<DollarSign size={18} />} title={t('reports.pnl_title')}
+                subtitle={`${pnl.date_from} → ${pnl.date_to}`} inline />
+              <button onClick={() => exportCSV('profit-and-loss.csv', [pnl], [
+                { key: 'date_from', label: 'From' },
+                { key: 'date_to', label: 'To' },
+                { key: 'gross_revenue', label: 'Gross Revenue' },
+                { key: 'total_discount', label: 'Total Discount' },
+                { key: 'returns_value', label: 'Returns' },
+                { key: 'net_revenue', label: 'Net Revenue' },
+                { key: 'cogs', label: 'COGS' },
+                { key: 'gross_profit', label: 'Gross Profit' },
+                { key: 'margin_pct', label: 'Margin %' },
+                { key: 'invoice_count', label: 'Invoices' },
+                { key: 'returns_count', label: 'Returns Count' },
+              ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
+                <Download size={13} /> CSV
+              </button>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Kpi tone="blue" label={t('reports.gross_revenue')} value={fmt(pnl.gross_revenue)} sub={`${pnl.invoice_count} ${t('reports.invoices')}`} />
               <Kpi tone="red" label={t('reports.returns')} value={fmt(pnl.returns_value)} sub={`${pnl.returns_count} ${t('reports.returns')}`} />
@@ -154,7 +171,19 @@ export default function Reports() {
 
         {/* Monthly trend */}
         <section>
-          <SectionHead icon={<TrendingUp size={18} />} title={t('reports.monthly_trend')} subtitle={t('reports.last_12_months')} />
+          <div className="flex items-center justify-between mb-2">
+            <SectionHead icon={<TrendingUp size={18} />} title={t('reports.monthly_trend')} subtitle={t('reports.last_12_months')} inline />
+            <button onClick={() => exportCSV('monthly-trend.csv', trend, [
+              { key: 'month', label: 'Month' },
+              { key: 'revenue', label: 'Revenue' },
+              { key: 'invoice_count', label: 'Invoices' },
+              { key: 'cogs', label: 'COGS' },
+              { key: 'profit', label: 'Profit' },
+              { key: 'returns_value', label: 'Returns' },
+            ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
+              <Download size={13} /> CSV
+            </button>
+          </div>
           <TrendChart rows={trend} />
         </section>
 
@@ -188,7 +217,18 @@ export default function Reports() {
         {/* Branch performance — admin only */}
         {isAdmin && (
           <section>
-            <SectionHead icon={<Building2 size={18} />} title={t('reports.by_branch')} />
+            <div className="flex items-center justify-between mb-2">
+              <SectionHead icon={<Building2 size={18} />} title={t('reports.by_branch')} inline />
+              <button onClick={() => exportCSV('sales-by-branch.csv', branches, [
+                { key: 'name_en', label: 'Branch' },
+                { key: 'invoice_count', label: 'Invoices' },
+                { key: 'revenue', label: 'Gross Revenue' },
+                { key: 'returns_value', label: 'Returns' },
+                { key: 'net_revenue', label: 'Net Revenue' },
+              ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
+                <Download size={13} /> CSV
+              </button>
+            </div>
             <DataTable
               empty={t('reports.no_data')}
               cols={[
@@ -234,7 +274,17 @@ export default function Reports() {
 
         {/* Payment breakdown */}
         <section>
-          <SectionHead icon={<CreditCard size={18} />} title={t('reports.by_payment')} />
+          <div className="flex items-center justify-between mb-2">
+            <SectionHead icon={<CreditCard size={18} />} title={t('reports.by_payment')} inline />
+            <button onClick={() => exportCSV('sales-by-payment.csv', pays, [
+              { key: 'sale_type', label: 'Sale Type' },
+              { key: 'payment_method', label: 'Payment Method' },
+              { key: 'invoice_count', label: 'Invoices' },
+              { key: 'revenue', label: 'Revenue' },
+            ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
+              <Download size={13} /> CSV
+            </button>
+          </div>
           <DataTable
             empty={t('reports.no_data')}
             cols={[

@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search } from 'lucide-react'
+import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search, Download } from 'lucide-react'
 import Layout from '../components/Layout'
-import { salesAPI, employeesAPI, clinicsAPI } from '../lib/api'
-import type { Invoice, SaleResponse, Employee, Clinic } from '../lib/api'
+import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
+import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
+
+type SalesRow = Invoice & { isReturn?: boolean }
 
 export default function Sales() {
   const { t } = useTranslation()
   const lang = i18n.language
 
-  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [invoices, setInvoices] = useState<SalesRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSale, setSelectedSale] = useState<SaleResponse | null>(null)
   const [showDetail, setShowDetail] = useState(false)
@@ -33,20 +35,53 @@ export default function Sales() {
   const refundMode = searchParams.get('refund') === '1'
   const refundFocusRef = useRef<HTMLInputElement>(null)
 
+  const returnToRow = (r: ReturnRow): SalesRow => ({
+    id: r.id,
+    invoice_number: r.return_invoice_number,
+    type: 'return',
+    payment_method: 'return',
+    net_total: -Math.abs(r.total_returned),
+    seller_id: r.seller_id || 0,
+    seller_name_en: r.seller_name_en || '',
+    seller_name_ar: r.seller_name_ar || '',
+    customer_name: '',
+    clinic_name: null,
+    status: 'returned',
+    created_at: r.created_at,
+    isReturn: true,
+  } as SalesRow)
+
   const loadInvoices = () => {
     setLoading(true)
-    salesAPI
-      .list({
-        limit: 200,
-        offset: 0,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        type: typeFilter || undefined,
-        seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
-        clinic_id: clinicFilter ? parseInt(clinicFilter) : undefined,
-      })
-      .then((r) => {
-        setInvoices(r.data)
+    const includeReturns = !clinicFilter && (!typeFilter || typeFilter === 'return')
+    const invReq =
+      typeFilter === 'return'
+        ? Promise.resolve({ data: [] as Invoice[] })
+        : salesAPI.list({
+            limit: 200,
+            offset: 0,
+            date_from: dateFrom || undefined,
+            date_to: dateTo || undefined,
+            type: typeFilter || undefined,
+            seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
+            clinic_id: clinicFilter ? parseInt(clinicFilter) : undefined,
+          })
+    const retReq = includeReturns
+      ? returnsAPI.list({
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+          limit: 200,
+        })
+      : Promise.resolve({ data: [] as ReturnRow[] })
+    Promise.all([invReq, retReq])
+      .then(([invRes, retRes]) => {
+        const rets = retRes.data
+          .filter((r) => !sellerFilter || r.seller_id === parseInt(sellerFilter))
+          .map(returnToRow)
+        const merged: SalesRow[] = [...invRes.data, ...rets].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )
+        setInvoices(merged)
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -140,6 +175,31 @@ export default function Sales() {
     cash: t('sales.cash_sale'),
     delivery: t('sales.delivery'),
     digital: t('sales.digital'),
+    return: t('sales.return_type'),
+  }
+
+  const exportCSV = () => {
+    const columns: { label: string; value: (r: SalesRow) => string | number }[] = [
+      { label: t('sales.invoice_no'), value: (r) => r.invoice_number },
+      { label: t('sales.date'), value: (r) => new Date(r.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US') },
+      { label: t('sales.type'), value: (r) => typeLabel[r.type] || r.type },
+      { label: t('sales.payment'), value: (r) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method) },
+      { label: t('sales.seller'), value: (r) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '' },
+      { label: t('sales.customer'), value: (r) => r.customer_name || '' },
+      { label: t('sales.clinic'), value: (r) => r.clinic_name || '' },
+      { label: t('sales.total'), value: (r) => r.net_total.toFixed(2) },
+      { label: t('sales.status'), value: (r) => (r.status === 'completed' ? t('sales.completed') : t('sales.returned')) },
+    ]
+    const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+    const head = columns.map((c) => esc(c.label)).join(',')
+    const body = visibleInvoices.map((r) => columns.map((c) => esc(c.value(r))).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + head + '\n' + body], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `sales-history-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const completed = invoices.filter((i) => i.status === 'completed')
@@ -242,6 +302,7 @@ export default function Sales() {
                 <option value="cash">{t('sales.cash_sale')}</option>
                 <option value="delivery">{t('sales.delivery')}</option>
                 <option value="digital">{t('sales.digital')}</option>
+                <option value="return">{t('sales.return_type')}</option>
               </select>
             </div>
             <div>
@@ -271,6 +332,10 @@ export default function Sales() {
             <button onClick={resetFilters}
               className="text-gray-500 hover:text-gray-700 text-sm font-medium">
               {t('sales.reset')}
+            </button>
+            <button onClick={exportCSV} disabled={visibleInvoices.length === 0}
+              className="ms-auto inline-flex items-center gap-1.5 border border-gray-200 text-gray-600 hover:text-pharma-700 hover:border-pharma-300 rounded-lg px-3 py-1.5 text-sm font-medium disabled:opacity-40">
+              <Download size={14} /> {t('sales.export')}
             </button>
           </div>
 
@@ -321,7 +386,7 @@ export default function Sales() {
                   <tbody className="divide-y divide-gray-50">
                     {visibleInvoices.map((inv) => (
                       <tr
-                        key={inv.id}
+                        key={`${inv.isReturn ? 'ret' : 'inv'}-${inv.id}`}
                         className="hover:bg-gray-50/80 transition-colors"
                       >
                         <td className="px-4 py-3 font-mono text-sm font-bold text-gray-900">
@@ -338,16 +403,18 @@ export default function Sales() {
                             }
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-700 text-xs font-medium">
+                        <td className={`px-4 py-3 text-xs font-medium ${inv.isReturn ? 'text-red-600' : 'text-gray-700'}`}>
                           {typeLabel[inv.type] || inv.type}
                         </td>
                         <td className="px-4 py-3">
                           <span
                             className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                              paymentColor[inv.payment_method] || 'bg-gray-100 text-gray-600'
+                              inv.isReturn
+                                ? 'bg-red-100 text-red-600'
+                                : paymentColor[inv.payment_method] || 'bg-gray-100 text-gray-600'
                             }`}
                           >
-                            {paymentLabel[inv.payment_method] || inv.payment_method}
+                            {inv.isReturn ? t('sales.return_type') : paymentLabel[inv.payment_method] || inv.payment_method}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-700 text-xs">
@@ -361,7 +428,7 @@ export default function Sales() {
                         <td className="px-4 py-3 text-gray-600 text-xs">
                           {inv.clinic_name || '—'}
                         </td>
-                        <td className="px-4 py-3 text-end font-bold text-pharma-700 tabular-nums">
+                        <td className={`px-4 py-3 text-end font-bold tabular-nums ${inv.net_total < 0 ? 'text-red-600' : 'text-pharma-700'}`}>
                           {t('sales.egp')} {inv.net_total.toFixed(2)}
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -378,24 +445,26 @@ export default function Sales() {
                           </span>
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 justify-end">
-                            <button
-                              onClick={() => handleView(inv.id)}
-                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                              title={t('sales.view')}
-                            >
-                              <Eye size={14} />
-                            </button>
-                            {inv.status === 'completed' && (
+                          {!inv.isReturn && (
+                            <div className="flex items-center gap-1 justify-end">
                               <button
-                                onClick={() => handleReturnOpen(inv.id)}
-                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
-                                title={t('sales.return')}
+                                onClick={() => handleView(inv.id)}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                title={t('sales.view')}
                               >
-                                <RotateCcw size={14} />
+                                <Eye size={14} />
                               </button>
-                            )}
-                          </div>
+                              {inv.status === 'completed' && (
+                                <button
+                                  onClick={() => handleReturnOpen(inv.id)}
+                                  className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                                  title={t('sales.return')}
+                                >
+                                  <RotateCcw size={14} />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}

@@ -672,6 +672,8 @@
     "kpi_discount": "Discount",
     "kpi_net": "Net Revenue",
     "return": "Return",
+    "return_type": "Return",
+    "export": "Export Excel",
     "clinic": "Clinic"
   },
   "branch": {

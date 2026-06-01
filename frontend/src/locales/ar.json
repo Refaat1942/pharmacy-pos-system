@@ -672,6 +672,8 @@
     "kpi_discount": "الخصومات",
     "kpi_net": "صافي المبيعات",
     "return": "مرتجع",
+    "return_type": "مرتجع",
+    "export": "تصدير إكسل",
     "clinic": "العيادة"
   },
   "branch": {
