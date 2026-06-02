@@ -231,6 +231,7 @@ export const salesAPI = {
     seller_id?: number; clinic_id?: number;
     delivery_status?: string;
     delivery_person_id?: number;
+    payment_method?: string;
   } = {}) => api.get<Invoice[]>('/sales', { params }),
   setDeliveryStatus: (invoiceId: number, status: string) =>
     api.post<Invoice>(`/sales/${invoiceId}/delivery-status`, { status }),

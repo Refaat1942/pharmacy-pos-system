@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search, Download } from 'lucide-react'
@@ -7,8 +7,49 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
+import type { TFunction } from 'i18next'
 
 type SalesRow = Invoice & { isReturn?: boolean }
+
+function branchLabel(inv: Invoice, lang: string) {
+  return (lang === 'ar' ? inv.branch_name_ar : inv.branch_name_en) || ''
+}
+
+function customerDisplay(inv: Invoice) {
+  return inv.delivery_customer_name || inv.customer_name || ''
+}
+
+function phoneDisplay(inv: Invoice) {
+  return inv.delivery_customer_phone || ''
+}
+
+function paymentBreakdown(inv: Invoice, t: TFunction, labels: Record<string, string>): string {
+  if (!inv.payment_method) return '—'
+  const parts: string[] = [labels[inv.payment_method] || inv.payment_method]
+  if ((inv.cash_amount || 0) > 0) {
+    parts.push(`${t('sales.cash_paid')}: ${inv.cash_amount.toFixed(2)}`)
+  }
+  if ((inv.visa_amount || 0) > 0) {
+    parts.push(`${t('sales.card_paid')}: ${inv.visa_amount.toFixed(2)}`)
+  }
+  if ((inv.change_amount || 0) > 0) {
+    parts.push(`${t('sales.change')}: ${inv.change_amount.toFixed(2)}`)
+  }
+  if (inv.digital_type) {
+    parts.push(`${t('sales.digital_platform')}: ${labels[inv.digital_type] || inv.digital_type}`)
+  }
+  return parts.join(' · ')
+}
+
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
+  if (value === null || value === undefined || value === '' || value === '—') return null
+  return (
+    <div className="flex justify-between gap-4 text-sm py-1.5 border-b border-gray-50 last:border-0">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className="text-gray-900 text-end font-medium">{value}</span>
+    </div>
+  )
+}
 
 export default function Sales() {
   const { t } = useTranslation()
@@ -29,6 +70,7 @@ export default function Sales() {
   const [typeFilter, setTypeFilter] = useState('')
   const [sellerFilter, setSellerFilter] = useState('')
   const [clinicFilter, setClinicFilter] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState('')
   const [invoiceSearch, setInvoiceSearch] = useState('')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [clinics, setClinics] = useState<Clinic[]>([])
@@ -59,13 +101,14 @@ export default function Sales() {
       typeFilter === 'return'
         ? Promise.resolve({ data: [] as Invoice[] })
         : salesAPI.list({
-            limit: 200,
+            limit: 500,
             offset: 0,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             type: typeFilter || undefined,
             seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
             clinic_id: clinicFilter ? parseInt(clinicFilter) : undefined,
+            payment_method: paymentFilter || undefined,
           })
     const retReq = includeReturns
       ? returnsAPI.list({
@@ -108,7 +151,12 @@ export default function Sales() {
   }, [refundMode])
 
   const resetFilters = () => {
-    setDateFrom(''); setDateTo(''); setTypeFilter(''); setSellerFilter(''); setClinicFilter('')
+    setDateFrom('')
+    setDateTo('')
+    setTypeFilter('')
+    setSellerFilter('')
+    setClinicFilter('')
+    setPaymentFilter('')
     setTimeout(loadInvoices, 0)
   }
 
@@ -163,6 +211,8 @@ export default function Sales() {
     visa: 'bg-blue-100 text-blue-700',
     hybrid: 'bg-purple-100 text-purple-700',
     digital: 'bg-orange-100 text-orange-700',
+    account: 'bg-amber-100 text-amber-700',
+    return: 'bg-red-100 text-red-600',
   }
 
   const paymentLabel: Record<string, string> = {
@@ -186,12 +236,36 @@ export default function Sales() {
     const columns: { label: string; value: (r: SalesRow) => string | number }[] = [
       { label: t('sales.invoice_no'), value: (r) => r.invoice_number },
       { label: t('sales.date'), value: (r) => new Date(r.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US') },
-      { label: t('sales.type'), value: (r) => typeLabel[r.type] || r.type },
-      { label: t('sales.payment'), value: (r) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method) },
+      { label: t('sales.sale_type'), value: (r) => typeLabel[r.type] || r.type },
+      {
+        label: t('sales.payment_method'),
+        value: (r) =>
+          r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method,
+      },
+      {
+        label: t('sales.payment_detail'),
+        value: (r) => (r.isReturn ? '' : paymentBreakdown(r, t, paymentLabel)),
+      },
+      { label: t('sales.digital_platform'), value: (r) => (r.digital_type ? paymentLabel[r.digital_type] || r.digital_type : '') },
       { label: t('sales.seller'), value: (r) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '' },
-      { label: t('sales.customer'), value: (r) => r.customer_name || '' },
+      { label: t('sales.customer'), value: (r) => customerDisplay(r) },
+      { label: t('sales.customer_phone'), value: (r) => phoneDisplay(r) },
+      { label: t('sales.branch'), value: (r) => branchLabel(r, lang) },
       { label: t('sales.clinic'), value: (r) => r.clinic_name || '' },
+      { label: t('sales.subtotal'), value: (r) => (r.subtotal ?? 0).toFixed(2) },
+      { label: t('sales.discount'), value: (r) => (r.discount ?? 0).toFixed(2) },
+      { label: t('sales.delivery_fee'), value: (r) => (r.delivery_fee ?? 0).toFixed(2) },
       { label: t('sales.total'), value: (r) => r.net_total.toFixed(2) },
+      { label: t('sales.cash_paid'), value: (r) => (r.cash_amount ?? 0).toFixed(2) },
+      { label: t('sales.card_paid'), value: (r) => (r.visa_amount ?? 0).toFixed(2) },
+      { label: t('sales.change'), value: (r) => (r.change_amount ?? 0).toFixed(2) },
+      { label: t('sales.driver'), value: (r) => r.delivery_person_name || '' },
+      { label: t('sales.delivery_address'), value: (r) => r.delivery_address || '' },
+      {
+        label: t('sales.delivery_status'),
+        value: (r) => (r.delivery_status ? t(`deliveries.${r.delivery_status}`) : ''),
+      },
+      { label: t('sales.notes'), value: (r) => r.notes || '' },
       { label: t('sales.status'), value: (r) => (r.status === 'completed' ? t('sales.completed') : t('sales.returned')) },
     ]
     const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
@@ -219,9 +293,15 @@ export default function Sales() {
     (r) => r.invoice_number,
     (r) => typeLabel[r.type] || r.type,
     (r) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method),
+    (r) => (r.isReturn ? '' : paymentBreakdown(r, t, paymentLabel)),
     (r) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en),
-    (r) => r.customer_name,
+    (r) => customerDisplay(r),
+    (r) => phoneDisplay(r),
+    (r) => branchLabel(r, lang),
     (r) => r.clinic_name,
+    (r) => r.delivery_person_name,
+    (r) => r.digital_type,
+    (r) => r.notes,
   ])
   const sortAccessors = useMemo(() => ({
     invoice_number: (r: SalesRow) => r.invoice_number,
@@ -229,8 +309,11 @@ export default function Sales() {
     type: (r: SalesRow) => typeLabel[r.type] || r.type,
     payment: (r: SalesRow) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method),
     seller: (r: SalesRow) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '',
-    customer: (r: SalesRow) => r.customer_name || '',
+    customer: (r: SalesRow) => customerDisplay(r),
+    branch: (r: SalesRow) => branchLabel(r, lang),
     clinic: (r: SalesRow) => r.clinic_name || '',
+    subtotal: (r: SalesRow) => Number(r.subtotal || 0),
+    discount: (r: SalesRow) => Number(r.discount || 0),
     net_total: (r: SalesRow) => Number(r.net_total || 0),
     status: (r: SalesRow) => r.status,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,7 +323,7 @@ export default function Sales() {
   return (
     <Layout>
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="max-w-[100rem] mx-auto p-6 min-w-0">
           {/* Page header */}
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -351,6 +434,18 @@ export default function Sales() {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.filter_payment')}</label>
+              <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                <option value="">{t('common.all')}</option>
+                <option value="cash">{t('sales.cash')}</option>
+                <option value="visa">{t('sales.visa')}</option>
+                <option value="hybrid">{t('sales.hybrid')}</option>
+                <option value="digital">{t('sales.digital')}</option>
+                <option value="account">{t('payment.account')}</option>
+              </select>
+            </div>
             <button onClick={loadInvoices}
               className="bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">
               {t('sales.apply')}
@@ -385,33 +480,43 @@ export default function Sales() {
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-w-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm min-w-[88rem]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
                       <SortTh k="invoice_number" sort={sort} onToggle={toggle} align="start">{t('sales.invoice_no')}</SortTh>
                       <SortTh k="created_at" sort={sort} onToggle={toggle} align="start">{t('sales.date')}</SortTh>
-                      <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('sales.type')}</SortTh>
-                      <SortTh k="payment" sort={sort} onToggle={toggle} align="start">{t('sales.payment')}</SortTh>
+                      <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('sales.sale_type')}</SortTh>
+                      <SortTh k="payment" sort={sort} onToggle={toggle} align="start">{t('sales.payment_method')}</SortTh>
+                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.payment_detail')}</th>
                       <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.seller')}</SortTh>
                       <SortTh k="customer" sort={sort} onToggle={toggle} align="start">{t('sales.customer')}</SortTh>
+                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.customer_phone')}</th>
+                      <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('sales.branch')}</SortTh>
                       <SortTh k="clinic" sort={sort} onToggle={toggle} align="start">{t('sales.clinic')}</SortTh>
+                      <SortTh k="subtotal" sort={sort} onToggle={toggle} align="end">{t('sales.subtotal')}</SortTh>
+                      <SortTh k="discount" sort={sort} onToggle={toggle} align="end">{t('sales.discount')}</SortTh>
+                      <th className="px-3 py-3 text-end whitespace-nowrap">{t('sales.delivery_fee')}</th>
                       <SortTh k="net_total" sort={sort} onToggle={toggle} align="end">{t('sales.total')}</SortTh>
+                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.driver')}</th>
+                      <th className="px-3 py-3 text-center whitespace-nowrap">{t('sales.delivery_status')}</th>
                       <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('sales.status')}</SortTh>
-                      <th className="px-4 py-3 text-center" />
+                      <th className="px-4 py-3 text-center sticky end-0 bg-gray-50" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {sorted.map((inv) => (
+                    {sorted.map((inv) => {
+                      const st = inv.delivery_status || ''
+                      return (
                       <tr
                         key={`${inv.isReturn ? 'ret' : 'inv'}-${inv.id}`}
                         className="hover:bg-gray-50/80 transition-colors"
                       >
-                        <td className="px-4 py-3 font-mono text-sm font-bold text-gray-900">
+                        <td className="px-3 py-3 font-mono text-xs font-bold text-gray-900 whitespace-nowrap">
                           {inv.invoice_number}
                         </td>
-                        <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                        <td className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">
                           {new Date(inv.created_at).toLocaleString(
                             lang === 'ar' ? 'ar-EG' : 'en-US',
                             {
@@ -422,10 +527,10 @@ export default function Sales() {
                             }
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-xs font-medium ${inv.isReturn ? 'text-red-600' : 'text-gray-700'}`}>
+                        <td className={`px-3 py-3 text-xs font-medium whitespace-nowrap ${inv.isReturn ? 'text-red-600' : 'text-gray-700'}`}>
                           {typeLabel[inv.type] || inv.type}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3 whitespace-nowrap">
                           <span
                             className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                               inv.isReturn
@@ -436,21 +541,51 @@ export default function Sales() {
                             {inv.isReturn ? t('sales.return_type') : paymentLabel[inv.payment_method] || inv.payment_method}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-700 text-xs">
-                          {lang === 'ar'
-                            ? inv.seller_name_ar || '—'
-                            : inv.seller_name_en || '—'}
+                        <td className="px-3 py-3 text-[11px] text-gray-600 max-w-[14rem]">
+                          {inv.isReturn ? '—' : (
+                            <span className="line-clamp-2" title={paymentBreakdown(inv, t, paymentLabel)}>
+                              {paymentBreakdown(inv, t, paymentLabel)}
+                            </span>
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          {inv.customer_name || '—'}
+                        <td className="px-3 py-3 text-gray-700 text-xs whitespace-nowrap">
+                          {lang === 'ar' ? inv.seller_name_ar || '—' : inv.seller_name_en || '—'}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
+                        <td className="px-3 py-3 text-gray-600 text-xs max-w-[10rem] truncate" title={customerDisplay(inv)}>
+                          {customerDisplay(inv) || '—'}
+                        </td>
+                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap font-mono">
+                          {phoneDisplay(inv) || '—'}
+                        </td>
+                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
+                          {branchLabel(inv, lang) || '—'}
+                        </td>
+                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
                           {inv.clinic_name || '—'}
                         </td>
-                        <td className={`px-4 py-3 text-end font-bold tabular-nums ${inv.net_total < 0 ? 'text-red-600' : 'text-pharma-700'}`}>
+                        <td className="px-3 py-3 text-end text-xs text-gray-600 tabular-nums whitespace-nowrap">
+                          {!inv.isReturn && inv.subtotal != null ? `${t('sales.egp')} ${inv.subtotal.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-end text-xs text-amber-600 tabular-nums whitespace-nowrap">
+                          {!inv.isReturn && (inv.discount || 0) > 0 ? `-${inv.discount.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-end text-xs text-teal-700 tabular-nums whitespace-nowrap">
+                          {(inv.delivery_fee || 0) > 0 ? inv.delivery_fee!.toFixed(2) : '—'}
+                        </td>
+                        <td className={`px-3 py-3 text-end font-bold tabular-nums whitespace-nowrap ${inv.net_total < 0 ? 'text-red-600' : 'text-pharma-700'}`}>
                           {t('sales.egp')} {inv.net_total.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
+                          {inv.delivery_person_name || '—'}
+                        </td>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
+                          {st ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
+                              {t(`deliveries.${st}`)}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-3 py-3 text-center whitespace-nowrap">
                           <span
                             className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
                               inv.status === 'completed'
@@ -463,7 +598,7 @@ export default function Sales() {
                               : t('sales.returned')}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3 sticky end-0 bg-white">
                           {!inv.isReturn && (
                             <div className="flex items-center gap-1 justify-end">
                               <button
@@ -486,7 +621,7 @@ export default function Sales() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>
@@ -496,20 +631,25 @@ export default function Sales() {
       </div>
 
       {/* ── View Detail Modal ── */}
-      {showDetail && selectedSale && (
+      {showDetail && selectedSale && (() => {
+        const inv = selectedSale.invoice
+        const payMethod = paymentLabel[inv.payment_method] || inv.payment_method
+        const deliverySt = inv.delivery_status || ''
+        return (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           onClick={() => setShowDetail(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b">
+            <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white z-10">
               <div>
-                <h3 className="font-bold text-gray-900">{selectedSale.invoice.invoice_number}</h3>
+                <h3 className="font-bold text-gray-900">{t('sales.detail_title')}</h3>
+                <p className="font-mono text-sm text-pharma-700">{inv.invoice_number}</p>
                 <p className="text-xs text-gray-500">
-                  {new Date(selectedSale.invoice.created_at).toLocaleString()}
+                  {new Date(inv.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US')}
                 </p>
               </div>
               <button
@@ -519,48 +659,145 @@ export default function Sales() {
                 <X size={18} />
               </button>
             </div>
-            <div className="p-5">
-              <table className="w-full text-sm mb-4">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="pb-2 text-start text-xs text-gray-500 font-semibold">
-                      {t('receipt.item')}
-                    </th>
-                    <th className="pb-2 text-center text-xs text-gray-500 font-semibold w-10">
-                      {t('receipt.qty')}
-                    </th>
-                    <th className="pb-2 text-end text-xs text-gray-500 font-semibold">
-                      {t('receipt.total')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedSale.items.map((item) => (
-                    <tr key={item.id} className="border-b border-gray-50">
-                      <td className="py-2.5 text-gray-800 font-medium">
-                        {lang === 'ar' ? item.product_name_ar : item.product_name_en}
-                        <p className="text-[11px] text-gray-400 tabular-nums">
-                          {t('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
-                        </p>
-                      </td>
-                      <td className="py-2.5 text-center text-gray-600">{item.quantity}</td>
-                      <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums">
-                        {item.total.toFixed(2)}
-                      </td>
+            <div className="p-5 space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">{t('sales.sale_type')}</p>
+                  <DetailRow label={t('sales.sale_type')} value={typeLabel[inv.type] || inv.type} />
+                  <DetailRow label={t('sales.payment_method')} value={payMethod} />
+                  <DetailRow
+                    label={t('sales.payment_detail')}
+                    value={paymentBreakdown(inv, t, paymentLabel)}
+                  />
+                  <DetailRow
+                    label={t('sales.digital_platform')}
+                    value={inv.digital_type ? (paymentLabel[inv.digital_type] || inv.digital_type) : null}
+                  />
+                  <DetailRow label={t('sales.status')} value={inv.status === 'completed' ? t('sales.completed') : t('sales.returned')} />
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-2">{t('sales.seller')}</p>
+                  <DetailRow
+                    label={t('sales.seller')}
+                    value={lang === 'ar' ? inv.seller_name_ar : inv.seller_name_en}
+                  />
+                  <DetailRow label={t('sales.branch')} value={branchLabel(inv, lang)} />
+                  <DetailRow label={t('sales.customer')} value={customerDisplay(inv)} />
+                  <DetailRow label={t('sales.customer_phone')} value={phoneDisplay(inv)} />
+                  <DetailRow label={t('sales.clinic')} value={inv.clinic_name} />
+                </div>
+              </div>
+              {(inv.type === 'delivery' || inv.delivery_address || inv.delivery_person_name) && (
+                <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-teal-700 uppercase mb-2">{t('sales.delivery')}</p>
+                  <DetailRow label={t('sales.driver')} value={inv.delivery_person_name} />
+                  <DetailRow label={t('sales.delivery_address')} value={inv.delivery_address} />
+                  <DetailRow
+                    label={t('sales.delivery_fee')}
+                    value={(inv.delivery_fee || 0) > 0 ? `${t('sales.egp')} ${inv.delivery_fee!.toFixed(2)}` : null}
+                  />
+                  <DetailRow
+                    label={t('sales.delivery_status')}
+                    value={deliverySt ? t(`deliveries.${deliverySt}`) : null}
+                  />
+                </div>
+              )}
+              {inv.notes && (
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-sm text-amber-900">
+                  <span className="font-semibold">{t('sales.notes')}: </span>
+                  {inv.notes}
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase mb-2">
+                  {t('sales.items_count')} ({selectedSale.items.length})
+                </p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="pb-2 text-start text-xs text-gray-500 font-semibold">
+                        {t('receipt.item')}
+                      </th>
+                      <th className="pb-2 text-center text-xs text-gray-500 font-semibold w-10">
+                        {t('receipt.qty')}
+                      </th>
+                      <th className="pb-2 text-end text-xs text-gray-500 font-semibold">
+                        {t('receipt.total')}
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="bg-pharma-50 rounded-xl p-3 flex justify-between font-bold text-pharma-800">
-                <span>{t('receipt.net_total')}</span>
-                <span className="tabular-nums">
-                  {t('receipt.egp')} {selectedSale.invoice.net_total.toFixed(2)}
-                </span>
+                  </thead>
+                  <tbody>
+                    {selectedSale.items.map((item) => (
+                      <tr key={item.id} className="border-b border-gray-50">
+                        <td className="py-2.5 text-gray-800 font-medium">
+                          {lang === 'ar' ? item.product_name_ar : item.product_name_en}
+                          <p className="text-[11px] text-gray-400 tabular-nums">
+                            {t('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
+                            {item.discount > 0 && ` (−${item.discount.toFixed(2)})`}
+                          </p>
+                        </td>
+                        <td className="py-2.5 text-center text-gray-600">{item.quantity}</td>
+                        <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums">
+                          {item.total.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>{t('sales.subtotal')}</span>
+                  <span className="tabular-nums">{t('sales.egp')} {inv.subtotal.toFixed(2)}</span>
+                </div>
+                {inv.discount > 0 && (
+                  <div className="flex justify-between text-amber-600">
+                    <span>{t('sales.discount')}</span>
+                    <span className="tabular-nums">− {inv.discount.toFixed(2)}</span>
+                  </div>
+                )}
+                {(inv.delivery_fee || 0) > 0 && (
+                  <div className="flex justify-between text-teal-700">
+                    <span>{t('sales.delivery_fee')}</span>
+                    <span className="tabular-nums">{inv.delivery_fee!.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-pharma-800 pt-2 border-t border-gray-200">
+                  <span>{t('receipt.net_total')}</span>
+                  <span className="tabular-nums">
+                    {t('receipt.egp')} {inv.net_total.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-1.5 text-sm">
+                <div className="flex justify-between font-semibold text-blue-800">
+                  <span>{t('sales.payment_method')}</span>
+                  <span>{payMethod}</span>
+                </div>
+                {(inv.cash_amount || 0) > 0 && (
+                  <div className="flex justify-between text-blue-700">
+                    <span>{t('sales.cash_paid')}</span>
+                    <span className="tabular-nums">{t('sales.egp')} {inv.cash_amount.toFixed(2)}</span>
+                  </div>
+                )}
+                {(inv.visa_amount || 0) > 0 && (
+                  <div className="flex justify-between text-blue-700">
+                    <span>{t('sales.card_paid')}</span>
+                    <span className="tabular-nums">{t('sales.egp')} {inv.visa_amount.toFixed(2)}</span>
+                  </div>
+                )}
+                {(inv.change_amount || 0) > 0 && (
+                  <div className="flex justify-between text-blue-700 font-medium">
+                    <span>{t('sales.change')}</span>
+                    <span className="tabular-nums">{t('sales.egp')} {inv.change_amount.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── Return Modal ── */}
       {showReturn && selectedSale && (
