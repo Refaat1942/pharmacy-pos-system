@@ -299,6 +299,7 @@
     "no_clinic_sales": "No clinic sales for this period",
     "digital_account_title": "Digital platforms — on account",
     "digital_account_hint": "Sales billed to Talabat, Vezeeta, and other platforms (payment: on account). Use this statement with your date range when collecting from partners.",
+    "digital_account_dates_hint": "Uses report dates {{from}} → {{to}} from the top of the page.",
     "digital_account_charged": "Charged (period)",
     "digital_account_paid": "Paid",
     "digital_account_balance": "Still owed (period)",

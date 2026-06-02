@@ -86,14 +86,34 @@ export default function Reports() {
   const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
   const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
   const [loading, setLoading] = useState(false)
+  const [digitalLoading, setDigitalLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
   const canSee = isAdmin || user?.role === 'pharmacist'
 
+  const dateParams = useMemo(() => ({ date_from: from, date_to: to }), [from, to])
+
+  const loadDigitalAccount = async () => {
+    setDigitalLoading(true)
+    try {
+      const { data } = await api.get('/reports/digital-platform-account', {
+        params: {
+          ...dateParams,
+          ...(digitalPlatformFilter ? { digital_type: digitalPlatformFilter } : {}),
+        },
+      })
+      setDigitalAccount(data)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail || 'Failed to load digital platform report')
+    } finally {
+      setDigitalLoading(false)
+    }
+  }
+
   const load = async () => {
     setLoading(true); setError(null)
-    const params = { date_from: from, date_to: to }
+    const params = dateParams
     try {
       const showClinics = hasFeature('clinics')
       const reqs: Promise<any>[] = [
@@ -174,19 +194,6 @@ export default function Reports() {
             <div>
               <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.filter_platform')}</label>
-              <select
-                value={digitalPlatformFilter}
-                onChange={(e) => setDigitalPlatformFilter(e.target.value)}
-                className="input text-sm min-w-[9rem]"
-              >
-                <option value="">{t('common.all')}</option>
-                {DIGITAL_PLATFORMS.map((p) => (
-                  <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
-                ))}
-              </select>
             </div>
             <button onClick={load} disabled={loading} className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
               {loading ? t('common.loading') : t('reports.apply')}
@@ -384,6 +391,34 @@ export default function Reports() {
               </div>
             </div>
             <p className="text-sm text-slate-600 mb-3 max-w-3xl">{t('reports.digital_account_hint')}</p>
+            <div className="flex flex-wrap items-end gap-3 mb-4 bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
+                  {t('reports.filter_platform')}
+                </label>
+                <select
+                  value={digitalPlatformFilter}
+                  onChange={(e) => setDigitalPlatformFilter(e.target.value)}
+                  className="input text-sm min-w-[10rem] bg-white"
+                >
+                  <option value="">{t('common.all')}</option>
+                  {DIGITAL_PLATFORMS.map((p) => (
+                    <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadDigitalAccount()}
+                disabled={digitalLoading || loading}
+                className="bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
+              >
+                {digitalLoading ? t('common.loading') : t('reports.apply')}
+              </button>
+              <p className="text-xs text-slate-500 w-full sm:w-auto sm:ms-1">
+                {t('reports.digital_account_dates_hint', { from, to })}
+              </p>
+            </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <Kpi tone="blue" label={t('reports.digital_account_charged')} value={fmt(digitalAccount.summary.total_charged)} sub={`${digitalAccount.summary.invoice_count} ${t('reports.invoices')}`} />
               <Kpi tone="green" label={t('reports.digital_account_paid')} value={fmt(digitalAccount.summary.total_paid)} />

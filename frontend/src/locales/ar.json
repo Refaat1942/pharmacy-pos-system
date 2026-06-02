@@ -456,6 +456,7 @@
     "no_clinic_sales": "لا توجد مبيعات عيادات لهذه الفترة",
     "digital_account_title": "منصات رقمية — آجل",
     "digital_account_hint": "مبيعات محمّلة على حساب طلبات، فيزيتا، وغيرها (دفع: آجل). استخدم هذا الكشف مع نطاق التاريخ عند تحصيل المبالغ من الشركاء.",
+    "digital_account_dates_hint": "يستخدم تواريخ التقرير {{from}} → {{to}} من أعلى الصفحة.",
     "digital_account_charged": "المحمّل (الفترة)",
     "digital_account_paid": "المدفوع",
     "digital_account_balance": "المتبقي (الفترة)",
