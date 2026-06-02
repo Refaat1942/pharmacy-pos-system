@@ -385,6 +385,7 @@ END $$;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_unit  VARCHAR(30);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100);
 
 -- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);

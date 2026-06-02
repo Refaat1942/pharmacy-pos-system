@@ -47,6 +47,8 @@ export default function PaymentModal({
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
+  const requiresCustomerInfo = effectiveTotal > 100
+  const hasCustomerInfo = !!selectedCustomer || (deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== '')
   const change =
     paymentMethod === 'cash' && cashAmount
       ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
@@ -57,6 +59,7 @@ export default function PaymentModal({
 
   const isValid = () => {
     if (!selectedSeller) return false
+    if (requiresCustomerInfo && !hasCustomerInfo) return false
     if (needsDelivery) {
       if (!deliveryAddress.trim()) return false
       if (!deliveryCustomerName.trim()) return false
@@ -71,6 +74,10 @@ export default function PaymentModal({
   const handleSubmit = async () => {
     if (!selectedSeller) {
       setError(t('payment.seller_required') as string)
+      return
+    }
+    if (requiresCustomerInfo && !hasCustomerInfo) {
+      setError(t('payment.customer_required_over_100') as string)
       return
     }
     if (needsDelivery && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
@@ -107,7 +114,7 @@ export default function PaymentModal({
             ? parseFloat(cashPart) || 0
             : undefined,
         visa_amount:
-          paymentMethod === 'visa'
+          paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash'
             ? effectiveTotal
             : paymentMethod === 'hybrid'
             ? parseFloat(cardPart) || 0
@@ -238,11 +245,13 @@ export default function PaymentModal({
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
                 </p>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {[
                     { value: 'cash', label: t('payment.cash') },
                     { value: 'visa', label: t('payment.visa') },
                     { value: 'hybrid', label: t('payment.hybrid') },
+                    { value: 'instapay', label: t('payment.instapay') },
+                    { value: 'vodafone_cash', label: t('payment.vodafone_cash') },
                     { value: 'account', label: t('payment.account') },
                   ].map(({ value, label }) => (
                     <button
@@ -290,11 +299,11 @@ export default function PaymentModal({
               </div>
             )}
 
-            {/* Visa form */}
-            {paymentMethod === 'visa' && (
+            {/* Electronic form */}
+            {(paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash') && (
               <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-xl text-center space-y-2">
                 <CreditCard size={36} className="text-blue-500 mx-auto" />
-                <p className="text-sm font-semibold text-blue-700">{t('payment.visa')}</p>
+                <p className="text-sm font-semibold text-blue-700">{t(`payment.${paymentMethod}`)}</p>
                 <p className="text-3xl font-bold text-blue-900">
                   {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </p>

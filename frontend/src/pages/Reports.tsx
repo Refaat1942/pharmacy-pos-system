@@ -289,7 +289,7 @@ export default function Reports() {
             empty={t('reports.no_data')}
             cols={[
               { key: 'sale_type', label: t('reports.sale_type'), render: (r) => <span className={`capitalize${r.sale_type === 'return' ? ' text-red-600' : ''}`}>{r.sale_type === 'return' ? t('reports.return_type') : r.sale_type}</span> },
-              { key: 'payment_method', label: t('reports.payment_method'), render: (r) => <span className="capitalize">{r.payment_method === 'return' ? t('reports.return_type') : r.payment_method}</span> },
+              { key: 'payment_method', label: t('reports.payment_method'), render: (r) => <span className="capitalize">{r.payment_method === 'return' ? t('reports.return_type') : r.payment_method === 'instapay' ? t('payment.instapay') : r.payment_method === 'vodafone_cash' ? t('payment.vodafone_cash') : r.payment_method}</span> },
               { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => <span className={r.revenue < 0 ? 'text-red-600 font-medium' : undefined}>{fmt(r.revenue)}</span> },
             ]}

@@ -42,6 +42,7 @@ def log_movement(cur, product_id: int, branch_id, movement_type: str,
 
 class ProductUpdate(BaseModel):
     barcode: Optional[str] = None
+    international_barcode: Optional[str] = None
     name_ar: Optional[str] = None
     name_en: Optional[str] = None
     category: Optional[str] = None
@@ -58,7 +59,7 @@ class ProductUpdate(BaseModel):
 
 
 
-ALLOWED_UPDATE_FIELDS = {"barcode", "name_ar", "name_en", "category", "unit",
+ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
                          "pack_size", "sub_unit", "sub_price"}
 
@@ -126,9 +127,9 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     if not include_inactive:
         where.append("p.active = true")
     if q:
-        where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s)")
+        where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s OR p.international_barcode ILIKE %s)")
         s = f"%{q}%"
-        params += [s, s, s]
+        params += [s, s, s, s]
     if branch_id is not None and current_user.get("role") != "admin":
         if branch_id != current_user.get("branch_id"):
             raise HTTPException(status_code=403, detail="Cross-branch access denied")
@@ -421,14 +422,14 @@ def bulk_template(current_user=Depends(get_current_user)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
-    headers = ["Code", "Material Name", "Unit", "Small Unit",
+    headers = ["Code", "International Barcode", "Material Name", "Unit", "Small Unit",
                "Small Unit Quantity Per Unit", "Quantity",
-               "Sales Price", "Cost", "Category", "Min Stock"]
+               "Sales Price", "Cost", "Category", "Min Stock", "Expiry Date"]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 48 Tab", "Box", "Strip", 4, 100,
-               116.00, 80.00, "Painkillers", 10])
-    ws.append(["7654321098765", "Augmentin 1g", "Box", "Tablet", 14, 50,
-               180.00, 130.00, "Antibiotics", 5])
+    ws.append(["1234567890123", "5000112637922", "Panadol Extra 48 Tab", "Box", "Strip", 4, 100,
+               116.00, 80.00, "Painkillers", 10, "2027-12-31"])
+    ws.append(["7654321098765", "8901234567890", "Augmentin 1g", "Box", "Tablet", 14, 50,
+               180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -482,6 +483,8 @@ async def bulk_upload(file: UploadFile = File(...),
                 raise ValueError("Material Name is required")
             name_ar = str(_row_get(r, "name_ar", "arabic name", "name (arabic)") or "").strip() or name_en
             barcode = str(_row_get(r, "barcode", "code", "material code", "item code") or "").strip() or None
+            intl_barcode = str(_row_get(r, "international barcode", "international_barcode",
+                                        "intl barcode", "global barcode", "gtin", "ean") or "").strip() or None
             category = str(_row_get(r, "category") or "").strip() or None
             unit = str(_row_get(r, "unit", "material unit", "big unit", "main unit") or "box").strip()
             price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
@@ -514,6 +517,24 @@ async def bulk_upload(file: UploadFile = File(...),
 
             qty_big = float(_row_get(r, "stock", "quantity", "qty") or 0)
 
+            from datetime import datetime as _dt, date as _date
+            expiry_date = None
+            exp_raw = _row_get(r, "expiry", "expiry date", "expiry_date",
+                               "expiration", "expiration date", "exp date", "exp")
+            if exp_raw not in (None, ""):
+                if isinstance(exp_raw, _dt):
+                    expiry_date = exp_raw.date()
+                elif isinstance(exp_raw, _date):
+                    expiry_date = exp_raw
+                else:
+                    s = str(exp_raw).strip()
+                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+                        try:
+                            expiry_date = _dt.strptime(s, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+
             if pack_size > 1:
                 sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
                 sub_price = round(price / pack_size, 2) if price else None
@@ -535,9 +556,11 @@ async def bulk_upload(file: UploadFile = File(...),
                 cur.execute(
                     """UPDATE products SET name_en=%s, name_ar=%s, category=%s, unit=%s,
                        price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-                       sub_price=%s, active=true WHERE id=%s""",
+                       sub_price=%s, active=true,
+                       international_barcode=COALESCE(%s, international_barcode),
+                       expiry_date=COALESCE(%s, expiry_date) WHERE id=%s""",
                     (name_en, name_ar, category, unit, price, cost, min_stock,
-                     pack_size, sub_unit, sub_price, existing["id"]),
+                     pack_size, sub_unit, sub_price, intl_barcode, expiry_date, existing["id"]),
                 )
                 if stock != int(existing["stock"]):
                     delta = stock - int(existing["stock"])
@@ -551,11 +574,11 @@ async def bulk_upload(file: UploadFile = File(...),
                 updated += 1
             else:
                 cur.execute(
-                    """INSERT INTO products (barcode, name_ar, name_en, category, unit,
-                       price, cost, stock, min_stock, pack_size, sub_unit, sub_price, branch_id)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (barcode, name_ar, name_en, category, unit,
-                     price, cost, stock, min_stock, pack_size, sub_unit, sub_price, branch_id),
+                    """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
+                       price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (barcode, intl_barcode, name_ar, name_en, category, unit,
+                     price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
                 )
                 new_id = cur.fetchone()["id"]
                 if stock > 0:

@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 type Product = {
   id: number
   barcode: string | null
+  international_barcode?: string | null
   name_ar: string
   name_en: string
   category: string | null
@@ -400,6 +401,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const { t } = useTranslation()
   const [f, setF] = useState({
     barcode: item?.barcode || '',
+    international_barcode: item?.international_barcode || '',
     name_ar: item?.name_ar || '',
     name_en: item?.name_en || '',
     category: item?.category || '',
@@ -426,6 +428,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
       const priceNum = parseFloat(f.price)
       const payload: any = {
         barcode: f.barcode || null,
+        international_barcode: f.international_barcode || null,
         name_ar: f.name_ar,
         name_en: f.name_en,
         category: f.category || null,
@@ -465,6 +468,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               <Wand2 size={13} /> {t('barcode_studio.open')}
             </button>
           </div>
+        </Field>
+        <Field label={t('inventory.f_international_barcode')}>
+          <input value={f.international_barcode} onChange={e => setF({ ...f, international_barcode: e.target.value })} className="input" />
         </Field>
         <Field label={t('inventory.f_category')}>
           <input
@@ -597,8 +603,11 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
 
 function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () => void; onSaved: () => void }) {
   const { t, i18n } = useTranslation()
+  const pack = item.pack_size && item.pack_size > 1 ? item.pack_size : 1
   const [mode, setMode] = useState<'add' | 'remove' | 'set'>('add')
   const [qty, setQty] = useState('')
+  const [boxes, setBoxes] = useState('')
+  const [subs, setSubs] = useState('')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -606,7 +615,9 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const n = parseInt(qty)
+    const n = pack > 1
+      ? (parseInt(boxes) || 0) * pack + (parseInt(subs) || 0)
+      : parseInt(qty)
     if (!n || n <= 0) { setError(t('inventory.err_qty') as string); return }
     if (!reason.trim()) { setError(t('inventory.err_reason') as string); return }
     let delta = mode === 'add' ? n : mode === 'remove' ? -n : (n - item.stock)
@@ -626,7 +637,11 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
     <Modal onClose={onClose} title={t('inventory.adjust_title')}>
       <div className="mb-4 p-3 bg-slate-50 rounded-lg">
         <div className="font-semibold">{i18n.language === 'ar' ? item.name_ar : item.name_en}</div>
-        <div className="text-sm text-slate-600">{t('inventory.current_stock')}: <span className="font-bold">{item.stock}</span></div>
+        <div className="text-sm text-slate-600">{t('inventory.current_stock')}: <span className="font-bold">{item.stock}</span>
+          {pack > 1 && (
+            <span className="text-slate-500"> ({Math.floor(item.stock / pack)} {item.unit} + {item.stock % pack} {item.sub_unit || t('inventory.sub_unit_word')})</span>
+          )}
+        </div>
       </div>
       <form onSubmit={submit} className="space-y-4">
         <div className="flex gap-2">
@@ -639,9 +654,20 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
             </button>
           ))}
         </div>
-        <Field label={mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')}>
-          <input type="number" required value={qty} onChange={e => setQty(e.target.value)} className="input" autoFocus />
-        </Field>
+        {pack > 1 ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={`${mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')} — ${item.unit}`}>
+              <input type="number" min={0} value={boxes} onChange={e => setBoxes(e.target.value)} className="input" autoFocus placeholder="0" />
+            </Field>
+            <Field label={item.sub_unit || t('inventory.sub_unit_word')}>
+              <input type="number" min={0} value={subs} onChange={e => setSubs(e.target.value)} className="input" placeholder="0" />
+            </Field>
+          </div>
+        ) : (
+          <Field label={mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')}>
+            <input type="number" required value={qty} onChange={e => setQty(e.target.value)} className="input" autoFocus />
+          </Field>
+        )}
         <Field label={t('inventory.reason') + ' *'}>
           <textarea required value={reason} onChange={e => setReason(e.target.value)} className="input min-h-20" />
         </Field>

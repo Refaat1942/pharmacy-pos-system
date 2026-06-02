@@ -38,7 +38,7 @@ export default function Sales() {
   const returnToRow = (r: ReturnRow): SalesRow => ({
     id: r.id,
     invoice_number: r.return_invoice_number,
-    type: 'return',
+    type: r.sale_type || 'return',
     payment_method: 'return',
     net_total: -Math.abs(r.total_returned),
     seller_id: r.seller_id || 0,
@@ -169,6 +169,9 @@ export default function Sales() {
     visa: t('sales.visa'),
     hybrid: t('sales.hybrid'),
     digital: t('sales.digital'),
+    instapay: t('payment.instapay'),
+    vodafone_cash: t('payment.vodafone_cash'),
+    account: t('payment.account'),
   }
 
   const typeLabel: Record<string, string> = {

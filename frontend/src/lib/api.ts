@@ -32,6 +32,7 @@ export default api
 export interface Product {
   id: number
   barcode: string
+  international_barcode?: string | null
   name_ar: string
   name_en: string
   category: string

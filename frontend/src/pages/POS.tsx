@@ -573,19 +573,19 @@ export default function POS() {
                                 value={item.discount_value || ''}
                                 onChange={(e) => setItemDiscount(item.product.id, item.discount_mode || 'amount', Math.max(0, parseFloat(e.target.value) || 0))}
                                 placeholder={t('pos.item_discount') as string}
-                                className="w-16 text-[11px] text-end border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:border-pharma-400 bg-white"
+                                className="w-20 text-xs text-end border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-pharma-400 bg-white"
                               />
-                              <div className="inline-flex bg-slate-100 rounded p-0.5">
+                              <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
                                 <button
                                   onClick={() => setItemDiscount(item.product.id, 'amount', item.discount_value || 0)}
-                                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${(item.discount_mode || 'amount') === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                                  className={`px-2.5 py-1 text-xs font-bold rounded ${(item.discount_mode || 'amount') === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
                                   title={t('pos.by_amount') as string}
                                 >
                                   {t('pos.egp')}
                                 </button>
                                 <button
                                   onClick={() => setItemDiscount(item.product.id, 'percent', item.discount_value || 0)}
-                                  className={`px-1.5 py-0.5 text-[10px] font-bold rounded ${item.discount_mode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                                  className={`px-2.5 py-1 text-xs font-bold rounded ${item.discount_mode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
                                   title={t('pos.by_percent') as string}
                                 >
                                   %
@@ -770,14 +770,14 @@ export default function POS() {
                 <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
                   <button
                     onClick={() => setInvoiceDiscountMode('amount')}
-                    className={`px-2 py-1 text-xs font-bold rounded ${invoiceDiscountMode === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 text-sm font-bold rounded ${invoiceDiscountMode === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
                     title={t('pos.by_amount') as string}
                   >
                     {t('pos.egp')}
                   </button>
                   <button
                     onClick={() => setInvoiceDiscountMode('percent')}
-                    className={`px-2 py-1 text-xs font-bold rounded ${invoiceDiscountMode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
+                    className={`px-3 py-1.5 text-sm font-bold rounded ${invoiceDiscountMode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
                     title={t('pos.by_percent') as string}
                   >
                     %

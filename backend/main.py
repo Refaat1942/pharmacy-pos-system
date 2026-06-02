@@ -345,8 +345,8 @@ def search_products(q: str = "",
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     search = f"%{q}%"
-    where = ["active = true", "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode = %s)"]
-    params = [search, search, q]
+    where = ["active = true", "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode = %s OR international_barcode = %s)"]
+    params = [search, search, q, q]
     if active_branch is not None:
         where.append("(branch_id = %s OR branch_id IS NULL)")
         params.append(active_branch)
@@ -390,6 +390,7 @@ def get_product(product_id: int, current_user=Depends(get_current_user)):
 
 class ProductCreate(BaseModel):
     barcode: Optional[str] = None
+    international_barcode: Optional[str] = None
     name_ar: Optional[str] = None
     name_en: str
     category: Optional[str] = None
@@ -412,9 +413,9 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
     try:
         branch_id = current_user.get("branch_id")
         cur.execute(
-            """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-            (req.barcode, req.name_ar, req.name_en, req.category, req.unit,
+            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (req.barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
              req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price),
         )
@@ -552,6 +553,9 @@ def create_sale(req: SaleRequest,
         subtotal = sum(i.quantity * i.unit_price for i in req.items)
         delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0
         net_total = subtotal - req.discount + delivery_fee
+
+        if req.type != "return" and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
+            raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
 
         cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
         count = cur.fetchone()["cnt"]
