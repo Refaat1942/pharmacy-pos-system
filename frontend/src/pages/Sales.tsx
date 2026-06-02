@@ -8,6 +8,7 @@ import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
 import type { TFunction } from 'i18next'
+import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
 
 type SalesRow = Invoice & { isReturn?: boolean }
 
@@ -71,6 +72,7 @@ export default function Sales() {
   const [sellerFilter, setSellerFilter] = useState('')
   const [clinicFilter, setClinicFilter] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('')
+  const [digitalPlatformFilter, setDigitalPlatformFilter] = useState('')
   const [invoiceSearch, setInvoiceSearch] = useState('')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [clinics, setClinics] = useState<Clinic[]>([])
@@ -109,6 +111,7 @@ export default function Sales() {
             seller_id: sellerFilter ? parseInt(sellerFilter) : undefined,
             clinic_id: clinicFilter ? parseInt(clinicFilter) : undefined,
             payment_method: paymentFilter || undefined,
+            digital_type: digitalPlatformFilter || undefined,
           })
     const retReq = includeReturns
       ? returnsAPI.list({
@@ -157,6 +160,7 @@ export default function Sales() {
     setSellerFilter('')
     setClinicFilter('')
     setPaymentFilter('')
+    setDigitalPlatformFilter('')
     setTimeout(loadInvoices, 0)
   }
 
@@ -225,6 +229,20 @@ export default function Sales() {
     account: t('payment.account'),
   }
 
+  const platformLabel: Record<string, string> = useMemo(
+    () => ({
+      talabat: t('sales.talabat'),
+      vezeeta: t('sales.vezeeta'),
+      other_digital: t('sales.other_digital'),
+    }),
+    [t],
+  )
+
+  const paymentLabelsWithPlatform = useMemo(
+    () => ({ ...paymentLabel, ...platformLabel }),
+    [paymentLabel, platformLabel],
+  )
+
   const typeLabel: Record<string, string> = {
     cash: t('sales.cash_sale'),
     delivery: t('sales.delivery'),
@@ -246,7 +264,10 @@ export default function Sales() {
         label: t('sales.payment_detail'),
         value: (r) => (r.isReturn ? '' : paymentBreakdown(r, t, paymentLabel)),
       },
-      { label: t('sales.digital_platform'), value: (r) => (r.digital_type ? paymentLabel[r.digital_type] || r.digital_type : '') },
+      {
+        label: t('sales.digital_platform'),
+        value: (r) => (r.digital_type ? platformLabel[r.digital_type] || r.digital_type : ''),
+      },
       { label: t('sales.seller'), value: (r) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '' },
       { label: t('sales.customer'), value: (r) => customerDisplay(r) },
       { label: t('sales.customer_phone'), value: (r) => phoneDisplay(r) },
@@ -307,6 +328,7 @@ export default function Sales() {
     invoice_number: (r: SalesRow) => r.invoice_number,
     created_at: (r: SalesRow) => r.created_at,
     type: (r: SalesRow) => typeLabel[r.type] || r.type,
+    digital_type: (r: SalesRow) => (r.digital_type ? platformLabel[r.digital_type] || r.digital_type : ''),
     payment: (r: SalesRow) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method),
     seller: (r: SalesRow) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '',
     customer: (r: SalesRow) => customerDisplay(r),
@@ -446,6 +468,19 @@ export default function Sales() {
                 <option value="account">{t('payment.account')}</option>
               </select>
             </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.filter_platform')}</label>
+              <select
+                value={digitalPlatformFilter}
+                onChange={(e) => setDigitalPlatformFilter(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm min-w-[8rem]"
+              >
+                <option value="">{t('common.all')}</option>
+                {DIGITAL_PLATFORMS.map((p) => (
+                  <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
+                ))}
+              </select>
+            </div>
             <button onClick={loadInvoices}
               className="bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">
               {t('sales.apply')}
@@ -488,6 +523,7 @@ export default function Sales() {
                       <SortTh k="invoice_number" sort={sort} onToggle={toggle} align="start">{t('sales.invoice_no')}</SortTh>
                       <SortTh k="created_at" sort={sort} onToggle={toggle} align="start">{t('sales.date')}</SortTh>
                       <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('sales.sale_type')}</SortTh>
+                      <SortTh k="digital_type" sort={sort} onToggle={toggle} align="start">{t('sales.digital_platform')}</SortTh>
                       <SortTh k="payment" sort={sort} onToggle={toggle} align="start">{t('sales.payment_method')}</SortTh>
                       <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.payment_detail')}</th>
                       <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.seller')}</SortTh>
@@ -531,6 +567,17 @@ export default function Sales() {
                           {typeLabel[inv.type] || inv.type}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
+                          {inv.digital_type ? (
+                            <span
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(inv.digital_type)}`}
+                            >
+                              {platformLabel[inv.digital_type] || inv.digital_type}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap">
                           <span
                             className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                               inv.isReturn
@@ -543,8 +590,8 @@ export default function Sales() {
                         </td>
                         <td className="px-3 py-3 text-[11px] text-gray-600 max-w-[14rem]">
                           {inv.isReturn ? '—' : (
-                            <span className="line-clamp-2" title={paymentBreakdown(inv, t, paymentLabel)}>
-                              {paymentBreakdown(inv, t, paymentLabel)}
+                            <span className="line-clamp-2" title={paymentBreakdown(inv, t, paymentLabelsWithPlatform)}>
+                              {paymentBreakdown(inv, t, paymentLabelsWithPlatform)}
                             </span>
                           )}
                         </td>
@@ -671,7 +718,15 @@ export default function Sales() {
                   />
                   <DetailRow
                     label={t('sales.digital_platform')}
-                    value={inv.digital_type ? (paymentLabel[inv.digital_type] || inv.digital_type) : null}
+                    value={
+                      inv.digital_type ? (
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(inv.digital_type)}`}
+                        >
+                          {platformLabel[inv.digital_type] || inv.digital_type}
+                        </span>
+                      ) : null
+                    }
                   />
                   <DetailRow label={t('sales.status')} value={inv.status === 'completed' ? t('sales.completed') : t('sales.returned')} />
                 </div>

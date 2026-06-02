@@ -944,6 +944,7 @@ def list_sales(limit: int = 50, offset: int = 0,
                delivery_status: Optional[str] = None,
                delivery_person_id: Optional[int] = None,
                payment_method: Optional[str] = None,
+               digital_type: Optional[str] = None,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
@@ -985,6 +986,9 @@ def list_sales(limit: int = 50, offset: int = 0,
     if payment_method:
         conds.append("i.payment_method = %s")
         params.append(payment_method)
+    if digital_type:
+        conds.append("i.digital_type = %s")
+        params.append(digital_type)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(

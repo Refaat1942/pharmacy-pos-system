@@ -311,7 +311,8 @@
     "digital_account_empty": "No digital on-account sales in this period",
     "digital_platform": "Platform",
     "invoice_no": "Invoice #",
-    "sale_date": "Date"
+    "sale_date": "Date",
+    "filter_platform": "Platform"
   },
   "settings": {
     "title": "Settings",
@@ -826,7 +827,8 @@
     "notes": "Notes",
     "detail_title": "Sale details",
     "items_count": "Items",
-    "filter_payment": "Payment"
+    "filter_payment": "Payment",
+    "filter_platform": "Platform"
   },
   "branch": {
     "switch": "Switch Branch",

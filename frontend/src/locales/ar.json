@@ -468,7 +468,8 @@
     "digital_account_empty": "لا توجد مبيعات رقمية آجلة في هذه الفترة",
     "digital_platform": "المنصة",
     "invoice_no": "رقم الفاتورة",
-    "sale_date": "التاريخ"
+    "sale_date": "التاريخ",
+    "filter_platform": "المنصة"
   },
   "settings": {
     "title": "الإعدادات",
@@ -826,7 +827,8 @@
     "notes": "ملاحظات",
     "detail_title": "تفاصيل البيع",
     "items_count": "الأصناف",
-    "filter_payment": "الدفع"
+    "filter_payment": "الدفع",
+    "filter_platform": "المنصة"
   },
   "branch": {
     "switch": "تبديل الفرع",

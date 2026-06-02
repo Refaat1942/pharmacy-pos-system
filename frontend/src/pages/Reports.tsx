@@ -10,6 +10,7 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
 
 type PnL = {
   date_from: string; date_to: string
@@ -61,11 +62,20 @@ const firstOfMonth = () => {
 const fmt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtInt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')
 
+function PlatformBadge({ platformId, label }: { platformId: string; label: string }) {
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(platformId)}`}>
+      {label}
+    </span>
+  )
+}
+
 export default function Reports() {
   const { t } = useTranslation()
   const { user, hasFeature } = useAuth()
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(today())
+  const [digitalPlatformFilter, setDigitalPlatformFilter] = useState('')
 
   const [pnl, setPnl] = useState<PnL | null>(null)
   const [cats, setCats] = useState<CatRow[]>([])
@@ -92,7 +102,12 @@ export default function Reports() {
         api.get('/reports/sales-by-payment', { params }),
         api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
         api.get('/reports/monthly-trend', { params: { months: 12 } }),
-        api.get('/reports/digital-platform-account', { params }),
+        api.get('/reports/digital-platform-account', {
+          params: {
+            ...params,
+            ...(digitalPlatformFilter ? { digital_type: digitalPlatformFilter } : {}),
+          },
+        }),
       ]
       const clinicIdx = showClinics ? reqs.length : -1
       if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
@@ -159,6 +174,19 @@ export default function Reports() {
             <div>
               <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.filter_platform')}</label>
+              <select
+                value={digitalPlatformFilter}
+                onChange={(e) => setDigitalPlatformFilter(e.target.value)}
+                className="input text-sm min-w-[9rem]"
+              >
+                <option value="">{t('common.all')}</option>
+                {DIGITAL_PLATFORMS.map((p) => (
+                  <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
+                ))}
+              </select>
             </div>
             <button onClick={load} disabled={loading} className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
               {loading ? t('common.loading') : t('reports.apply')}
@@ -314,7 +342,11 @@ export default function Reports() {
               <SectionHead
                 icon={<Smartphone size={18} />}
                 title={t('reports.digital_account_title')}
-                subtitle={`${digitalAccount.date_from} → ${digitalAccount.date_to}`}
+                subtitle={`${digitalAccount.date_from} → ${digitalAccount.date_to}${
+                  digitalPlatformFilter
+                    ? ` · ${t(DIGITAL_PLATFORMS.find((p) => p.id === digitalPlatformFilter)?.labelKey || 'sales.talabat')}`
+                    : ''
+                }`}
                 inline
               />
               <div className="flex flex-wrap gap-2">
@@ -361,7 +393,13 @@ export default function Reports() {
             <DataTable
               empty={t('reports.digital_account_empty')}
               cols={[
-                { key: 'platform_name', label: t('reports.digital_platform') },
+                {
+                  key: 'platform_name',
+                  label: t('reports.digital_platform'),
+                  render: (r: DigitalPlatformRow) => (
+                    <PlatformBadge platformId={r.digital_type} label={r.platform_name} />
+                  ),
+                },
                 { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r: DigitalPlatformRow) => fmtInt(r.invoice_count) },
                 { key: 'charged', label: t('reports.digital_account_charged'), align: 'end', render: (r: DigitalPlatformRow) => fmt(r.charged) },
                 { key: 'paid', label: t('reports.digital_account_paid'), align: 'end', render: (r: DigitalPlatformRow) => fmt(r.paid) },
@@ -378,7 +416,13 @@ export default function Reports() {
                 cols={[
                   { key: 'invoice_number', label: t('reports.invoice_no') },
                   { key: 'created_at', label: t('reports.sale_date'), render: (r: DigitalInvoiceRow) => r.created_at?.slice(0, 16).replace('T', ' ') },
-                  { key: 'platform_name', label: t('reports.digital_platform') },
+                  {
+                    key: 'platform_name',
+                    label: t('reports.digital_platform'),
+                    render: (r: DigitalInvoiceRow) => (
+                      <PlatformBadge platformId={r.digital_type} label={r.platform_name} />
+                    ),
+                  },
                   { key: 'branch', label: t('reports.branch'), render: (r: DigitalInvoiceRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
                   { key: 'net_total', label: t('reports.digital_account_charged'), align: 'end', render: (r: DigitalInvoiceRow) => fmt(r.net_total) },
                   { key: 'paid_total', label: t('reports.digital_account_paid'), align: 'end', render: (r: DigitalInvoiceRow) => fmt(r.paid_total) },
