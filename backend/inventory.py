@@ -362,19 +362,30 @@ def list_movements(product_id: Optional[int] = None,
 
 @router.get("/velocity")
 def velocity_classification(days: int = 90,
+                            date_from: Optional[str] = None,
+                            date_to: Optional[str] = None,
                             current_user=Depends(get_current_user)):
     """
-    Classify items by sales velocity over the last N days.
+    Classify items by sales velocity over a period.
+    Uses a custom [date_from, date_to] range when both are supplied,
+    otherwise the last N days.
     - fast:  >= 10 units sold
     - slow:  1-9 units sold
     - dead:  0 units sold
     """
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if date_from and date_to:
+        sold_filter = ("WHERE i.created_at >= %s::date "
+                       "AND i.created_at < (%s::date + INTERVAL '1 day')")
+        filter_params = [date_from, date_to]
+    else:
+        sold_filter = "WHERE i.created_at >= NOW() - (%s * INTERVAL '1 day')"
+        filter_params = [days]
     cur.execute(
-        """SELECT p.id, p.name_ar, p.name_en, p.barcode, p.stock, p.unit, p.price,
+        f"""SELECT p.id, p.name_ar, p.name_en, p.barcode, p.stock, p.unit, p.price,
                   COALESCE(SUM(ii.quantity) FILTER (
-                      WHERE i.created_at >= NOW() - (%s * INTERVAL '1 day')
+                      {sold_filter}
                   ), 0) AS sold_qty
            FROM products p
            LEFT JOIN invoice_items ii ON ii.product_id = p.id
@@ -382,7 +393,7 @@ def velocity_classification(days: int = 90,
            WHERE p.active = true
            GROUP BY p.id
            ORDER BY sold_qty DESC""",
-        [days],
+        filter_params,
     )
     rows = cur.fetchall()
     conn.close()

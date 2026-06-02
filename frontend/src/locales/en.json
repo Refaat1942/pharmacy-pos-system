@@ -480,7 +480,8 @@
     "updated_count": "updated",
     "errors": "errors",
     "show_errors": "Show error details",
-    "download_failed": "Could not download the template. Please try again."
+    "download_failed": "Could not download the template. Please try again.",
+    "custom_range": "Custom range"
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
