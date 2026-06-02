@@ -29,6 +29,15 @@ def _require_admin_or_branch(user):
         raise HTTPException(403, "Admin or branch user only")
 
 
+def _require_hr_access(user):
+    if user.get('role') in ('admin', 'branch'):
+        return
+    perms = user.get('permissions') or []
+    if isinstance(perms, (list, tuple)) and 'hr' in perms:
+        return
+    raise HTTPException(403, "HR access required")
+
+
 # ─── Employees ─────────────────────────────────────────────────────────────
 class EmployeeIn(BaseModel):
     name: str = Field(min_length=1)
@@ -194,6 +203,18 @@ class AttendanceIn(BaseModel):
     notes: Optional[str] = None
 
 
+@router.get("/attendance-roster")
+def attendance_roster(current_user=Depends(get_current_user)):
+    _require_hr_access(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, name FROM employees WHERE active = TRUE ORDER BY name")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close(); conn.close()
+
+
 def _calc_hours(ci: Optional[time], co: Optional[time]) -> Optional[float]:
     if not ci or not co: return None
     mins = (co.hour * 60 + co.minute) - (ci.hour * 60 + ci.minute)
@@ -208,7 +229,7 @@ def list_attendance(
     employee_id: Optional[int] = None,
     current_user=Depends(get_current_user),
 ):
-    _require_admin_or_branch(current_user)
+    _require_hr_access(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -229,7 +250,7 @@ def list_attendance(
 
 @router.post("/attendance")
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
-    _require_admin_or_branch(current_user)
+    _require_hr_access(current_user)
     hours = _calc_hours(body.check_in, body.check_out)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

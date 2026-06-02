@@ -28,6 +28,7 @@ export default function HR() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const isBranch = user?.role === 'branch'
+  const hasHrPerm = Array.isArray(user?.permissions) && (user!.permissions as string[]).includes('hr')
   const allowedTabs = isAdmin
     ? (['employees', 'attendance', 'payroll', 'performance'] as const)
     : (['attendance'] as const)
@@ -35,7 +36,7 @@ export default function HR() {
     isAdmin ? 'employees' : 'attendance'
   )
 
-  if (!isAdmin && !isBranch) {
+  if (!isAdmin && !isBranch && !hasHrPerm) {
     return (
       <Layout>
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
@@ -210,7 +211,7 @@ function AttendanceTab() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [employees, setEmployees] = useState<Employee[]>([])
+  const [employees, setEmployees] = useState<{ id: number; name: string }[]>([])
   const [rows, setRows] = useState<Att[]>([])
   const [date, setDate] = useState(today())
   const [showAdd, setShowAdd] = useState(false)
@@ -218,7 +219,7 @@ function AttendanceTab() {
 
   const load = async () => {
     const [e, a] = await Promise.all([
-      api.get('/hr/employees', { params: { active_only: true } }),
+      api.get('/hr/attendance-roster'),
       api.get('/hr/attendance', { params: { date_from: date, date_to: date } }),
     ])
     setEmployees(e.data); setRows(a.data)

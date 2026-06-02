@@ -1,1 +1,2 @@
 - [Clinic Prescription Portal](clinic-prescription-portal.md) — public no-auth `/api/clinic/{slug}/{token}` resolves tenant by slug; prescription branch predicate is the access control (IDOR guard).
+- [HR permissions & tenant JWT](hr-permissions-and-jwt.md) — login JWT lacked `permissions`; HR-perm users get attendance-only via `_require_hr_access` + slim `/hr/attendance-roster`, never the full employees list.

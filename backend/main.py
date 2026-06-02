@@ -214,6 +214,7 @@ def login(req: LoginRequest, request: Request):
         "name_ar": user["name_ar"],
         "name_en": user["name_en"],
         "branch_id": user["branch_id"],
+        "permissions": user.get("permissions"),
     })
     return {
         "token": token,

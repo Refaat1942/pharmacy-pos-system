@@ -62,7 +62,10 @@ export default function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV.filter((n) => {
           if (n.adminOnly && !isAdmin) return false
-          if (n.roles && !n.roles.includes(user?.role || '')) return false
+          if (n.roles && !n.roles.includes(user?.role || '')) {
+            const permittedByUser = !!(userPerms && n.feature && userPerms.has(n.feature))
+            if (!(n.feature === 'hr' && permittedByUser)) return false
+          }
           if (isBranch && (!n.feature || !BRANCH_ALLOWED.has(n.feature))) return false
           if (n.feature && !hasFeature(n.feature)) return false
           if (userPerms && n.feature && !userPerms.has(n.feature)) return false
