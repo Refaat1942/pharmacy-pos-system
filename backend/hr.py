@@ -80,6 +80,34 @@ def _require_hr_tab(user, tab: str) -> None:
     raise HTTPException(status_code=403, detail=f"HR access required for {tab}")
 
 
+def _can_manage_employees(user) -> bool:
+    if user.get("role") == "admin":
+        return True
+    return _has_hr_tab(user, "employees")
+
+
+def _require_manage_employees(user) -> None:
+    if _can_manage_employees(user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="You are not authorized to use this feature",
+    )
+
+
+def _can_record_attendance(user) -> bool:
+    return user.get("role") in ("admin", "branch")
+
+
+def _require_record_attendance(user) -> None:
+    if _can_record_attendance(user):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="You are not authorized to use this feature",
+    )
+
+
 def _require_hr_access(user):
     """Any HR module access (legacy endpoints shared across tabs)."""
     if user.get("role") in ("admin", "branch"):
@@ -125,7 +153,7 @@ def list_employees(active_only: bool = False, current_user=Depends(get_current_u
 
 @router.post("/employees")
 def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
-    _require_hr_tab(current_user, "employees")
+    _require_manage_employees(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -216,7 +244,7 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
 
 @router.put("/employees/{eid}")
 def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current_user)):
-    _require_hr_tab(current_user, "employees")
+    _require_manage_employees(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -235,7 +263,7 @@ def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current
 
 @router.delete("/employees/{eid}")
 def delete_employee(eid: int, current_user=Depends(get_current_user)):
-    _require_hr_tab(current_user, "employees")
+    _require_manage_employees(current_user)
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -325,7 +353,7 @@ def list_attendance(
 
 @router.post("/attendance")
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
-    _require_hr_tab(current_user, "attendance")
+    _require_record_attendance(current_user)
     hours = _calc_hours(body.check_in, body.check_out)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

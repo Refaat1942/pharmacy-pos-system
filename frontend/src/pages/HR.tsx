@@ -5,7 +5,8 @@ import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { allowedHrTabs, canAccessHr, hasHrTab } from '../lib/hrAccess'
+import { allowedHrTabs, canAccessHr, canManageEmployees, canRecordAttendance, hasHrTab } from '../lib/hrAccess'
+import HrUnauthorized from '../components/HrUnauthorized'
 import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
@@ -67,10 +68,20 @@ export default function HR() {
           ))}
         </div>
 
-        {tab === 'employees' && hasHrTab(user, 'employees') && <EmployeesTab />}
-        {tab === 'attendance' && hasHrTab(user, 'attendance') && <AttendanceTab />}
-        {tab === 'payroll' && hasHrTab(user, 'payroll') && <PayrollTab />}
-        {tab === 'performance' && hasHrTab(user, 'performance') && <PerformanceTab />}
+        {tab === 'employees' && (
+          hasHrTab(user, 'employees')
+            ? (canManageEmployees(user) ? <EmployeesTab /> : <HrUnauthorized />)
+            : <HrUnauthorized />
+        )}
+        {tab === 'attendance' && (
+          hasHrTab(user, 'attendance') ? <AttendanceTab /> : <HrUnauthorized />
+        )}
+        {tab === 'payroll' && (
+          hasHrTab(user, 'payroll') ? <PayrollTab /> : <HrUnauthorized />
+        )}
+        {tab === 'performance' && (
+          hasHrTab(user, 'performance') ? <PerformanceTab /> : <HrUnauthorized />
+        )}
       </div>
     </Layout>
   )
@@ -78,6 +89,8 @@ export default function HR() {
 
 function EmployeesTab() {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const manage = canManageEmployees(user)
   const [rows, setRows] = useState<Employee[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [editing, setEditing] = useState<Partial<Employee> | null>(null)
@@ -126,9 +139,13 @@ function EmployeesTab() {
   }), [])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
+  if (!manage) {
+    return <HrUnauthorized />
+  }
+
   return (
     <div className="space-y-3">
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 flex-wrap">
         <a href="/clock" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
           <QrCode size={14} /> {t('hr.open_clock')}
         </a>
@@ -234,6 +251,7 @@ function AttendanceTab() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const mayRecord = canRecordAttendance(user)
   const [employees, setEmployees] = useState<{ id: number; name: string }[]>([])
   const [rows, setRows] = useState<Att[]>([])
   const [date, setDate] = useState(today())
@@ -286,15 +304,19 @@ function AttendanceTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.date')}</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input text-sm" />
         </div>
-        <button onClick={() => { setForm({ ...form, work_date: date }); setShowAdd(true) }} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
-          <CalIcon size={14} /> {t('hr.record_attendance')}
-        </button>
+        {mayRecord ? (
+          <button onClick={() => { setForm({ ...form, work_date: date }); setShowAdd(true) }} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
+            <CalIcon size={14} /> {t('hr.record_attendance')}
+          </button>
+        ) : null}
       </div>
+
+      {!mayRecord && <HrUnauthorized />}
 
       <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -345,7 +367,7 @@ function AttendanceTab() {
         </table>
       </div>
 
-      {showAdd && (
+      {mayRecord && showAdd && (
         <Modal onClose={() => setShowAdd(false)} title={t('hr.record_attendance')}>
           <div className="space-y-3">
             <Field label={t('hr.employee')}>

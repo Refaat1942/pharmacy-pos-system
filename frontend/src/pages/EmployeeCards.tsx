@@ -5,7 +5,8 @@ import JsBarcode from 'jsbarcode'
 import { Printer } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { hasHrTab } from '../lib/hrAccess'
+import { canManageEmployees } from '../lib/hrAccess'
+import HrUnauthorized from '../components/HrUnauthorized'
 import { Navigate } from 'react-router-dom'
 
 type Employee = {
@@ -56,8 +57,12 @@ export default function EmployeeCards() {
   }, [ready])
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (!hasHrTab(user, 'employees')) {
-    return <div className="p-10 text-center text-slate-500">{t('hr.admin_only')}</div>
+  if (!canManageEmployees(user)) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-6 flex items-center justify-center">
+        <HrUnauthorized className="max-w-lg w-full" />
+      </div>
+    )
   }
 
   const pharmaName = (i18n.language === 'ar' ? profile?.name_ar : profile?.name_en) || 'Fratelanza'

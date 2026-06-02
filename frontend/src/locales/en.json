@@ -176,6 +176,8 @@
     "title": "HR & Payroll",
     "subtitle": "Employees, attendance, monthly salary slips",
     "admin_only": "HR module is admin-only",
+    "not_authorized_title": "Not authorized",
+    "not_authorized_feature": "You are not authorized to use this feature. Ask an administrator to grant HR — Employees or use the attendance clock screen for check-in/out.",
     "tab_employees": "Employees",
     "tab_attendance": "Attendance",
     "tab_payroll": "Payroll",
