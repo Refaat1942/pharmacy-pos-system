@@ -852,6 +852,7 @@ def list_sales(limit: int = 50, offset: int = 0,
                seller_id: Optional[int] = None,
                clinic_id: Optional[int] = None,
                delivery_status: Optional[str] = None,
+               delivery_person_id: Optional[int] = None,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
@@ -884,6 +885,12 @@ def list_sales(limit: int = 50, offset: int = 0,
         else:
             conds.append("i.delivery_status = %s")
             params.append(delivery_status)
+    if delivery_person_id is not None:
+        if delivery_person_id == 0:
+            conds.append("i.delivery_person_id IS NULL")
+        else:
+            conds.append("i.delivery_person_id = %s")
+            params.append(delivery_person_id)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(

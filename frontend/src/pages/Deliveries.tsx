@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Truck, PackageCheck, RotateCcw } from 'lucide-react'
+import { Loader2, Truck, PackageCheck, RotateCcw, Wallet } from 'lucide-react'
 import Layout from '../components/Layout'
-import { salesAPI } from '../lib/api'
+import { employeesAPI, salesAPI } from '../lib/api'
 import type { Invoice } from '../lib/api'
 import i18n from '../lib/i18n'
 
@@ -19,13 +19,22 @@ function statusClasses(s: string | null | undefined) {
   }
 }
 
+function cashCollectedOnDelivery(inv: Invoice): number {
+  if (inv.payment_method !== 'cash') return 0
+  const cash = Number(inv.cash_amount) || 0
+  if (cash > 0) return cash
+  return Number(inv.net_total) || 0
+}
+
 export default function Deliveries() {
   const { t } = useTranslation()
   const lang = i18n.language
 
   const [rows, setRows] = useState<Invoice[]>([])
+  const [drivers, setDrivers] = useState<{ id: number; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('pending')
+  const [driverFilter, setDriverFilter] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
 
   const fmt = (n: number | null | undefined) =>
@@ -33,18 +42,51 @@ export default function Deliveries() {
   const fmtDT = (s: string) =>
     new Date(s).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })
 
+  const driverIdParam = driverFilter === '' ? undefined : Number(driverFilter)
+
   const load = () => {
     setLoading(true)
     salesAPI
-      .list({ delivery_queue: true, delivery_status: statusFilter || undefined, limit: 200 })
+      .list({
+        delivery_queue: true,
+        delivery_status: statusFilter || undefined,
+        delivery_person_id: driverIdParam,
+        limit: 500,
+      })
       .then((r) => setRows(r.data))
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
+    employeesAPI.deliveryRoster().then((r) => setDrivers(r.data)).catch(() => setDrivers([]))
+  }, [])
+
+  useEffect(() => {
     load()
-  }, [statusFilter])
+  }, [statusFilter, driverFilter])
+
+  const summary = useMemo(() => {
+    if (driverFilter === '') return null
+    let deliveryFees = 0
+    let cashCollected = 0
+    let salesTotal = 0
+    for (const r of rows) {
+      deliveryFees += Number(r.delivery_fee) || 0
+      cashCollected += cashCollectedOnDelivery(r)
+      salesTotal += Number(r.net_total) || 0
+    }
+    return {
+      orders: rows.length,
+      deliveryFees,
+      cashCollected,
+      salesTotal,
+      driverName:
+        driverFilter === '0'
+          ? t('deliveries.unassigned_driver')
+          : drivers.find((d) => String(d.id) === driverFilter)?.name || '—',
+    }
+  }, [rows, driverFilter, drivers, t])
 
   const setStatus = async (id: number, status: string) => {
     setBusyId(id)
@@ -66,20 +108,70 @@ export default function Deliveries() {
             <h1 className="text-2xl font-bold text-slate-800">{t('deliveries.title')}</h1>
             <p className="text-sm text-slate-500 mt-0.5">{t('deliveries.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{t('deliveries.filter_status')}</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
-            >
-              <option value="">{t('deliveries.all')}</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>{t(`deliveries.${s}`)}</option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">{t('deliveries.filter_driver')}</span>
+              <select
+                value={driverFilter}
+                onChange={(e) => setDriverFilter(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white min-w-[10rem]"
+              >
+                <option value="">{t('deliveries.all_drivers')}</option>
+                <option value="0">{t('deliveries.unassigned_driver')}</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={String(d.id)}>{d.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">{t('deliveries.filter_status')}</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              >
+                <option value="">{t('deliveries.all')}</option>
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>{t(`deliveries.${s}`)}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
+
+        {driverFilter === '' ? (
+          <p className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            {t('deliveries.select_driver_for_summary')}
+          </p>
+        ) : summary && !loading && (
+          <div className="bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Wallet className="text-teal-700" size={20} />
+              <h2 className="font-semibold text-teal-900">
+                {t('deliveries.driver_summary_title')} — {summary.driverName}
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-white/80 rounded-xl px-3 py-2.5 border border-teal-100">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('deliveries.driver_summary_orders')}</p>
+                <p className="text-xl font-bold text-slate-800 tabular-nums">{summary.orders}</p>
+              </div>
+              <div className="bg-white/80 rounded-xl px-3 py-2.5 border border-teal-200">
+                <p className="text-[11px] text-teal-700 uppercase tracking-wide font-medium">{t('deliveries.driver_summary_delivery_fees')}</p>
+                <p className="text-xl font-bold text-teal-800 tabular-nums">{fmt(summary.deliveryFees)}</p>
+              </div>
+              <div className="bg-white/80 rounded-xl px-3 py-2.5 border border-amber-200">
+                <p className="text-[11px] text-amber-800 uppercase tracking-wide font-medium">{t('deliveries.driver_summary_cash_collected')}</p>
+                <p className="text-xl font-bold text-amber-900 tabular-nums">{fmt(summary.cashCollected)}</p>
+              </div>
+              <div className="bg-white/80 rounded-xl px-3 py-2.5 border border-slate-200">
+                <p className="text-[11px] text-slate-500 uppercase tracking-wide">{t('deliveries.driver_summary_sales_total')}</p>
+                <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(summary.salesTotal)}</p>
+              </div>
+            </div>
+            <p className="text-xs text-teal-800/80 mt-3">{t('deliveries.driver_summary_hint')}</p>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 min-w-0">
           {loading ? (
@@ -100,6 +192,7 @@ export default function Deliveries() {
                   <th className="px-4 py-3 text-start">{t('deliveries.phone')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.address')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.driver')}</th>
+                  <th className="px-4 py-3 text-end">{t('deliveries.delivery_fee_col')}</th>
                   <th className="px-4 py-3 text-end">{t('deliveries.total')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.created')}</th>
                   <th className="px-4 py-3 text-center">{t('deliveries.status')}</th>
@@ -122,6 +215,7 @@ export default function Deliveries() {
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.delivery_customer_phone || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 min-w-[12rem] max-w-[24rem]">{r.delivery_address || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{r.delivery_person_name || '—'}</td>
+                      <td className="px-4 py-3 text-end font-mono text-teal-700">{fmt(r.delivery_fee)}</td>
                       <td className="px-4 py-3 text-end font-mono text-slate-700">{fmt(r.net_total)}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDT(r.created_at)}</td>
                       <td className="px-4 py-3 text-center">

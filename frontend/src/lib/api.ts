@@ -128,6 +128,7 @@ export interface Invoice {
   branch_name_ar?: string | null
   branch_address?: string | null
   branch_phone?: string | null
+  delivery_person_id?: number | null
   delivery_person_name?: string | null
   delivery_address?: string | null
   delivery_fee?: number | null
@@ -229,6 +230,7 @@ export const salesAPI = {
     delivery_queue?: boolean;
     seller_id?: number; clinic_id?: number;
     delivery_status?: string;
+    delivery_person_id?: number;
   } = {}) => api.get<Invoice[]>('/sales', { params }),
   setDeliveryStatus: (invoiceId: number, status: string) =>
     api.post<Invoice>(`/sales/${invoiceId}/delivery-status`, { status }),
