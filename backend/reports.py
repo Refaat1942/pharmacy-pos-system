@@ -72,13 +72,32 @@ def profit_and_loss(
               COALESCE(SUM(i.net_total), 0)::float AS gross_revenue,
               COALESCE(SUM(i.discount), 0)::float AS total_discount,
               COALESCE(SUM(i.subtotal), 0)::float AS subtotal,
-              COUNT(*)::int AS invoice_count
+              COALESCE(SUM(COALESCE(i.delivery_fee, 0)), 0)::float AS delivery_fees,
+              COUNT(*)::int AS invoice_count,
+              COALESCE(SUM(CASE WHEN i.payment_method = 'cash' THEN i.net_total ELSE 0 END), 0)::float AS cash_revenue,
+              COALESCE(SUM(CASE WHEN i.payment_method = 'visa' THEN i.net_total ELSE 0 END), 0)::float AS visa_revenue,
+              COALESCE(SUM(CASE WHEN i.payment_method = 'hybrid' THEN i.net_total ELSE 0 END), 0)::float AS hybrid_revenue,
+              COALESCE(SUM(CASE WHEN i.payment_method = 'digital' THEN i.net_total ELSE 0 END), 0)::float AS digital_revenue,
+              COALESCE(SUM(CASE WHEN i.payment_method = 'account' THEN i.net_total ELSE 0 END), 0)::float AS account_revenue,
+              COALESCE(SUM(CASE WHEN i.type = 'delivery' THEN 1 ELSE 0 END), 0)::int AS delivery_orders,
+              COALESCE(SUM(CASE WHEN i.type = 'cash' THEN 1 ELSE 0 END), 0)::int AS walk_in_orders,
+              COALESCE(SUM(CASE WHEN i.type = 'digital' THEN 1 ELSE 0 END), 0)::int AS digital_orders
             FROM invoices i
             WHERE i.status = 'completed'
               AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
               {bf.replace('branch_id', 'i.branch_id')}
         """, [df, dt] + bp)
         sales = dict(cur.fetchone())
+
+        cur.execute(f"""
+            SELECT COALESCE(SUM(ii.quantity), 0)::int AS items_sold
+            FROM invoice_items ii
+            JOIN invoices i ON i.id = ii.invoice_id
+            WHERE i.status = 'completed'
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+        """, [df, dt] + bp)
+        items_sold = int(cur.fetchone()['items_sold'])
 
         # COGS via invoice_items joined to products
         cur.execute(f"""
@@ -105,19 +124,35 @@ def profit_and_loss(
         net_revenue = sales['gross_revenue'] - returns['returns_value']
         gross_profit = net_revenue - cogs
         margin_pct = (gross_profit / net_revenue * 100) if net_revenue > 0 else 0
+        inv_count = sales['invoice_count'] or 0
+        avg_invoice = (sales['gross_revenue'] / inv_count) if inv_count else 0
+        discount_pct = (sales['total_discount'] / sales['subtotal'] * 100) if sales['subtotal'] > 0 else 0
 
         return {
             "date_from": str(df),
             "date_to": str(dt),
             "gross_revenue": round(sales['gross_revenue'], 2),
+            "subtotal": round(sales['subtotal'], 2),
             "total_discount": round(sales['total_discount'], 2),
+            "discount_pct": round(discount_pct, 2),
+            "delivery_fees": round(sales['delivery_fees'], 2),
             "returns_value": round(returns['returns_value'], 2),
             "net_revenue": round(net_revenue, 2),
             "cogs": round(cogs, 2),
             "gross_profit": round(gross_profit, 2),
             "margin_pct": round(margin_pct, 2),
-            "invoice_count": sales['invoice_count'],
+            "invoice_count": inv_count,
             "returns_count": returns['returns_count'],
+            "items_sold": items_sold,
+            "avg_invoice": round(avg_invoice, 2),
+            "cash_revenue": round(sales['cash_revenue'], 2),
+            "visa_revenue": round(sales['visa_revenue'], 2),
+            "hybrid_revenue": round(sales['hybrid_revenue'], 2),
+            "digital_revenue": round(sales['digital_revenue'], 2),
+            "account_revenue": round(sales['account_revenue'], 2),
+            "delivery_orders": sales['delivery_orders'],
+            "walk_in_orders": sales['walk_in_orders'],
+            "digital_orders": sales['digital_orders'],
         }
     finally:
         cur.close()
@@ -144,7 +179,10 @@ def sales_by_category(
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
               SUM(ii.quantity * COALESCE(p.cost, 0))::float AS cost,
-              (SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0)))::float AS profit
+              (SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0)))::float AS profit,
+              CASE WHEN SUM(ii.total) > 0
+                   THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0))) / SUM(ii.total) * 100)::float
+                   ELSE 0 END AS margin_pct
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
             LEFT JOIN products p ON p.id = ii.product_id
@@ -178,18 +216,36 @@ def sales_by_branch(
               b.id AS branch_id,
               b.name_en, b.name_ar,
               COALESCE(s.revenue, 0)::float AS revenue,
+              COALESCE(s.subtotal, 0)::float AS subtotal,
+              COALESCE(s.discount, 0)::float AS discount,
               COALESCE(s.invoice_count, 0)::int AS invoice_count,
+              COALESCE(s.delivery_fees, 0)::float AS delivery_fees,
+              COALESCE(c.cogs, 0)::float AS cogs,
               COALESCE(r.returns_value, 0)::float AS returns_value,
-              COALESCE(s.revenue, 0)::float - COALESCE(r.returns_value, 0)::float AS net_revenue
+              COALESCE(s.revenue, 0)::float - COALESCE(r.returns_value, 0)::float AS net_revenue,
+              (COALESCE(s.revenue, 0) - COALESCE(r.returns_value, 0) - COALESCE(c.cogs, 0))::float AS gross_profit
             FROM branches b
             LEFT JOIN (
                 SELECT branch_id,
                        SUM(net_total) AS revenue,
+                       SUM(subtotal) AS subtotal,
+                       SUM(discount) AS discount,
+                       SUM(COALESCE(delivery_fee, 0)) AS delivery_fees,
                        COUNT(*) AS invoice_count
                 FROM invoices
                 WHERE status = 'completed' AND created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
                 GROUP BY branch_id
             ) s ON s.branch_id = b.id
+            LEFT JOIN (
+                SELECT i.branch_id,
+                       SUM(ii.quantity * COALESCE(p.cost, 0)) AS cogs
+                FROM invoice_items ii
+                JOIN invoices i ON i.id = ii.invoice_id
+                LEFT JOIN products p ON p.id = ii.product_id
+                WHERE i.status = 'completed'
+                  AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+                GROUP BY i.branch_id
+            ) c ON c.branch_id = b.id
             LEFT JOIN (
                 SELECT branch_id, SUM(total_returned) AS returns_value
                 FROM returns
@@ -197,7 +253,7 @@ def sales_by_branch(
                 GROUP BY branch_id
             ) r ON r.branch_id = b.id
             ORDER BY revenue DESC NULLS LAST
-        """, [df, dt, df, dt])
+        """, [df, dt, df, dt, df, dt])
         return [dict(r) for r in cur.fetchall()]
     finally:
         cur.close()
@@ -224,7 +280,11 @@ def sales_by_payment(
                   COALESCE(payment_method, 'unknown') AS payment_method,
                   COALESCE(type, 'unknown') AS sale_type,
                   COUNT(*)::int AS invoice_count,
-                  SUM(net_total)::float AS revenue
+                  SUM(net_total)::float AS revenue,
+                  SUM(subtotal)::float AS subtotal,
+                  SUM(discount)::float AS discount,
+                  SUM(COALESCE(cash_amount, 0))::float AS cash_collected,
+                  SUM(COALESCE(visa_amount, 0))::float AS card_collected
                 FROM invoices i
                 WHERE status = 'completed'
                   AND created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
@@ -235,7 +295,11 @@ def sales_by_payment(
                   'return' AS payment_method,
                   'return' AS sale_type,
                   COUNT(*)::int AS invoice_count,
-                  (-SUM(total_returned))::float AS revenue
+                  (-SUM(total_returned))::float AS revenue,
+                  0::float AS subtotal,
+                  0::float AS discount,
+                  0::float AS cash_collected,
+                  0::float AS card_collected
                 FROM returns r
                 WHERE r.created_at >= %s::date AND r.created_at < (%s::date + INTERVAL '1 day')
                   {bf.replace('branch_id', 'r.branch_id')}
@@ -266,7 +330,7 @@ def product_profitability(
     try:
         cur.execute(f"""
             SELECT
-              p.id, p.name_ar, p.name_en, p.barcode,
+              p.id, p.name_ar, p.name_en, p.barcode, p.international_barcode,
               COALESCE(p.category, 'Uncategorized') AS category,
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
@@ -274,14 +338,17 @@ def product_profitability(
               (SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0)))::float AS profit,
               CASE WHEN SUM(ii.total) > 0
                    THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0))) / SUM(ii.total) * 100)::float
-                   ELSE 0 END AS margin_pct
+                   ELSE 0 END AS margin_pct,
+              CASE WHEN SUM(ii.quantity) > 0
+                   THEN (SUM(ii.total) / SUM(ii.quantity))::float
+                   ELSE 0 END AS avg_unit_price
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
             JOIN products p ON p.id = ii.product_id
             WHERE i.status = 'completed'
               AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
               {bf.replace('branch_id', 'i.branch_id')}
-            GROUP BY p.id, p.name_ar, p.name_en, p.barcode, p.category
+            GROUP BY p.id, p.name_ar, p.name_en, p.barcode, p.international_barcode, p.category
             ORDER BY profit DESC
             LIMIT %s
         """, [df, dt] + bp + [limit])
@@ -317,6 +384,8 @@ def monthly_trend(
             sales AS (
                 SELECT DATE_TRUNC('month', i.created_at)::date AS month_start,
                        SUM(i.net_total) AS revenue,
+                       SUM(i.subtotal) AS subtotal,
+                       SUM(i.discount) AS discount,
                        COUNT(*) AS invoice_count
                 FROM invoices i, bounds b
                 WHERE i.status = 'completed'
@@ -346,10 +415,15 @@ def monthly_trend(
             SELECT
               TO_CHAR(m.month_start, 'YYYY-MM') AS month,
               COALESCE(s.revenue, 0)::float AS revenue,
+              COALESCE(s.subtotal, 0)::float AS subtotal,
+              COALESCE(s.discount, 0)::float AS discount,
               COALESCE(s.invoice_count, 0)::int AS invoice_count,
               COALESCE(c.cogs, 0)::float AS cogs,
               (COALESCE(s.revenue, 0) - COALESCE(c.cogs, 0) - COALESCE(rt.returns_value, 0))::float AS profit,
-              COALESCE(rt.returns_value, 0)::float AS returns_value
+              COALESCE(rt.returns_value, 0)::float AS returns_value,
+              CASE WHEN COALESCE(s.invoice_count, 0) > 0
+                   THEN (COALESCE(s.revenue, 0) / s.invoice_count)::float
+                   ELSE 0 END AS avg_invoice
             FROM months m
             LEFT JOIN sales s ON s.month_start = m.month_start
             LEFT JOIN cogs_cte c ON c.month_start = m.month_start

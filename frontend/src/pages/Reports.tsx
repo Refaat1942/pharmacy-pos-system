@@ -6,22 +6,55 @@ import {
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
-import api from '../lib/api'
+import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 
 type PnL = {
   date_from: string; date_to: string
-  gross_revenue: number; total_discount: number; returns_value: number
-  net_revenue: number; cogs: number; gross_profit: number; margin_pct: number
-  invoice_count: number; returns_count: number
+  gross_revenue: number; subtotal: number; total_discount: number; discount_pct: number
+  delivery_fees: number; returns_value: number; net_revenue: number; cogs: number
+  gross_profit: number; margin_pct: number; invoice_count: number; returns_count: number
+  items_sold: number; avg_invoice: number
+  cash_revenue: number; visa_revenue: number; hybrid_revenue: number
+  digital_revenue: number; account_revenue: number
+  delivery_orders: number; walk_in_orders: number; digital_orders: number
 }
-type CatRow = { category: string; qty: number; revenue: number; cost: number; profit: number }
-type BranchRow = { branch_id: number; name_en: string; name_ar: string; revenue: number; invoice_count: number; returns_value: number; net_revenue: number }
-type PayRow = { payment_method: string; sale_type: string; invoice_count: number; revenue: number }
-type ProdRow = { id: number; name_en: string; name_ar: string; barcode: string | null; category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
-type TrendRow = { month: string; revenue: number; invoice_count: number; cogs: number; profit: number; returns_value: number }
+type CatRow = { category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
+type BranchRow = {
+  branch_id: number; name_en: string; name_ar: string
+  revenue: number; subtotal: number; discount: number; invoice_count: number
+  delivery_fees: number; cogs: number; returns_value: number; net_revenue: number; gross_profit: number
+}
+type PayRow = {
+  payment_method: string; sale_type: string; invoice_count: number; revenue: number
+  subtotal: number; discount: number; cash_collected: number; card_collected: number
+}
+type ProdRow = {
+  id: number; name_en: string; name_ar: string; barcode: string | null
+  international_barcode?: string | null; category: string
+  qty: number; revenue: number; cost: number; profit: number; margin_pct: number; avg_unit_price: number
+}
+type TrendRow = {
+  month: string; revenue: number; subtotal: number; discount: number
+  invoice_count: number; cogs: number; profit: number; returns_value: number; avg_invoice: number
+}
 type ClinicRow = { clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }
+
+function reportRequestConfig(
+  from: string,
+  to: string,
+  branchFilter: string,
+  isAdmin: boolean,
+  extra: Record<string, string | number> = {},
+) {
+  const params: Record<string, string | number> = { date_from: from, date_to: to, ...extra }
+  const headers: Record<string, string> = {}
+  if (isAdmin) {
+    headers['X-Active-Branch'] = branchFilter ? String(branchFilter) : 'all'
+  }
+  return { params, headers }
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -35,6 +68,8 @@ export default function Reports() {
   const { user, hasFeature } = useAuth()
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(today())
+  const [branchFilter, setBranchFilter] = useState('')
+  const [allBranches, setAllBranches] = useState<Branch[]>([])
 
   const [pnl, setPnl] = useState<PnL | null>(null)
   const [cats, setCats] = useState<CatRow[]>([])
@@ -49,22 +84,40 @@ export default function Reports() {
   const isAdmin = user?.role === 'admin'
   const canSee = isAdmin || user?.role === 'pharmacist'
 
+  useEffect(() => {
+    if (isAdmin) {
+      branchesAPI.list().then((r) => setAllBranches(r.data)).catch(() => setAllBranches([]))
+    }
+  }, [isAdmin])
+
+  const branchScopeLabel = useMemo(() => {
+    if (!isAdmin) {
+      const b = allBranches.find((x) => x.id === user?.branch_id)
+      if (b) return i18n.language === 'ar' ? b.name_ar : b.name_en
+      return ''
+    }
+    if (!branchFilter) return t('reports.all_branches')
+    const b = allBranches.find((x) => String(x.id) === branchFilter)
+    return b ? (i18n.language === 'ar' ? b.name_ar : b.name_en) : ''
+  }, [isAdmin, branchFilter, allBranches, user?.branch_id, t])
+
   const load = async () => {
     setLoading(true); setError(null)
-    const params = { date_from: from, date_to: to }
+    const cfg = (extra?: Record<string, string | number>) =>
+      reportRequestConfig(from, to, branchFilter, isAdmin, extra)
     try {
       const showClinics = hasFeature('clinics')
       const reqs: Promise<any>[] = [
-        api.get('/reports/pnl', { params }),
-        api.get('/reports/sales-by-category', { params }),
-        api.get('/reports/sales-by-payment', { params }),
-        api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
-        api.get('/reports/monthly-trend', { params: { months: 12 } }),
+        api.get('/reports/pnl', cfg()),
+        api.get('/reports/sales-by-category', cfg()),
+        api.get('/reports/sales-by-payment', cfg()),
+        api.get('/reports/product-profitability', cfg({ limit: 30 })),
+        api.get('/reports/monthly-trend', cfg({ months: 12 })),
       ]
       const clinicIdx = showClinics ? reqs.length : -1
-      if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
-      const branchIdx = isAdmin ? reqs.length : -1
-      if (isAdmin) reqs.push(api.get('/reports/sales-by-branch', { params }))
+      if (showClinics) reqs.push(api.get('/sales/by-clinic', cfg()))
+      const branchIdx = isAdmin && !branchFilter ? reqs.length : -1
+      if (isAdmin && !branchFilter) reqs.push(api.get('/reports/sales-by-branch', cfg()))
       const results = await Promise.all(reqs)
       setPnl(results[0].data)
       setCats(results[1].data)
@@ -80,18 +133,18 @@ export default function Reports() {
     }
   }
 
-  useEffect(() => { if (canSee) load() }, [])
+  useEffect(() => {
+    if (!isAdmin && user?.branch_id && allBranches.length === 0) {
+      branchesAPI.list().then((r) => setAllBranches(r.data)).catch(() => {})
+    }
+  }, [isAdmin, user?.branch_id, allBranches.length])
 
-  if (!canSee) {
-    return (
-      <Layout>
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-          <ShieldAlert size={48} className="mb-3 text-red-400" />
-          <p className="text-lg font-medium">{t('reports.access_denied')}</p>
-        </div>
-      </Layout>
-    )
-  }
+  useEffect(() => { if (canSee) load() }, [from, to, branchFilter, canSee])
+
+  const catRevenueTotal = useMemo(
+    () => cats.reduce((s, c) => s + (c.revenue || 0), 0),
+    [cats],
+  )
 
   const exportCSV = (filename: string, rows: any[], columns: { key: string; label: string }[]) => {
     const head = columns.map((c) => `"${c.label}"`).join(',')
@@ -106,7 +159,18 @@ export default function Reports() {
     const blob = new Blob(['\uFEFF' + head + '\n' + body], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url)
+    a.href = url; a.download = filename; a.click();     URL.revokeObjectURL(url)
+  }
+
+  if (!canSee) {
+    return (
+      <Layout>
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
+          <ShieldAlert size={48} className="mb-3 text-red-400" />
+          <p className="text-lg font-medium">{t('reports.access_denied')}</p>
+        </div>
+      </Layout>
+    )
   }
 
   return (
@@ -126,11 +190,40 @@ export default function Reports() {
               <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
               <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
             </div>
+            {isAdmin && (
+              <div className="min-w-[11rem]">
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block flex items-center gap-1">
+                  <Building2 size={11} /> {t('reports.filter_branch')}
+                </label>
+                <select
+                  value={branchFilter}
+                  onChange={(e) => setBranchFilter(e.target.value)}
+                  className="input text-sm w-full"
+                >
+                  <option value="">{t('reports.all_branches')}</option>
+                  {allBranches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {i18n.language === 'ar' ? b.name_ar : b.name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button onClick={load} disabled={loading} className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
               {loading ? t('common.loading') : t('reports.apply')}
             </button>
           </div>
         </div>
+
+        {branchScopeLabel && (
+          <p className="text-sm text-slate-600 -mt-2">
+            <span className="font-medium text-slate-500">{t('reports.scope_hint')}:</span>{' '}
+            <span className="inline-flex items-center gap-1.5 bg-pharma-50 text-pharma-800 border border-pharma-100 rounded-lg px-2.5 py-1 font-semibold">
+              <Building2 size={14} />
+              {branchScopeLabel}
+            </span>
+          </p>
+        )}
 
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>}
 
@@ -162,10 +255,46 @@ export default function Reports() {
               <Kpi tone="amber" label={t('reports.cogs')} value={fmt(pnl.cogs)} />
               <Kpi tone="green" label={t('reports.gross_profit')} value={fmt(pnl.gross_profit)} sub={`${fmt(pnl.margin_pct)}% ${t('reports.margin')}`} />
             </div>
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
               <PnlRow label={t('reports.net_revenue')} value={fmt(pnl.net_revenue)} accent />
+              <PnlRow label={t('reports.subtotal')} value={fmt(pnl.subtotal)} />
               <PnlRow label={t('reports.total_discount')} value={fmt(pnl.total_discount)} />
-              <PnlRow label={t('reports.avg_invoice')} value={fmt(pnl.invoice_count ? pnl.gross_revenue / pnl.invoice_count : 0)} />
+              <PnlRow label={t('reports.discount_pct')} value={`${fmt(pnl.discount_pct)}%`} />
+              <PnlRow label={t('reports.avg_invoice')} value={fmt(pnl.avg_invoice)} />
+              <PnlRow label={t('reports.items_sold')} value={fmtInt(pnl.items_sold)} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <PnlRow label={t('reports.delivery_fees')} value={fmt(pnl.delivery_fees)} />
+              <PnlRow label={t('reports.cash_sales')} value={fmt(pnl.cash_revenue)} />
+              <PnlRow label={t('reports.card_sales')} value={fmt(pnl.visa_revenue)} />
+              <PnlRow label={t('reports.hybrid_sales')} value={fmt(pnl.hybrid_revenue)} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <p className="text-[10px] uppercase text-slate-400 font-semibold">{t('reports.sale_type')}</p>
+                <ul className="mt-2 space-y-1 text-slate-700">
+                  <li className="flex justify-between"><span>{t('reports.walk_in_orders')}</span><span className="font-mono font-semibold">{fmtInt(pnl.walk_in_orders)}</span></li>
+                  <li className="flex justify-between"><span>{t('reports.delivery_orders')}</span><span className="font-mono font-semibold">{fmtInt(pnl.delivery_orders)}</span></li>
+                  <li className="flex justify-between"><span>{t('reports.digital_orders')}</span><span className="font-mono font-semibold">{fmtInt(pnl.digital_orders)}</span></li>
+                </ul>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-3 md:col-span-3">
+                <p className="text-[10px] uppercase text-slate-400 font-semibold">{t('reports.by_payment')}</p>
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { label: t('reports.cash_sales'), v: pnl.cash_revenue },
+                    { label: t('reports.card_sales'), v: pnl.visa_revenue },
+                    { label: t('reports.hybrid_sales'), v: pnl.hybrid_revenue },
+                    { label: t('reports.digital_sales'), v: pnl.digital_revenue },
+                    { label: t('reports.account_sales'), v: pnl.account_revenue },
+                  ].map((x) => (
+                    <div key={x.label} className="bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-100">
+                      <p className="text-[10px] text-slate-500 truncate">{x.label}</p>
+                      <p className="font-mono font-bold text-slate-800 tabular-nums">{fmt(x.v)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
         )}
@@ -186,6 +315,24 @@ export default function Reports() {
             </button>
           </div>
           <TrendChart rows={trend} />
+          {trend.length > 0 && (
+            <DataTable
+              className="mt-3"
+              empty={t('reports.no_data')}
+              cols={[
+                { key: 'month', label: t('reports.monthly_trend') },
+                { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
+                { key: 'subtotal', label: t('reports.subtotal'), align: 'end', render: (r) => fmt(r.subtotal) },
+                { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
+                { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
+                { key: 'returns_value', label: t('reports.returns'), align: 'end', render: (r) => fmt(r.returns_value) },
+                { key: 'cogs', label: t('reports.cogs'), align: 'end', render: (r) => fmt(r.cogs) },
+                { key: 'profit', label: t('reports.profit'), align: 'end', render: (r) => <span className="text-emerald-700 font-semibold">{fmt(r.profit)}</span> },
+                { key: 'avg_invoice', label: t('reports.avg_per_invoice'), align: 'end', render: (r) => fmt(r.avg_invoice) },
+              ]}
+              rows={trend}
+            />
+          )}
         </section>
 
         {/* Category breakdown */}
@@ -208,15 +355,17 @@ export default function Reports() {
               { key: 'category', label: t('reports.category') },
               { key: 'qty', label: t('reports.qty'), align: 'end', render: (r) => fmtInt(r.qty) },
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
+              { key: 'share', label: t('reports.share'), align: 'end', render: (r) => `${catRevenueTotal > 0 ? fmt((r.revenue / catRevenueTotal) * 100) : '0.00'}%` },
               { key: 'cost', label: t('reports.cost'), align: 'end', render: (r) => fmt(r.cost) },
               { key: 'profit', label: t('reports.profit'), align: 'end', render: (r) => <span className={r.profit >= 0 ? 'text-emerald-700 font-semibold' : 'text-red-600 font-semibold'}>{fmt(r.profit)}</span> },
+              { key: 'margin_pct', label: t('reports.margin'), align: 'end', render: (r) => `${fmt(r.margin_pct)}%` },
             ]}
             rows={cats}
           />
         </section>
 
         {/* Branch performance — admin only */}
-        {isAdmin && (
+        {isAdmin && !branchFilter && (
           <section>
             <div className="flex items-center justify-between mb-2">
               <SectionHead icon={<Building2 size={18} />} title={t('reports.by_branch')} inline />
@@ -235,9 +384,15 @@ export default function Reports() {
               cols={[
                 { key: 'name', label: t('reports.branch'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en, sortValue: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
                 { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
+                { key: 'subtotal', label: t('reports.subtotal'), align: 'end', render: (r) => fmt(r.subtotal) },
+                { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
                 { key: 'revenue', label: t('reports.gross_revenue'), align: 'end', render: (r) => fmt(r.revenue) },
                 { key: 'returns_value', label: t('reports.returns'), align: 'end', render: (r) => fmt(r.returns_value) },
+                { key: 'delivery_fees', label: t('reports.delivery_fees_col'), align: 'end', render: (r) => fmt(r.delivery_fees) },
+                { key: 'cogs', label: t('reports.cogs'), align: 'end', render: (r) => fmt(r.cogs) },
                 { key: 'net_revenue', label: t('reports.net_revenue'), align: 'end', render: (r) => <span className="font-semibold text-slate-800">{fmt(r.net_revenue)}</span> },
+                { key: 'gross_profit', label: t('reports.gross_profit'), align: 'end', render: (r) => <span className={r.gross_profit >= 0 ? 'text-emerald-700 font-semibold' : 'text-red-600'}>{fmt(r.gross_profit)}</span> },
+                { key: 'margin', label: t('reports.margin'), align: 'end', render: (r) => `${r.net_revenue > 0 ? fmt((r.gross_profit / r.net_revenue) * 100) : '0.00'}%` },
               ]}
               rows={branches}
             />
@@ -267,6 +422,7 @@ export default function Reports() {
               { key: 'gross', label: t('reports.gross_revenue'), align: 'end', render: (r) => fmt(r.gross) },
               { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
               { key: 'net', label: t('reports.net_revenue'), align: 'end', render: (r) => <span className="font-semibold text-slate-800">{fmt(r.net)}</span> },
+              { key: 'avg', label: t('reports.avg_per_invoice'), align: 'end', render: (r) => fmt(r.invoice_count ? r.net / r.invoice_count : 0) },
             ]}
             rows={clinicRows}
           />
@@ -292,7 +448,12 @@ export default function Reports() {
               { key: 'sale_type', label: t('reports.sale_type'), render: (r) => <span className={`capitalize${r.sale_type === 'return' ? ' text-red-600' : ''}`}>{r.sale_type === 'return' ? t('reports.return_type') : r.sale_type}</span> },
               { key: 'payment_method', label: t('reports.payment_method'), render: (r) => <span className="capitalize">{r.payment_method === 'return' ? t('reports.return_type') : r.payment_method === 'instapay' ? t('payment.instapay') : r.payment_method === 'vodafone_cash' ? t('payment.vodafone_cash') : r.payment_method}</span> },
               { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
+              { key: 'subtotal', label: t('reports.subtotal'), align: 'end', render: (r) => fmt(r.subtotal) },
+              { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => <span className={r.revenue < 0 ? 'text-red-600 font-medium' : undefined}>{fmt(r.revenue)}</span> },
+              { key: 'cash_collected', label: t('reports.cash_collected'), align: 'end', render: (r) => fmt(r.cash_collected) },
+              { key: 'card_collected', label: t('reports.card_collected'), align: 'end', render: (r) => fmt(r.card_collected) },
+              { key: 'avg', label: t('reports.avg_per_invoice'), align: 'end', render: (r) => fmt(r.invoice_count ? r.revenue / r.invoice_count : 0) },
             ]}
             rows={pays}
           />
@@ -319,8 +480,12 @@ export default function Reports() {
             cols={[
               { key: 'name', label: t('reports.product'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en, sortValue: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
               { key: 'category', label: t('reports.category') },
+              { key: 'barcode', label: t('reports.barcode'), render: (r) => <span className="font-mono text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">{r.barcode || '—'}</span> },
+              { key: 'intl', label: t('reports.intl_barcode'), render: (r) => <span className="font-mono text-[11px] bg-indigo-50 text-indigo-900 px-1.5 py-0.5 rounded">{r.international_barcode || '—'}</span> },
               { key: 'qty', label: t('reports.qty'), align: 'end', render: (r) => fmtInt(r.qty) },
+              { key: 'avg_unit_price', label: t('reports.avg_unit_price'), align: 'end', render: (r) => fmt(r.avg_unit_price) },
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
+              { key: 'cost', label: t('reports.cost'), align: 'end', render: (r) => fmt(r.cost) },
               { key: 'profit', label: t('reports.profit'), align: 'end', render: (r) => <span className={r.profit >= 0 ? 'text-emerald-700 font-semibold' : 'text-red-600 font-semibold'}>{fmt(r.profit)}</span> },
               { key: 'margin_pct', label: t('reports.margin'), align: 'end', render: (r) => `${fmt(r.margin_pct)}%` },
             ]}
@@ -373,10 +538,11 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
   )
 }
 
-function DataTable({ cols, rows, empty }: {
+function DataTable({ cols, rows, empty, className }: {
   cols: { key: string; label: string; align?: 'start' | 'end'; render?: (r: any) => React.ReactNode; sortValue?: (r: any) => unknown }[]
   rows: any[]
   empty: string
+  className?: string
 }) {
   const { t } = useTranslation()
   const fields = useMemo(
@@ -395,12 +561,12 @@ function DataTable({ cols, rows, empty }: {
     return <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">{empty}</div>
   }
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+    <div className={`bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm ${className || ''}`}>
       <div className="p-3 border-b border-slate-100">
         <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} className="max-w-xs" />
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm min-w-[40rem]">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
               {cols.map((c) => (
