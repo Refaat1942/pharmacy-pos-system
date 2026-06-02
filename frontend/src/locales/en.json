@@ -736,7 +736,8 @@
     "total_items": "Total items",
     "total_qty": "Total quantity",
     "sent_by": "Sent by",
-    "received_sig": "Received by"
+    "received_sig": "Received by",
+    "no_results": "No matching items"
   },
   "expiry": {
     "title": "Expiry Management",

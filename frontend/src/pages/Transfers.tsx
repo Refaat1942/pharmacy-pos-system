@@ -195,6 +195,7 @@ interface CartLine {
   name_en: string
   name_ar: string
   barcode: string
+  international_barcode?: string | null
   stock: number
   quantity: number
   unit: string
@@ -222,11 +223,13 @@ function CreateTransferModal({
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<any[]>([])
+  const [showResults, setShowResults] = useState(false)
   const [lines, setLines] = useState<CartLine[]>([])
   const [saving, setSaving] = useState(false)
   const [scan, setScan] = useState('')
   const [scanError, setScanError] = useState('')
   const scanRef = useRef<HTMLInputElement>(null)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { scanRef.current?.focus() }, [fromBranch])
 
@@ -256,6 +259,7 @@ function CreateTransferModal({
         name_en: p.name_en,
         name_ar: p.name_ar,
         barcode: p.barcode,
+        international_barcode: p.international_barcode,
         stock: p.stock,
         quantity: Math.min(p.stock, qty) || 1,
         unit: p.unit,
@@ -401,23 +405,38 @@ function CreateTransferModal({
             <label className="text-xs text-slate-600 font-medium">{t('transfers.add_products')}</label>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setShowResults(true) }}
+              onFocus={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); setShowResults(true) }}
+              onBlur={() => {
+                if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+                hideTimerRef.current = setTimeout(() => setShowResults(false), 200)
+              }}
               disabled={!fromBranch}
               className="input mt-1 w-full"
               placeholder={t('transfers.search_placeholder') as string}
             />
-            {results.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-auto border border-slate-200 rounded-lg">
+            {showResults && fromBranch && (
+              <div className="mt-2 max-h-56 overflow-auto border border-slate-200 rounded-lg">
                 {results.slice(0, 20).map((p) => (
                   <button
                     key={p.id}
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={() => addLine(p)}
-                    className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between gap-2"
+                    className="w-full px-3 py-2 text-start hover:bg-slate-50 border-b border-slate-100 last:border-0"
                   >
-                    <span className="flex-1 truncate">{i18n.language === 'ar' ? p.name_ar : p.name_en}</span>
-                    <span className="text-xs text-slate-500 shrink-0">{p.barcode} · {t('transfers.stock')}: {p.stock} {unitLabel(p)}</span>
+                    <div className="text-sm font-medium text-slate-800 truncate">{i18n.language === 'ar' ? p.name_ar : p.name_en}</div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className="text-xs font-mono text-slate-600 tabular-nums">
+                        {p.barcode}
+                        {p.international_barcode ? ` · ${p.international_barcode}` : ''}
+                      </span>
+                      <span className="text-xs text-slate-500 shrink-0">{t('transfers.stock')}: {p.stock} {unitLabel(p)}</span>
+                    </div>
                   </button>
                 ))}
+                {results.length === 0 && (
+                  <div className="px-3 py-3 text-xs text-slate-400 text-center">{t('transfers.no_results')}</div>
+                )}
               </div>
             )}
           </div>
@@ -429,7 +448,9 @@ function CreateTransferModal({
               <div key={l.product_id} className="flex items-center gap-2 py-2 border-b border-slate-100">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
-                  <div className="text-xs text-slate-500">{l.barcode} · {t('transfers.stock')}: {l.stock} {unitLabel(l)}</div>
+                  <div className="text-xs text-slate-500">
+                    <span className="font-mono text-slate-600 tabular-nums">{l.barcode}{l.international_barcode ? ` · ${l.international_barcode}` : ''}</span> · {t('transfers.stock')}: {l.stock} {unitLabel(l)}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <input

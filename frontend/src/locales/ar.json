@@ -736,7 +736,8 @@
     "total_items": "عدد الأصناف",
     "total_qty": "إجمالي الكمية",
     "sent_by": "بواسطة",
-    "received_sig": "المستلم"
+    "received_sig": "المستلم",
+    "no_results": "لا توجد أصناف مطابقة"
   },
   "expiry": {
     "title": "إدارة الصلاحية",
