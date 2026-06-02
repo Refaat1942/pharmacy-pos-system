@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, Download } from 'lucide-react'
 import Layout from '../components/Layout'
+import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api from '../lib/api'
+import { autoPickKeys, parseSearchTerms } from '../lib/branchStockPick'
 import { exportCSV } from '../lib/csv'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint from '../components/BulkBarcodePrint'
@@ -1293,6 +1295,11 @@ function BranchStockTab() {
   const [q, setQ] = useState('')
   const [branchFilter, setBranchFilter] = useState('')
   const [loading, setLoading] = useState(false)
+  const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
+  const lastAutoPickQ = useRef('')
+
+  const searchTerms = useMemo(() => parseSearchTerms(q), [q])
+  const multiPick = searchTerms.length > 1
 
   useEffect(() => {
     if (!isAdmin) return
@@ -1305,15 +1312,41 @@ function BranchStockTab() {
       const params: Record<string, string | number> = {}
       if (q.trim()) params.q = q.trim()
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
-      const { data } = await api.get('/inventory/branch-stock', { params })
-      setData(data)
+      const { data: res } = await api.get('/inventory/branch-stock', { params })
+      setData(res)
+      if (multiPick && lastAutoPickQ.current !== q.trim()) {
+        lastAutoPickQ.current = q.trim()
+        setPickedKeys(autoPickKeys(res.items || [], searchTerms))
+      }
     } finally { setLoading(false) }
   }
   useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [q, branchFilter, isAdmin])
 
+  useEffect(() => {
+    if (!multiPick) {
+      setPickedKeys(new Set())
+      lastAutoPickQ.current = ''
+    }
+  }, [multiPick])
+
+  const displayItems = useMemo(() => {
+    if (!multiPick) return data.items
+    if (pickedKeys.size === 0) return []
+    return data.items.filter((r) => pickedKeys.has(r.key))
+  }, [data.items, multiPick, pickedKeys])
+
+  const togglePick = (key: string) => {
+    setPickedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
 
-  const bsFilter = useQuickFilter(data.items, [
+  const bsFilter = useQuickFilter(displayItems, [
     (r: BranchStockRow) => r.name_en,
     (r: BranchStockRow) => r.name_ar,
     (r: BranchStockRow) => r.barcode,
@@ -1355,6 +1388,17 @@ function BranchStockTab() {
         <TableFilter value={bsFilter.query} onChange={bsFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
       </div>
 
+      {multiPick && !loading && data.items.length > 0 && (
+        <BranchStockPickPanel
+          items={data.items}
+          pickedKeys={pickedKeys}
+          onToggle={togglePick}
+          onSelectAll={() => setPickedKeys(new Set(data.items.map((r) => r.key)))}
+          onClear={() => setPickedKeys(new Set())}
+          isAr={isAr}
+        />
+      )}
+
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[48rem]">
@@ -1371,8 +1415,11 @@ function BranchStockTab() {
             </thead>
             <tbody>
               {loading && <tr><td colSpan={data.branches.length + 4} className="text-center py-8 text-slate-400">…</td></tr>}
-              {!loading && sortedBs.length === 0 && (
+              {!loading && data.items.length === 0 && (
                 <tr><td colSpan={data.branches.length + 4} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+              )}
+              {!loading && multiPick && data.items.length > 0 && sortedBs.length === 0 && (
+                <tr><td colSpan={data.branches.length + 4} className="text-center py-8 text-slate-500">{t('inventory.bs_pick_none')}</td></tr>
               )}
               {sortedBs.map(row => (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/50">

@@ -1193,7 +1193,12 @@ def expiry_summary(days: int = 30,
     return dict(row)
 
 
-def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
+def _branch_stock_data(
+    q,
+    current_user,
+    branch_id: Optional[int] = None,
+    keys: Optional[str] = None,
+):
     """Aggregated per-branch stock balances. Groups products that share the
     same barcode (or, when barcode is empty, the same EN+AR name) and returns
     one row per product family with a breakdown of stock across all branches.
@@ -1229,6 +1234,13 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
 
         where = ["p.active = true"]
         params: list = []
+        if keys:
+            key_list = [k.strip() for k in keys.replace(";", ",").split(",") if k.strip()]
+            if key_list:
+                where.append(
+                    "COALESCE(NULLIF(p.barcode,''), 'name:' || p.name_en || '::' || p.name_ar) = ANY(%s)"
+                )
+                params.append(key_list)
         if q:
             terms = [t.strip() for t in q.replace(";", ",").replace("|", ",").split(",") if t.strip()]
             if terms:
@@ -1335,15 +1347,17 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
 def branch_stock(
     q: Optional[str] = None,
     branch_id: Optional[int] = None,
+    keys: Optional[str] = None,
     current_user=Depends(get_current_user),
 ):
-    return _branch_stock_data(q, current_user, branch_id)
+    return _branch_stock_data(q, current_user, branch_id, keys)
 
 
 @router.get("/branch-stock/export")
 def branch_stock_export(
     q: Optional[str] = None,
     branch_id: Optional[int] = None,
+    keys: Optional[str] = None,
     current_user=Depends(get_current_user),
 ):
     from openpyxl import Workbook
@@ -1359,7 +1373,7 @@ def branch_stock_export(
             s = "'" + s
         return s
 
-    data = _branch_stock_data(q, current_user, branch_id)
+    data = _branch_stock_data(q, current_user, branch_id, keys)
     branches = data["branches"]
     items = data["items"]
 

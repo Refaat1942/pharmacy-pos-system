@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
+import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { autoPickKeys, parseSearchTerms } from '../lib/branchStockPick'
 import i18n from '../lib/i18n'
 
 const fmtInt = (n: number) =>
@@ -82,6 +84,11 @@ export default function BranchesStock() {
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
+  const lastAutoPickQ = useRef('')
+
+  const searchTerms = useMemo(() => parseSearchTerms(q), [q])
+  const multiPick = searchTerms.length > 1
 
   useEffect(() => {
     if (!isAdmin) return
@@ -101,6 +108,10 @@ export default function BranchesStock() {
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
       const { data: res } = await api.get('/inventory/branch-stock', { params })
       setData(res)
+      if (multiPick && lastAutoPickQ.current !== q.trim()) {
+        lastAutoPickQ.current = q.trim()
+        setPickedKeys(autoPickKeys(res.items || [], searchTerms))
+      }
     } finally {
       setLoading(false)
     }
@@ -112,11 +123,34 @@ export default function BranchesStock() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, branchFilter, isAdmin])
 
+  useEffect(() => {
+    if (!multiPick) {
+      setPickedKeys(new Set())
+      lastAutoPickQ.current = ''
+    }
+  }, [multiPick])
+
+  const displayItems = useMemo(() => {
+    if (!multiPick) return data.items
+    if (pickedKeys.size === 0) return []
+    return data.items.filter((r) => pickedKeys.has(r.key))
+  }, [data.items, multiPick, pickedKeys])
+
+  const togglePick = (key: string) => {
+    setPickedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
   const exportExcel = async () => {
     setExporting(true)
     try {
       const params: Record<string, string | number> = {}
       if (q.trim()) params.q = q.trim()
+      if (multiPick && pickedKeys.size > 0) params.keys = Array.from(pickedKeys).join(',')
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
       const res = await api.get('/inventory/branch-stock/export', {
         params,
@@ -264,13 +298,24 @@ export default function BranchesStock() {
           )}
           <button
             onClick={exportExcel}
-            disabled={exporting || data.items.length === 0}
+            disabled={exporting || (multiPick ? pickedKeys.size === 0 : data.items.length === 0)}
             className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
           >
             <Download size={16} />
             {exporting ? '…' : t('inventory.bs_export')}
           </button>
         </div>
+
+        {multiPick && !loading && data.items.length > 0 && (
+          <BranchStockPickPanel
+            items={data.items}
+            pickedKeys={pickedKeys}
+            onToggle={togglePick}
+            onSelectAll={() => setPickedKeys(new Set(data.items.map((r) => r.key)))}
+            onClear={() => setPickedKeys(new Set())}
+            isAr={isAr}
+          />
+        )}
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -324,8 +369,15 @@ export default function BranchesStock() {
                     </td>
                   </tr>
                 )}
+                {!loading && multiPick && data.items.length > 0 && displayItems.length === 0 && (
+                  <tr>
+                    <td colSpan={colSpan} className="text-center py-12 text-slate-500">
+                      {t('inventory.bs_pick_none')}
+                    </td>
+                  </tr>
+                )}
                 {!loading &&
-                  data.items.map((row) => (
+                  displayItems.map((row) => (
                     <tr key={row.key} className="hover:bg-slate-50/60 transition-colors">
                       <td className="px-4 py-3 sticky start-0 bg-white z-[1] border-e border-slate-50">
                         <div className="font-semibold text-slate-800 leading-snug">
