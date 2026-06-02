@@ -18,6 +18,14 @@ def _generate_clock_code(eid: int, name: str) -> str:
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
+PAYROLL_WORKING_DAYS = 26
+
+
+def _prorated_base(base_salary, days_worked) -> float:
+    base = float(base_salary or 0)
+    days = int(days_worked or 0)
+    return min(base, round(base * days / PAYROLL_WORKING_DAYS, 2))
+
 
 def _require_admin(user):
     if user.get('role') != 'admin':
@@ -341,12 +349,13 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
                   AND TO_CHAR(work_date, 'YYYY-MM') = %s
             """, [e['id'], period_month])
             days = cur.fetchone()['days'] or 0
+            net = _prorated_base(e['base_salary'], days)
             cur.execute("""
                 INSERT INTO salary_slips(employee_id, period_month, base_salary,
                                          bonus, deductions, days_worked, net_amount, status)
                 VALUES (%s,%s,%s,0,0,%s,%s,'draft')
                 ON CONFLICT (employee_id, period_month) DO NOTHING
-            """, [e['id'], period_month, e['base_salary'], days, e['base_salary']])
+            """, [e['id'], period_month, e['base_salary'], days, net])
             if cur.rowcount > 0: created += 1
         conn.commit()
         return {"created": created, "total_employees": len(emps), "period_month": period_month}
@@ -365,8 +374,8 @@ def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_curre
         if not slip: raise HTTPException(404, "Slip not found")
         if slip['status'] == 'paid':
             raise HTTPException(400, "Slip already paid")
-        base = float(slip['base_salary'])
-        net = base + body.bonus - body.deductions
+        prorated = _prorated_base(slip['base_salary'], slip['days_worked'])
+        net = prorated + body.bonus - body.deductions
         cur.execute("""
             UPDATE salary_slips SET bonus=%s, deductions=%s, net_amount=%s,
               notes=COALESCE(NULLIF(%s,''), notes)
