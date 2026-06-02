@@ -4,6 +4,10 @@ import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import i18n from '../lib/i18n'
+
+const fmtInt = (n: number) =>
+  Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')
 
 type Row = {
   key: string
@@ -62,7 +66,17 @@ export default function BranchesStock() {
   const isAr = i18n.language === 'ar'
   const isAdmin = user?.role === 'admin'
 
-  const [data, setData] = useState<{ branches: Branch[]; items: Row[] }>({ branches: [], items: [] })
+  const [data, setData] = useState<{
+    branches: Branch[]
+    items: Row[]
+    summary?: {
+      total_count: number
+      shown_count: number
+      low_stock: number
+      out_of_stock: number
+      truncated?: boolean
+    }
+  }>({ branches: [], items: [] })
   const [allBranches, setAllBranches] = useState<Branch[]>([])
   const [q, setQ] = useState('')
   const [branchFilter, setBranchFilter] = useState<string>('')
@@ -126,18 +140,15 @@ export default function BranchesStock() {
   const visibleBranches = data.branches
 
   const stats = useMemo(() => {
-    let low = 0
-    let out = 0
-    for (const row of data.items) {
-      for (const cell of row.branches) {
-        if (cell.product_id == null) continue
-        const st = stockStatus(cell.stock, cell.min_stock, false)
-        if (st === 'out') out++
-        else if (st === 'low') low++
-      }
+    const s = data.summary
+    return {
+      items: s?.total_count ?? data.items.length,
+      shown: s?.shown_count ?? data.items.length,
+      low: s?.low_stock ?? 0,
+      out: s?.out_of_stock ?? 0,
+      truncated: s?.truncated ?? false,
     }
-    return { items: data.items.length, low, out }
-  }, [data.items])
+  }, [data.summary, data.items.length])
 
   const statusBadge = (st: ReturnType<typeof stockStatus>) => {
     if (st === 'ok') {
@@ -192,19 +203,30 @@ export default function BranchesStock() {
                 <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
                   {t('inventory.stat_total')}
                 </p>
-                <p className="text-lg font-bold text-slate-800 tabular-nums">{stats.items}</p>
+                <p className="text-lg font-bold text-slate-800 tabular-nums">{fmtInt(stats.items)}</p>
+                {stats.truncated && (
+                  <p className="text-[10px] text-amber-700 mt-0.5">
+                    {t('inventory.bs_showing', { shown: stats.shown, total: stats.items })}
+                  </p>
+                )}
               </div>
             </div>
             <div className="bg-white border border-amber-200 rounded-xl px-4 py-2.5 flex items-center gap-2 shadow-sm">
-              <p className="text-lg font-bold text-amber-700 tabular-nums">{stats.low}</p>
+              <p className="text-lg font-bold text-amber-700 tabular-nums">{fmtInt(stats.low)}</p>
               <p className="text-xs text-amber-700">{t('inventory.filter_low')}</p>
             </div>
             <div className="bg-white border border-red-200 rounded-xl px-4 py-2.5 flex items-center gap-2 shadow-sm">
-              <p className="text-lg font-bold text-red-700 tabular-nums">{stats.out}</p>
+              <p className="text-lg font-bold text-red-700 tabular-nums">{fmtInt(stats.out)}</p>
               <p className="text-xs text-red-700">{t('inventory.filter_zero')}</p>
             </div>
           </div>
         </div>
+
+        {stats.truncated && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {t('inventory.bs_showing', { shown: fmtInt(stats.shown), total: fmtInt(stats.items) })}
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 mb-4 flex flex-wrap gap-3 items-end">
           <div className="flex-1 min-w-[16rem] relative">

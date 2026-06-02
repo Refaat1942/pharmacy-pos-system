@@ -112,6 +112,63 @@ def delete_product(product_id: int,
         conn.close()
 
 
+# Max rows returned by list-style endpoints (raise if you outgrow this).
+MAX_INVENTORY_ROWS = 100_000
+
+
+# ─── INVENTORY SUMMARY (accurate DB counts) ─────────────────────────────────
+
+@router.get("/summary")
+def inventory_summary(
+    q: str = "",
+    branch_id: Optional[int] = None,
+    stock_filter: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user=Depends(get_current_user),
+    active_branch=Depends(get_active_branch_id),
+):
+    """Branch-scoped product counts for dashboard cards (not capped by list limits)."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if branch_id is not None and current_user.get("role") != "admin":
+        if branch_id != current_user.get("branch_id"):
+            raise HTTPException(status_code=403, detail="Cross-branch access denied")
+    effective_branch = branch_id if branch_id is not None else active_branch
+    where = ["active = true"]
+    params: list = []
+    if q:
+        where.append(
+            "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode ILIKE %s OR international_barcode ILIKE %s)"
+        )
+        s = f"%{q}%"
+        params += [s, s, s, s]
+    if effective_branch is not None:
+        where.append("branch_id = %s")
+        params.append(effective_branch)
+    if category:
+        where.append("category = %s")
+        params.append(category)
+    if stock_filter == "low":
+        where.append("stock > 0 AND stock <= min_stock")
+    elif stock_filter == "zero":
+        where.append("stock <= 0")
+    elif stock_filter == "ok":
+        where.append("stock > min_stock")
+    w = " AND ".join(where)
+    cur.execute(
+        f"""SELECT
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE stock <= 0)::int AS zero_stock,
+              COUNT(*) FILTER (WHERE stock > 0 AND stock <= min_stock)::int AS low_stock,
+              COALESCE(SUM(stock * COALESCE(cost, 0)), 0)::float AS stock_value
+            FROM products WHERE {w}""",
+        params,
+    )
+    row = dict(cur.fetchone())
+    conn.close()
+    return row
+
+
 # ─── LIST WITH FILTERS ─────────────────────────────────────────────────────
 
 @router.get("/items")
@@ -157,7 +214,7 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY p.name_en LIMIT %s"
-    params.append(max(1, min(limit, 100000)))
+    params.append(max(1, min(limit, MAX_INVENTORY_ROWS)))
     cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
@@ -1084,11 +1141,20 @@ def expiry_report(
               LEFT JOIN branches b ON p.branch_id = b.id
               WHERE {' AND '.join(where)}
               ORDER BY p.expiry_date ASC
-              LIMIT 1000"""
-    cur.execute(sql, params)
+              LIMIT %s"""
+    count_sql = f"""SELECT COUNT(*)::int AS total
+                    FROM products p
+                    WHERE {' AND '.join(where)}"""
+    cur.execute(count_sql, params)
+    total_count = int(cur.fetchone()["total"])
+    cur.execute(sql, params + [MAX_INVENTORY_ROWS])
     rows = cur.fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    return {
+        "items": [dict(r) for r in rows],
+        "total_count": total_count,
+        "shown_count": len(rows),
+    }
 
 
 @router.get("/expiry/summary")
@@ -1179,8 +1245,8 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
             where.append("p.branch_id = %s")
             params.append(effective_branch)
 
-        cur.execute(
-            f"""WITH grouped AS (
+        where_sql = " AND ".join(where)
+        grouped_cte = f"""WITH grouped AS (
                   SELECT
                     COALESCE(NULLIF(p.barcode,''), 'name:' || p.name_en || '::' || p.name_ar) AS key,
                     p.branch_id,
@@ -1194,9 +1260,28 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
                     MAX(p.category)         AS category,
                     MAX(p.unit)             AS unit
                   FROM products p
-                  WHERE {' AND '.join(where)}
+                  WHERE {where_sql}
                   GROUP BY key, p.branch_id
-                )
+                )"""
+
+        cur.execute(
+            f"""{grouped_cte}
+                SELECT
+                  COUNT(DISTINCT key)::int AS total_count,
+                  COUNT(*) FILTER (
+                    WHERE product_id IS NOT NULL AND branch_stock <= 0
+                  )::int AS out_of_stock,
+                  COUNT(*) FILTER (
+                    WHERE product_id IS NOT NULL
+                      AND branch_stock > 0 AND branch_stock <= branch_min
+                  )::int AS low_stock
+                FROM grouped""",
+            params,
+        )
+        summary = dict(cur.fetchone())
+
+        cur.execute(
+            f"""{grouped_cte}
                 SELECT
                   key,
                   MAX(barcode)   AS barcode,
@@ -1216,8 +1301,8 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
                 FROM grouped
                 GROUP BY key
                 ORDER BY MAX(name_en), key
-                LIMIT 1000""",
-            params,
+                LIMIT %s""",
+            params + [MAX_INVENTORY_ROWS],
         )
         items = []
         for r in cur.fetchall():
@@ -1235,7 +1320,13 @@ def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
                 for b in branches
             ]
             items.append(d)
-        return {"branches": branches, "items": items}
+        shown = len(items)
+        summary["shown_count"] = shown
+        if summary["total_count"] > shown:
+            summary["truncated"] = True
+        else:
+            summary["truncated"] = False
+        return {"branches": branches, "items": items, "summary": summary}
     finally:
         cur.close(); conn.close()
 

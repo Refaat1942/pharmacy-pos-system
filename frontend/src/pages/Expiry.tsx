@@ -25,7 +25,8 @@ export default function Expiry() {
     ])
       .then(([list, sum]) => {
         if (cancelled) return
-        setItems(list.data)
+        const payload = list.data
+        setItems(Array.isArray(payload) ? payload : payload.items)
         setSummary(sum.data)
       })
       .catch(() => {

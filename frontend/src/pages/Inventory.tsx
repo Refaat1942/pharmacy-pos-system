@@ -80,6 +80,7 @@ export default function Inventory() {
 
   const [tab, setTab] = useState<Tab>('items')
   const [items, setItems] = useState<Product[]>([])
+  const [itemStats, setItemStats] = useState<{ total: number; zero: number; low_stock: number; stock_value: number } | null>(null)
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState('')
   const [stockFilter, setStockFilter] = useState<'' | 'low' | 'zero' | 'ok'>('')
@@ -111,12 +112,24 @@ export default function Inventory() {
   const loadItems = async () => {
     setLoading(true)
     try {
-      const params: any = {}
+      const params: Record<string, string> = {}
       if (q) params.q = q
       if (stockFilter) params.stock_filter = stockFilter
       if (categoryFilter) params.category = categoryFilter
-      const { data } = await api.get('/inventory/items', { params })
-      setItems(data)
+      const [listRes, sumRes] = await Promise.all([
+        api.get<Product[]>('/inventory/items', { params }),
+        api.get<{ total: number; zero_stock: number; low_stock: number; stock_value: number }>(
+          '/inventory/summary',
+          { params },
+        ),
+      ])
+      setItems(listRes.data)
+      setItemStats({
+        total: sumRes.data.total,
+        zero: sumRes.data.zero_stock,
+        low_stock: sumRes.data.low_stock,
+        stock_value: sumRes.data.stock_value,
+      })
     } finally {
       setLoading(false)
     }
@@ -155,11 +168,19 @@ export default function Inventory() {
   }, [q, stockFilter, categoryFilter])
 
   const stats = useMemo(() => {
+    if (itemStats) {
+      return {
+        total: itemStats.total,
+        zero: itemStats.zero,
+        low: itemStats.low_stock,
+        totalValue: itemStats.stock_value,
+      }
+    }
     const total = items.length
-    const zero = items.filter(i => i.stock <= 0).length
+    const zero = items.filter((i) => i.stock <= 0).length
     const totalValue = items.reduce((s, i) => s + Number(i.stock) * Number(i.cost || 0), 0)
-    return { total, zero, totalValue }
-  }, [items])
+    return { total, zero, low: 0, totalValue }
+  }, [items, itemStats])
 
   const itemFilter = useQuickFilter(items, [
     i => i.barcode,
@@ -223,6 +244,7 @@ export default function Inventory() {
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <StatCard label={t('inventory.stat_total')} value={stats.total} color="slate" />
+              <StatCard label={t('inventory.stat_low')} value={stats.low} color="amber" />
               <StatCard label={t('inventory.stat_zero')} value={stats.zero} color="red" />
               <StatCard
                 label={t('inventory.stat_value')}

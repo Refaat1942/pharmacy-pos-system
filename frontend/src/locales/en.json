@@ -430,6 +430,7 @@
     "bs_min": "Min",
     "bs_status": "Status",
     "col_intl_barcode": "Intl. barcode",
+    "bs_showing": "Showing {{shown}} of {{total}} in table — use search to narrow",
     "tab_movements": "Stock Movements",
     "tab_velocity": "Fast / Slow / Dead",
     "tab_alerts": "Consumption Alerts",

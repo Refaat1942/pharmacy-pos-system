@@ -81,6 +81,7 @@
     "bs_min": "الحد الأدنى",
     "bs_status": "الحالة",
     "col_intl_barcode": "الباركود الدولي",
+    "bs_showing": "يعرض {{shown}} من {{total}} في الجدول — استخدم البحث للتضييق",
     "tab_movements": "حركة المخزون",
     "tab_velocity": "سريع / بطيء / راكد",
     "tab_alerts": "تنبيهات الاستهلاك",

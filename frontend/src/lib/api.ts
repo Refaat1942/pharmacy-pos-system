@@ -558,9 +558,15 @@ export interface ReplenishmentItem {
   needs_replenish?: boolean
 }
 
+export type ExpiryListResponse = {
+  items: ExpiryItem[]
+  total_count: number
+  shown_count: number
+}
+
 export const expiryAPI = {
   list: (params: { status: 'near' | 'expired' | 'all'; days?: number; branch_id?: number }) =>
-    api.get<ExpiryItem[]>('/inventory/expiry', { params }),
+    api.get<ExpiryListResponse>('/inventory/expiry', { params }),
   summary: (params: { days?: number; branch_id?: number } = {}) =>
     api.get<ExpirySummary>('/inventory/expiry/summary', { params }),
 }
