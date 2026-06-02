@@ -57,6 +57,8 @@ export default function PaymentModal({
   const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
   const requiresCustomerInfo = effectiveTotal > 100
   const hasCustomerInfo = !!selectedCustomer || (deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== '')
+  const isDigitalSale = saleType === 'digital'
+  const isAccountPayment = isDigitalSale && paymentMethod === 'account'
   const change =
     paymentMethod === 'cash' && cashAmount
       ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
@@ -78,7 +80,7 @@ export default function PaymentModal({
     }
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
-    if (paymentMethod === 'account') return !!selectedCustomer
+    if (paymentMethod === 'account') return isAccountPayment && !!selectedCustomer
     return true
   }
 
@@ -130,8 +132,8 @@ export default function PaymentModal({
             : paymentMethod === 'hybrid'
             ? parseFloat(cardPart) || 0
             : undefined,
-        account_paid_amount: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidNow : undefined,
-        account_paid_method: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidMethod : undefined,
+        account_paid_amount: isAccountPayment && accountPaidNow > 0 ? accountPaidNow : undefined,
+        account_paid_method: isAccountPayment && accountPaidNow > 0 ? accountPaidMethod : undefined,
         customer_id: selectedCustomer?.id,
         seller_id: selectedSeller?.id,
         clinic_id: clinicId ?? undefined,
@@ -268,7 +270,7 @@ export default function PaymentModal({
             )}
 
             {/* Payment method */}
-            {saleType !== 'digital' && (
+            {!isDigitalSale && (
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
@@ -298,7 +300,7 @@ export default function PaymentModal({
             )}
 
             {/* Digital payment method (platform vs on-account) */}
-            {saleType === 'digital' && (
+            {isDigitalSale && (
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
@@ -416,7 +418,7 @@ export default function PaymentModal({
             )}
 
             {/* Account (on-credit) */}
-            {paymentMethod === 'account' && (
+            {isAccountPayment && (
               <div className={`p-5 rounded-xl border-2 text-center space-y-2 ${selectedCustomer ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                 <CreditCard size={32} className={selectedCustomer ? 'text-amber-500 mx-auto' : 'text-red-500 mx-auto'} />
                 <p className={`text-sm font-semibold ${selectedCustomer ? 'text-amber-800' : 'text-red-800'}`}>
