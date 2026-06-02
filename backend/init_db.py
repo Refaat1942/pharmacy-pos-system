@@ -391,6 +391,8 @@ CREATE TABLE IF NOT EXISTS salary_slips (
     UNIQUE(employee_id, period_month)
 );
 
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS hours_worked NUMERIC(10,2);
+
 -- Migration: replace single-column UNIQUE(barcode) with composite UNIQUE(barcode, branch_id)
 DO $$
 BEGIN

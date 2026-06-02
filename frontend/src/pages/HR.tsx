@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert, QrCode, Printer } from 'lucide-react'
+import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert, QrCode, Printer, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -16,7 +16,7 @@ type Employee = {
   branch_name_en?: string; branch_name_ar?: string
 }
 type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null }
-type Slip = { id: number; employee_id: number; employee_name: string; employee_role: string; period_month: string; base_salary: number; bonus: number; deductions: number; days_worked: number; net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null }
+type Slip = { id: number; employee_id: number; employee_name: string; employee_role: string; period_month: string; base_salary: number; bonus: number; deductions: number; days_worked: number; hours_worked: number | null; net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null }
 type Branch = { id: number; name_en: string; name_ar: string }
 
 const fmt = (n: any) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -317,17 +317,38 @@ function AttendanceTab() {
   )
 }
 
+const STANDARD_MONTH_HOURS = 26 * 8
+
 function PayrollTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState(ym())
   const [rows, setRows] = useState<Slip[]>([])
   const [editing, setEditing] = useState<Slip | null>(null)
+  const [search, setSearch] = useState('')
+  const [allMonths, setAllMonths] = useState(false)
 
   const load = async () => {
-    const r = await api.get('/hr/payroll', { params: { period_month: period } })
+    const params: any = {}
+    if (!allMonths) params.period_month = period
+    if (search.trim()) params.q = search.trim()
+    const r = await api.get('/hr/payroll', { params })
     setRows(r.data)
   }
-  useEffect(() => { load() }, [period])
+  useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [period, allMonths, search])
+
+  const exportSheet = () => {
+    const headers = [t('hr.period_month'), t('hr.employee'), t('hr.role'), t('hr.days_worked'), t('hr.hours'), t('hr.base_salary'), t('hr.bonus'), t('hr.deductions'), t('hr.net_amount'), t('hr.status')]
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const lines = rows.map((r) => [r.period_month, r.employee_name, r.employee_role || '', r.days_worked, r.hours_worked ?? '', Number(r.base_salary || 0).toFixed(2), Number(r.bonus || 0).toFixed(2), Number(r.deductions || 0).toFixed(2), Number(r.net_amount || 0).toFixed(2), t(`hr.slip_${r.status}`)].map(esc).join(','))
+    const csv = '\uFEFF' + [headers.map(esc).join(','), ...lines].join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `salaries_${allMonths ? 'all' : period}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const generate = async () => {
     try {
@@ -361,9 +382,19 @@ function PayrollTab() {
   return (
     <div className="space-y-3">
       <div className="flex items-end justify-between flex-wrap gap-2">
-        <div>
-          <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.period_month')}</label>
-          <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="input text-sm" />
+        <div className="flex items-end gap-2 flex-wrap">
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.period_month')}</label>
+            <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} disabled={allMonths} className="input text-sm disabled:bg-slate-100" />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.search_employee')}</label>
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('hr.search_employee') as string} className="input text-sm" />
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2 cursor-pointer">
+            <input type="checkbox" checked={allMonths} onChange={(e) => setAllMonths(e.target.checked)} />
+            {t('hr.all_months')}
+          </label>
         </div>
         <div className="flex items-end gap-2">
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
@@ -374,6 +405,9 @@ function PayrollTab() {
             <div className="text-slate-500">{t('hr.unpaid')}</div>
             <div className="font-bold text-amber-700 font-mono">{fmt(unpaid)}</div>
           </div>
+          <button onClick={exportSheet} disabled={rows.length === 0} className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium px-3 py-2 rounded-lg text-sm disabled:opacity-50">
+            <Download size={14} /> {t('hr.export_sheet')}
+          </button>
           <button onClick={generate} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-2 rounded-lg text-sm">
             <RotateCw size={14} /> {t('hr.generate_slips')}
           </button>
@@ -384,9 +418,11 @@ function PayrollTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
+              <th className="px-3 py-2.5 text-start">{t('hr.period_month')}</th>
               <th className="px-3 py-2.5 text-start">{t('hr.employee')}</th>
               <th className="px-3 py-2.5 text-start">{t('hr.role')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.days_worked')}</th>
+              <th className="px-3 py-2.5 text-end">{t('hr.hours')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.base_salary')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.bonus')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.deductions')}</th>
@@ -396,12 +432,14 @@ function PayrollTab() {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                <td className="px-3 py-2.5 font-mono text-slate-500">{r.period_month}</td>
                 <td className="px-3 py-2.5 font-medium">{r.employee_name}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.employee_role || '—'}</td>
                 <td className="px-3 py-2.5 text-end font-mono">{r.days_worked}</td>
+                <td className="px-3 py-2.5 text-end font-mono">{r.hours_worked ?? '—'}</td>
                 <td className="px-3 py-2.5 text-end font-mono">{fmt(r.base_salary)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-emerald-700">{fmt(r.bonus)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-red-600">{fmt(r.deductions)}</td>
@@ -426,17 +464,27 @@ function PayrollTab() {
 
       {editing && (
         <Modal onClose={() => setEditing(null)} title={`${t('hr.edit_slip')} — ${editing.employee_name}`}>
+          {(() => {
+            const hrs = editing.hours_worked != null ? Number(editing.hours_worked) : Number(editing.days_worked || 0) * 8
+            const proratedBase = Math.round(Number(editing.base_salary || 0) * hrs / STANDARD_MONTH_HOURS * 100) / 100
+            return (
           <div className="space-y-3">
-            <div className="text-xs text-slate-500">{t('hr.base_salary')}: <span className="font-mono font-semibold">{fmt(editing.base_salary)}</span></div>
+            <div className="text-xs text-slate-500 flex justify-between">
+              <span>{t('hr.base_salary')}: <span className="font-mono font-semibold">{fmt(editing.base_salary)}</span></span>
+              <span>{t('hr.hours')}: <span className="font-mono font-semibold">{editing.hours_worked ?? '—'}</span></span>
+            </div>
+            <div className="text-xs text-slate-500">{t('hr.prorated_base')}: <span className="font-mono font-semibold">{fmt(proratedBase)}</span></div>
             <Field label={t('hr.bonus')}><input type="number" className="input w-full" value={editing.bonus} onChange={(e) => setEditing({ ...editing, bonus: Number(e.target.value) })} /></Field>
             <Field label={t('hr.deductions')}><input type="number" className="input w-full" value={editing.deductions} onChange={(e) => setEditing({ ...editing, deductions: Number(e.target.value) })} /></Field>
             <Field label={t('common.notes')}><textarea className="input w-full" rows={2} value={editing.notes || ''} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></Field>
             <div className="bg-slate-50 rounded-lg p-2 text-sm flex justify-between">
               <span>{t('hr.net_amount')}</span>
-              <span className="font-mono font-bold">{fmt(Number(editing.base_salary) + Number(editing.bonus || 0) - Number(editing.deductions || 0))}</span>
+              <span className="font-mono font-bold">{fmt(proratedBase + Number(editing.bonus || 0) - Number(editing.deductions || 0))}</span>
             </div>
             <button onClick={saveEdit} className="w-full bg-pharma-600 hover:bg-pharma-700 text-white font-medium py-2 rounded-lg">{t('common.save')}</button>
           </div>
+            )
+          })()}
         </Modal>
       )}
     </div>

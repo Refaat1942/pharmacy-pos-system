@@ -19,12 +19,20 @@ def _generate_clock_code(eid: int, name: str) -> str:
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
 PAYROLL_WORKING_DAYS = 26
+STANDARD_HOURS_PER_DAY = 8
+PAYROLL_STANDARD_MONTH_HOURS = PAYROLL_WORKING_DAYS * STANDARD_HOURS_PER_DAY
 
 
 def _prorated_base(base_salary, days_worked) -> float:
     base = float(base_salary or 0)
     days = int(days_worked or 0)
     return min(base, round(base * days / PAYROLL_WORKING_DAYS, 2))
+
+
+def _prorated_base_hours(base_salary, hours_worked) -> float:
+    base = float(base_salary or 0)
+    hours = float(hours_worked or 0)
+    return round(base * hours / PAYROLL_STANDARD_MONTH_HOURS, 2)
 
 
 def _require_admin(user):
@@ -308,7 +316,8 @@ class SlipUpdateIn(BaseModel):
 
 
 @router.get("/payroll")
-def list_payroll(period_month: Optional[str] = None, current_user=Depends(get_current_user)):
+def list_payroll(period_month: Optional[str] = None, q: Optional[str] = None,
+                 current_user=Depends(get_current_user)):
     _require_admin(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -316,6 +325,8 @@ def list_payroll(period_month: Optional[str] = None, current_user=Depends(get_cu
         where = ["1=1"]; params = []
         if period_month:
             where.append("s.period_month=%s"); params.append(period_month)
+        if q and q.strip():
+            where.append("e.name ILIKE %s"); params.append(f"%{q.strip()}%")
         cur.execute(f"""
             SELECT s.*, e.name AS employee_name, e.role AS employee_role
             FROM salary_slips s JOIN employees e ON e.id = s.employee_id
@@ -343,19 +354,22 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
         created = 0
         for e in emps:
             cur.execute("""
-                SELECT COUNT(DISTINCT work_date)::int AS days
+                SELECT COUNT(DISTINCT work_date)::int AS days,
+                       COALESCE(SUM(COALESCE(hours, %s)), 0) AS hours
                 FROM attendance
                 WHERE employee_id=%s AND status='present'
                   AND TO_CHAR(work_date, 'YYYY-MM') = %s
-            """, [e['id'], period_month])
-            days = cur.fetchone()['days'] or 0
-            net = _prorated_base(e['base_salary'], days)
+            """, [STANDARD_HOURS_PER_DAY, e['id'], period_month])
+            row = cur.fetchone()
+            days = row['days'] or 0
+            hours = float(row['hours'] or 0)
+            net = _prorated_base_hours(e['base_salary'], hours)
             cur.execute("""
                 INSERT INTO salary_slips(employee_id, period_month, base_salary,
-                                         bonus, deductions, days_worked, net_amount, status)
-                VALUES (%s,%s,%s,0,0,%s,%s,'draft')
+                                         bonus, deductions, days_worked, hours_worked, net_amount, status)
+                VALUES (%s,%s,%s,0,0,%s,%s,%s,'draft')
                 ON CONFLICT (employee_id, period_month) DO NOTHING
-            """, [e['id'], period_month, e['base_salary'], days, net])
+            """, [e['id'], period_month, e['base_salary'], days, hours, net])
             if cur.rowcount > 0: created += 1
         conn.commit()
         return {"created": created, "total_employees": len(emps), "period_month": period_month}
@@ -374,7 +388,10 @@ def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_curre
         if not slip: raise HTTPException(404, "Slip not found")
         if slip['status'] == 'paid':
             raise HTTPException(400, "Slip already paid")
-        prorated = _prorated_base(slip['base_salary'], slip['days_worked'])
+        hrs = slip['hours_worked']
+        if hrs is None:
+            hrs = (slip['days_worked'] or 0) * STANDARD_HOURS_PER_DAY
+        prorated = _prorated_base_hours(slip['base_salary'], hrs)
         net = prorated + body.bonus - body.deductions
         cur.execute("""
             UPDATE salary_slips SET bonus=%s, deductions=%s, net_amount=%s,

@@ -263,6 +263,7 @@ def create_adjustment(req: AdjustmentRequest,
 class StocktakeLine(BaseModel):
     product_id: int
     counted: int
+    expiry_date: Optional[date] = None
 
 
 class StocktakeRequest(BaseModel):
@@ -284,7 +285,7 @@ def apply_stocktake(req: StocktakeRequest,
         for line in req.items:
             if line.counted < 0:
                 raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
-            cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE",
+            cur.execute("SELECT id, stock, branch_id, expiry_date FROM products WHERE id=%s FOR UPDATE",
                         (line.product_id,))
             product = cur.fetchone()
             if not product:
@@ -292,16 +293,24 @@ def apply_stocktake(req: StocktakeRequest,
             _assert_branch_access(current_user, product["branch_id"])
             old_stock = int(product["stock"])
             delta = line.counted - old_stock
-            if delta == 0:
+            expiry_change = line.expiry_date is not None and line.expiry_date != product["expiry_date"]
+            if delta == 0 and not expiry_change:
                 continue
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
-                        (line.counted, line.product_id))
-            log_movement(
-                cur, line.product_id, product["branch_id"], "adjustment",
-                delta, line.counted,
-                reference_type="stocktake", reason=reason,
-                user_id=current_user.get("user_id"),
-            )
+            set_parts = []
+            set_vals = []
+            if delta != 0:
+                set_parts.append("stock=%s"); set_vals.append(line.counted)
+            if expiry_change:
+                set_parts.append("expiry_date=%s"); set_vals.append(line.expiry_date)
+            cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id=%s",
+                        set_vals + [line.product_id])
+            if delta != 0:
+                log_movement(
+                    cur, line.product_id, product["branch_id"], "adjustment",
+                    delta, line.counted,
+                    reference_type="stocktake", reason=reason,
+                    user_id=current_user.get("user_id"),
+                )
             changes.append({"product_id": line.product_id,
                             "old_stock": old_stock,
                             "new_stock": line.counted,

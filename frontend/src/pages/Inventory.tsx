@@ -418,7 +418,7 @@ function IconBtn({ onClick, title, color, children }: any) {
 // ─── Item Create/Edit Modal ─────────────────────────────────────────────
 
 function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: () => void; onSaved: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [f, setF] = useState({
     barcode: item?.barcode || '',
     international_barcode: item?.international_barcode || '',
@@ -465,6 +465,14 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
       }
       if (item) {
         await api.put(`/inventory/products/${item.id}`, payload)
+        const newStock = parseInt(f.stock)
+        if (!Number.isNaN(newStock) && newStock !== Number(item.stock)) {
+          await api.post('/inventory/adjustments', {
+            product_id: item.id,
+            delta: newStock - Number(item.stock),
+            reason: t('inventory.edit_stock_reason'),
+          })
+        }
       } else {
         payload.stock = parseInt(f.stock) || 0
         await api.post('/products', payload)
@@ -538,6 +546,11 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         </Field>
         {!item && (
           <Field label={t('inventory.f_initial_stock')}>
+            <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
+          </Field>
+        )}
+        {item && (
+          <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
             <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
           </Field>
         )}
@@ -1239,6 +1252,7 @@ function StocktakeTab() {
   const [categories, setCategories] = useState<string[]>([])
   const [items, setItems] = useState<any[]>([])
   const [counted, setCounted] = useState<Record<number, string>>({})
+  const [expiries, setExpiries] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -1263,28 +1277,39 @@ function StocktakeTab() {
 
   const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
 
-  const entries = items
+  const origExpiry = (it: any) => (it.expiry_date ? String(it.expiry_date).slice(0, 10) : '')
+  const curExpiry = (it: any) => (expiries[it.id] !== undefined ? expiries[it.id] : origExpiry(it))
+
+  const toApply = items
     .map(it => {
       const raw = counted[it.id]
-      const val = raw === '' || raw === undefined ? null : Number(raw)
-      return { it, val }
+      const hasC = raw !== '' && raw !== undefined
+      const cnum = hasC ? Number(raw) : NaN
+      const countChanged = hasC && !Number.isNaN(cnum) && cnum !== Number(it.stock)
+      const curExp = curExpiry(it)
+      const expChanged = curExp !== '' && curExp !== origExpiry(it)
+      return { it, counted: countChanged ? cnum : Number(it.stock), curExp, countChanged, expChanged }
     })
-    .filter(e => e.val !== null && !Number.isNaN(e.val as number))
-  const toChange = entries.filter(e => (e.val as number) !== Number(e.it.stock))
+    .filter(r => r.countChanged || r.expChanged)
 
   const apply = async () => {
-    if (toChange.length === 0) return
-    const msg = (t('inventory.st_confirm') as string).replace('{n}', String(toChange.length))
+    if (toApply.length === 0) return
+    const msg = (t('inventory.st_confirm') as string).replace('{n}', String(toApply.length))
     if (!confirm(msg)) return
     setApplying(true)
     try {
       const payload = {
-        items: toChange.map(e => ({ product_id: e.it.id, counted: e.val as number })),
+        items: toApply.map(r => ({
+          product_id: r.it.id,
+          counted: r.counted,
+          expiry_date: r.expChanged ? r.curExp : undefined,
+        })),
         note: note.trim() || undefined,
       }
       const { data } = await api.post('/inventory/stocktake', payload)
       alert((t('inventory.st_done') as string).replace('{n}', String(data.changed)))
       setCounted({})
+      setExpiries({})
       await load()
     } catch (e: any) {
       alert(e?.response?.data?.detail || t('inventory.st_error'))
@@ -1330,10 +1355,10 @@ function StocktakeTab() {
         />
         <button
           onClick={apply}
-          disabled={toChange.length === 0 || applying}
+          disabled={toApply.length === 0 || applying}
           className="flex items-center gap-1.5 px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg text-sm font-medium disabled:opacity-40"
         >
-          {applying ? t('common.loading') : `${t('inventory.st_apply')}${toChange.length ? ` (${toChange.length})` : ''}`}
+          {applying ? t('common.loading') : `${t('inventory.st_apply')}${toApply.length ? ` (${toApply.length})` : ''}`}
         </button>
       </div>
 
@@ -1349,15 +1374,16 @@ function StocktakeTab() {
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_system')}</th>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_counted')}</th>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_variance')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.f_expiry')}</th>
               </tr>
             </thead>
             <tbody>
               {!branchId && (
-                <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
               )}
-              {branchId && loading && <tr><td colSpan={5} className="text-center py-8 text-slate-400">…</td></tr>}
+              {branchId && loading && <tr><td colSpan={6} className="text-center py-8 text-slate-400">…</td></tr>}
               {branchId && !loading && items.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
               {branchId && items.map(it => {
                 const raw = counted[it.id]
@@ -1386,6 +1412,14 @@ function StocktakeTab() {
                         : variance === 0 ? <span className="text-slate-400">0</span>
                         : variance > 0 ? <span className="text-emerald-600">+{variance}</span>
                         : <span className="text-red-600">{variance}</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <input
+                        type="date"
+                        value={curExpiry(it)}
+                        onChange={e => setExpiries(prev => ({ ...prev, [it.id]: e.target.value }))}
+                        className="w-36 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                      />
                     </td>
                   </tr>
                 )
