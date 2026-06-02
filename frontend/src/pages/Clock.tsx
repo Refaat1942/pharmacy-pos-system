@@ -15,7 +15,7 @@ type Result = {
 
 export default function Clock() {
   const { t, i18n } = useTranslation()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, logout } = useAuth()
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
@@ -65,6 +65,10 @@ export default function Clock() {
 
   return (
     <div className={`min-h-screen w-full bg-gradient-to-br ${bg} text-white flex flex-col items-center justify-center px-6 transition-colors duration-500`}>
+      <button onClick={logout}
+        className="absolute top-5 end-5 inline-flex items-center gap-1.5 text-white/70 hover:text-white text-sm font-medium bg-white/10 hover:bg-white/20 rounded-xl px-3 py-2 transition-colors">
+        <LogOut size={16} /> {t('nav.logout')}
+      </button>
       <div className="absolute top-6 inset-x-0 text-center opacity-90">
         <div className="text-lg font-medium">{dateStr}</div>
         <div className="text-5xl font-mono tabular-nums tracking-wider mt-1">{timeStr}</div>
