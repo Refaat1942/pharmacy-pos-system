@@ -110,6 +110,9 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_person_id INTEGER;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_person_name VARCHAR(120);
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(20);
 UPDATE invoices SET delivery_status='pending' WHERE type='delivery' AND delivery_status IS NULL;
+UPDATE invoices SET delivery_status='pending'
+WHERE delivery_status IS NULL AND type='digital'
+  AND NULLIF(TRIM(COALESCE(delivery_address, '')), '') IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS invoice_items (
     id SERIAL PRIMARY KEY,

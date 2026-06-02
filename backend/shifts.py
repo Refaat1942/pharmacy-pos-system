@@ -151,8 +151,11 @@ def close_shift(
         cur.execute("""
             SELECT COUNT(*)::int AS cnt
             FROM invoices
-            WHERE seller_id = %s AND branch_id = %s AND type = 'delivery'
+            WHERE seller_id = %s AND branch_id = %s
               AND status = 'completed'
+              AND (type = 'delivery'
+                   OR (type = 'digital'
+                       AND NULLIF(TRIM(COALESCE(delivery_address, '')), '') IS NOT NULL))
               AND COALESCE(delivery_status, 'pending') <> 'delivered'
               AND created_at >= %s AND created_at <= now()
         """, [shift['user_id'], shift['branch_id'], shift['opened_at']])

@@ -516,6 +516,21 @@ def list_employees(current_user=Depends(get_current_user)):
 
 # ─── SALES ───────────────────────────────────────────────────────────────────
 
+def _is_shipment_sale(sale_type: str, delivery_address: Optional[str]) -> bool:
+    """Cash/delivery and digital (Talabat, etc.) orders with an address go to the delivery queue."""
+    if sale_type == "delivery":
+        return True
+    if sale_type == "digital" and (delivery_address or "").strip():
+        return True
+    return False
+
+
+SHIPMENT_INVOICE_SQL = (
+    "(i.type = 'delivery' OR "
+    "(i.type = 'digital' AND NULLIF(TRIM(COALESCE(i.delivery_address, '')), '') IS NOT NULL))"
+)
+
+
 class InvoiceItemInput(BaseModel):
     product_id: int
     quantity: int
@@ -710,7 +725,11 @@ def create_sale(req: SaleRequest,
             delivery_person_id = req.delivery_person_id
             delivery_person_name = dp["name"]
 
-        delivery_status = "pending" if req.type == "delivery" else None
+        delivery_status = (
+            "pending"
+            if _is_shipment_sale(req.type, req.delivery_address)
+            else None
+        )
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
@@ -829,6 +848,7 @@ def list_sales(limit: int = 50, offset: int = 0,
                date_from: Optional[str] = None,
                date_to: Optional[str] = None,
                type: Optional[str] = None,
+               delivery_queue: Optional[bool] = None,
                seller_id: Optional[int] = None,
                clinic_id: Optional[int] = None,
                delivery_status: Optional[str] = None,
@@ -847,7 +867,9 @@ def list_sales(limit: int = 50, offset: int = 0,
     if date_to:
         conds.append("DATE(i.created_at) <= %s")
         params.append(date_to)
-    if type:
+    if delivery_queue:
+        conds.append(SHIPMENT_INVOICE_SQL)
+    elif type:
         conds.append("i.type = %s")
         params.append(type)
     if seller_id:
@@ -857,8 +879,11 @@ def list_sales(limit: int = 50, offset: int = 0,
         conds.append("i.clinic_id = %s")
         params.append(clinic_id)
     if delivery_status:
-        conds.append("i.delivery_status = %s")
-        params.append(delivery_status)
+        if delivery_status == "pending":
+            conds.append("COALESCE(i.delivery_status, 'pending') = 'pending'")
+        else:
+            conds.append("i.delivery_status = %s")
+            params.append(delivery_status)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(
@@ -1070,11 +1095,14 @@ def update_delivery_status(invoice_id: int, req: DeliveryStatusRequest,
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         _assert_invoice_branch_access(cur, invoice_id, current_user)
-        cur.execute("SELECT id, type FROM invoices WHERE id=%s", (invoice_id,))
+        cur.execute(
+            "SELECT id, type, delivery_address FROM invoices WHERE id=%s",
+            (invoice_id,),
+        )
         inv = cur.fetchone()
         if not inv:
             raise HTTPException(status_code=404, detail="Invoice not found")
-        if inv["type"] != "delivery":
+        if not _is_shipment_sale(inv["type"], inv.get("delivery_address")):
             raise HTTPException(status_code=400, detail="Not a delivery order")
         cur.execute(
             "UPDATE invoices SET delivery_status=%s WHERE id=%s RETURNING *",

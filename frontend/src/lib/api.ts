@@ -225,7 +225,9 @@ export const salesAPI = {
   list: (params: {
     limit?: number; offset?: number;
     date_from?: string; date_to?: string;
-    type?: string; seller_id?: number; clinic_id?: number;
+    type?: string;
+    delivery_queue?: boolean;
+    seller_id?: number; clinic_id?: number;
     delivery_status?: string;
   } = {}) => api.get<Invoice[]>('/sales', { params }),
   setDeliveryStatus: (invoiceId: number, status: string) =>

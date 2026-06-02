@@ -36,7 +36,7 @@ export default function Deliveries() {
   const load = () => {
     setLoading(true)
     salesAPI
-      .list({ type: 'delivery', delivery_status: statusFilter || undefined, limit: 200 })
+      .list({ delivery_queue: true, delivery_status: statusFilter || undefined, limit: 200 })
       .then((r) => setRows(r.data))
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
@@ -93,6 +93,8 @@ export default function Deliveries() {
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-start">{t('deliveries.invoice')}</th>
+                  <th className="px-4 py-3 text-start">{t('deliveries.sale_type')}</th>
+                  <th className="px-4 py-3 text-start">{t('deliveries.payment')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.customer')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.phone')}</th>
                   <th className="px-4 py-3 text-start">{t('deliveries.address')}</th>
@@ -109,6 +111,12 @@ export default function Deliveries() {
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/60">
                       <td className="px-4 py-3 font-mono text-xs text-slate-700">{r.invoice_number}</td>
+                      <td className="px-4 py-3 text-slate-600 capitalize">{r.type}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {r.payment_method === 'account'
+                          ? t('deliveries.payment_on_account')
+                          : t(`payment.${r.payment_method}`, r.payment_method)}
+                      </td>
                       <td className="px-4 py-3 text-slate-700">{r.delivery_customer_name || r.customer_name || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{r.delivery_customer_phone || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 max-w-[16rem] truncate" title={r.delivery_address || ''}>{r.delivery_address || '—'}</td>
