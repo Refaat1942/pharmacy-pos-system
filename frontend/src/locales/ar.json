@@ -222,7 +222,31 @@
     "shifts": "درج النقدية",
     "hr": "الموارد البشرية",
     "settings": "الإعدادات",
-    "clinics": "العيادات"
+    "clinics": "العيادات",
+    "deliveries": "التوصيل"
+  },
+  "deliveries": {
+    "title": "طلبات التوصيل",
+    "subtitle": "متابعة وتحديث حالة طلبات التوصيل",
+    "filter_status": "الحالة",
+    "all": "الكل",
+    "pending": "قيد الانتظار",
+    "out_for_delivery": "خرج للتوصيل",
+    "delivered": "تم التوصيل",
+    "invoice": "الفاتورة",
+    "customer": "العميل",
+    "phone": "الهاتف",
+    "address": "العنوان",
+    "driver": "المندوب",
+    "total": "الإجمالي",
+    "status": "الحالة",
+    "actions": "إجراءات",
+    "created": "التاريخ",
+    "mark_out": "خرج للتوصيل",
+    "mark_delivered": "تم التوصيل",
+    "mark_pending": "إرجاع للانتظار",
+    "none": "لا توجد طلبات توصيل",
+    "count": "طلب توصيل"
   },
   "shifts": {
     "title": "درج النقدية / الورديات",

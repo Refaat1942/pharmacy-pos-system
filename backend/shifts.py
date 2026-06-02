@@ -148,6 +148,20 @@ def close_shift(
             raise HTTPException(400, "Shift already closed")
         if shift['user_id'] != current_user['user_id'] and current_user.get('role') != 'admin':
             raise HTTPException(403, "Cannot close another user's shift")
+        cur.execute("""
+            SELECT COUNT(*)::int AS cnt
+            FROM invoices
+            WHERE seller_id = %s AND branch_id = %s AND type = 'delivery'
+              AND status = 'completed'
+              AND COALESCE(delivery_status, 'pending') <> 'delivered'
+              AND created_at >= %s AND created_at <= now()
+        """, [shift['user_id'], shift['branch_id'], shift['opened_at']])
+        pending_deliveries = cur.fetchone()['cnt']
+        if pending_deliveries > 0:
+            raise HTTPException(
+                400,
+                f"Cannot close shift: {pending_deliveries} delivery order(s) not yet marked delivered",
+            )
         exp = _compute_expected(cur, shift)
         expected = exp['expected_cash']
         variance = round(body.counted_cash - expected, 2)

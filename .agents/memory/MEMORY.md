@@ -4,3 +4,4 @@
 - [Branch access control](branch-access-control.md) — stock-mutating endpoints must fail closed: non-admin with null branch_id is denied, never treated as unrestricted.
 - [PO landed-cost & margins](po-landed-cost-model.md) — PO per-line discount%/VAT% feed effective landed cost into products.cost on receive; VAT intentionally in cost basis so margins reflect it.
 - [FastAPI route shadowing](fastapi-route-ordering.md) — literal sub-routes (e.g. /replenishment) get swallowed by an earlier /{id:int}-less /{id} route; use {id:int} converter so non-numeric paths fall through.
+- [Shift-close guards](shift-close-guards.md) — scope close-blockers like cash reconciliation (seller_id+branch+opened_at); backfill any new status col that gates a guard so the UI filter and guard agree.

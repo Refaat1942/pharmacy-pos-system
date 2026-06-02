@@ -125,6 +125,11 @@ export interface Invoice {
   branch_address?: string | null
   branch_phone?: string | null
   delivery_person_name?: string | null
+  delivery_address?: string | null
+  delivery_fee?: number | null
+  delivery_customer_name?: string | null
+  delivery_customer_phone?: string | null
+  delivery_status?: string | null
 }
 
 export interface SaleResponse {
@@ -217,7 +222,10 @@ export const salesAPI = {
     limit?: number; offset?: number;
     date_from?: string; date_to?: string;
     type?: string; seller_id?: number; clinic_id?: number;
+    delivery_status?: string;
   } = {}) => api.get<Invoice[]>('/sales', { params }),
+  setDeliveryStatus: (invoiceId: number, status: string) =>
+    api.post<Invoice>(`/sales/${invoiceId}/delivery-status`, { status }),
   byClinic: (params: { date_from?: string; date_to?: string } = {}) =>
     api.get<{ clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }[]>(
       '/sales/by-clinic', { params }),

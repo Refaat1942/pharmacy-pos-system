@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import Login from './pages/Login'
 import POS from './pages/POS'
 import Sales from './pages/Sales'
+import Deliveries from './pages/Deliveries'
 import Inventory from './pages/Inventory'
 import Transfers from './pages/Transfers'
 import BranchesStock from './pages/BranchesStock'
@@ -70,6 +71,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute feature="pos"><POS /></ProtectedRoute>} />
       <Route path="/sales" element={<ProtectedRoute feature="sales"><Sales /></ProtectedRoute>} />
+      <Route path="/deliveries" element={<ProtectedRoute feature="sales"><Deliveries /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute feature="inventory"><Inventory /></ProtectedRoute>} />
       <Route path="/transfers" element={<ProtectedRoute feature="transfers"><Transfers /></ProtectedRoute>} />
       <Route path="/branches-stock" element={<ProtectedRoute feature="branches_stock"><BranchesStock /></ProtectedRoute>} />

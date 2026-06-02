@@ -688,20 +688,21 @@ def create_sale(req: SaleRequest,
             delivery_person_id = req.delivery_person_id
             delivery_person_name = dp["name"]
 
+        delivery_status = "pending" if req.type == "delivery" else None
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
                 change_amount, seller_id, customer_id, branch_id, clinic_id, prescription_id, notes,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone,
-                delivery_person_id, delivery_person_name)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                delivery_person_id, delivery_person_name, delivery_status)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, req.customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
-             delivery_person_id, delivery_person_name),
+             delivery_person_id, delivery_person_name, delivery_status),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
@@ -806,6 +807,7 @@ def list_sales(limit: int = 50, offset: int = 0,
                type: Optional[str] = None,
                seller_id: Optional[int] = None,
                clinic_id: Optional[int] = None,
+               delivery_status: Optional[str] = None,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
@@ -830,6 +832,9 @@ def list_sales(limit: int = 50, offset: int = 0,
     if clinic_id:
         conds.append("i.clinic_id = %s")
         params.append(clinic_id)
+    if delivery_status:
+        conds.append("i.delivery_status = %s")
+        params.append(delivery_status)
     where = (" WHERE " + " AND ".join(conds)) if conds else ""
     params += [limit, offset]
     cur.execute(
@@ -1013,6 +1018,37 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     items = cur.fetchall()
     conn.close()
     return {"invoice": dict(invoice), "items": [dict(i) for i in items]}
+
+
+class DeliveryStatusRequest(BaseModel):
+    status: str
+
+
+@app.post("/api/sales/{invoice_id:int}/delivery-status")
+def update_delivery_status(invoice_id: int, req: DeliveryStatusRequest,
+                           current_user=Depends(get_current_user)):
+    valid = ("pending", "out_for_delivery", "delivered")
+    if req.status not in valid:
+        raise HTTPException(status_code=400, detail="Invalid delivery status")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        _assert_invoice_branch_access(cur, invoice_id, current_user)
+        cur.execute("SELECT id, type FROM invoices WHERE id=%s", (invoice_id,))
+        inv = cur.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv["type"] != "delivery":
+            raise HTTPException(status_code=400, detail="Not a delivery order")
+        cur.execute(
+            "UPDATE invoices SET delivery_status=%s WHERE id=%s RETURNING *",
+            (req.status, invoice_id),
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
+    finally:
+        cur.close(); conn.close()
 
 
 class ReturnItem(BaseModel):

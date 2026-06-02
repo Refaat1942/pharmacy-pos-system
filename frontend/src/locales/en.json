@@ -84,7 +84,31 @@
     "shifts": "Cash Drawer",
     "hr": "HR & Payroll",
     "settings": "Settings",
-    "clinics": "Clinics"
+    "clinics": "Clinics",
+    "deliveries": "Deliveries"
+  },
+  "deliveries": {
+    "title": "Delivery Orders",
+    "subtitle": "Track and update the status of delivery orders",
+    "filter_status": "Status",
+    "all": "All",
+    "pending": "Pending",
+    "out_for_delivery": "Out for Delivery",
+    "delivered": "Delivered",
+    "invoice": "Invoice",
+    "customer": "Customer",
+    "phone": "Phone",
+    "address": "Address",
+    "driver": "Driver",
+    "total": "Total",
+    "status": "Status",
+    "actions": "Actions",
+    "created": "Created",
+    "mark_out": "Out for Delivery",
+    "mark_delivered": "Mark Delivered",
+    "mark_pending": "Back to Pending",
+    "none": "No delivery orders found",
+    "count": "delivery order(s)"
   },
   "shifts": {
     "title": "Cash Drawer / Shifts",
