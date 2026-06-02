@@ -749,18 +749,20 @@ def create_sale(req: SaleRequest,
             if unit_type == "sub" and pack_size > 1:
                 stock_used = item.quantity
                 unit_label = prod["sub_unit"] or "unit"
+                line_pack = 1
             else:
                 stock_used = item.quantity * pack_size
                 unit_label = prod["unit"] or "unit"
+                line_pack = pack_size
             item_total = item.quantity * item.unit_price - item.discount
             cur.execute(
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
-                    barcode, quantity, unit_price, discount, total, unit_label)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    barcode, quantity, unit_price, discount, total, unit_label, pack_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, item.discount,
-                 item_total, unit_label),
+                 item_total, unit_label, line_pack),
             )
             new_stock = int(prod["stock"]) - stock_used
             cur.execute("UPDATE products SET stock=%s WHERE id=%s",
@@ -1014,7 +1016,19 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     invoice = cur.fetchone()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
+    cur.execute(
+        """SELECT ii.*,
+                  p.unit AS prod_unit, p.sub_unit AS prod_sub_unit,
+                  COALESCE((
+                      SELECT SUM(ri.sub_quantity) FROM return_items ri
+                      WHERE ri.invoice_item_id = ii.id
+                  ), 0) AS returned_sub
+           FROM invoice_items ii
+           LEFT JOIN products p ON ii.product_id = p.id
+           WHERE ii.invoice_id=%s
+           ORDER BY ii.id""",
+        (invoice_id,),
+    )
     items = cur.fetchall()
     conn.close()
     return {"invoice": dict(invoice), "items": [dict(i) for i in items]}
@@ -1053,7 +1067,8 @@ def update_delivery_status(invoice_id: int, req: DeliveryStatusRequest,
 
 class ReturnItem(BaseModel):
     invoice_item_id: int
-    quantity: int
+    quantity: int = 0
+    sub_quantity: Optional[int] = None
 
 
 class ReturnRequest(BaseModel):
@@ -1080,63 +1095,84 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         count = cur.fetchone()["cnt"]
         return_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
 
-        total_returned = 0.0
-        for item in req.items:
-            cur.execute("SELECT unit_price FROM invoice_items WHERE id=%s AND invoice_id=%s",
-                        (item.invoice_item_id, invoice_id))
-            inv_item = cur.fetchone()
-            if not inv_item:
-                raise HTTPException(status_code=404, detail="Invoice item not found on this invoice")
-            total_returned += float(inv_item["unit_price"]) * item.quantity
-
         cur.execute(
             """INSERT INTO returns
                (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id)
                VALUES (%s,%s,'partial',%s,%s,%s,%s) RETURNING *""",
-            (invoice_id, return_number, total_returned, req.reason,
+            (invoice_id, return_number, 0, req.reason,
              current_user.get("user_id"), return_branch_id),
         )
         ret = cur.fetchone()
 
+        total_returned = 0.0
         for item in req.items:
-            if item.quantity <= 0:
-                raise HTTPException(status_code=400, detail="Invalid return quantity")
             cur.execute(
-                """SELECT ii.*, COALESCE((
-                       SELECT SUM(ri.quantity) FROM return_items ri WHERE ri.invoice_item_id = ii.id
-                   ), 0) AS already_returned
-                   FROM invoice_items ii WHERE ii.id=%s AND ii.invoice_id=%s""",
+                """SELECT ii.unit_price, ii.product_id, ii.quantity, ii.unit_label,
+                          ii.pack_size AS line_pack_stored,
+                          COALESCE(p.pack_size, 1) AS cur_pack_size, p.sub_unit,
+                          COALESCE((
+                              SELECT SUM(ri.sub_quantity) FROM return_items ri
+                              WHERE ri.invoice_item_id = ii.id
+                          ), 0) AS already_sub
+                   FROM invoice_items ii
+                   LEFT JOIN products p ON ii.product_id = p.id
+                   WHERE ii.id=%s AND ii.invoice_id=%s""",
                 (item.invoice_item_id, invoice_id),
             )
             inv_item = cur.fetchone()
             if not inv_item:
                 raise HTTPException(status_code=404, detail="Invoice item not found on this invoice")
-            remaining = int(inv_item["quantity"]) - int(inv_item["already_returned"])
-            if item.quantity > remaining:
-                raise HTTPException(status_code=400, detail=f"Return qty {item.quantity} exceeds remaining {remaining}")
-            item_total = float(inv_item["unit_price"]) * item.quantity
+
+            stored = inv_item["line_pack_stored"]
+            if stored is not None and int(stored) > 0:
+                line_pack = int(stored)
+            else:
+                cur_pack = max(1, int(inv_item["cur_pack_size"] or 1))
+                sold_as_sub = bool(inv_item["sub_unit"]) and inv_item["unit_label"] == inv_item["sub_unit"]
+                line_pack = 1 if sold_as_sub else cur_pack
+            total_sub = int(inv_item["quantity"]) * line_pack
+            already_sub = int(inv_item["already_sub"])
+
+            if item.sub_quantity is not None:
+                req_sub = int(item.sub_quantity)
+            else:
+                req_sub = int(item.quantity) * line_pack
+            if req_sub <= 0:
+                raise HTTPException(status_code=400, detail="Invalid return quantity")
+            remaining_sub = total_sub - already_sub
+            if req_sub > remaining_sub:
+                raise HTTPException(status_code=400, detail=f"Return qty {req_sub} exceeds remaining {remaining_sub}")
+
+            price_per_sub = float(inv_item["unit_price"]) / line_pack
+            item_total = round(price_per_sub * req_sub, 2)
+            total_returned += item_total
+
             cur.execute(
                 """INSERT INTO return_items
-                   (return_id, invoice_item_id, product_id, quantity, unit_price, total)
-                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                   (return_id, invoice_item_id, product_id, quantity, unit_price, total, sub_quantity)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (ret["id"], item.invoice_item_id, inv_item["product_id"],
-                 item.quantity, inv_item["unit_price"], item_total),
+                 req_sub, round(price_per_sub, 2), item_total, req_sub),
             )
             cur.execute("SELECT stock, branch_id FROM products WHERE id=%s FOR UPDATE",
                         (inv_item["product_id"],))
             p = cur.fetchone()
-            new_stock = int(p["stock"]) + item.quantity
+            new_stock = int(p["stock"]) + req_sub
             cur.execute("UPDATE products SET stock=%s WHERE id=%s",
                         (new_stock, inv_item["product_id"]))
+            unit_lbl = inv_item["sub_unit"] if line_pack > 1 else inv_item["unit_label"]
             log_movement(
                 cur, inv_item["product_id"], p["branch_id"], "return",
-                item.quantity, new_stock,
+                req_sub, new_stock,
                 reference_type="return", reference_id=ret["id"],
-                reason=f"Return {return_number}: {req.reason or ''}".strip(),
+                reason=f"Return {return_number} ({req_sub} {unit_lbl or 'unit'}): {req.reason or ''}".strip(),
                 user_id=current_user.get("user_id"),
             )
 
+        cur.execute("UPDATE returns SET total_returned=%s WHERE id=%s",
+                    (round(total_returned, 2), ret["id"]))
         conn.commit()
+        ret["total_returned"] = round(total_returned, 2)
         return dict(ret)
     except HTTPException:
         conn.rollback()

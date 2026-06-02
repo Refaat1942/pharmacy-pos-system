@@ -45,8 +45,9 @@ const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
 ]
 
 function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature?: string }) {
-  const { isAuthenticated, hasFeature } = useAuth()
+  const { isAuthenticated, hasFeature, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (user && user.role !== 'admin') return <Navigate to="/clock" replace />
   if (feature && !hasFeature(feature)) {
     const home = FEATURE_HOME_ORDER.find((r) => !r.feature || hasFeature(r.feature))
     return <Navigate to={home ? home.path : '/clock'} replace />
@@ -88,7 +89,7 @@ function AppRoutes() {
       <Route path="/hr" element={<ProtectedRoute feature="hr"><HR /></ProtectedRoute>} />
       <Route path="/hr/cards" element={<ProtectedRoute feature="hr"><EmployeeCards /></ProtectedRoute>} />
       <Route path="/settings/login-cards" element={<ProtectedRoute feature="settings"><UserCards /></ProtectedRoute>} />
-      <Route path="/clock" element={<ProtectedRoute><Clock /></ProtectedRoute>} />
+      <Route path="/clock" element={isAuthenticated ? <Clock /> : <Navigate to="/login" replace />} />
       <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />

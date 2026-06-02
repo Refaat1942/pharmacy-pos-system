@@ -1,7 +1,2 @@
-- [Clinic Prescription Portal](clinic-prescription-portal.md) — public no-auth `/api/clinic/{slug}/{token}` resolves tenant by slug; prescription branch predicate is the access control (IDOR guard).
-- [HR permissions & tenant JWT](hr-permissions-and-jwt.md) — login JWT lacked `permissions`; HR-perm users get attendance-only via `_require_hr_access` + slim `/hr/attendance-roster`, never the full employees list.
-- [Credit / account money model](credit-account-money-model.md) — balance = charged(account invoices) − customer_payments; record at-sale partial payments as a payments row, never by shrinking net_total.
-- [Branch access control](branch-access-control.md) — stock-mutating endpoints must fail closed: non-admin with null branch_id is denied, never treated as unrestricted.
-- [PO landed-cost & margins](po-landed-cost-model.md) — PO per-line discount%/VAT% feed effective landed cost into products.cost on receive; VAT intentionally in cost basis so margins reflect it.
-- [FastAPI route shadowing](fastapi-route-ordering.md) — literal sub-routes (e.g. /replenishment) get swallowed by an earlier /{id:int}-less /{id} route; use {id:int} converter so non-numeric paths fall through.
-- [Shift-close guards](shift-close-guards.md) — scope close-blockers like cash reconciliation (seller_id+branch+opened_at); backfill any new status col that gates a guard so the UI filter and guard agree.
+- [Pack units & returns](pack-units-and-returns.md) — stock lives in sub-units when pack_size>1; snapshot the per-line pack multiple at sale time, never derive return math from mutable product fields.
+- [Product branch_id orphans](product-branch-orphans.md) — products uploaded with no active branch get branch_id NULL, vanish from per-branch views and branch-scoped queries; guard at upload + backfill to a branch.

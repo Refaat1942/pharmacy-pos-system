@@ -96,6 +96,10 @@ export interface InvoiceItem {
   discount: number
   total: number
   unit_label?: string | null
+  pack_size?: number
+  prod_unit?: string | null
+  prod_sub_unit?: string | null
+  returned_sub?: number
 }
 
 export interface Invoice {
@@ -237,7 +241,7 @@ export const salesAPI = {
   get: (id: number) => api.get<SaleResponse>(`/sales/${id}`),
   processReturn: (
     invoiceId: number,
-    items: { invoice_item_id: number; quantity: number }[],
+    items: { invoice_item_id: number; sub_quantity: number }[],
     reason?: string
   ) => api.post(`/sales/${invoiceId}/return`, { items, reason }),
 }

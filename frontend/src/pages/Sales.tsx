@@ -134,7 +134,7 @@ export default function Sales() {
     if (!selectedSale) return
     const toReturn = Object.entries(returnItems)
       .filter(([, qty]) => qty > 0)
-      .map(([id, qty]) => ({ invoice_item_id: parseInt(id), quantity: qty }))
+      .map(([id, qty]) => ({ invoice_item_id: parseInt(id), sub_quantity: qty }))
     if (toReturn.length === 0) return
 
     setReturnLoading(true)
@@ -586,32 +586,50 @@ export default function Sales() {
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedSale.items.map((item) => (
+                      {selectedSale.items.map((item) => {
+                        const linePack = item.pack_size && item.pack_size > 1 ? item.pack_size : 1
+                        const totalSub = item.quantity * linePack
+                        const maxSub = totalSub - (item.returned_sub || 0)
+                        const subLabel = linePack > 1 ? (item.prod_sub_unit || '') : (item.unit_label || '')
+                        return (
                         <tr key={item.id} className="border-b border-gray-50">
                           <td className="py-2.5 text-gray-800 font-medium text-xs">
                             {lang === 'ar' ? item.product_name_ar : item.product_name_en}
                           </td>
-                          <td className="py-2.5 text-center text-gray-500">{item.quantity}</td>
+                          <td className="py-2.5 text-center text-gray-500">
+                            {item.quantity}{item.unit_label ? ` ${item.unit_label}` : ''}
+                            {linePack > 1 && (
+                              <span className="block text-[10px] text-gray-400">
+                                = {totalSub} {item.prod_sub_unit}
+                              </span>
+                            )}
+                          </td>
                           <td className="py-2.5 text-center">
-                            <input
-                              type="number"
-                              min={0}
-                              max={item.quantity}
-                              value={returnItems[item.id] || 0}
-                              onChange={(e) =>
-                                setReturnItems((prev) => ({
-                                  ...prev,
-                                  [item.id]: Math.min(
-                                    item.quantity,
-                                    Math.max(0, parseInt(e.target.value) || 0)
-                                  ),
-                                }))
-                              }
-                              className="w-16 text-center border border-gray-200 rounded-lg px-1 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pharma-400"
-                            />
+                            <div className="flex items-center justify-center gap-1">
+                              <input
+                                type="number"
+                                min={0}
+                                max={maxSub}
+                                value={returnItems[item.id] || 0}
+                                onChange={(e) =>
+                                  setReturnItems((prev) => ({
+                                    ...prev,
+                                    [item.id]: Math.min(
+                                      maxSub,
+                                      Math.max(0, parseInt(e.target.value) || 0)
+                                    ),
+                                  }))
+                                }
+                                className="w-16 text-center border border-gray-200 rounded-lg px-1 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-pharma-400"
+                              />
+                              {subLabel && (
+                                <span className="text-[10px] text-gray-400">{subLabel}</span>
+                              )}
+                            </div>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                   <div>
