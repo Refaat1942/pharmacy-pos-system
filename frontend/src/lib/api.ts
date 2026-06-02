@@ -197,6 +197,8 @@ export const customersAPI = {
 
 export const employeesAPI = {
   list: () => api.get<Employee[]>('/employees'),
+  lookupByCode: (code: string) =>
+    api.get<Employee>('/employees/by-code', { params: { code: code.trim() } }),
   deliveryRoster: () => api.get<{ id: number; name: string }[]>('/hr/delivery-roster'),
 }
 

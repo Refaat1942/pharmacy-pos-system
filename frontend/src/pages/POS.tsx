@@ -136,8 +136,11 @@ export default function POS() {
   const [highlight, setHighlight] = useState(0)
   const [searching, setSearching] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const sellerScanRef = useRef<HTMLInputElement>(null)
 
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [sellerScanCode, setSellerScanCode] = useState('')
+  const [sellerScanFeedback, setSellerScanFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedSeller, setSelectedSeller] = useState<Employee | null>(() => loadJSON<Employee | null>(SELLER_KEY, null))
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
@@ -221,6 +224,40 @@ export default function POS() {
 
   useEffect(() => {
     employeesAPI.list().then((r) => setEmployees(r.data))
+  }, [])
+
+  const applySellerScan = useCallback(async () => {
+    const code = sellerScanCode.trim()
+    if (!code) return
+    try {
+      const { data } = await employeesAPI.lookupByCode(code)
+      setSelectedSeller(data)
+      setEmployees((prev) => (prev.some((e) => e.id === data.id) ? prev : [...prev, data]))
+      setSellerScanCode('')
+      setSellerScanFeedback({ type: 'ok', text: t('pos.seller_scan_ok') as string })
+      sellerScanRef.current?.focus()
+      window.setTimeout(() => setSellerScanFeedback(null), 2500)
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setSellerScanFeedback({
+        type: 'err',
+        text: typeof detail === 'string' ? detail : (t('pos.seller_scan_fail') as string),
+      })
+      sellerScanRef.current?.select()
+    }
+  }, [sellerScanCode, t])
+
+  const selectSelfAsSeller = useCallback(() => {
+    if (!user) return
+    const me = employees.find((e) => e.id === user.id)
+    if (me) {
+      setSelectedSeller(me)
+      setSellerScanFeedback({ type: 'ok', text: t('pos.seller_scan_ok') as string })
+      window.setTimeout(() => setSellerScanFeedback(null), 2000)
+    }
+  }, [user, employees, t])
+
+  useEffect(() => {
     customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
     searchRef.current?.focus()
   }, [])
@@ -713,30 +750,91 @@ export default function POS() {
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
                 <UserCircle2 size={13} /> {t('pos.seller')}
               </label>
-              <select
-                value={selectedSeller?.id ?? ''}
-                onChange={(e) => {
-                  const emp = employees.find((em) => em.id === parseInt(e.target.value))
-                  setSelectedSeller(emp || null)
-                }}
-                className={`w-full text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-pharma-100 ${
-                  selectedSeller
-                    ? 'border border-slate-200 bg-slate-50 text-slate-700 focus:border-pharma-400'
-                    : 'border-2 border-red-300 bg-red-50 text-red-800 font-semibold focus:border-red-400'
-                }`}
-              >
-                <option value="">{t('pos.select_seller')}</option>
-                {employees.map((e) => {
-                  const display = lang === 'ar'
-                    ? (e.name_ar || e.name_en || `#${e.id}`)
-                    : (e.name_en || e.name_ar || `#${e.id}`)
-                  return (
-                    <option key={e.id} value={e.id}>
-                      {display}
-                    </option>
-                  )
-                })}
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedSeller?.id ?? ''}
+                  onChange={(e) => {
+                    const emp = employees.find((em) => em.id === parseInt(e.target.value))
+                    setSelectedSeller(emp || null)
+                    setSellerScanFeedback(null)
+                  }}
+                  className={`flex-1 min-w-0 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-pharma-100 ${
+                    selectedSeller
+                      ? 'border border-slate-200 bg-slate-50 text-slate-700 focus:border-pharma-400'
+                      : 'border-2 border-red-300 bg-red-50 text-red-800 font-semibold focus:border-red-400'
+                  }`}
+                >
+                  <option value="">{t('pos.select_seller')}</option>
+                  {employees.map((e) => {
+                    const display = lang === 'ar'
+                      ? (e.name_ar || e.name_en || `#${e.id}`)
+                      : (e.name_en || e.name_ar || `#${e.id}`)
+                    return (
+                      <option key={e.id} value={e.id}>
+                        {display}
+                      </option>
+                    )
+                  })}
+                </select>
+                {user && employees.some((e) => e.id === user.id) && (
+                  <button
+                    type="button"
+                    onClick={selectSelfAsSeller}
+                    className="flex-shrink-0 text-xs font-semibold px-2.5 py-2.5 rounded-xl border border-pharma-200 bg-pharma-50 text-pharma-700 hover:bg-pharma-100"
+                    title={t('pos.seller_me') as string}
+                  >
+                    {t('pos.seller_me')}
+                  </button>
+                )}
+                {selectedSeller && (
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedSeller(null); setSellerScanFeedback(null) }}
+                    className="flex-shrink-0 text-slate-400 hover:text-red-500 p-2"
+                    title={t('pos.clear_seller') as string}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1.5 mb-1">{t('pos.scan_seller_or')}</p>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <ScanLine size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    ref={sellerScanRef}
+                    type="text"
+                    value={sellerScanCode}
+                    onChange={(e) => { setSellerScanCode(e.target.value); setSellerScanFeedback(null) }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void applySellerScan()
+                      }
+                    }}
+                    placeholder={t('pos.scan_seller_placeholder') as string}
+                    aria-label={t('pos.scan_seller') as string}
+                    className="w-full text-sm border border-slate-200 rounded-xl ps-9 pe-3 py-2 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white text-slate-700 font-mono"
+                    autoComplete="off"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void applySellerScan()}
+                  disabled={!sellerScanCode.trim()}
+                  className="flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+                >
+                  {t('pos.scan_seller_apply')}
+                </button>
+              </div>
+              {sellerScanFeedback && (
+                <p
+                  className={`text-xs mt-1.5 ${sellerScanFeedback.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}
+                  role="status"
+                >
+                  {sellerScanFeedback.text}
+                </p>
+              )}
             </div>
 
             <div className="relative">

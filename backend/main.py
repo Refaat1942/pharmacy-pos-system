@@ -514,6 +514,49 @@ def list_employees(current_user=Depends(get_current_user)):
     return [dict(e) for e in employees]
 
 
+@app.get("/api/employees/by-code")
+def lookup_seller_by_code(code: str, current_user=Depends(get_current_user)):
+    """Resolve an active POS seller from a scanned login card (card_code) or HR clock QR (clock_code)."""
+    raw = (code or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Code is required")
+    key = raw.upper()
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """SELECT id, name_ar, name_en, role, status
+               FROM users
+               WHERE status = 'active' AND UPPER(card_code) = %s""",
+            [key],
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                """SELECT u.id, u.name_ar, u.name_en, u.role, u.status
+                   FROM employees e
+                   JOIN users u ON u.employee_id = e.id AND u.status = 'active'
+                   WHERE e.active = TRUE AND UPPER(e.clock_code) = %s""",
+                [key],
+            )
+            row = cur.fetchone()
+        if not row:
+            cur.execute(
+                "SELECT 1 FROM employees WHERE active = TRUE AND UPPER(clock_code) = %s",
+                [key],
+            )
+            if cur.fetchone():
+                raise HTTPException(
+                    status_code=404,
+                    detail="Employee card found but no active POS user is linked — link the user in Settings",
+                )
+            raise HTTPException(status_code=404, detail="Seller not found for this code")
+        return dict(row)
+    finally:
+        cur.close()
+        conn.close()
+
+
 # ─── SALES ───────────────────────────────────────────────────────────────────
 
 def _is_shipment_sale(sale_type: str, delivery_address: Optional[str]) -> bool:
