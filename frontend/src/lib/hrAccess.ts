@@ -52,11 +52,9 @@ export function allowedHrTabs(user: UserLike): HrTab[] {
   return all.filter((tab) => hasHrTab(user, tab))
 }
 
-/** Add/edit employees and print QR clock cards. */
+/** Add/edit/delete employees and print QR clock cards (admin only). */
 export function canManageEmployees(user: UserLike): boolean {
-  if (!user) return false
-  if (user.role === 'admin') return true
-  return hasHrTab(user, 'employees')
+  return user?.role === 'admin'
 }
 
 /** Manually record or edit attendance rows (not the public clock screen). */

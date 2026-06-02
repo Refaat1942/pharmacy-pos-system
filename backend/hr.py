@@ -81,9 +81,7 @@ def _require_hr_tab(user, tab: str) -> None:
 
 
 def _can_manage_employees(user) -> bool:
-    if user.get("role") == "admin":
-        return True
-    return _has_hr_tab(user, "employees")
+    return user.get("role") == "admin"
 
 
 def _require_manage_employees(user) -> None:

@@ -69,9 +69,7 @@ export default function HR() {
         </div>
 
         {tab === 'employees' && (
-          hasHrTab(user, 'employees')
-            ? (canManageEmployees(user) ? <EmployeesTab /> : <HrUnauthorized />)
-            : <HrUnauthorized />
+          hasHrTab(user, 'employees') ? <EmployeesTab /> : <HrUnauthorized />
         )}
         {tab === 'attendance' && (
           hasHrTab(user, 'attendance') ? <AttendanceTab /> : <HrUnauthorized />
@@ -139,22 +137,23 @@ function EmployeesTab() {
   }), [])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
-  if (!manage) {
-    return <HrUnauthorized />
-  }
-
   return (
     <div className="space-y-3">
+      {!manage && <HrUnauthorized />}
       <div className="flex justify-end gap-2 flex-wrap">
         <a href="/clock" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
           <QrCode size={14} /> {t('hr.open_clock')}
         </a>
-        <a href="/hr/cards" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
-          <Printer size={14} /> {t('hr.print_cards')}
-        </a>
-        <button onClick={() => setEditing({ active: true, base_salary: 0 })} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
-          <UserPlus size={14} /> {t('hr.add_employee')}
-        </button>
+        {manage && (
+          <>
+            <a href="/hr/cards" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
+              <Printer size={14} /> {t('hr.print_cards')}
+            </a>
+            <button type="button" onClick={() => setEditing({ active: true, base_salary: 0 })} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
+              <UserPlus size={14} /> {t('hr.add_employee')}
+            </button>
+          </>
+        )}
       </div>
       <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -189,8 +188,14 @@ function EmployeesTab() {
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-center">
-                  <button onClick={() => setEditing(r)} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
-                  <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700 mx-1"><Trash2 size={14} /></button>
+                  {manage ? (
+                    <>
+                      <button onClick={() => setEditing(r)} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
+                      <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700 mx-1"><Trash2 size={14} /></button>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">—</span>
+                  )}
                 </td>
               </tr>
             ))}
