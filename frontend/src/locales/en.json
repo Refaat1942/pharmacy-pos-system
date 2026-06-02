@@ -83,6 +83,10 @@
     "reports": "Reports",
     "shifts": "Cash Drawer",
     "hr": "HR & Payroll",
+    "hr_employees": "HR — Employees",
+    "hr_attendance": "HR — Attendance",
+    "hr_payroll": "HR — Payroll",
+    "hr_performance": "HR — Performance",
     "settings": "Settings",
     "clinics": "Clinics",
     "deliveries": "Deliveries"
@@ -368,6 +372,7 @@
     "custom_permissions": "Custom menu access for this user",
     "custom_permissions_off_hint": "Off — this user sees the default menu for their role.",
     "custom_permissions_on_hint": "On — this user will only see the menu items you tick below.",
+    "hr_tabs_hint": "Choose which HR & Payroll tabs this user can open:",
     "status_active": "Active",
     "status_inactive": "Inactive",
     "role_admin": "Admin",

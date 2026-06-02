@@ -6,6 +6,7 @@ import {
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
+import { canAccessHr } from '../lib/hrAccess'
 
 interface NavItem {
   to: string
@@ -64,12 +65,20 @@ export default function Sidebar() {
         {NAV.filter((n) => {
           if (n.adminOnly && !isAdmin) return false
           if (n.roles && !n.roles.includes(user?.role || '')) {
-            const permittedByUser = !!(userPerms && n.feature && userPerms.has(n.feature))
-            if (!(n.feature === 'hr' && permittedByUser)) return false
+            const permittedByUser = !!(userPerms && n.feature && (
+              n.feature === 'hr' ? canAccessHr(user) : userPerms.has(n.feature)
+            ))
+            if (!permittedByUser) return false
           }
           if (isBranch && (!n.feature || !BRANCH_ALLOWED.has(n.feature))) return false
           if (n.feature && !hasFeature(n.feature)) return false
-          if (userPerms && n.feature && !userPerms.has(n.feature)) return false
+          if (userPerms && n.feature) {
+            if (n.feature === 'hr') {
+              if (!canAccessHr(user)) return false
+            } else if (!userPerms.has(n.feature)) {
+              return false
+            }
+          }
           return true
         }).map(({ to, labelKey, Icon }) => {
           const active = location.pathname === to

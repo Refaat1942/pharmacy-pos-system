@@ -5,6 +5,7 @@ import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { allowedHrTabs, canAccessHr, hasHrTab } from '../lib/hrAccess'
 import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
@@ -28,16 +29,18 @@ export default function HR() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const isBranch = user?.role === 'branch'
-  const hasHrPerm = Array.isArray(user?.permissions) && (user!.permissions as string[]).includes('hr')
-  const allowedTabs = isAdmin
-    ? (['employees', 'attendance', 'payroll', 'performance'] as const)
-    : (['attendance'] as const)
+  const allowedTabs = useMemo(() => allowedHrTabs(user), [user])
   const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>(
-    isAdmin ? 'employees' : 'attendance'
+    () => allowedTabs[0] ?? 'attendance',
   )
 
-  if (!isAdmin && !isBranch && !hasHrPerm) {
+  useEffect(() => {
+    if (!allowedTabs.includes(tab)) {
+      setTab(allowedTabs[0] ?? 'attendance')
+    }
+  }, [allowedTabs, tab])
+
+  if (!canAccessHr(user)) {
     return (
       <Layout>
         <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
@@ -64,10 +67,10 @@ export default function HR() {
           ))}
         </div>
 
-        {tab === 'employees' && isAdmin && <EmployeesTab />}
-        {tab === 'attendance' && <AttendanceTab />}
-        {tab === 'payroll' && isAdmin && <PayrollTab />}
-        {tab === 'performance' && isAdmin && <PerformanceTab />}
+        {tab === 'employees' && hasHrTab(user, 'employees') && <EmployeesTab />}
+        {tab === 'attendance' && hasHrTab(user, 'attendance') && <AttendanceTab />}
+        {tab === 'payroll' && hasHrTab(user, 'payroll') && <PayrollTab />}
+        {tab === 'performance' && hasHrTab(user, 'performance') && <PerformanceTab />}
       </div>
     </Layout>
   )

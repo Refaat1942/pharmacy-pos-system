@@ -45,13 +45,49 @@ def _require_admin_or_branch(user):
         raise HTTPException(403, "Admin or branch user only")
 
 
+HR_TAB_PERMS = {
+    "employees": "hr_employees",
+    "attendance": "hr_attendance",
+    "payroll": "hr_payroll",
+    "performance": "hr_performance",
+}
+
+
+def _user_permissions(user) -> set:
+    raw = user.get("permissions") or []
+    if isinstance(raw, (list, tuple)):
+        return {str(p) for p in raw}
+    return set()
+
+
+def _has_hr_tab(user, tab: str) -> bool:
+    if user.get("role") == "admin":
+        return True
+    if user.get("role") == "branch":
+        return tab == "attendance"
+    perms = _user_permissions(user)
+    key = HR_TAB_PERMS.get(tab)
+    if key and key in perms:
+        return True
+    if tab == "attendance" and "hr" in perms:
+        return True
+    return False
+
+
+def _require_hr_tab(user, tab: str) -> None:
+    if _has_hr_tab(user, tab):
+        return
+    raise HTTPException(status_code=403, detail=f"HR access required for {tab}")
+
+
 def _require_hr_access(user):
-    if user.get('role') in ('admin', 'branch'):
+    """Any HR module access (legacy endpoints shared across tabs)."""
+    if user.get("role") in ("admin", "branch"):
         return
-    perms = user.get('permissions') or []
-    if isinstance(perms, (list, tuple)) and 'hr' in perms:
+    perms = _user_permissions(user)
+    if "hr" in perms or perms.intersection(HR_TAB_PERMS.values()):
         return
-    raise HTTPException(403, "HR access required")
+    raise HTTPException(status_code=403, detail="HR access required")
 
 
 # ─── Employees ─────────────────────────────────────────────────────────────
@@ -70,7 +106,7 @@ class EmployeeIn(BaseModel):
 
 @router.get("/employees")
 def list_employees(active_only: bool = False, current_user=Depends(get_current_user)):
-    _require_admin_or_branch(current_user)
+    _require_hr_tab(current_user, "employees")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -89,7 +125,7 @@ def list_employees(active_only: bool = False, current_user=Depends(get_current_u
 
 @router.post("/employees")
 def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "employees")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -180,7 +216,7 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
 
 @router.put("/employees/{eid}")
 def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "employees")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -199,7 +235,7 @@ def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current
 
 @router.delete("/employees/{eid}")
 def delete_employee(eid: int, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "employees")
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -223,7 +259,7 @@ class AttendanceIn(BaseModel):
 
 @router.get("/attendance-roster")
 def attendance_roster(current_user=Depends(get_current_user)):
-    _require_hr_access(current_user)
+    _require_hr_tab(current_user, "attendance")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -261,14 +297,14 @@ def _calc_hours(ci: Optional[time], co: Optional[time]) -> Optional[float]:
     return round(mins / 60.0, 2)
 
 
-@router.get("/attendance")  
+@router.get("/attendance")
 def list_attendance(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     employee_id: Optional[int] = None,
     current_user=Depends(get_current_user),
 ):
-    _require_hr_access(current_user)
+    _require_hr_tab(current_user, "attendance")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -289,7 +325,7 @@ def list_attendance(
 
 @router.post("/attendance")
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
-    _require_hr_access(current_user)
+    _require_hr_tab(current_user, "attendance")
     hours = _calc_hours(body.check_in, body.check_out)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -338,7 +374,7 @@ class SlipUpdateIn(BaseModel):
 @router.get("/payroll")
 def list_payroll(period_month: Optional[str] = None, q: Optional[str] = None,
                  current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "payroll")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -361,7 +397,7 @@ def list_payroll(period_month: Optional[str] = None, q: Optional[str] = None,
 @router.post("/payroll/generate")
 def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
     """Create draft slips for active employees for given YYYY-MM. Skips existing."""
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "payroll")
     try:
         datetime.strptime(period_month, "%Y-%m")
     except ValueError:
@@ -409,7 +445,7 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
 
 @router.put("/payroll/{slip_id}")
 def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "payroll")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -435,7 +471,7 @@ def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_curre
 
 @router.post("/payroll/{slip_id}/mark-paid")
 def mark_paid(slip_id: int, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "payroll")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -452,7 +488,7 @@ def mark_paid(slip_id: int, current_user=Depends(get_current_user)):
 
 @router.delete("/payroll/{slip_id}")
 def delete_slip(slip_id: int, current_user=Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "payroll")
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -474,7 +510,7 @@ def sales_performance(
     """Aggregate sales by seller (user) for a date range. Returns invoice
     count, items sold, gross revenue, average ticket and rank. Joins users
     so we can show the cashier's display name in either language."""
-    _require_admin(current_user)
+    _require_hr_tab(current_user, "performance")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:

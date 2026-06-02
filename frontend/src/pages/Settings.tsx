@@ -26,7 +26,11 @@ interface UserRow {
 const ALL_FEATURES = [
   'dashboard', 'pos', 'sales', 'returns', 'inventory', 'transfers', 'branches_stock',
   'expiry', 'purchases', 'customers', 'suppliers', 'reports', 'shifts', 'hr',
+  'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_performance',
 ] as const
+
+const HR_SUB_FEATURES = ['hr_employees', 'hr_attendance', 'hr_payroll', 'hr_performance'] as const
+const CORE_FEATURES = ALL_FEATURES.filter((f) => f !== 'hr' && !HR_SUB_FEATURES.includes(f as typeof HR_SUB_FEATURES[number]))
 
 const BRANCH_ROLE_FEATURES = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock'])
 
@@ -261,7 +265,22 @@ function UserModal({ user, branches, onClose, onSaved }: {
     new Set(Array.isArray(user?.permissions) ? (user!.permissions as string[]) : [])
   )
   const togglePerm = (f: string) => {
-    setPerms(prev => { const n = new Set(prev); if (n.has(f)) n.delete(f); else n.add(f); return n })
+    setPerms((prev) => {
+      const n = new Set(prev)
+      if (n.has(f)) {
+        n.delete(f)
+        if (f === 'hr') HR_SUB_FEATURES.forEach((s) => n.delete(s))
+        if ((HR_SUB_FEATURES as readonly string[]).includes(f) && !HR_SUB_FEATURES.some((s) => n.has(s))) {
+          n.delete('hr')
+        }
+      } else {
+        n.add(f)
+        if (f === 'hr' || (HR_SUB_FEATURES as readonly string[]).includes(f)) {
+          n.add('hr')
+        }
+      }
+      return n
+    })
   }
   const showPerms = form.role !== 'admin'
   const [saving, setSaving] = useState(false)
@@ -402,23 +421,52 @@ function UserModal({ user, branches, onClose, onSaved }: {
                 {customPerms ? t('settings.custom_permissions_on_hint') : t('settings.custom_permissions_off_hint')}
               </p>
               {customPerms && (
-                <div className="grid grid-cols-2 gap-1.5 mt-2">
-                  {ALL_FEATURES.map(f => {
-                    const isBranchRole = form.role === 'branch'
-                    const blocked = isBranchRole && !BRANCH_ROLE_FEATURES.has(f)
-                    return (
-                      <label key={f} className={`flex items-center gap-2 px-2 py-1 rounded ${blocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white cursor-pointer'}`}>
-                        <input
-                          type="checkbox"
-                          checked={perms.has(f) && !blocked}
-                          disabled={blocked}
-                          onChange={() => togglePerm(f)}
-                          className="rounded"
-                        />
-                        <span className="text-sm text-slate-700">{t(`nav.${f}`)}</span>
-                      </label>
-                    )
-                  })}
+                <div className="space-y-3 mt-2">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {CORE_FEATURES.map((f) => {
+                      const isBranchRole = form.role === 'branch'
+                      const blocked = isBranchRole && !BRANCH_ROLE_FEATURES.has(f)
+                      return (
+                        <label key={f} className={`flex items-center gap-2 px-2 py-1 rounded ${blocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white cursor-pointer'}`}>
+                          <input
+                            type="checkbox"
+                            checked={perms.has(f) && !blocked}
+                            disabled={blocked}
+                            onChange={() => togglePerm(f)}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-slate-700">{t(`nav.${f}`)}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <div className="rounded-lg border border-violet-200 bg-violet-50/80 p-3">
+                    <label className={`flex items-center gap-2 px-1 py-1 rounded cursor-pointer ${form.role === 'branch' && !BRANCH_ROLE_FEATURES.has('hr') ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/60'}`}>
+                      <input
+                        type="checkbox"
+                        checked={perms.has('hr')}
+                        disabled={form.role === 'branch' && !BRANCH_ROLE_FEATURES.has('hr')}
+                        onChange={() => togglePerm('hr')}
+                        className="rounded"
+                      />
+                      <span className="text-sm font-semibold text-violet-900">{t('nav.hr')}</span>
+                    </label>
+                    <p className="text-[11px] text-violet-700 mt-1 mb-2 ps-6">{t('settings.hr_tabs_hint')}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 ps-4 border-s border-violet-200">
+                      {HR_SUB_FEATURES.map((f) => (
+                        <label key={f} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/70 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={perms.has(f)}
+                            disabled={form.role === 'branch' && !BRANCH_ROLE_FEATURES.has('hr')}
+                            onChange={() => togglePerm(f)}
+                            className="rounded"
+                          />
+                          <span className="text-sm text-violet-900">{t(`nav.${f}`)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -5,6 +5,7 @@ import JsBarcode from 'jsbarcode'
 import { Printer } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { hasHrTab } from '../lib/hrAccess'
 import { Navigate } from 'react-router-dom'
 
 type Employee = {
@@ -55,7 +56,7 @@ export default function EmployeeCards() {
   }, [ready])
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (user?.role !== 'admin') {
+  if (!hasHrTab(user, 'employees')) {
     return <div className="p-10 text-center text-slate-500">{t('hr.admin_only')}</div>
   }
 

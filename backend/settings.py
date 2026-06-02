@@ -152,7 +152,10 @@ ALL_FEATURES = {
     "dashboard", "pos", "sales", "returns", "inventory", "transfers",
     "branches_stock", "expiry", "purchases", "customers", "suppliers",
     "reports", "shifts", "hr",
+    "hr_employees", "hr_attendance", "hr_payroll", "hr_performance",
 }
+
+HR_SUB_FEATURES = {"hr_employees", "hr_attendance", "hr_payroll", "hr_performance"}
 
 
 def _clean_permissions(value):
@@ -168,6 +171,8 @@ def _clean_permissions(value):
         v = v.strip()
         if v in ALL_FEATURES and v not in seen:
             cleaned.append(v); seen.add(v)
+    if any(s in cleaned for s in HR_SUB_FEATURES) and "hr" not in seen:
+        cleaned.append("hr")
     return cleaned
 
 
