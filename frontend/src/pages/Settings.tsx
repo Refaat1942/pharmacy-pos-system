@@ -20,6 +20,7 @@ interface UserRow {
   permissions: string[] | null
   branch_name_en: string | null
   branch_name_ar: string | null
+  is_delivery?: boolean
 }
 
 const ALL_FEATURES = [
@@ -39,13 +40,15 @@ interface BranchRow {
   product_count: number
 }
 
-const ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'branch']
+const ROLES = ['admin', 'pharmacist', 'assistant', 'cashier', 'delivery', 'branch']
 
 const roleClass: Record<string, string> = {
   admin: 'bg-purple-100 text-purple-700 border-purple-200',
   pharmacist: 'bg-blue-100 text-blue-700 border-blue-200',
   assistant: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   cashier: 'bg-amber-100 text-amber-700 border-amber-200',
+  delivery: 'bg-teal-100 text-teal-700 border-teal-200',
+  branch: 'bg-slate-100 text-slate-700 border-slate-200',
 }
 
 export default function Settings() {
@@ -251,6 +254,7 @@ function UserModal({ user, branches, onClose, onSaved }: {
     salary: user?.salary?.toString() || '',
     status: user?.status || 'active',
     password: '',
+    is_delivery: user?.is_delivery ?? user?.role === 'delivery',
   })
   const [customPerms, setCustomPerms] = useState<boolean>(Array.isArray(user?.permissions))
   const [perms, setPerms] = useState<Set<string>>(
@@ -272,6 +276,7 @@ function UserModal({ user, branches, onClose, onSaved }: {
         role: form.role,
         branch_id: form.branch_id ? Number(form.branch_id) : null,
         salary: form.salary ? Number(form.salary) : null,
+        is_delivery: form.is_delivery || form.role === 'delivery',
       }
       if (form.role !== 'admin') {
         payload.permissions = customPerms ? Array.from(perms) : null
@@ -317,7 +322,18 @@ function UserModal({ user, branches, onClose, onSaved }: {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('settings.role')}>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="input w-full">
+              <select
+                value={form.role}
+                onChange={(e) => {
+                  const role = e.target.value
+                  setForm({
+                    ...form,
+                    role,
+                    is_delivery: role === 'delivery' ? true : form.is_delivery,
+                  })
+                }}
+                className="input w-full"
+              >
                 {ROLES.map((r) => <option key={r} value={r}>{t(`settings.role_${r}`, r)}</option>)}
               </select>
             </Field>
@@ -351,6 +367,25 @@ function UserModal({ user, branches, onClose, onSaved }: {
             <Field label={t('settings.password')}>
               <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="input w-full" autoComplete="new-password" />
             </Field>
+          )}
+          {form.role !== 'admin' && (
+            <label className="flex items-start gap-3 p-3 rounded-xl border-2 border-teal-200 bg-teal-50/80 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.is_delivery || form.role === 'delivery'}
+                disabled={form.role === 'delivery'}
+                onChange={(e) => setForm({ ...form, is_delivery: e.target.checked })}
+                className="mt-1 rounded border-teal-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-teal-900">
+                  {t('settings.is_delivery')}
+                </span>
+                <span className="block text-xs text-teal-700 mt-0.5">
+                  {t('settings.is_delivery_hint')}
+                </span>
+              </span>
+            </label>
           )}
           {showPerms && (
             <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/60">

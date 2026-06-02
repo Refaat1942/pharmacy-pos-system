@@ -138,7 +138,7 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
         conn.close()
 
 
-ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier", "branch"}
+ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier", "branch", "delivery"}
 
 
 def _admin(user):
@@ -171,6 +171,43 @@ def _clean_permissions(value):
     return cleaned
 
 
+def _user_display_name(name_en: str, name_ar: str) -> str:
+    return (name_en or name_ar or "Staff").strip()
+
+
+def _sync_user_delivery_employee(cur, user_id: int, name_en: str, name_ar: str,
+                                branch_id: Optional[int], is_delivery: bool,
+                                employee_id: Optional[int] = None) -> None:
+    """Keep employees(role=delivery) in sync when a user is marked as a delivery driver."""
+    from hr import _generate_clock_code
+
+    name = _user_display_name(name_en, name_ar)
+    if not is_delivery:
+        if employee_id:
+            cur.execute("UPDATE employees SET active = FALSE WHERE id = %s", (employee_id,))
+        cur.execute("UPDATE users SET employee_id = NULL WHERE id = %s", (user_id,))
+        return
+    if employee_id:
+        cur.execute(
+            """UPDATE employees SET name = %s, role = 'delivery', branch_id = %s, active = TRUE
+               WHERE id = %s""",
+            (name, branch_id, employee_id),
+        )
+        eid = employee_id
+    else:
+        cur.execute(
+            """INSERT INTO employees (name, role, branch_id, active, base_salary)
+               VALUES (%s, 'delivery', %s, TRUE, 0) RETURNING id""",
+            (name, branch_id),
+        )
+        eid = cur.fetchone()["id"]
+        cur.execute(
+            "UPDATE employees SET clock_code = %s WHERE id = %s",
+            (_generate_clock_code(eid, name), eid),
+        )
+    cur.execute("UPDATE users SET employee_id = %s WHERE id = %s", (eid, user_id))
+
+
 class UserIn(BaseModel):
     username: str
     name_ar: str
@@ -180,6 +217,7 @@ class UserIn(BaseModel):
     salary: Optional[float] = None
     password: Optional[str] = None
     permissions: Optional[List[str]] = None
+    is_delivery: bool = False
 
 
 class UserPatch(BaseModel):
@@ -190,6 +228,7 @@ class UserPatch(BaseModel):
     salary: Optional[float] = None
     status: Optional[str] = None
     permissions: Optional[List[str]] = None
+    is_delivery: Optional[bool] = None
 
 
 class PasswordReset(BaseModel):
@@ -205,11 +244,13 @@ def list_users(current_user: dict = Depends(get_current_user)):
         cur.execute("""
             SELECT u.id, u.username, u.name_ar, u.name_en, u.role,
                    u.branch_id, u.salary, COALESCE(u.status,'active') AS status,
-                   u.permissions, u.card_code,
+                   u.permissions, u.card_code, u.employee_id,
+                   (e.id IS NOT NULL AND e.role = 'delivery' AND e.active = TRUE) AS is_delivery,
                    b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                    u.created_at
             FROM users u
             LEFT JOIN branches b ON b.id = u.branch_id
+            LEFT JOIN employees e ON e.id = u.employee_id
             ORDER BY u.id
         """)
         return [dict(r) for r in cur.fetchall()]
@@ -246,6 +287,10 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
                SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
              WHERE id = %s AND card_code IS NULL
         """, (uid,))
+        is_delivery = body.is_delivery or body.role == "delivery"
+        _sync_user_delivery_employee(
+            cur, uid, body.name_en, body.name_ar, body.branch_id, is_delivery,
+        )
         conn.commit()
         return {"id": uid, "ok": True}
     finally:
@@ -258,7 +303,10 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
     _admin(current_user)
     fields = []
     values = []
-    for k, v in body.model_dump(exclude_unset=True).items():
+    patch = body.model_dump(exclude_unset=True)
+    for k, v in patch.items():
+        if k == "is_delivery":
+            continue
         if k == "role" and v not in ALLOWED_ROLES:
             raise HTTPException(400, "Invalid role")
         if k == "status" and v not in ("active", "inactive"):
@@ -270,15 +318,40 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
             continue
         fields.append(f"{k} = %s")
         values.append(v)
-    if not fields:
-        return {"ok": True}
-    values.append(user_id)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
-        if cur.rowcount == 0:
+        cur.execute(
+            """SELECT id, name_en, name_ar, branch_id, role, employee_id
+               FROM users WHERE id = %s""",
+            (user_id,),
+        )
+        before = cur.fetchone()
+        if not before:
             raise HTTPException(404, "User not found")
+        if fields:
+            values.append(user_id)
+            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+        name_en = body.name_en if body.name_en is not None else before["name_en"]
+        name_ar = body.name_ar if body.name_ar is not None else before["name_ar"]
+        branch_id = body.branch_id if body.branch_id is not None else before["branch_id"]
+        role = body.role if body.role is not None else before["role"]
+        if body.is_delivery is not None:
+            is_delivery = body.is_delivery
+        elif body.role is not None:
+            is_delivery = role == "delivery"
+        else:
+            cur.execute(
+                "SELECT 1 FROM employees WHERE id = %s AND role = 'delivery' AND active = TRUE",
+                (before["employee_id"],),
+            )
+            is_delivery = cur.fetchone() is not None
+        if body.is_delivery is not None or body.role is not None or any(
+            k in patch for k in ("name_en", "name_ar", "branch_id")
+        ):
+            _sync_user_delivery_employee(
+                cur, user_id, name_en, name_ar, branch_id, is_delivery, before["employee_id"],
+            )
         conn.commit()
         return {"ok": True}
     finally:

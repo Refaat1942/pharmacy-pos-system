@@ -461,6 +461,9 @@ UPDATE users
    SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
  WHERE card_code IS NULL;
 
+-- Link POS login users to HR employee rows (e.g. delivery drivers on the delivery roster)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL;
+
 -- Contracted clinics that send prescriptions to the POS via a private link
 CREATE TABLE IF NOT EXISTS clinics (
     id           SERIAL PRIMARY KEY,

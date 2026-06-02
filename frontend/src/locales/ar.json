@@ -516,7 +516,10 @@
     "role_pharmacist": "صيدلي",
     "role_assistant": "مساعد",
     "role_cashier": "كاشير",
+    "role_delivery": "مندوب توصيل",
     "role_branch": "حساب الفرع",
+    "is_delivery": "مندوب توصيل (قائمة نقطة البيع)",
+    "is_delivery_hint": "يظهر في قائمة مندوب التوصيل عند إتمام مبيعات التوصيل.",
     "login_cards": "طباعة بطاقات الدخول",
     "no_cards": "لا يوجد مستخدمون نشطون لديهم كود بطاقة",
     "scan_to_unlock": "امسح لفتح قفل الجهاز"

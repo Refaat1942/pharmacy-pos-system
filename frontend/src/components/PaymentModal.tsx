@@ -43,7 +43,12 @@ export default function PaymentModal({
   const [accountPaidMethod, setAccountPaidMethod] = useState('cash')
 
   useEffect(() => {
-    employeesAPI.deliveryRoster().then((r) => setDeliveryPeople(r.data)).catch(() => {})
+    const load = () => {
+      employeesAPI.deliveryRoster().then((r) => setDeliveryPeople(r.data)).catch(() => {})
+    }
+    load()
+    window.addEventListener('branch-changed', load)
+    return () => window.removeEventListener('branch-changed', load)
   }, [])
 
   const handleSaleTypeChange = (type: string) => {

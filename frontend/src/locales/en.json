@@ -374,7 +374,10 @@
     "role_pharmacist": "Pharmacist",
     "role_assistant": "Assistant",
     "role_cashier": "Cashier",
+    "role_delivery": "Delivery driver",
     "role_branch": "Branch Terminal",
+    "is_delivery": "Delivery driver (POS list)",
+    "is_delivery_hint": "Shows this person in the delivery-person dropdown when completing delivery sales.",
     "login_cards": "Print login cards",
     "no_cards": "No active users with a card code",
     "scan_to_unlock": "Scan to unlock terminal"

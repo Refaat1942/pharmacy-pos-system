@@ -7,7 +7,7 @@ import hashlib
 import secrets
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, get_active_branch_id
 
 
 def _generate_clock_code(eid: int, name: str) -> str:
@@ -234,11 +234,21 @@ def attendance_roster(current_user=Depends(get_current_user)):
 
 
 @router.get("/delivery-roster")
-def delivery_roster(current_user=Depends(get_current_user)):
+def delivery_roster(current_user=Depends(get_current_user),
+                    active_branch=Depends(get_active_branch_id)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id, name FROM employees WHERE active = TRUE AND role = 'delivery' ORDER BY name")
+        sql = (
+            "SELECT id, name FROM employees "
+            "WHERE active = TRUE AND role = 'delivery'"
+        )
+        params: list = []
+        if active_branch is not None:
+            sql += " AND (branch_id IS NULL OR branch_id = %s)"
+            params.append(active_branch)
+        sql += " ORDER BY name"
+        cur.execute(sql, params)
         return [dict(r) for r in cur.fetchall()]
     finally:
         cur.close(); conn.close()
