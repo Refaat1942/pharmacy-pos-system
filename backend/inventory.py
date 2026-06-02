@@ -114,6 +114,32 @@ def delete_product(product_id: int,
 
 # Max rows returned by list-style endpoints (raise if you outgrow this).
 MAX_INVENTORY_ROWS = 100_000
+# Branch-stock search results cap (keeps UI and DB fast)
+BRANCH_STOCK_LIMIT = 1000
+
+
+def _parse_search_terms(q: str) -> list[str]:
+    if not q:
+        return []
+    normalized = q.replace("\n", ",").replace("\r", ",").replace(";", ",").replace("|", ",")
+    return [t.strip() for t in normalized.split(",") if t.strip()]
+
+
+def _branch_stock_term_clause(term: str) -> tuple[str, list]:
+    """Match one term by exact/prefix barcode or by name contains."""
+    params: list = []
+    t_upper = term.strip().upper()
+    prefix = f"{term.strip()}%"
+    name_like = f"%{term.strip()}%"
+    clause = (
+        "(UPPER(COALESCE(p.barcode, '')) = %s "
+        "OR UPPER(COALESCE(p.international_barcode, '')) = %s "
+        "OR COALESCE(p.barcode, '') ILIKE %s "
+        "OR COALESCE(p.international_barcode, '') ILIKE %s "
+        "OR p.name_en ILIKE %s OR p.name_ar ILIKE %s)"
+    )
+    params.extend([t_upper, t_upper, prefix, prefix, name_like, name_like])
+    return clause, params
 
 
 # ─── INVENTORY SUMMARY (accurate DB counts) ─────────────────────────────────
@@ -1242,22 +1268,35 @@ def _branch_stock_data(
                 )
                 params.append(key_list)
         if q:
-            terms = [t.strip() for t in q.replace(";", ",").replace("|", ",").split(",") if t.strip()]
+            terms = _parse_search_terms(q)
             if terms:
-                ors = []
+                term_ors = []
                 for term in terms:
-                    ors.append(
-                        "(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s "
-                        "OR COALESCE(p.international_barcode,'') ILIKE %s)"
-                    )
-                    like = f"%{term}%"
-                    params += [like, like, like, like]
-                where.append("(" + " OR ".join(ors) + ")")
+                    clause, term_params = _branch_stock_term_clause(term)
+                    term_ors.append(clause)
+                    params.extend(term_params)
+                where.append("(" + " OR ".join(term_ors) + ")")
         if effective_branch is not None:
             where.append("p.branch_id = %s")
             params.append(effective_branch)
 
         where_sql = " AND ".join(where)
+
+        # Avoid scanning the full catalog when no search — keeps the page fast.
+        if not q and not keys:
+            return {
+                "branches": branches,
+                "items": [],
+                "summary": {
+                    "total_count": 0,
+                    "shown_count": 0,
+                    "low_stock": 0,
+                    "out_of_stock": 0,
+                    "truncated": False,
+                },
+                "search_required": True,
+            }
+
         grouped_cte = f"""WITH grouped AS (
                   SELECT
                     COALESCE(NULLIF(p.barcode,''), 'name:' || p.name_en || '::' || p.name_ar) AS key,
@@ -1314,7 +1353,7 @@ def _branch_stock_data(
                 GROUP BY key
                 ORDER BY MAX(name_en), key
                 LIMIT %s""",
-            params + [MAX_INVENTORY_ROWS],
+            params + [BRANCH_STOCK_LIMIT],
         )
         items = []
         for r in cur.fetchall():

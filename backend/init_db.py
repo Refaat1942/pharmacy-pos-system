@@ -427,6 +427,9 @@ ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30)
 -- Optional preferred supplier per product (used by auto-replenishment PO).
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+CREATE INDEX IF NOT EXISTS idx_products_active_branch ON products(active, branch_id) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_products_barcode_lookup ON products(UPPER(barcode)) WHERE barcode IS NOT NULL AND barcode <> '';
+CREATE INDEX IF NOT EXISTS idx_products_intl_barcode_lookup ON products(UPPER(international_barcode)) WHERE international_barcode IS NOT NULL AND international_barcode <> '';
 
 -- Shift Visa reconciliation (counted Visa total + variance vs expected Visa sales)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
