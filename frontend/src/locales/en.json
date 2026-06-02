@@ -601,6 +601,7 @@
     "account": "On Account",
     "charge_to": "Charge to:",
     "account_requires_customer": "Please select a customer (top of POS) to charge on account.",
+    "account_digital_only": "On Account payment is only available for Digital sales.",
     "salesperson": "Salesperson",
     "seller_required": "Select the salesperson before confirming — every sale must be assigned to a pharmacist.",
     "delivery_details": "Delivery details",

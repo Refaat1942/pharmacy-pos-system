@@ -67,6 +67,7 @@ export default function PaymentModal({
 
   const accountPaidNow = Math.min(Math.max(parseFloat(accountPaidAmount) || 0, 0), effectiveTotal)
   const accountRemaining = Math.max(0, effectiveTotal - accountPaidNow)
+  const isAccountPaymentAllowed = saleType === 'digital'
 
   const isValid = () => {
     if (!selectedSeller) return false
@@ -78,7 +79,7 @@ export default function PaymentModal({
     }
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
-    if (paymentMethod === 'account') return !!selectedCustomer
+    if (paymentMethod === 'account') return isAccountPaymentAllowed && !!selectedCustomer
     return true
   }
 
@@ -95,10 +96,16 @@ export default function PaymentModal({
       setError(t('payment.delivery_required') as string)
       return
     }
+    if (paymentMethod === 'account' && !isAccountPaymentAllowed) {
+      setError(t('payment.account_digital_only') as string)
+      return
+    }
     if (!isValid()) {
       setError(
         paymentMethod === 'cash'
           ? `Minimum amount: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
+          : paymentMethod === 'account'
+          ? (t('payment.account_requires_customer') as string)
           : `Amounts must sum to: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
       )
       return

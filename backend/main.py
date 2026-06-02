@@ -561,6 +561,8 @@ def create_sale(req: SaleRequest,
 
         if req.type != "return" and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
+        if req.payment_method == "account" and req.type != "digital":
+            raise HTTPException(status_code=400, detail="On Account payment is only available for digital sales")
 
         cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
         count = cur.fetchone()["cnt"]
