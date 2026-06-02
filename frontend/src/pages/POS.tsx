@@ -52,6 +52,57 @@ const normalizeItem = (i: CartItem): CartItem =>
     ? { ...i, discount_mode: 'amount', discount_value: i.discount }
     : i
 
+/** EGP / % toggle — shared by line-item and invoice discount rows */
+function DiscountModeToggle({
+  mode,
+  onAmount,
+  onPercent,
+  size = 'md',
+}: {
+  mode: 'amount' | 'percent'
+  onAmount: () => void
+  onPercent: () => void
+  size?: 'sm' | 'md'
+}) {
+  const { t } = useTranslation()
+  const large = size === 'md'
+  const wrap = large
+    ? 'inline-flex gap-1.5 rounded-xl border-2 border-slate-200 bg-slate-100 p-1'
+    : 'inline-flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5'
+  const btn = (active: boolean) =>
+    large
+      ? `min-h-[44px] min-w-[4.5rem] px-4 py-2.5 rounded-lg border-2 text-sm font-bold transition-all ${
+          active
+            ? 'bg-pharma-600 text-white border-pharma-600 shadow-md'
+            : 'bg-white text-slate-600 border-slate-200 hover:border-pharma-400 hover:bg-pharma-50'
+        }`
+      : `min-h-[36px] min-w-[3.25rem] px-3 py-2 rounded-md border-2 text-xs font-bold transition-all ${
+          active
+            ? 'bg-pharma-600 text-white border-pharma-600 shadow-sm'
+            : 'bg-white text-slate-600 border-slate-200 hover:border-pharma-300'
+        }`
+  return (
+    <div className={wrap} role="group" aria-label={t('pos.discount') as string}>
+      <button
+        type="button"
+        onClick={onAmount}
+        className={btn(mode === 'amount')}
+        title={t('pos.by_amount') as string}
+      >
+        {large ? t('pos.by_amount') : t('pos.egp')}
+      </button>
+      <button
+        type="button"
+        onClick={onPercent}
+        className={btn(mode === 'percent')}
+        title={t('pos.by_percent') as string}
+      >
+        {large ? t('pos.by_percent') : '%'}
+      </button>
+    </div>
+  )
+}
+
 const normalizeItems = (items: CartItem[]): CartItem[] => items.map(normalizeItem)
 
 function loadJSON<T>(key: string, fallback: T): T {
@@ -566,34 +617,41 @@ export default function POS() {
                                 </button>
                               </div>
                             )}
-                            <div className="mt-1.5 flex items-center gap-1">
-                              <input
-                                type="number"
-                                min={0}
-                                value={item.discount_value || ''}
-                                onChange={(e) => setItemDiscount(item.product.id, item.discount_mode || 'amount', Math.max(0, parseFloat(e.target.value) || 0))}
-                                placeholder={t('pos.item_discount') as string}
-                                className="w-20 text-xs text-end border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:border-pharma-400 bg-white"
-                              />
-                              <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
-                                <button
-                                  onClick={() => setItemDiscount(item.product.id, 'amount', item.discount_value || 0)}
-                                  className={`px-2.5 py-1 text-xs font-bold rounded ${(item.discount_mode || 'amount') === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
-                                  title={t('pos.by_amount') as string}
-                                >
-                                  {t('pos.egp')}
-                                </button>
-                                <button
-                                  onClick={() => setItemDiscount(item.product.id, 'percent', item.discount_value || 0)}
-                                  className={`px-2.5 py-1 text-xs font-bold rounded ${item.discount_mode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
-                                  title={t('pos.by_percent') as string}
-                                >
-                                  %
-                                </button>
+                            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">
+                                {t('pos.item_discount')}
+                              </p>
+                              <div className="flex flex-wrap items-stretch gap-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.discount_value || ''}
+                                  onChange={(e) =>
+                                    setItemDiscount(
+                                      item.product.id,
+                                      item.discount_mode || 'amount',
+                                      Math.max(0, parseFloat(e.target.value) || 0),
+                                    )
+                                  }
+                                  placeholder={item.discount_mode === 'percent' ? '0' : '0.00'}
+                                  className="w-24 min-h-[36px] text-sm text-end font-semibold border-2 border-emerald-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-pharma-500 focus:ring-2 focus:ring-pharma-100 bg-white tabular-nums"
+                                />
+                                <DiscountModeToggle
+                                  size="sm"
+                                  mode={item.discount_mode || 'amount'}
+                                  onAmount={() =>
+                                    setItemDiscount(item.product.id, 'amount', item.discount_value || 0)
+                                  }
+                                  onPercent={() =>
+                                    setItemDiscount(item.product.id, 'percent', item.discount_value || 0)
+                                  }
+                                />
+                                {item.discount > 0 && (
+                                  <span className="self-center text-xs text-emerald-700 font-bold tabular-nums px-1">
+                                    − {item.discount.toFixed(2)} {t('pos.egp')}
+                                  </span>
+                                )}
                               </div>
-                              {item.discount > 0 && (
-                                <span className="text-[10px] text-emerald-600 font-semibold tabular-nums">-{item.discount.toFixed(2)}</span>
-                              )}
                             </div>
                           </div>
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
@@ -752,37 +810,28 @@ export default function POS() {
               </span>
             </div>
 
-            <div className="flex items-center justify-between gap-2">
-              <label className="flex items-center gap-1.5 text-sm text-slate-500">
-                <Tag size={13} /> {t('pos.discount')}
+            <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2.5">
+              <label className="flex items-center gap-2 text-sm font-bold text-amber-900">
+                <Tag size={16} className="text-amber-600 shrink-0" />
+                {t('pos.discount')}
               </label>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-stretch gap-2">
                 <input
                   type="number"
                   value={invoiceDiscount || ''}
                   onChange={(e) =>
                     setInvoiceDiscount(Math.max(0, parseFloat(e.target.value) || 0))
                   }
-                  className="w-20 text-end text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white"
+                  className="flex-1 min-w-[5rem] min-h-[44px] text-end text-lg font-bold border-2 border-amber-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-500 focus:ring-2 focus:ring-pharma-100 bg-white tabular-nums"
                   placeholder={invoiceDiscountMode === 'percent' ? '0' : '0.00'}
                   min={0}
                 />
-                <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setInvoiceDiscountMode('amount')}
-                    className={`px-3 py-1.5 text-sm font-bold rounded ${invoiceDiscountMode === 'amount' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
-                    title={t('pos.by_amount') as string}
-                  >
-                    {t('pos.egp')}
-                  </button>
-                  <button
-                    onClick={() => setInvoiceDiscountMode('percent')}
-                    className={`px-3 py-1.5 text-sm font-bold rounded ${invoiceDiscountMode === 'percent' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500'}`}
-                    title={t('pos.by_percent') as string}
-                  >
-                    %
-                  </button>
-                </div>
+                <DiscountModeToggle
+                  size="md"
+                  mode={invoiceDiscountMode}
+                  onAmount={() => setInvoiceDiscountMode('amount')}
+                  onPercent={() => setInvoiceDiscountMode('percent')}
+                />
               </div>
             </div>
             {invoiceDiscountMode === 'percent' && effectiveInvoiceDiscount > 0 && (
