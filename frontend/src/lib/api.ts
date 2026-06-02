@@ -454,6 +454,9 @@ export interface POItem {
   product_name_en?: string | null
   quantity: number
   unit_cost: number
+  discount_pct?: number
+  vat_pct?: number
+  public_price?: number | null
   expiry_date?: string | null
   total?: number
 }

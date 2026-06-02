@@ -2,3 +2,4 @@
 - [HR permissions & tenant JWT](hr-permissions-and-jwt.md) — login JWT lacked `permissions`; HR-perm users get attendance-only via `_require_hr_access` + slim `/hr/attendance-roster`, never the full employees list.
 - [Credit / account money model](credit-account-money-model.md) — balance = charged(account invoices) − customer_payments; record at-sale partial payments as a payments row, never by shrinking net_total.
 - [Branch access control](branch-access-control.md) — stock-mutating endpoints must fail closed: non-admin with null branch_id is denied, never treated as unrestricted.
+- [PO landed-cost & margins](po-landed-cost-model.md) — PO per-line discount%/VAT% feed effective landed cost into products.cost on receive; VAT intentionally in cost basis so margins reflect it.

@@ -868,7 +868,10 @@
     "repl_select_items": "اختر صنفاً واحداً على الأقل بكمية أكبر من صفر",
     "repl_need_supplier": "اختر مورداً لإنشاء أمر الشراء",
     "repl_need_branch": "اختر فرعاً لإنشاء أمر الشراء",
-    "repl_po_created": "تم إنشاء مسودة أمر الشراء"
+    "repl_po_created": "تم إنشاء مسودة أمر الشراء",
+    "discount_pct": "الخصم %",
+    "vat_pct": "الضريبة %",
+    "public_price": "سعر الجمهور"
   },
   "customers": {
     "title": "العملاء",

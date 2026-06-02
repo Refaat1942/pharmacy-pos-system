@@ -868,7 +868,10 @@
     "repl_select_items": "Select at least one item with quantity > 0",
     "repl_need_supplier": "Choose a supplier to create the PO",
     "repl_need_branch": "Choose a branch to create the PO",
-    "repl_po_created": "Draft PO created"
+    "repl_po_created": "Draft PO created",
+    "discount_pct": "Disc %",
+    "vat_pct": "VAT %",
+    "public_price": "Public Price"
   },
   "customers": {
     "title": "Customers",

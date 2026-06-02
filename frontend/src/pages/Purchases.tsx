@@ -197,16 +197,17 @@ function CreatePOModal({
   const addItem = (p?: any) => {
     if (p) {
       if (items.find((i) => i.product_id === p.id)) return
-      setItems([...items, { product_id: p.id, barcode: p.barcode, product_name_en: p.name_en, product_name_ar: p.name_ar, quantity: 1, unit_cost: p.cost || 0, expiry_date: null }])
+      setItems([...items, { product_id: p.id, barcode: p.barcode, product_name_en: p.name_en, product_name_ar: p.name_ar, quantity: 1, unit_cost: p.cost || 0, discount_pct: 0, vat_pct: 0, public_price: p.price ?? null, expiry_date: null }])
     } else {
       // blank line for new product
-      setItems([...items, { product_id: null, barcode: '', product_name_en: '', product_name_ar: '', quantity: 1, unit_cost: 0, expiry_date: null }])
+      setItems([...items, { product_id: null, barcode: '', product_name_en: '', product_name_ar: '', quantity: 1, unit_cost: 0, discount_pct: 0, vat_pct: 0, public_price: null, expiry_date: null }])
     }
   }
   const update = (i: number, patch: Partial<POItem>) => setItems(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
   const remove = (i: number) => setItems(items.filter((_, idx) => idx !== i))
 
-  const subtotal = items.reduce((s, i) => s + i.quantity * i.unit_cost, 0)
+  const lineNet = (i: POItem) => i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100) * (1 + (i.vat_pct || 0) / 100)
+  const subtotal = items.reduce((s, i) => s + lineNet(i), 0)
   const total = subtotal - discount + tax
 
   const submit = async () => {
@@ -226,6 +227,9 @@ function CreatePOModal({
           product_name_en: i.product_name_en || undefined,
           quantity: i.quantity,
           unit_cost: i.unit_cost,
+          discount_pct: i.discount_pct || 0,
+          vat_pct: i.vat_pct || 0,
+          public_price: i.public_price ?? undefined,
           expiry_date: i.expiry_date || undefined,
         })),
       })
@@ -237,7 +241,7 @@ function CreatePOModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{t('purchases.new')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -299,17 +303,36 @@ function CreatePOModal({
               </div>
             )}
             <div className="space-y-2">
+              {items.length > 0 && (
+                <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
+                  <div className="col-span-2">{t('purchases.col_name')}</div>
+                  <div className="col-span-2">{t('purchases.col_barcode')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.qty')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.cost')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
+                  <div className="col-span-2">{t('purchases.col_expiry')}</div>
+                  <div className="col-span-1" />
+                </div>
+              )}
               {items.map((it, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg">
-                  <input className="input col-span-3 text-xs" placeholder={t('purchases.col_name') as string}
+                  <input className="input col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
                          value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
                   <input className="input col-span-2 text-xs" placeholder={t('purchases.col_barcode') as string}
                          value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
                   <input type="number" min={1} className="input col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
                          value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
-                  <input type="number" min={0} step="0.01" className="input col-span-2 text-xs text-end" placeholder={t('purchases.cost') as string}
+                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.cost') as string}
                          value={it.unit_cost} onChange={(e) => update(i, { unit_cost: Math.max(0, Number(e.target.value)) })} />
-                  <input type="date" className="input col-span-3 text-xs" value={it.expiry_date || ''} onChange={(e) => update(i, { expiry_date: e.target.value })} />
+                  <input type="number" min={0} max={100} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
+                         value={it.discount_pct ?? 0} onChange={(e) => update(i, { discount_pct: Math.min(100, Math.max(0, Number(e.target.value))) })} />
+                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
+                         value={it.vat_pct ?? 0} onChange={(e) => update(i, { vat_pct: Math.max(0, Number(e.target.value)) })} />
+                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
+                         value={it.public_price ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
+                  <input type="date" className="input col-span-2 text-xs" value={it.expiry_date || ''} onChange={(e) => update(i, { expiry_date: e.target.value })} />
                   <button onClick={() => remove(i)} className="p-1 hover:bg-red-100 rounded text-red-600 col-span-1 justify-self-end">
                     <Trash2 size={14} />
                   </button>
@@ -362,6 +385,9 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
                 <th className="px-3 py-2 text-start">{t('purchases.col_barcode')}</th>
                 <th className="px-3 py-2 text-end">{t('purchases.qty')}</th>
                 <th className="px-3 py-2 text-end">{t('purchases.cost')}</th>
+                <th className="px-3 py-2 text-end">{t('purchases.discount_pct')}</th>
+                <th className="px-3 py-2 text-end">{t('purchases.vat_pct')}</th>
+                <th className="px-3 py-2 text-end">{t('purchases.public_price')}</th>
                 <th className="px-3 py-2 text-start">{t('purchases.col_expiry')}</th>
                 <th className="px-3 py-2 text-end">{t('purchases.col_total')}</th>
               </tr>
@@ -373,6 +399,9 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
                   <td className="px-3 py-2 text-end">{it.quantity}</td>
                   <td className="px-3 py-2 text-end">{Number(it.unit_cost).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-end">{Number(it.discount_pct || 0).toFixed(2)}%</td>
+                  <td className="px-3 py-2 text-end">{Number(it.vat_pct || 0).toFixed(2)}%</td>
+                  <td className="px-3 py-2 text-end">{it.public_price != null ? Number(it.public_price).toFixed(2) : '—'}</td>
                   <td className="px-3 py-2 text-xs">{it.expiry_date || '—'}</td>
                   <td className="px-3 py-2 text-end font-semibold">{Number(it.total).toFixed(2)}</td>
                 </tr>

@@ -475,6 +475,10 @@ CREATE TABLE IF NOT EXISTS prescription_items (
 
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS prescription_id INTEGER REFERENCES prescriptions(id);
 CREATE INDEX IF NOT EXISTS invoices_prescription_id_idx ON invoices(prescription_id);
+
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS discount_pct DECIMAL(6,2) DEFAULT 0;
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS vat_pct      DECIMAL(6,2) DEFAULT 0;
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS public_price DECIMAL(12,2);
 """
 
 

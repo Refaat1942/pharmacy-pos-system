@@ -17,6 +17,10 @@ def _admin_only(user):
         raise HTTPException(status_code=403, detail="Admins only")
 
 
+def _eff_unit_cost(unit_cost, discount_pct, vat_pct):
+    return float(unit_cost) * (1 - float(discount_pct or 0) / 100) * (1 + float(vat_pct or 0) / 100)
+
+
 # ─── SUPPLIERS ──────────────────────────────────────────────────────────
 
 class SupplierIn(BaseModel):
@@ -160,6 +164,9 @@ class POItemIn(BaseModel):
     product_name_en: Optional[str] = None
     quantity: int
     unit_cost: float
+    discount_pct: float = 0
+    vat_pct: float = 0
+    public_price: Optional[float] = None
     expiry_date: Optional[date] = None
 
 
@@ -203,6 +210,12 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 raise HTTPException(status_code=400, detail="Quantity must be positive")
             if it.unit_cost < 0:
                 raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
+            if it.discount_pct < 0 or it.discount_pct > 100:
+                raise HTTPException(status_code=400, detail="Discount % must be between 0 and 100")
+            if it.vat_pct < 0:
+                raise HTTPException(status_code=400, detail="VAT % cannot be negative")
+            if it.public_price is not None and it.public_price < 0:
+                raise HTTPException(status_code=400, detail="Public price cannot be negative")
         # Supplier consistency: if any selected product has a preferred supplier set,
         # it must match the PO's supplier (NULL = unassigned, allowed). Prevents
         # the replenishment flow (or any UI) from sending mixed-supplier POs.
@@ -219,7 +232,8 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                     status_code=400,
                     detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
                 )
-        subtotal = sum(i.quantity * i.unit_cost for i in req.items)
+        subtotal = sum(i.quantity * _eff_unit_cost(i.unit_cost, i.discount_pct, i.vat_pct)
+                       for i in req.items)
         total = subtotal - req.discount + req.tax
         if total < 0:
             raise HTTPException(status_code=400, detail="Discount cannot exceed subtotal + tax")
@@ -261,14 +275,16 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 barcode = barcode or p["barcode"]
             if not pname_en:
                 raise HTTPException(status_code=400, detail="Product name required")
+            line_total = it.quantity * _eff_unit_cost(it.unit_cost, it.discount_pct, it.vat_pct)
             cur.execute(
                 """INSERT INTO purchase_order_items
                    (po_id, product_id, barcode, product_name_ar, product_name_en,
-                    quantity, unit_cost, expiry_date, total)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    quantity, unit_cost, discount_pct, vat_pct, public_price,
+                    expiry_date, total)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (po_id, it.product_id, barcode, pname_ar, pname_en,
-                 it.quantity, it.unit_cost, it.expiry_date,
-                 it.quantity * it.unit_cost),
+                 it.quantity, it.unit_cost, it.discount_pct, it.vat_pct, it.public_price,
+                 it.expiry_date, line_total),
             )
         conn.commit()
         return {"ok": True, "po_id": po_id, "po_number": po_number, "total": total}
@@ -367,6 +383,9 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
         cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s", (po_id,))
         items = cur.fetchall()
         for it in items:
+            eff_cost = _eff_unit_cost(it["unit_cost"], it.get("discount_pct"), it.get("vat_pct"))
+            pub_price = it.get("public_price")
+            new_price = float(pub_price) if pub_price not in (None, "") and float(pub_price) > 0 else None
             pid = it["product_id"]
             # Resolve / create destination product in this branch
             if pid:
@@ -386,7 +405,7 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
                 if p:
                     pid = p["id"]
             if not pid:
-                # Create new product (price = unit_cost as placeholder; user can edit later)
+                # Create new product (price = public price if given, else effective cost as placeholder)
                 cur.execute(
                     """INSERT INTO products
                        (barcode, name_ar, name_en, category, unit, price, cost,
@@ -396,7 +415,7 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
                        RETURNING id, stock""",
                     (it["barcode"], it["product_name_ar"] or it["product_name_en"],
                      it["product_name_en"] or it["product_name_ar"],
-                     it["unit_cost"], it["unit_cost"],
+                     new_price if new_price is not None else eff_cost, eff_cost,
                      it["expiry_date"], branch_id),
                 )
                 p = cur.fetchone()
@@ -413,17 +432,18 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
             cur.execute("SELECT stock FROM products WHERE id=%s FOR UPDATE", (pid,))
             cur_stock = int(cur.fetchone()["stock"])
             new_stock = cur_stock + int(it["quantity"])
-            # Update stock, cost (latest), and expiry if provided
+            # Update stock, cost (effective landed cost), selling price (if public price given),
+            # and expiry if provided.
+            sets = ["stock=%s", "cost=%s"]
+            params: list = [new_stock, eff_cost]
+            if new_price is not None:
+                sets.append("price=%s")
+                params.append(new_price)
             if it["expiry_date"]:
-                cur.execute(
-                    "UPDATE products SET stock=%s, cost=%s, expiry_date=%s WHERE id=%s",
-                    (new_stock, it["unit_cost"], it["expiry_date"], pid),
-                )
-            else:
-                cur.execute(
-                    "UPDATE products SET stock=%s, cost=%s WHERE id=%s",
-                    (new_stock, it["unit_cost"], pid),
-                )
+                sets.append("expiry_date=%s")
+                params.append(it["expiry_date"])
+            params.append(pid)
+            cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
             cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s",
                         (pid, it["id"]))
             log_movement(
