@@ -552,6 +552,9 @@ async def bulk_upload(file: UploadFile = File(...),
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+    if branch_id is None:
+        conn.close()
+        raise HTTPException(status_code=400, detail="Select a specific branch before uploading items")
     user_id = current_user.get("user_id")
 
     for idx, r in enumerate(rows, start=2):
@@ -1106,8 +1109,7 @@ def expiry_summary(days: int = 30,
     return dict(row)
 
 
-@router.get("/branch-stock")
-def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)):
+def _branch_stock_data(q, current_user):
     """Aggregated per-branch stock balances. Groups products that share the
     same barcode (or, when barcode is empty, the same EN+AR name) and returns
     one row per product family with a breakdown of stock across all branches.
@@ -1198,3 +1200,68 @@ def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)
         return {"branches": branches, "items": items}
     finally:
         cur.close(); conn.close()
+
+
+@router.get("/branch-stock")
+def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)):
+    return _branch_stock_data(q, current_user)
+
+
+@router.get("/branch-stock/export")
+def branch_stock_export(q: Optional[str] = None, current_user=Depends(get_current_user)):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    def _safe(v):
+        if v is None:
+            return ""
+        s = str(v)
+        s = "".join(ch for ch in s if ch in ("\n", "\t") or ord(ch) >= 32)
+        s = s.lstrip(" \t\n")
+        if s and s[0] in ("=", "+", "-", "@"):
+            s = "'" + s
+        return s
+
+    data = _branch_stock_data(q, current_user)
+    branches = data["branches"]
+    items = data["items"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Branches Stock"
+    headers = ["Name (EN)", "Name (AR)", "Barcode", "Category"]
+    headers += [b["name_en"] for b in branches]
+    headers += ["Total"]
+    ws.append(headers)
+    head_fill = PatternFill("solid", fgColor="1F8A4C")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+
+    for row in items:
+        by_branch = {b["branch_id"]: b for b in row.get("branches", [])}
+        line = [
+            _safe(row.get("name_en")),
+            _safe(row.get("name_ar")),
+            _safe(row.get("barcode")),
+            _safe(row.get("category")),
+        ]
+        for b in branches:
+            cell = by_branch.get(b["id"])
+            line.append(int(cell["stock"]) if cell and cell.get("product_id") is not None else 0)
+        line.append(int(row.get("total_stock") or 0))
+        ws.append(line)
+
+    for col in ws.columns:
+        width = max((len(str(c.value)) if c.value is not None else 0) for c in col) + 2
+        ws.column_dimensions[col[0].column_letter].width = min(max(width, 10), 40)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="branches_stock.xlsx"'},
+    )

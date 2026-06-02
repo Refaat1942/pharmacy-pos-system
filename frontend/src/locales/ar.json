@@ -73,6 +73,7 @@
     "tab_branch_stock": "أرصدة الفروع",
     "bs_total": "الإجمالي",
     "bs_hint": "أرصدة المخزون لكل فرع عبر جميع الفروع",
+    "bs_export": "تصدير إكسل",
     "bs_multi_search_placeholder": "ابحث — افصل بين العناصر بفواصل",
     "tab_movements": "حركة المخزون",
     "tab_velocity": "سريع / بطيء / راكد",

@@ -49,7 +49,7 @@ export default function PaymentModal({
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
     if (type === 'digital') setPaymentMethod('digital')
-    else if (paymentMethod === 'digital') setPaymentMethod('cash')
+    else if (paymentMethod === 'digital' || paymentMethod === 'account') setPaymentMethod('cash')
   }
 
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
@@ -280,6 +280,32 @@ export default function PaymentModal({
                     { value: 'hybrid', label: t('payment.hybrid') },
                     { value: 'instapay', label: t('payment.instapay') },
                     { value: 'vodafone_cash', label: t('payment.vodafone_cash') },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => setPaymentMethod(value)}
+                      className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                        paymentMethod === value
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Digital payment method (platform vs on-account) */}
+            {saleType === 'digital' && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  {t('payment.payment_method')}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'digital', label: t('payment.digital_sale') },
                     { value: 'account', label: t('payment.account') },
                   ].map(({ value, label }) => (
                     <button
@@ -440,7 +466,7 @@ export default function PaymentModal({
             )}
 
             {/* Digital platform */}
-            {(paymentMethod === 'digital' || saleType === 'digital') && (
+            {paymentMethod === 'digital' && (
               <div>
                 <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
                   {t('payment.digital_type')}

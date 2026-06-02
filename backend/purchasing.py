@@ -628,7 +628,7 @@ def replenishment_list(
         if branch_id is not None and branch_id != ub:
             raise HTTPException(status_code=403, detail="Cross-branch access denied")
         branch_id = ub
-    eff_branch = branch_id if branch_id is not None else active_branch
+    eff_branch = branch_id
 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

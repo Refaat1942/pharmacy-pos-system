@@ -386,6 +386,7 @@
     "tab_branch_stock": "Branch Stock",
     "bs_total": "Total",
     "bs_hint": "Per-branch balances across all branches",
+    "bs_export": "Export Excel",
     "bs_multi_search_placeholder": "Search — separate multiple items with commas",
     "tab_movements": "Stock Movements",
     "tab_velocity": "Fast / Slow / Dead",

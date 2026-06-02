@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Search, Layers } from 'lucide-react'
+import { Search, Layers, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 
@@ -34,6 +34,24 @@ export default function BranchesStock() {
   }
   useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [q])
 
+  const [exporting, setExporting] = useState(false)
+  const exportExcel = async () => {
+    setExporting(true)
+    try {
+      const res = await api.get('/inventory/branch-stock/export', {
+        params: q ? { q } : {},
+        responseType: 'blob',
+      })
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `branches_stock_${new Date().toISOString().slice(0, 10)}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally { setExporting(false) }
+  }
+
   const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
 
   return (
@@ -61,6 +79,14 @@ export default function BranchesStock() {
                 className="w-full ps-10 pe-3 py-2 border border-slate-300 rounded-lg text-sm"
               />
             </div>
+            <button
+              onClick={exportExcel}
+              disabled={exporting || data.items.length === 0}
+              className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-semibold whitespace-nowrap"
+            >
+              <Download size={16} />
+              {t('inventory.bs_export')}
+            </button>
           </div>
 
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
