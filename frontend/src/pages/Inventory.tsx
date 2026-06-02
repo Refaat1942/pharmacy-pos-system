@@ -44,7 +44,7 @@ type Movement = {
   created_at: string
 }
 
-type Tab = 'items' | 'branch_stock' | 'movements' | 'velocity' | 'alerts'
+type Tab = 'items' | 'branch_stock' | 'stocktake' | 'movements' | 'velocity' | 'alerts'
 
 type BranchStockRow = {
   key: string
@@ -177,6 +177,7 @@ export default function Inventory() {
           {([
             ['items', t('inventory.tab_items')],
             ['branch_stock', t('inventory.tab_branch_stock')],
+            ['stocktake', t('inventory.tab_stocktake')],
             ['movements', t('inventory.tab_movements')],
             ['velocity', t('inventory.tab_velocity')],
             ['alerts', t('inventory.tab_alerts')],
@@ -356,6 +357,7 @@ export default function Inventory() {
         )}
 
         {tab === 'branch_stock' && <BranchStockTab />}
+        {tab === 'stocktake' && <StocktakeTab />}
         {tab === 'movements' && <MovementsTab />}
         {tab === 'velocity' && <VelocityTab />}
         {tab === 'alerts' && <AlertsTab />}
@@ -1221,6 +1223,177 @@ function BranchStockTab() {
                   <td className="px-3 py-2.5 text-center font-mono font-bold bg-slate-50">{row.total_stock}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StocktakeTab() {
+  const { t, i18n } = useTranslation()
+  const { user } = useAuth()
+  const isAr = i18n.language === 'ar'
+  const isAdmin = user?.role === 'admin'
+  const [branches, setBranches] = useState<{ id: number; name_en: string; name_ar: string }[]>([])
+  const [branchId, setBranchId] = useState<number | ''>(user?.branch_id || '')
+  const [q, setQ] = useState('')
+  const [category, setCategory] = useState('')
+  const [categories, setCategories] = useState<string[]>([])
+  const [items, setItems] = useState<any[]>([])
+  const [counted, setCounted] = useState<Record<number, string>>({})
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [applying, setApplying] = useState(false)
+
+  useEffect(() => {
+    api.get('/inventory/branches').then(r => setBranches(r.data)).catch(() => setBranches([]))
+    api.get('/inventory/categories').then(r => setCategories(r.data)).catch(() => setCategories([]))
+  }, [])
+
+  const load = async () => {
+    if (!branchId) { setItems([]); return }
+    setLoading(true)
+    try {
+      const params: any = { branch_id: branchId }
+      if (q) params.q = q
+      if (category) params.category = category
+      const { data } = await api.get('/inventory/items', { params })
+      setItems(data)
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [branchId, q, category])
+
+  const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
+
+  const entries = items
+    .map(it => {
+      const raw = counted[it.id]
+      const val = raw === '' || raw === undefined ? null : Number(raw)
+      return { it, val }
+    })
+    .filter(e => e.val !== null && !Number.isNaN(e.val as number))
+  const toChange = entries.filter(e => (e.val as number) !== Number(e.it.stock))
+
+  const apply = async () => {
+    if (toChange.length === 0) return
+    const msg = (t('inventory.st_confirm') as string).replace('{n}', String(toChange.length))
+    if (!confirm(msg)) return
+    setApplying(true)
+    try {
+      const payload = {
+        items: toChange.map(e => ({ product_id: e.it.id, counted: e.val as number })),
+        note: note.trim() || undefined,
+      }
+      const { data } = await api.post('/inventory/stocktake', payload)
+      alert((t('inventory.st_done') as string).replace('{n}', String(data.changed)))
+      setCounted({})
+      await load()
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || t('inventory.st_error'))
+    } finally { setApplying(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
+        <select
+          value={branchId}
+          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}) }}
+          disabled={!isAdmin}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 disabled:bg-slate-50"
+        >
+          <option value="">{t('inventory.st_select_branch')}</option>
+          {branches.map(b => <option key={b.id} value={b.id}>{branchName(b)}</option>)}
+        </select>
+        <div className="flex-1 min-w-56 relative">
+          <Search size={16} className="absolute top-1/2 -translate-y-1/2 start-3 text-slate-400" />
+          <input
+            type="text"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder={t('inventory.search_placeholder') as string}
+            className="w-full ps-10 pe-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+        </div>
+        <select
+          value={category}
+          onChange={e => setCategory(e.target.value)}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500"
+        >
+          <option value="">{t('inventory.filter_all_categories')}</option>
+          {categories.map(c => <option key={c} value={c}>{t(`inventory.cat_${c}`, c)}</option>)}
+        </select>
+        <input
+          type="text"
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder={t('inventory.st_note_ph') as string}
+          className="px-3 py-2 border border-slate-300 rounded-lg text-sm min-w-48"
+        />
+        <button
+          onClick={apply}
+          disabled={toChange.length === 0 || applying}
+          className="flex items-center gap-1.5 px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg text-sm font-medium disabled:opacity-40"
+        >
+          {applying ? t('common.loading') : `${t('inventory.st_apply')}${toChange.length ? ` (${toChange.length})` : ''}`}
+        </button>
+      </div>
+
+      <div className="text-xs text-slate-500 px-1">{t('inventory.st_hint')}</div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2.5 text-start">{t('inventory.col_name')}</th>
+                <th className="px-3 py-2.5 text-start">{t('inventory.col_barcode')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.st_system')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.st_counted')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.st_variance')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!branchId && (
+                <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
+              )}
+              {branchId && loading && <tr><td colSpan={5} className="text-center py-8 text-slate-400">…</td></tr>}
+              {branchId && !loading && items.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+              )}
+              {branchId && items.map(it => {
+                const raw = counted[it.id]
+                const has = raw !== '' && raw !== undefined
+                const val = has ? Number(raw) : null
+                const variance = val !== null && !Number.isNaN(val) ? val - Number(it.stock) : null
+                return (
+                  <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                    <td className="px-3 py-2.5">
+                      <div className="font-medium text-slate-800">{isAr ? it.name_ar : it.name_en}</div>
+                      {it.category && <div className="text-[11px] text-slate-400">{it.category}</div>}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{it.barcode || '—'}</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-700">{it.stock}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <input
+                        type="number"
+                        min={0}
+                        value={raw ?? ''}
+                        onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
+                        className="w-24 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                      />
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-mono font-semibold">
+                      {variance === null ? <span className="text-slate-300">—</span>
+                        : variance === 0 ? <span className="text-slate-400">0</span>
+                        : variance > 0 ? <span className="text-emerald-600">+{variance}</span>
+                        : <span className="text-red-600">{variance}</span>}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

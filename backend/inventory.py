@@ -17,7 +17,9 @@ def _assert_branch_access(user, product_branch_id):
     if user.get("role") == "admin":
         return
     user_branch = user.get("branch_id")
-    if product_branch_id is not None and user_branch is not None and product_branch_id != user_branch:
+    if user_branch is None:
+        raise HTTPException(status_code=403, detail="Cross-branch access denied")
+    if product_branch_id is not None and product_branch_id != user_branch:
         raise HTTPException(status_code=403, detail="Cross-branch access denied")
 
 
@@ -246,6 +248,66 @@ def create_adjustment(req: AdjustmentRequest,
         )
         conn.commit()
         return {"ok": True, "new_stock": new_stock}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+# ─── STOCKTAKE (physical count reconciliation) ──────────────────────────
+
+class StocktakeLine(BaseModel):
+    product_id: int
+    counted: int
+
+
+class StocktakeRequest(BaseModel):
+    items: List[StocktakeLine]
+    note: Optional[str] = None
+
+
+@router.post("/stocktake")
+def apply_stocktake(req: StocktakeRequest,
+                    current_user=Depends(get_current_user)):
+    if not req.items:
+        raise HTTPException(status_code=400, detail="No counted items provided")
+    note = (req.note or "").strip()
+    reason = f"Stocktake: {note}" if note else "Stocktake"
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        changes = []
+        for line in req.items:
+            if line.counted < 0:
+                raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
+            cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE",
+                        (line.product_id,))
+            product = cur.fetchone()
+            if not product:
+                continue
+            _assert_branch_access(current_user, product["branch_id"])
+            old_stock = int(product["stock"])
+            delta = line.counted - old_stock
+            if delta == 0:
+                continue
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
+                        (line.counted, line.product_id))
+            log_movement(
+                cur, line.product_id, product["branch_id"], "adjustment",
+                delta, line.counted,
+                reference_type="stocktake", reason=reason,
+                user_id=current_user.get("user_id"),
+            )
+            changes.append({"product_id": line.product_id,
+                            "old_stock": old_stock,
+                            "new_stock": line.counted,
+                            "delta": delta})
+        conn.commit()
+        return {"ok": True, "changed": len(changes), "changes": changes}
     except HTTPException:
         conn.rollback()
         raise

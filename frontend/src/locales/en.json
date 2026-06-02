@@ -481,7 +481,18 @@
     "errors": "errors",
     "show_errors": "Show error details",
     "download_failed": "Could not download the template. Please try again.",
-    "custom_range": "Custom range"
+    "custom_range": "Custom range",
+    "tab_stocktake": "Stocktake",
+    "st_select_branch": "Select a branch to count",
+    "st_system": "System",
+    "st_counted": "Counted",
+    "st_variance": "Variance",
+    "st_apply": "Apply Stocktake",
+    "st_hint": "Enter the real counted quantity for each item. Only items you fill in that differ from the system will be updated, and each change is logged as a stock adjustment.",
+    "st_note_ph": "Note (optional) e.g. Monthly count",
+    "st_confirm": "Apply stocktake? This will adjust stock for {n} item(s) to match your counted quantities. Each change is logged as an adjustment.",
+    "st_done": "Stocktake applied — {n} item(s) updated.",
+    "st_error": "Could not apply stocktake."
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
