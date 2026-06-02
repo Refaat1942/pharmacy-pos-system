@@ -193,7 +193,7 @@ export default function PrescriptionBell({ onLoad }: Props) {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute end-0 mt-2 w-[min(92vw,420px)] bg-white rounded-2xl shadow-2xl border border-slate-200 z-40 overflow-hidden">
+          <div className="absolute end-0 mt-2 w-[min(95vw,560px)] bg-white rounded-2xl shadow-2xl border border-slate-200 z-40 overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
               <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
                 <Stethoscope size={16} className="text-pharma-600" /> {t('rx.title')}
@@ -210,7 +210,7 @@ export default function PrescriptionBell({ onLoad }: Props) {
                 {t('rx.dismissed_tab')}{dismissedList.length > 0 ? ` (${dismissedList.length})` : ''}
               </button>
             </div>
-            <div className="max-h-[70vh] overflow-y-auto divide-y divide-slate-100">
+            <div className="max-h-[80vh] overflow-y-auto divide-y divide-slate-100">
               {loadingList && <div className="py-10 text-center text-slate-400 text-sm">{t('common.loading')}</div>}
               {!loadingList && shown.length === 0 && (
                 <div className="py-10 text-center text-slate-400 text-sm">
