@@ -517,6 +517,8 @@
     "show_errors": "Show error details",
     "download_failed": "Could not download the template. Please try again.",
     "custom_range": "Custom range",
+    "or_custom_dates": "or",
+    "clear_dates": "Use preset period",
     "tab_stocktake": "Stocktake",
     "st_select_branch": "Select a branch to count",
     "st_system": "System",

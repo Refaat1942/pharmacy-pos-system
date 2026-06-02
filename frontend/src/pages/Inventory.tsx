@@ -911,15 +911,15 @@ function MovementsTab() {
 
 function VelocityTab() {
   const { t, i18n } = useTranslation()
+  const todayIso = () => new Date().toISOString().slice(0, 10)
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(90)
-  const [custom, setCustom] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [filter, setFilter] = useState<'' | 'fast' | 'slow' | 'dead'>('')
 
-  const useCustom = custom && dateFrom !== '' && dateTo !== ''
+  const useCustom = dateFrom !== '' && dateTo !== ''
 
   useEffect(() => {
     setLoading(true)
@@ -928,6 +928,12 @@ function VelocityTab() {
       .then(r => setRows(r.data))
       .finally(() => setLoading(false))
   }, [days, useCustom, dateFrom, dateTo])
+
+  const onPresetChange = (value: string) => {
+    setDays(parseInt(value, 10))
+    setDateFrom('')
+    setDateTo('')
+  }
 
   const shown = filter ? rows.filter(r => r.classification === filter) : rows
   const counts = useMemo(() => ({
@@ -952,29 +958,56 @@ function VelocityTab() {
 
   return (
     <div>
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
-        <label className="text-sm text-slate-600">{t('inventory.period')}:</label>
-        <select
-          value={custom ? 'custom' : String(days)}
-          onChange={e => {
-            if (e.target.value === 'custom') setCustom(true)
-            else { setCustom(false); setDays(parseInt(e.target.value)) }
-          }}
-          className="input max-w-32"
-        >
-          <option value={30}>30 {t('inventory.days')}</option>
-          <option value={90}>90 {t('inventory.days')}</option>
-          <option value={180}>180 {t('inventory.days')}</option>
-          <option value="custom">{t('inventory.custom_range')}</option>
-        </select>
-        {custom && (
-          <div className="flex items-center gap-2">
-            <input type="date" value={dateFrom} max={dateTo || undefined}
-              onChange={e => setDateFrom(e.target.value)} className="input max-w-40" />
-            <span className="text-slate-400">→</span>
-            <input type="date" value={dateTo} min={dateFrom || undefined}
-              onChange={e => setDateTo(e.target.value)} className="input max-w-40" />
-          </div>
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-end">
+        <div>
+          <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
+            {t('inventory.period')}
+          </label>
+          <select
+            value={String(days)}
+            onChange={e => onPresetChange(e.target.value)}
+            disabled={useCustom}
+            className="input max-w-36 disabled:opacity-50"
+          >
+            <option value={30}>30 {t('inventory.days')}</option>
+            <option value={60}>60 {t('inventory.days')}</option>
+            <option value={90}>90 {t('inventory.days')}</option>
+          </select>
+        </div>
+        <span className="text-xs text-slate-400 pb-2 hidden sm:inline">{t('inventory.or_custom_dates')}</span>
+        <div>
+          <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
+            {t('inventory.from')}
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo || todayIso()}
+            onChange={e => setDateFrom(e.target.value)}
+            className="input max-w-40"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
+            {t('inventory.to')}
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            max={todayIso()}
+            onChange={e => setDateTo(e.target.value)}
+            className="input max-w-40"
+          />
+        </div>
+        {useCustom && (
+          <button
+            type="button"
+            onClick={() => { setDateFrom(''); setDateTo('') }}
+            className="text-xs text-slate-500 hover:text-pharma-700 pb-2"
+          >
+            {t('inventory.clear_dates')}
+          </button>
         )}
         <TableFilter value={velFilter.query} onChange={velFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <div className="flex gap-2 ms-auto">

@@ -194,6 +194,8 @@
     "show_errors": "عرض تفاصيل الأخطاء",
     "download_failed": "تعذّر تنزيل القالب. حاول مرة أخرى.",
     "custom_range": "نطاق مخصص",
+    "or_custom_dates": "أو",
+    "clear_dates": "استخدام الفترة الجاهزة",
     "tab_stocktake": "الجرد",
     "st_select_branch": "اختر الفرع للجرد",
     "st_system": "بالنظام",
