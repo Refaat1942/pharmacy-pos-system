@@ -335,7 +335,7 @@ def list_pos(status: Optional[str] = None, supplier_id: Optional[int] = None,
     return [dict(r) for r in rows]
 
 
-@router.get("/purchase-orders/{po_id}")
+@router.get("/purchase-orders/{po_id:int}")
 def get_po(po_id: int, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -364,7 +364,7 @@ def get_po(po_id: int, current_user=Depends(get_current_user)):
     return out
 
 
-@router.post("/purchase-orders/{po_id}/receive")
+@router.post("/purchase-orders/{po_id:int}/receive")
 def receive_po(po_id: int, current_user=Depends(get_current_user)):
     """Receive PO: add stock to branch, log purchase movements,
     update product cost + expiry_date when provided."""
@@ -472,7 +472,7 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.post("/purchase-orders/{po_id}/cancel")
+@router.post("/purchase-orders/{po_id:int}/cancel")
 def cancel_po(po_id: int, current_user=Depends(get_current_user)):
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
@@ -613,10 +613,13 @@ def replenishment_list(
     branch_id: Optional[int] = None,
     supplier_id: Optional[int] = None,
     only_zero: bool = False,
+    include_all: bool = False,
     current_user=Depends(get_current_user),
     active_branch=Depends(get_active_branch_id),
 ):
     """List items that need replenishment (stock <= min_stock).
+    When include_all is set, every active product is returned and each row
+    carries needs_replenish so the UI can pre-select only the low ones.
     Non-admins are constrained to their own branch."""
     if current_user.get("role") != "admin":
         ub = current_user.get("branch_id")
@@ -639,7 +642,7 @@ def replenishment_list(
         params.append(supplier_id)
     if only_zero:
         where.append("p.stock <= 0")
-    else:
+    elif not include_all:
         where.append("p.stock <= p.min_stock")
 
     sql = (
@@ -661,6 +664,7 @@ def replenishment_list(
         target = max(int(d.get("min_stock") or 0) * 2, int(d.get("min_stock") or 0) + 1, 1)
         suggested = max(target - int(d.get("stock") or 0), 1)
         d["suggested_quantity"] = suggested
+        d["needs_replenish"] = int(d.get("stock") or 0) <= int(d.get("min_stock") or 0)
         d["unit_label"] = (
             d.get("sub_unit") if (d.get("pack_size") or 1) > 1 and d.get("sub_unit")
             else (d.get("unit") or "unit")

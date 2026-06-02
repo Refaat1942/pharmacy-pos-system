@@ -152,10 +152,9 @@ export default function Inventory() {
 
   const stats = useMemo(() => {
     const total = items.length
-    const low = items.filter(i => i.stock > 0 && i.stock <= i.min_stock).length
     const zero = items.filter(i => i.stock <= 0).length
     const totalValue = items.reduce((s, i) => s + Number(i.stock) * Number(i.cost || 0), 0)
-    return { total, low, zero, totalValue }
+    return { total, zero, totalValue }
   }, [items])
 
   const onDelete = async (id: number) => {
@@ -201,7 +200,6 @@ export default function Inventory() {
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <StatCard label={t('inventory.stat_total')} value={stats.total} color="slate" />
-              <StatCard label={t('inventory.stat_low')} value={stats.low} color="amber" />
               <StatCard label={t('inventory.stat_zero')} value={stats.zero} color="red" />
               <StatCard
                 label={t('inventory.stat_value')}
@@ -305,7 +303,6 @@ export default function Inventory() {
                     )}
                     {items.map(it => {
                       const isZero = it.stock <= 0
-                      const isLow = !isZero && it.stock <= it.min_stock
                       return (
                         <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
                           <td className="px-3 py-2 text-center">
@@ -327,7 +324,6 @@ export default function Inventory() {
                           <td className="px-3 py-2 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
                               isZero ? 'bg-red-100 text-red-700' :
-                              isLow ? 'bg-amber-100 text-amber-700' :
                               'bg-emerald-100 text-emerald-700'
                             }`}>{it.stock}</span>
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (

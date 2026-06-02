@@ -871,7 +871,9 @@
     "repl_po_created": "تم إنشاء مسودة أمر الشراء",
     "discount_pct": "الخصم %",
     "vat_pct": "الضريبة %",
-    "public_price": "سعر الجمهور"
+    "public_price": "سعر الجمهور",
+    "show_all_items": "عرض كل الأصناف",
+    "items_total": "صنف"
   },
   "customers": {
     "title": "العملاء",

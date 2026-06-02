@@ -452,6 +452,7 @@ function ReplenishmentModal({
   const [branchId, setBranchId] = useState<number | ''>(user?.branch_id || '')
   const [supplierFilter, setSupplierFilter] = useState<number | ''>('')
   const [onlyZero, setOnlyZero] = useState(false)
+  const [showAll, setShowAll] = useState(false)
   const [loading, setLoading] = useState(false)
   const [lines, setLines] = useState<ReplLine[]>([])
   const [poSupplier, setPoSupplier] = useState<number | ''>('')
@@ -464,17 +465,18 @@ function ReplenishmentModal({
       branch_id: branchId ? Number(branchId) : undefined,
       supplier_id: supplierFilter ? Number(supplierFilter) : undefined,
       only_zero: onlyZero || undefined,
+      include_all: showAll || undefined,
     })
       .then((r) => setLines(r.data.map((it) => ({
         ...it,
-        selected: true,
+        selected: it.needs_replenish !== false,
         qty: it.suggested_quantity,
         cost: Number(it.cost) || 0,
       }))))
       .catch(() => setLines([]))
       .finally(() => setLoading(false))
   }
-  useEffect(load, [branchId, supplierFilter, onlyZero])
+  useEffect(load, [branchId, supplierFilter, onlyZero, showAll])
 
   const update = (id: number, patch: Partial<ReplLine>) =>
     setLines((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l))
@@ -602,14 +604,18 @@ function ReplenishmentModal({
               {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-4">
             <label className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
-              <input type="checkbox" checked={onlyZero} onChange={(e) => setOnlyZero(e.target.checked)} />
+              <input type="checkbox" checked={onlyZero} disabled={showAll} onChange={(e) => setOnlyZero(e.target.checked)} />
               {t('purchases.only_out_of_stock')}
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
+              <input type="checkbox" checked={showAll} onChange={(e) => { setShowAll(e.target.checked); if (e.target.checked) setOnlyZero(false) }} />
+              {t('purchases.show_all_items')}
             </label>
           </div>
           <div className="flex items-end justify-end text-xs text-slate-500">
-            {lines.length} {t('purchases.items_need')}
+            {lines.length} {showAll ? t('purchases.items_total') : t('purchases.items_need')}
           </div>
         </div>
 

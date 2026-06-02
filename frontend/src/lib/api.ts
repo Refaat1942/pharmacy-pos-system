@@ -510,7 +510,7 @@ export const purchasesAPI = {
   }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number }>('/purchase-orders', data),
   receive: (id: number) => api.post(`/purchase-orders/${id}/receive`),
   cancel: (id: number) => api.post(`/purchase-orders/${id}/cancel`),
-  replenishment: (params: { branch_id?: number; supplier_id?: number; only_zero?: boolean } = {}) =>
+  replenishment: (params: { branch_id?: number; supplier_id?: number; only_zero?: boolean; include_all?: boolean } = {}) =>
     api.get<ReplenishmentItem[]>('/purchase-orders/replenishment', { params }),
   exportReplenishment: (data: {
     supplier_id?: number
@@ -538,6 +538,7 @@ export interface ReplenishmentItem {
   branch_name_en: string | null
   branch_name_ar: string | null
   suggested_quantity: number
+  needs_replenish?: boolean
 }
 
 export const expiryAPI = {
