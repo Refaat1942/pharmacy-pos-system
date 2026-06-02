@@ -451,7 +451,22 @@
     "no_data": "لا توجد بيانات لهذه الفترة",
     "by_clinic": "المبيعات حسب العيادة",
     "clinic": "العيادة",
-    "no_clinic_sales": "لا توجد مبيعات عيادات لهذه الفترة"
+    "no_clinic_sales": "لا توجد مبيعات عيادات لهذه الفترة",
+    "digital_account_title": "منصات رقمية — آجل",
+    "digital_account_hint": "مبيعات محمّلة على حساب طلبات، فيزيتا، وغيرها (دفع: آجل). استخدم هذا الكشف مع نطاق التاريخ عند تحصيل المبالغ من الشركاء.",
+    "digital_account_charged": "المحمّل (الفترة)",
+    "digital_account_paid": "المدفوع",
+    "digital_account_balance": "المتبقي (الفترة)",
+    "digital_account_balance_sub": "على فواتير هذه الفترة",
+    "digital_account_owed": "إجمالي المستحق (كل الوقت)",
+    "digital_account_owed_sub": "على كل فواتير المنصات",
+    "digital_account_collected": "المحصّل (الفترة)",
+    "digital_account_total_owed": "إجمالي المستحق",
+    "digital_account_invoices": "تفاصيل الفواتير",
+    "digital_account_empty": "لا توجد مبيعات رقمية آجلة في هذه الفترة",
+    "digital_platform": "المنصة",
+    "invoice_no": "رقم الفاتورة",
+    "sale_date": "التاريخ"
   },
   "settings": {
     "title": "الإعدادات",

@@ -296,7 +296,22 @@
     "no_data": "No data for this period",
     "by_clinic": "Sales by Clinic",
     "clinic": "Clinic",
-    "no_clinic_sales": "No clinic sales for this period"
+    "no_clinic_sales": "No clinic sales for this period",
+    "digital_account_title": "Digital platforms — on account",
+    "digital_account_hint": "Sales billed to Talabat, Vezeeta, and other platforms (payment: on account). Use this statement with your date range when collecting from partners.",
+    "digital_account_charged": "Charged (period)",
+    "digital_account_paid": "Paid",
+    "digital_account_balance": "Still owed (period)",
+    "digital_account_balance_sub": "On invoices in this period",
+    "digital_account_owed": "Total owed (all time)",
+    "digital_account_owed_sub": "Across all platform invoices",
+    "digital_account_collected": "Collected (period)",
+    "digital_account_total_owed": "Total owed",
+    "digital_account_invoices": "Invoice detail",
+    "digital_account_empty": "No digital on-account sales in this period",
+    "digital_platform": "Platform",
+    "invoice_no": "Invoice #",
+    "sale_date": "Date"
   },
   "settings": {
     "title": "Settings",

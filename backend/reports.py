@@ -4,9 +4,9 @@ from datetime import date, datetime, timedelta
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, resolve_analytics_branch
+from customers import PLATFORM_PARTNER_NAMES, platform_partner_display_name
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
-
 
 def _check_role(user):
     if user.get("role") not in ("admin", "pharmacist"):
@@ -272,6 +272,195 @@ def product_profitability(
             LIMIT %s
         """, [df, dt] + bp + [limit])
         return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.get("/digital-platform-account")
+def digital_platform_account_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    digital_type: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """On-account digital platform sales in a date range — for billing / collection from partners."""
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    bf_i = bf.replace("branch_id", "i.branch_id")
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        extra = []
+        params: list = [df, dt]
+        if digital_type and digital_type in PLATFORM_PARTNER_NAMES:
+            extra.append("AND i.digital_type = %s")
+            params.append(digital_type)
+        extra_sql = " ".join(extra)
+
+        cur.execute(
+            f"""
+            SELECT
+              i.id,
+              i.invoice_number,
+              i.created_at,
+              i.digital_type,
+              i.net_total::float AS net_total,
+              (SELECT COALESCE(SUM(cp.amount), 0)::float
+               FROM customer_payments cp WHERE cp.invoice_id = i.id) AS paid_total,
+              b.name_en AS branch_name_en,
+              b.name_ar AS branch_name_ar,
+              i.notes
+            FROM invoices i
+            LEFT JOIN branches b ON b.id = i.branch_id
+            WHERE i.status = 'completed'
+              AND i.type = 'digital'
+              AND i.payment_method = 'account'
+              AND i.created_at >= %s::date
+              AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+              {extra_sql}
+            ORDER BY i.created_at ASC, i.id ASC
+            """,
+            params + bp,
+        )
+        invoices = []
+        by_platform: dict = {}
+        total_charged = 0.0
+        total_paid = 0.0
+        total_balance = 0.0
+
+        for r in cur.fetchall():
+            row = dict(r)
+            dt_key = row.get("digital_type") or "unknown"
+            net = float(row["net_total"] or 0)
+            paid = float(row["paid_total"] or 0)
+            balance = round(net - paid, 2)
+            row["paid_total"] = round(paid, 2)
+            row["balance"] = balance
+            row["platform_name"] = platform_partner_display_name(dt_key)
+            invoices.append(row)
+
+            total_charged += net
+            total_paid += paid
+            total_balance += balance
+
+            if dt_key not in by_platform:
+                by_platform[dt_key] = {
+                    "digital_type": dt_key,
+                    "platform_name": row["platform_name"],
+                    "invoice_count": 0,
+                    "charged": 0.0,
+                    "paid": 0.0,
+                    "balance": 0.0,
+                    "collected_in_period": 0.0,
+                    "total_owed_all_time": 0.0,
+                }
+            p = by_platform[dt_key]
+            p["invoice_count"] += 1
+            p["charged"] = round(p["charged"] + net, 2)
+            p["paid"] = round(p["paid"] + paid, 2)
+            p["balance"] = round(p["balance"] + balance, 2)
+
+        # Payments recorded in the period against digital on-account invoices
+        pay_params: list = [df, dt]
+        pay_extra = ""
+        if digital_type and digital_type in PLATFORM_PARTNER_NAMES:
+            pay_extra = "AND i.digital_type = %s"
+            pay_params.append(digital_type)
+        cur.execute(
+            f"""
+            SELECT
+              COALESCE(i.digital_type, 'unknown') AS digital_type,
+              COALESCE(SUM(cp.amount), 0)::float AS collected
+            FROM customer_payments cp
+            JOIN invoices i ON i.id = cp.invoice_id
+            WHERE i.type = 'digital'
+              AND i.payment_method = 'account'
+              AND i.status = 'completed'
+              AND cp.paid_at >= %s::date
+              AND cp.paid_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+              {pay_extra}
+            GROUP BY COALESCE(i.digital_type, 'unknown')
+            """,
+            pay_params + bp,
+        )
+        for r in cur.fetchall():
+            dt_key = r["digital_type"]
+            if dt_key in by_platform:
+                by_platform[dt_key]["collected_in_period"] = round(float(r["collected"] or 0), 2)
+
+        # All-time balance per platform partner customer
+        for dt_key in list(by_platform.keys()):
+            pname = platform_partner_display_name(dt_key)
+            cur.execute(
+                """SELECT id FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1""",
+                (pname,),
+            )
+            cust = cur.fetchone()
+            if not cust:
+                continue
+            cid = cust["id"]
+            if current_user.get("role") != "admin":
+                ub = current_user.get("branch_id")
+                cur.execute(
+                    """SELECT COALESCE(SUM(net_total),0)::float AS charged
+                       FROM invoices
+                       WHERE customer_id=%s AND payment_method='account' AND type!='return'
+                         AND branch_id=%s""",
+                    (cid, ub),
+                )
+                charged_all = float(cur.fetchone()["charged"])
+                cur.execute(
+                    """SELECT COALESCE(SUM(cp.amount),0)::float AS paid
+                       FROM customer_payments cp
+                       JOIN invoices i ON i.id = cp.invoice_id
+                       WHERE cp.customer_id=%s AND i.branch_id=%s""",
+                    (cid, ub),
+                )
+                paid_all = float(cur.fetchone()["paid"])
+            else:
+                cur.execute(
+                    """SELECT COALESCE(SUM(net_total),0)::float AS charged
+                       FROM invoices
+                       WHERE customer_id=%s AND payment_method='account' AND type!='return'""",
+                    (cid,),
+                )
+                charged_all = float(cur.fetchone()["charged"])
+                cur.execute(
+                    """SELECT COALESCE(SUM(amount),0)::float AS paid
+                       FROM customer_payments WHERE customer_id=%s""",
+                    (cid,),
+                )
+                paid_all = float(cur.fetchone()["paid"])
+            by_platform[dt_key]["total_owed_all_time"] = round(charged_all - paid_all, 2)
+
+        platforms = sorted(
+            by_platform.values(),
+            key=lambda x: (-x["balance"], x["platform_name"]),
+        )
+        for p in platforms:
+            p["charged"] = round(p["charged"], 2)
+            p["paid"] = round(p["paid"], 2)
+            p["balance"] = round(p["balance"], 2)
+
+        return {
+            "date_from": str(df),
+            "date_to": str(dt),
+            "summary": {
+                "invoice_count": len(invoices),
+                "total_charged": round(total_charged, 2),
+                "total_paid": round(total_paid, 2),
+                "total_balance": round(total_balance, 2),
+            },
+            "by_platform": platforms,
+            "invoices": invoices,
+        }
     finally:
         cur.close()
         conn.close()

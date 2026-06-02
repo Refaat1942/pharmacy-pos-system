@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
-  Package as PackageIcon, BarChart3, Download, ShieldAlert, Calendar, Stethoscope,
+  Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
+  Smartphone,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
@@ -22,6 +23,36 @@ type PayRow = { payment_method: string; sale_type: string; invoice_count: number
 type ProdRow = { id: number; name_en: string; name_ar: string; barcode: string | null; category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
 type TrendRow = { month: string; revenue: number; invoice_count: number; cogs: number; profit: number; returns_value: number }
 type ClinicRow = { clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }
+type DigitalPlatformRow = {
+  digital_type: string
+  platform_name: string
+  invoice_count: number
+  charged: number
+  paid: number
+  balance: number
+  collected_in_period: number
+  total_owed_all_time: number
+}
+type DigitalInvoiceRow = {
+  id: number
+  invoice_number: string
+  created_at: string
+  digital_type: string
+  platform_name: string
+  net_total: number
+  paid_total: number
+  balance: number
+  branch_name_en: string
+  branch_name_ar: string
+  notes: string | null
+}
+type DigitalAccountReport = {
+  date_from: string
+  date_to: string
+  summary: { invoice_count: number; total_charged: number; total_paid: number; total_balance: number }
+  by_platform: DigitalPlatformRow[]
+  invoices: DigitalInvoiceRow[]
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -43,6 +74,7 @@ export default function Reports() {
   const [prods, setProds] = useState<ProdRow[]>([])
   const [trend, setTrend] = useState<TrendRow[]>([])
   const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
+  const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -60,6 +92,7 @@ export default function Reports() {
         api.get('/reports/sales-by-payment', { params }),
         api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
         api.get('/reports/monthly-trend', { params: { months: 12 } }),
+        api.get('/reports/digital-platform-account', { params }),
       ]
       const clinicIdx = showClinics ? reqs.length : -1
       if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
@@ -71,6 +104,7 @@ export default function Reports() {
       setPays(results[2].data)
       setProds(results[3].data)
       setTrend(results[4].data)
+      setDigitalAccount(results[5].data)
       if (clinicIdx >= 0) setClinicRows(results[clinicIdx].data)
       if (branchIdx >= 0) setBranches(results[branchIdx].data)
     } catch (e: any) {
@@ -271,6 +305,89 @@ export default function Reports() {
             rows={clinicRows}
           />
         </section>
+        )}
+
+        {/* Digital platform on-account (receivables) */}
+        {digitalAccount && (
+          <section className="print:break-inside-avoid">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <SectionHead
+                icon={<Smartphone size={18} />}
+                title={t('reports.digital_account_title')}
+                subtitle={`${digitalAccount.date_from} → ${digitalAccount.date_to}`}
+                inline
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700 border border-slate-200 rounded-lg px-3 py-1.5 bg-white"
+                >
+                  {t('common.print')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportCSV(
+                    `digital-platform-account-${digitalAccount.date_from}-${digitalAccount.date_to}.csv`,
+                    digitalAccount.invoices.map((r) => ({
+                      ...r,
+                      branch: i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en,
+                      sale_date: r.created_at?.slice(0, 10),
+                    })),
+                    [
+                      { key: 'invoice_number', label: 'Invoice' },
+                      { key: 'sale_date', label: 'Date' },
+                      { key: 'platform_name', label: 'Platform' },
+                      { key: 'branch', label: 'Branch' },
+                      { key: 'net_total', label: 'Charged' },
+                      { key: 'paid_total', label: 'Paid' },
+                      { key: 'balance', label: 'Balance' },
+                      { key: 'notes', label: 'Notes' },
+                    ],
+                  )}
+                  className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700"
+                >
+                  <Download size={13} /> CSV
+                </button>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-3 max-w-3xl">{t('reports.digital_account_hint')}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <Kpi tone="blue" label={t('reports.digital_account_charged')} value={fmt(digitalAccount.summary.total_charged)} sub={`${digitalAccount.summary.invoice_count} ${t('reports.invoices')}`} />
+              <Kpi tone="green" label={t('reports.digital_account_paid')} value={fmt(digitalAccount.summary.total_paid)} />
+              <Kpi tone="amber" label={t('reports.digital_account_balance')} value={fmt(digitalAccount.summary.total_balance)} sub={t('reports.digital_account_balance_sub')} />
+              <Kpi tone="red" label={t('reports.digital_account_owed')} value={fmt(digitalAccount.by_platform.reduce((s, p) => s + p.total_owed_all_time, 0))} sub={t('reports.digital_account_owed_sub')} />
+            </div>
+            <DataTable
+              empty={t('reports.digital_account_empty')}
+              cols={[
+                { key: 'platform_name', label: t('reports.digital_platform') },
+                { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r: DigitalPlatformRow) => fmtInt(r.invoice_count) },
+                { key: 'charged', label: t('reports.digital_account_charged'), align: 'end', render: (r: DigitalPlatformRow) => fmt(r.charged) },
+                { key: 'paid', label: t('reports.digital_account_paid'), align: 'end', render: (r: DigitalPlatformRow) => fmt(r.paid) },
+                { key: 'balance', label: t('reports.digital_account_balance'), align: 'end', render: (r: DigitalPlatformRow) => <span className="font-semibold text-amber-800">{fmt(r.balance)}</span> },
+                { key: 'collected_in_period', label: t('reports.digital_account_collected'), align: 'end', render: (r: DigitalPlatformRow) => fmt(r.collected_in_period) },
+                { key: 'total_owed_all_time', label: t('reports.digital_account_total_owed'), align: 'end', render: (r: DigitalPlatformRow) => <span className="font-semibold text-red-700">{fmt(r.total_owed_all_time)}</span> },
+              ]}
+              rows={digitalAccount.by_platform}
+            />
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('reports.digital_account_invoices')}</h3>
+              <DataTable
+                empty={t('reports.digital_account_empty')}
+                cols={[
+                  { key: 'invoice_number', label: t('reports.invoice_no') },
+                  { key: 'created_at', label: t('reports.sale_date'), render: (r: DigitalInvoiceRow) => r.created_at?.slice(0, 16).replace('T', ' ') },
+                  { key: 'platform_name', label: t('reports.digital_platform') },
+                  { key: 'branch', label: t('reports.branch'), render: (r: DigitalInvoiceRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
+                  { key: 'net_total', label: t('reports.digital_account_charged'), align: 'end', render: (r: DigitalInvoiceRow) => fmt(r.net_total) },
+                  { key: 'paid_total', label: t('reports.digital_account_paid'), align: 'end', render: (r: DigitalInvoiceRow) => fmt(r.paid_total) },
+                  { key: 'balance', label: t('reports.digital_account_balance'), align: 'end', render: (r: DigitalInvoiceRow) => <span className={r.balance > 0 ? 'text-amber-800 font-semibold' : 'text-emerald-700'}>{fmt(r.balance)}</span> },
+                ]}
+                rows={digitalAccount.invoices}
+              />
+            </div>
+          </section>
         )}
 
         {/* Payment breakdown */}
