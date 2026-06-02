@@ -119,6 +119,7 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
                stock_filter: Optional[str] = None,
                category: Optional[str] = None,
                include_inactive: bool = False,
+               limit: int = 20000,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     """stock_filter: 'low' | 'zero' | 'ok'"""
@@ -155,7 +156,8 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     )
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY p.name_en LIMIT 500"
+    sql += " ORDER BY p.name_en LIMIT %s"
+    params.append(max(1, min(limit, 100000)))
     cur.execute(sql, params)
     rows = cur.fetchall()
     conn.close()
