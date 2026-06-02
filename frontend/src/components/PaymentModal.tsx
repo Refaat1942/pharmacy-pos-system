@@ -52,7 +52,8 @@ export default function PaymentModal({
     else if (paymentMethod === 'digital' || paymentMethod === 'account') setPaymentMethod('cash')
   }
 
-  const needsDelivery = saleType === 'delivery' || saleType === 'digital'
+  const isDigitalSale = saleType === 'digital'
+  const needsDelivery = saleType === 'delivery' || isDigitalSale
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
   const requiresCustomerInfo = effectiveTotal > 100
@@ -76,6 +77,7 @@ export default function PaymentModal({
       if (!deliveryCustomerName.trim()) return false
       if (!deliveryCustomerPhone.trim()) return false
     }
+    if (paymentMethod === 'account' && !isDigitalSale) return false
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     if (paymentMethod === 'account') return !!selectedCustomer
@@ -93,6 +95,10 @@ export default function PaymentModal({
     }
     if (needsDelivery && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
       setError(t('payment.delivery_required') as string)
+      return
+    }
+    if (paymentMethod === 'account' && !isDigitalSale) {
+      setError(t('payment.account_digital_only') as string)
       return
     }
     if (!isValid()) {
@@ -298,7 +304,7 @@ export default function PaymentModal({
             )}
 
             {/* Digital payment method (platform vs on-account) */}
-            {saleType === 'digital' && (
+            {isDigitalSale && (
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
@@ -416,7 +422,7 @@ export default function PaymentModal({
             )}
 
             {/* Account (on-credit) */}
-            {paymentMethod === 'account' && (
+            {isDigitalSale && paymentMethod === 'account' && (
               <div className={`p-5 rounded-xl border-2 text-center space-y-2 ${selectedCustomer ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                 <CreditCard size={32} className={selectedCustomer ? 'text-amber-500 mx-auto' : 'text-red-500 mx-auto'} />
                 <p className={`text-sm font-semibold ${selectedCustomer ? 'text-amber-800' : 'text-red-800'}`}>

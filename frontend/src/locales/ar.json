@@ -610,6 +610,7 @@
     "delivery_person": "مندوب التوصيل",
     "delivery_customer_phone": "هاتف العميل",
     "delivery_required": "التوصيل يتطلب اسم العميل ورقم الهاتف والعنوان.",
+    "account_digital_only": "الدفع على الحساب متاح فقط في البيع الرقمي.",
     "paid_now": "المبلغ المدفوع الآن",
     "remaining_on_account": "المتبقي على الحساب"
   },

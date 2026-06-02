@@ -574,7 +574,7 @@ def create_sale(req: SaleRequest,
         if req.payment_method == "cash" and req.cash_amount:
             change = max(0.0, req.cash_amount - net_total)
         # Account (credit) sales require a customer + credit-limit check
-        if req.payment_method == "account" and req.type != "return":
+        if req.payment_method == "account":
             if not req.customer_id:
                 raise HTTPException(status_code=400, detail="Customer is required for account sales")
             cur.execute("SELECT id, name, credit_limit, active FROM customers WHERE id=%s",

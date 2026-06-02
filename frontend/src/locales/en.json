@@ -610,6 +610,7 @@
     "delivery_customer_phone": "Customer phone",
     "delivery_person": "Delivery person",
     "delivery_required": "Delivery requires customer name, phone and address.",
+    "account_digital_only": "On Account payment is only available for Digital sales.",
     "paid_now": "Amount paid now",
     "remaining_on_account": "Remaining on account"
   },
