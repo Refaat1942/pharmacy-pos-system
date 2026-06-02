@@ -51,6 +51,13 @@ export default function PaymentModal({
     return () => window.removeEventListener('branch-changed', load)
   }, [])
 
+  useEffect(() => {
+    if (selectedCustomer) {
+      setDeliveryCustomerName(selectedCustomer.name || '')
+      setDeliveryCustomerPhone(selectedCustomer.phone || '')
+    }
+  }, [selectedCustomer])
+
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
     if (type === 'digital') setPaymentMethod('digital')
@@ -61,7 +68,14 @@ export default function PaymentModal({
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
   const requiresCustomerInfo = effectiveTotal > 100
-  const hasCustomerInfo = !!selectedCustomer || (deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== '')
+  const hasDeliveryCustomerDetails =
+    deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== ''
+  const hasCustomerForShipment =
+    !!selectedCustomer ||
+    hasDeliveryCustomerDetails ||
+    (saleType === 'digital' && paymentMethod === 'account')
+  const hasCustomerInfo =
+    !!selectedCustomer || hasDeliveryCustomerDetails || (saleType === 'digital' && paymentMethod === 'account')
   const change =
     paymentMethod === 'cash' && cashAmount
       ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
@@ -77,14 +91,15 @@ export default function PaymentModal({
     if (!selectedSeller) return false
     if (requiresCustomerInfo && !hasCustomerInfo) return false
     if (needsDelivery) {
+      if (!deliveryPersonId) return false
+      if (!hasCustomerForShipment) return false
       if (!deliveryAddress.trim()) return false
-      if (!deliveryCustomerName.trim()) return false
-      if (!deliveryCustomerPhone.trim()) return false
     }
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     if (paymentMethod === 'account') {
-      return saleType === 'digital' || !!selectedCustomer
+      if (saleType === 'digital') return !!deliveryPersonId && hasCustomerForShipment
+      return !!selectedCustomer && !!deliveryPersonId
     }
     return true
   }
@@ -98,9 +113,23 @@ export default function PaymentModal({
       setError(t('payment.customer_required_over_100') as string)
       return
     }
-    if (needsDelivery && (!deliveryAddress.trim() || !deliveryCustomerName.trim() || !deliveryCustomerPhone.trim())) {
-      setError(t('payment.delivery_required') as string)
-      return
+    if (needsDelivery) {
+      if (!deliveryPersonId) {
+        setError(t('payment.delivery_person_required') as string)
+        return
+      }
+      if (!hasCustomerForShipment) {
+        setError(t('payment.delivery_customer_required') as string)
+        return
+      }
+      if (!deliveryAddress.trim()) {
+        setError(t('payment.delivery_address_required') as string)
+        return
+      }
+      if (!selectedCustomer && !hasDeliveryCustomerDetails && !(saleType === 'digital' && paymentMethod === 'account')) {
+        setError(t('payment.delivery_required') as string)
+        return
+      }
     }
     if (!isValid()) {
       setError(
@@ -255,9 +284,12 @@ export default function PaymentModal({
                 <select
                   value={deliveryPersonId}
                   onChange={(e) => setDeliveryPersonId(e.target.value ? Number(e.target.value) : '')}
-                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400"
+                  required
+                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400 ${
+                    deliveryPersonId ? 'border-amber-200' : 'border-red-300 ring-1 ring-red-200'
+                  }`}
                 >
-                  <option value="">{t('payment.delivery_person')}</option>
+                  <option value="">{t('payment.delivery_person_required_short')}</option>
                   {deliveryPeople.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}

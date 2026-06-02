@@ -525,6 +525,43 @@ def _is_shipment_sale(sale_type: str, delivery_address: Optional[str]) -> bool:
     return False
 
 
+def _invoice_has_customer(
+    customer_id: Optional[int],
+    delivery_customer_name: Optional[str],
+    delivery_customer_phone: Optional[str],
+) -> bool:
+    if customer_id:
+        return True
+    name = (delivery_customer_name or "").strip()
+    phone = (delivery_customer_phone or "").strip()
+    return bool(name and phone)
+
+
+def _validate_delivery_digital_sale(
+    sale_type: str,
+    delivery_person_id: Optional[int],
+    customer_id: Optional[int],
+    delivery_customer_name: Optional[str],
+    delivery_customer_phone: Optional[str],
+    delivery_address: Optional[str],
+) -> None:
+    """Delivery and digital orders must have a driver and customer before completion."""
+    if sale_type not in ("delivery", "digital"):
+        return
+    if not delivery_person_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Assign a delivery person before completing delivery or digital orders",
+        )
+    if not _invoice_has_customer(customer_id, delivery_customer_name, delivery_customer_phone):
+        raise HTTPException(
+            status_code=400,
+            detail="A customer is required for delivery and digital orders — select a customer or enter delivery name and phone",
+        )
+    if sale_type == "delivery" and not (delivery_address or "").strip():
+        raise HTTPException(status_code=400, detail="Delivery address is required for delivery orders")
+
+
 SHIPMENT_INVOICE_SQL = (
     "(i.type = 'delivery' OR "
     "(i.type = 'digital' AND NULLIF(TRIM(COALESCE(i.delivery_address, '')), '') IS NOT NULL))"
@@ -678,6 +715,16 @@ def create_sale(req: SaleRequest,
                     status_code=403,
                     detail="Customer is not authorized for this branch — ask an admin to open an account here",
                 )
+
+        if req.type != "return":
+            _validate_delivery_digital_sale(
+                req.type,
+                req.delivery_person_id,
+                invoice_customer_id,
+                req.delivery_customer_name,
+                req.delivery_customer_phone,
+                req.delivery_address,
+            )
 
         today = date.today()
         for item in req.items:
@@ -1103,7 +1150,9 @@ def update_delivery_status(invoice_id: int, req: DeliveryStatusRequest,
     try:
         _assert_invoice_branch_access(cur, invoice_id, current_user)
         cur.execute(
-            "SELECT id, type, delivery_address FROM invoices WHERE id=%s",
+            """SELECT id, type, delivery_address, delivery_person_id, customer_id,
+                      delivery_customer_name, delivery_customer_phone
+               FROM invoices WHERE id=%s""",
             (invoice_id,),
         )
         inv = cur.fetchone()
@@ -1111,6 +1160,22 @@ def update_delivery_status(invoice_id: int, req: DeliveryStatusRequest,
             raise HTTPException(status_code=404, detail="Invoice not found")
         if not _is_shipment_sale(inv["type"], inv.get("delivery_address")):
             raise HTTPException(status_code=400, detail="Not a delivery order")
+        if req.status in ("out_for_delivery", "delivered"):
+            if inv["type"] in ("delivery", "digital"):
+                if not inv.get("delivery_person_id"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Assign a delivery person before updating this order",
+                    )
+                if not _invoice_has_customer(
+                    inv.get("customer_id"),
+                    inv.get("delivery_customer_name"),
+                    inv.get("delivery_customer_phone"),
+                ):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Customer information is required before completing this delivery",
+                    )
         cur.execute(
             "UPDATE invoices SET delivery_status=%s WHERE id=%s RETURNING *",
             (req.status, invoice_id),
