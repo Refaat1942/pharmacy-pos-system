@@ -10,7 +10,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from auth import create_token, verify_password, verify_token
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id
+from deps import get_current_user, get_active_branch_id, resolve_analytics_branch
 from tenant_ctx import set_current_schema
 from inventory import router as inventory_router, log_movement
 from purchasing import router as purchasing_router
@@ -1313,8 +1313,9 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 # ─── DASHBOARD ───────────────────────────────────────────────────────────────
 
 @app.get("/api/dashboard/summary")
-def dashboard_summary(current_user=Depends(get_current_user),
-                      active_branch=Depends(get_active_branch_id)):
+def dashboard_summary(request: Request,
+                      current_user=Depends(get_current_user)):
+    active_branch = resolve_analytics_branch(request, current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     today = date.today()
@@ -1351,9 +1352,10 @@ def dashboard_summary(current_user=Depends(get_current_user),
 
 
 @app.get("/api/dashboard/sales-series")
-def dashboard_sales_series(days: int = 7,
-                           current_user=Depends(get_current_user),
-                           active_branch=Depends(get_active_branch_id)):
+def dashboard_sales_series(request: Request,
+                           days: int = 7,
+                           current_user=Depends(get_current_user)):
+    active_branch = resolve_analytics_branch(request, current_user)
     """Daily sales for last N days (default 7)."""
     days = max(1, min(days, 90))
     conn = get_db_connection()
@@ -1382,9 +1384,10 @@ def dashboard_sales_series(days: int = 7,
 
 
 @app.get("/api/dashboard/top-products")
-def dashboard_top_products(limit: int = 5, days: int = 30,
-                           current_user=Depends(get_current_user),
-                           active_branch=Depends(get_active_branch_id)):
+def dashboard_top_products(request: Request,
+                           limit: int = 5, days: int = 30,
+                           current_user=Depends(get_current_user)):
+    active_branch = resolve_analytics_branch(request, current_user)
     limit = max(1, min(limit, 50))
     days = max(1, min(days, 365))
     conn = get_db_connection()
@@ -1417,9 +1420,10 @@ def dashboard_top_products(limit: int = 5, days: int = 30,
 
 
 @app.get("/api/dashboard/top-sellers")
-def dashboard_top_sellers(limit: int = 3, days: int = 30,
-                          current_user=Depends(get_current_user),
-                          active_branch=Depends(get_active_branch_id)):
+def dashboard_top_sellers(request: Request,
+                          limit: int = 3, days: int = 30,
+                          current_user=Depends(get_current_user)):
+    active_branch = resolve_analytics_branch(request, current_user)
     limit = max(1, min(limit, 20))
     days = max(1, min(days, 365))
     conn = get_db_connection()
@@ -1452,8 +1456,9 @@ def dashboard_top_sellers(limit: int = 3, days: int = 30,
 
 
 @app.get("/api/dashboard/alerts")
-def dashboard_alerts(current_user=Depends(get_current_user),
-                     active_branch=Depends(get_active_branch_id)):
+def dashboard_alerts(request: Request,
+                     current_user=Depends(get_current_user)):
+    active_branch = resolve_analytics_branch(request, current_user)
     """Operational alerts: near-expiry, low-stock, high returns."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

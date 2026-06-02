@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, ShoppingCart, RotateCcw, AlertTriangle, Package,
   Calendar as CalendarIcon, Users, BarChart3, Loader2, Percent, DollarSign,
+  Building2,
 } from 'lucide-react'
 import Layout from '../components/Layout'
 import i18n from '../lib/i18n'
-import api, { dashboardAPI } from '../lib/api'
+import api, { branchesAPI, dashboardAPI } from '../lib/api'
 import type {
   DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts, PnlSummary,
 } from '../lib/api'
+import { useAuth } from '../lib/auth'
+import type { Branch } from '../lib/api'
 
 type Period = 'today' | 'month' | 'year'
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -22,10 +25,23 @@ function periodRange(p: Period): { date_from: string; date_to: string } {
   return { date_from: yearStartStr(), date_to: to }
 }
 
+function dashboardBranchHeaders(branchFilter: string, isAdmin: boolean) {
+  if (!isAdmin) return {}
+  return {
+    headers: {
+      'X-Active-Branch': branchFilter ? String(branchFilter) : 'all',
+    },
+  }
+}
+
 export default function Dashboard() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const lang = i18n.language
+  const isAdmin = user?.role === 'admin'
 
+  const [branchFilter, setBranchFilter] = useState('')
+  const [allBranches, setAllBranches] = useState<Branch[]>([])
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [series, setSeries] = useState<SalesSeriesPoint[]>([])
   const [topProducts, setTopProducts] = useState<TopProduct[]>([])
@@ -36,44 +52,75 @@ export default function Dashboard() {
   const [pnl, setPnl] = useState<PnlSummary | null>(null)
   const [pnlLoading, setPnlLoading] = useState(false)
 
+  useEffect(() => {
+    if (!isAdmin) return
+    branchesAPI.list().then((r) => setAllBranches(r.data)).catch(() => setAllBranches([]))
+  }, [isAdmin])
+
+  const branchScopeLabel = useMemo(() => {
+    if (!isAdmin) {
+      const b = allBranches.find((x) => x.id === user?.branch_id)
+      if (b) return lang === 'ar' ? b.name_ar : b.name_en
+      return ''
+    }
+    if (!branchFilter) return t('dashboard.all_branches')
+    const b = allBranches.find((x) => String(x.id) === branchFilter)
+    return b ? (lang === 'ar' ? b.name_ar : b.name_en) : ''
+  }, [isAdmin, branchFilter, allBranches, user?.branch_id, lang, t])
+
+  const branchCfg = () => dashboardBranchHeaders(branchFilter, isAdmin)
+
   const loadAll = () => {
     setLoading(true)
+    const cfg = branchCfg()
     Promise.all([
-      dashboardAPI.summary(),
-      dashboardAPI.series(7),
-      dashboardAPI.topProducts(5, 30),
-      dashboardAPI.topSellers(3, 30),
-      dashboardAPI.alerts(),
+      dashboardAPI.summary(cfg),
+      dashboardAPI.series(7, cfg),
+      dashboardAPI.topProducts(5, 30, cfg),
+      dashboardAPI.topSellers(3, 30, cfg),
+      dashboardAPI.alerts(cfg),
     ])
       .then(([s, sr, tp, ts, al]) => {
-        setSummary(s.data); setSeries(sr.data); setTopProducts(tp.data)
-        setTopSellers(ts.data); setAlerts(al.data)
+        setSummary(s.data)
+        setSeries(sr.data)
+        setTopProducts(tp.data)
+        setTopSellers(ts.data)
+        setAlerts(al.data)
       })
       .finally(() => setLoading(false))
   }
 
   const loadPnl = (p: Period) => {
     setPnlLoading(true)
-    api.get<PnlSummary>('/reports/pnl', { params: periodRange(p) })
+    api
+      .get<PnlSummary>('/reports/pnl', {
+        params: periodRange(p),
+        ...branchCfg(),
+      })
       .then((r) => setPnl(r.data))
       .catch(() => setPnl(null))
       .finally(() => setPnlLoading(false))
   }
 
   useEffect(() => {
+    if (!isAdmin && user?.branch_id && allBranches.length === 0) {
+      branchesAPI.list().then((r) => setAllBranches(r.data)).catch(() => {})
+    }
+  }, [isAdmin, user?.branch_id, allBranches.length])
+
+  useEffect(() => {
     loadAll()
     loadPnl(period)
-    const onBranchChange = () => { loadAll(); loadPnl(period) }
-    window.addEventListener('branch-changed', onBranchChange)
-    return () => window.removeEventListener('branch-changed', onBranchChange)
-     
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchFilter, isAdmin])
 
-  useEffect(() => { loadPnl(period) }, [period])
+  useEffect(() => {
+    loadPnl(period)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period])
 
   const egp = t('sales.egp')
 
-  // Chart scaling
   const maxSales = Math.max(1, ...series.map((p) => p.sales))
 
   const fmtDay = (d: string) =>
@@ -85,18 +132,50 @@ export default function Dashboard() {
     <Layout>
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6 space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{t('dashboard.title')}</h1>
               <p className="text-sm text-gray-500 mt-0.5">{t('dashboard.subtitle')}</p>
             </div>
-            <button
-              onClick={loadAll}
-              className="text-sm text-pharma-700 hover:text-pharma-800 font-semibold"
-            >
-              {t('common.refresh')}
-            </button>
+            <div className="flex flex-wrap items-end gap-2">
+              {isAdmin && (
+                <div className="min-w-[11rem]">
+                  <label className="text-[10px] text-gray-500 uppercase tracking-wider block flex items-center gap-1 mb-1">
+                    <Building2 size={11} />
+                    {t('dashboard.filter_branch')}
+                  </label>
+                  <select
+                    value={branchFilter}
+                    onChange={(e) => setBranchFilter(e.target.value)}
+                    className="input text-sm w-full min-w-[11rem]"
+                  >
+                    <option value="">{t('dashboard.all_branches')}</option>
+                    {allBranches.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {lang === 'ar' ? b.name_ar : b.name_en}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <button
+                onClick={() => { loadAll(); loadPnl(period) }}
+                className="text-sm text-pharma-700 hover:text-pharma-800 font-semibold px-3 py-2"
+              >
+                {t('common.refresh')}
+              </button>
+            </div>
           </div>
+
+          {branchScopeLabel && (
+            <p className="text-sm text-gray-600 -mt-2">
+              <span className="font-medium text-gray-500">{t('dashboard.scope_hint')}:</span>{' '}
+              <span className="inline-flex items-center gap-1.5 bg-pharma-50 text-pharma-800 border border-pharma-100 rounded-lg px-2.5 py-1 font-semibold">
+                <Building2 size={14} />
+                {branchScopeLabel}
+              </span>
+            </p>
+          )}
 
           {loading && !summary ? (
             <div className="flex items-center justify-center py-24 text-gray-400">
@@ -105,7 +184,6 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
-              {/* KPI cards */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KpiCard
                   icon={<TrendingUp size={18} />}
@@ -133,7 +211,6 @@ export default function Dashboard() {
                 />
               </div>
 
-              {/* Overall profit margin */}
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
@@ -191,7 +268,6 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Alerts */}
               {alerts && (alerts.expired_count > 0 || alerts.near_expiry_count > 0 ||
                           alerts.low_stock_count > 0 || alerts.returns_high) && (
                 <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-2">
@@ -220,7 +296,6 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {/* Chart */}
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <h2 className="text-sm font-bold text-gray-700 mb-4">{t('dashboard.last_7_days')}</h2>
                 <div className="flex items-end gap-3 h-48">
@@ -247,7 +322,6 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Top products + Top sellers */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                   <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">

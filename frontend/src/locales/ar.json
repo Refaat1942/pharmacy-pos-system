@@ -1044,7 +1044,10 @@
     "net_revenue": "صافي الإيرادات",
     "cogs": "تكلفة البضاعة",
     "gross_profit": "إجمالي الربح",
-    "margin_pct": "نسبة الربح"
+    "margin_pct": "نسبة الربح",
+    "filter_branch": "الفرع",
+    "all_branches": "كل الفروع",
+    "scope_hint": "عرض بيانات"
   },
   "returns": {
     "title": "المرتجعات",

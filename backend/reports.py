@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import date, datetime, timedelta
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, resolve_analytics_branch
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -14,21 +14,7 @@ def _check_role(user):
 
 
 def _resolve_report_branch(request: Request, user: dict) -> Optional[int]:
-    """Reports-specific scope: admin defaults to ALL branches; non-admin pinned to own.
-
-    Admin sends X-Active-Branch=<id> to scope to one branch, or omits/sets 'all' for all.
-    Cannot reuse the global get_active_branch_id, which (intentionally) defaults
-    admin to their own branch when no header is sent — wrong default for reports.
-    """
-    if user.get("role") != "admin":
-        return user.get("branch_id")
-    raw = request.headers.get("X-Active-Branch")
-    if not raw or raw in ("0", "all", "ALL"):
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        return None
+    return resolve_analytics_branch(request, user)
 
 
 def _branch_filter(user, active_branch_id: Optional[int]) -> tuple[str, list]:

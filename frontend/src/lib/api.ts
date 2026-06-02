@@ -286,14 +286,19 @@ export interface DashboardAlerts {
   returns_high: boolean
 }
 
+type DashboardRequestConfig = { headers?: Record<string, string> }
+
 export const dashboardAPI = {
-  summary: () => api.get<DashboardSummary>('/dashboard/summary'),
-  series: (days = 7) => api.get<SalesSeriesPoint[]>('/dashboard/sales-series', { params: { days } }),
-  topProducts: (limit = 5, days = 30) =>
-    api.get<TopProduct[]>('/dashboard/top-products', { params: { limit, days } }),
-  topSellers: (limit = 3, days = 30) =>
-    api.get<TopSeller[]>('/dashboard/top-sellers', { params: { limit, days } }),
-  alerts: () => api.get<DashboardAlerts>('/dashboard/alerts'),
+  summary: (config: DashboardRequestConfig = {}) =>
+    api.get<DashboardSummary>('/dashboard/summary', config),
+  series: (days = 7, config: DashboardRequestConfig = {}) =>
+    api.get<SalesSeriesPoint[]>('/dashboard/sales-series', { params: { days }, ...config }),
+  topProducts: (limit = 5, days = 30, config: DashboardRequestConfig = {}) =>
+    api.get<TopProduct[]>('/dashboard/top-products', { params: { limit, days }, ...config }),
+  topSellers: (limit = 3, days = 30, config: DashboardRequestConfig = {}) =>
+    api.get<TopSeller[]>('/dashboard/top-sellers', { params: { limit, days }, ...config }),
+  alerts: (config: DashboardRequestConfig = {}) =>
+    api.get<DashboardAlerts>('/dashboard/alerts', config),
 }
 
 export interface Branch {

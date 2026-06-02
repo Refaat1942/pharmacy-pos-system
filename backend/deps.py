@@ -1,4 +1,6 @@
 """Shared FastAPI dependencies."""
+from typing import Optional
+
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from auth import verify_token
@@ -72,3 +74,20 @@ def get_active_branch_id(request: Request, current_user=Depends(get_current_user
             return None
         return requested if requested is not None else user_branch
     return user_branch
+
+
+def resolve_analytics_branch(request: Request, current_user) -> Optional[int]:
+    """Dashboard / reports scope: admin may view all branches (None) or one branch via header.
+
+    Unlike get_active_branch_id, admins default to ALL when the header is omitted or 'all'.
+    Non-admins are always pinned to their branch.
+    """
+    if current_user.get("role") != "admin":
+        return current_user.get("branch_id")
+    raw = request.headers.get("X-Active-Branch")
+    if not raw or raw in ("0", "all", "ALL"):
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None

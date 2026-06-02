@@ -1044,7 +1044,10 @@
     "net_revenue": "Net Revenue",
     "cogs": "Cost of Goods",
     "gross_profit": "Gross Profit",
-    "margin_pct": "Margin %"
+    "margin_pct": "Margin %",
+    "filter_branch": "Branch",
+    "all_branches": "All branches",
+    "scope_hint": "Showing data for"
   },
   "returns": {
     "title": "Returns",
