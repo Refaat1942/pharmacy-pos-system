@@ -78,7 +78,7 @@ export default function PaymentModal({
     }
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
-    if (paymentMethod === 'account') return !!selectedCustomer
+    if (paymentMethod === 'account') return saleType === 'digital' && !!selectedCustomer
     return true
   }
 
