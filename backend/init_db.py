@@ -451,6 +451,8 @@ UPDATE employees
  WHERE clock_code IS NULL;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_by_user_id INTEGER;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_at TIMESTAMP;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS allowed BOOLEAN DEFAULT false;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS hours_allowance NUMERIC(5,2) DEFAULT 0;
 
 -- Per-user card code for unlocking a locked terminal by scanning a personal QR/barcode
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_code VARCHAR(40);

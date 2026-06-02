@@ -16,3 +16,5 @@ Salary slips are prorated by **hours worked** against a fixed standard month of 
 **How to apply:** Any new payroll path (regenerate, recalculation, reports, edit preview) must derive net from the hours proration (or the days*8 fallback), never the raw base_salary, or pay silently diverges. Past slips are not retroactively changed unless edited/regenerated.
 
 Note: `/api/hr/*` endpoints are gated behind the tenant 'hr' plan feature, so payroll APIs 403 ("feature not enabled") for tenants without it.
+
+**Per-day "pass" (attendance.allowed) is payroll-affecting and must stay admin-only.** Setting it makes a short day count as a full 8h (and overtime still pays more). Any branch/hr user can reach attendance CRUD, so the upsert must NOT let non-admins set or flip this flag — it preserves the existing value for non-admins and only honors the request body when role=='admin'. UI controls for it are likewise gated by isAdmin. **Why:** otherwise a non-admin attendance user could inflate payable hours = privilege escalation onto compensation. Applies to any future flag/field that increases pay.

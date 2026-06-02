@@ -65,6 +65,7 @@ class EmployeeIn(BaseModel):
     national_id: Optional[str] = None
     notes: Optional[str] = None
     active: bool = True
+    hours_allowance: float = Field(0, ge=0)
 
 
 @router.get("/employees")
@@ -94,10 +95,10 @@ def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
     try:
         cur.execute("""
             INSERT INTO employees(name, role, branch_id, base_salary, hire_date,
-                                  phone, national_id, notes, active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+                                  phone, national_id, notes, active, hours_allowance)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
         """, [body.name, body.role, body.branch_id, body.base_salary, body.hire_date,
-              body.phone, body.national_id, body.notes, body.active])
+              body.phone, body.national_id, body.notes, body.active, body.hours_allowance])
         row = dict(cur.fetchone())
         # Assign a unique clock_code now that we know the new id
         code = _generate_clock_code(row["id"], body.name)
@@ -185,10 +186,10 @@ def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current
     try:
         cur.execute("""
             UPDATE employees SET name=%s, role=%s, branch_id=%s, base_salary=%s,
-              hire_date=%s, phone=%s, national_id=%s, notes=%s, active=%s
+              hire_date=%s, phone=%s, national_id=%s, notes=%s, active=%s, hours_allowance=%s
             WHERE id=%s RETURNING *
         """, [body.name, body.role, body.branch_id, body.base_salary, body.hire_date,
-              body.phone, body.national_id, body.notes, body.active, eid])
+              body.phone, body.national_id, body.notes, body.active, body.hours_allowance, eid])
         row = cur.fetchone()
         if not row: raise HTTPException(404, "Employee not found")
         conn.commit(); return dict(row)
@@ -217,6 +218,7 @@ class AttendanceIn(BaseModel):
     check_out: Optional[time] = None
     status: Literal["present", "absent", "leave"] = "present"
     notes: Optional[str] = None
+    allowed: bool = False
 
 
 @router.get("/attendance-roster")
@@ -282,15 +284,23 @@ def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if current_user.get('role') == 'admin':
+            allowed_val = body.allowed
+        else:
+            cur.execute("SELECT allowed FROM attendance WHERE employee_id=%s AND work_date=%s",
+                        [body.employee_id, body.work_date])
+            ex = cur.fetchone()
+            allowed_val = bool(ex['allowed']) if ex and ex['allowed'] is not None else False
         cur.execute("""
-            INSERT INTO attendance(employee_id, work_date, check_in, check_out, hours, status, notes)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO attendance(employee_id, work_date, check_in, check_out, hours, status, notes, allowed)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (employee_id, work_date) DO UPDATE SET
               check_in=EXCLUDED.check_in, check_out=EXCLUDED.check_out,
-              hours=EXCLUDED.hours, status=EXCLUDED.status, notes=EXCLUDED.notes
+              hours=EXCLUDED.hours, status=EXCLUDED.status, notes=EXCLUDED.notes,
+              allowed=EXCLUDED.allowed
             RETURNING *
         """, [body.employee_id, body.work_date, body.check_in, body.check_out,
-              hours, body.status, body.notes])
+              hours, body.status, body.notes, allowed_val])
         row = dict(cur.fetchone()); conn.commit(); return row
     finally:
         cur.close(); conn.close()
@@ -349,17 +359,27 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id, base_salary FROM employees WHERE active=true")
+        cur.execute("SELECT id, base_salary, COALESCE(hours_allowance, 0) AS hours_allowance FROM employees WHERE active=true")
         emps = cur.fetchall()
         created = 0
         for e in emps:
             cur.execute("""
                 SELECT COUNT(DISTINCT work_date)::int AS days,
-                       COALESCE(SUM(COALESCE(hours, %s)), 0) AS hours
+                       COALESCE(SUM(
+                         CASE
+                           WHEN COALESCE(allowed, false)
+                             THEN GREATEST(COALESCE(hours, %(std)s), %(std)s)
+                           WHEN COALESCE(hours, %(std)s) < %(std)s
+                                AND COALESCE(hours, %(std)s) >= %(std)s - %(allow)s
+                             THEN %(std)s
+                           ELSE COALESCE(hours, %(std)s)
+                         END
+                       ), 0) AS hours
                 FROM attendance
-                WHERE employee_id=%s AND status='present'
-                  AND TO_CHAR(work_date, 'YYYY-MM') = %s
-            """, [STANDARD_HOURS_PER_DAY, e['id'], period_month])
+                WHERE employee_id=%(eid)s AND status='present'
+                  AND TO_CHAR(work_date, 'YYYY-MM') = %(pm)s
+            """, {"std": STANDARD_HOURS_PER_DAY, "allow": float(e['hours_allowance'] or 0),
+                  "eid": e['id'], "pm": period_month})
             row = cur.fetchone()
             days = row['days'] or 0
             hours = float(row['hours'] or 0)
@@ -481,11 +501,28 @@ def sales_performance(
             params,
         )
         rows = [dict(r) for r in cur.fetchall()]
+        cur.execute(
+            f"""SELECT i.seller_id,
+                       COALESCE(NULLIF(i.type, ''), 'cash') AS sale_type,
+                       COALESCE(SUM(i.net_total), 0)::float AS revenue
+                FROM invoices i
+                WHERE {' AND '.join(where)}
+                GROUP BY i.seller_id, COALESCE(NULLIF(i.type, ''), 'cash')""",
+            params,
+        )
+        by_seller: dict = {}
+        totals_by_type: dict = {}
+        for r in cur.fetchall():
+            by_seller.setdefault(r["seller_id"], {})[r["sale_type"]] = r["revenue"]
+            totals_by_type[r["sale_type"]] = totals_by_type.get(r["sale_type"], 0.0) + r["revenue"]
+        for r in rows:
+            r["by_type"] = by_seller.get(r["seller_id"], {})
         totals = {
             "invoices": sum(r["invoices"] for r in rows),
             "revenue": sum(r["revenue"] for r in rows),
             "items_sold": sum(r["items_sold"] for r in rows),
             "sellers": len(rows),
+            "by_type": totals_by_type,
         }
         return {"rows": rows, "totals": totals}
     finally:

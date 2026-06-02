@@ -12,10 +12,10 @@ type Employee = {
   id: number; name: string; role: string | null; branch_id: number | null
   base_salary: number; hire_date: string | null; phone: string | null
   national_id: string | null; active: boolean; notes: string | null
-  clock_code: string | null
+  clock_code: string | null; hours_allowance: number | null
   branch_name_en?: string; branch_name_ar?: string
 }
-type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null }
+type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null; allowed: boolean }
 type Slip = { id: number; employee_id: number; employee_name: string; employee_role: string; period_month: string; base_salary: number; bonus: number; deductions: number; days_worked: number; hours_worked: number | null; net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null }
 type Branch = { id: number; name_en: string; name_ar: string }
 
@@ -93,6 +93,7 @@ function EmployeesTab() {
         base_salary: editing.base_salary || 0, hire_date: editing.hire_date || null,
         phone: editing.phone || null, national_id: editing.national_id || null,
         notes: editing.notes || null, active: editing.active !== false,
+        hours_allowance: editing.hours_allowance || 0,
       }
       if (editing.id) await api.put(`/hr/employees/${editing.id}`, body)
       else await api.post('/hr/employees', body)
@@ -187,6 +188,7 @@ function EmployeesTab() {
               </select>
             </Field>
             <Field label={t('hr.base_salary')}><input type="number" className="input w-full" value={editing.base_salary ?? 0} onChange={(e) => setEditing({ ...editing, base_salary: Number(e.target.value) })} /></Field>
+            <Field label={t('hr.hours_allowance')}><input type="number" step="0.25" min="0" className="input w-full" value={editing.hours_allowance ?? 0} onChange={(e) => setEditing({ ...editing, hours_allowance: Number(e.target.value) })} /><div className="text-[11px] text-slate-400 mt-1">{t('hr.hours_allowance_hint')}</div></Field>
             <Field label={t('hr.hire_date')}><input type="date" className="input w-full" value={editing.hire_date || ''} onChange={(e) => setEditing({ ...editing, hire_date: e.target.value })} /></Field>
             <Field label={t('hr.phone')}><PhoneField className="input w-full" value={editing.phone || ''} onChange={(v) => setEditing({ ...editing, phone: v })} /></Field>
             <Field label={t('hr.national_id')}><input className="input w-full" value={editing.national_id || ''} onChange={(e) => setEditing({ ...editing, national_id: e.target.value })} /></Field>
@@ -215,7 +217,7 @@ function AttendanceTab() {
   const [rows, setRows] = useState<Att[]>([])
   const [date, setDate] = useState(today())
   const [showAdd, setShowAdd] = useState(false)
-  const [form, setForm] = useState<{ employee_id: number | ''; work_date: string; check_in: string; check_out: string; status: string }>({ employee_id: '', work_date: today(), check_in: '09:00', check_out: '17:00', status: 'present' })
+  const [form, setForm] = useState<{ employee_id: number | ''; work_date: string; check_in: string; check_out: string; status: string; allowed: boolean }>({ employee_id: '', work_date: today(), check_in: '09:00', check_out: '17:00', status: 'present', allowed: false })
 
   const load = async () => {
     const [e, a] = await Promise.all([
@@ -231,6 +233,16 @@ function AttendanceTab() {
     try {
       await api.post('/hr/attendance', form)
       setShowAdd(false); await load()
+    } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
+  }
+  const togglePass = async (r: Att) => {
+    try {
+      await api.post('/hr/attendance', {
+        employee_id: r.employee_id, work_date: r.work_date,
+        check_in: r.check_in || null, check_out: r.check_out || null,
+        status: r.status, notes: r.notes || null, allowed: !r.allowed,
+      })
+      await load()
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
   const remove = async (id: number) => {
@@ -260,11 +272,12 @@ function AttendanceTab() {
               <th className="px-3 py-2.5 text-start">{t('hr.check_out')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.hours')}</th>
               <th className="px-3 py-2.5 text-center">{t('hr.status')}</th>
+              <th className="px-3 py-2.5 text-center">{t('hr.pass_day')}</th>
               <th className="px-3 py-2.5 text-center">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('hr.no_attendance')}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_attendance')}</td></tr>}
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-medium">{r.employee_name}</td>
@@ -274,6 +287,15 @@ function AttendanceTab() {
                 <td className="px-3 py-2.5 text-end font-mono">{r.hours ?? '—'}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : r.status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{t(`hr.status_${r.status}`)}</span>
+                </td>
+                <td className="px-3 py-2.5 text-center">
+                  {isAdmin && r.status === 'present' ? (
+                    <button onClick={() => togglePass(r)} title={t('hr.pass_day_hint') as string} className={`text-[10px] px-2 py-0.5 rounded-full border ${r.allowed ? 'bg-pharma-100 text-pharma-700 border-pharma-200' : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'}`}>
+                      {r.allowed ? t('hr.passed') : t('hr.pass_day')}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-300">—</span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-center">
                   {isAdmin ? (
@@ -309,6 +331,12 @@ function AttendanceTab() {
                 <option value="leave">{t('hr.status_leave')}</option>
               </select>
             </Field>
+            {isAdmin && form.status === 'present' && (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.allowed} onChange={(e) => setForm({ ...form, allowed: e.target.checked })} />
+                {t('hr.pass_day')} <span className="text-[11px] text-slate-400">— {t('hr.pass_day_hint')}</span>
+              </label>
+            )}
             <button onClick={save} className="w-full bg-pharma-600 hover:bg-pharma-700 text-white font-medium py-2 rounded-lg">{t('common.save')}</button>
           </div>
         </Modal>
@@ -501,6 +529,7 @@ type SellerRow = {
   revenue: number
   avg_ticket: number
   items_sold: number
+  by_type: Record<string, number>
 }
 
 function PerformanceTab() {
@@ -509,7 +538,8 @@ function PerformanceTab() {
   const [from, setFrom] = useState(start)
   const [to, setTo] = useState(today())
   const [rows, setRows] = useState<SellerRow[]>([])
-  const [totals, setTotals] = useState<{ invoices: number; revenue: number; items_sold: number; sellers: number }>({ invoices: 0, revenue: 0, items_sold: 0, sellers: 0 })
+  const [totals, setTotals] = useState<{ invoices: number; revenue: number; items_sold: number; sellers: number; by_type: Record<string, number> }>({ invoices: 0, revenue: 0, items_sold: 0, sellers: 0, by_type: {} })
+  const typeLabel = (k: string) => t(`payment.${k}_sale`, k.charAt(0).toUpperCase() + k.slice(1))
   const [loading, setLoading] = useState(false)
 
   const load = async () => {
@@ -537,6 +567,15 @@ function PerformanceTab() {
           <PerfStat label={t('hr.perf_items')} value={totals.items_sold.toLocaleString()} />
           <PerfStat label={t('hr.perf_revenue')} value={fmt(totals.revenue)} />
         </div>
+        {Object.keys(totals.by_type || {}).length > 0 && (
+          <div className="w-full flex flex-wrap gap-2 pt-1">
+            {Object.entries(totals.by_type).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+              <span key={k} className="text-[11px] bg-slate-50 border border-slate-200 rounded-full px-2.5 py-1 text-slate-600">
+                {typeLabel(k)}: <span className="font-mono font-semibold text-slate-800">{fmt(v)}</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -549,13 +588,14 @@ function PerformanceTab() {
               <th className="px-3 py-2.5 text-end">{t('hr.perf_items')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.perf_avg_ticket')}</th>
               <th className="px-3 py-2.5 text-end">{t('hr.perf_revenue')}</th>
-              <th className="px-3 py-2.5 text-start w-1/4">{t('hr.perf_share')}</th>
+              <th className="px-3 py-2.5 text-start">{t('hr.perf_by_type')}</th>
+              <th className="px-3 py-2.5 text-start w-1/5">{t('hr.perf_share')}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="text-center py-8 text-slate-400">…</td></tr>}
+            {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">…</td></tr>}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('hr.no_sales_in_range')}</td></tr>
+              <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_sales_in_range')}</td></tr>
             )}
             {rows.map((r, idx) => {
               const name = (i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en) || r.username || `#${r.seller_id}`
@@ -573,6 +613,16 @@ function PerformanceTab() {
                   <td className="px-3 py-2.5 text-end font-mono">{r.items_sold.toLocaleString()}</td>
                   <td className="px-3 py-2.5 text-end font-mono">{fmt(r.avg_ticket)}</td>
                   <td className="px-3 py-2.5 text-end font-mono font-semibold">{fmt(r.revenue)}</td>
+                  <td className="px-3 py-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(r.by_type || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                        <span key={k} className="text-[10px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-500">
+                          {typeLabel(k)} <span className="font-mono text-slate-700">{fmt(v)}</span>
+                        </span>
+                      ))}
+                      {Object.keys(r.by_type || {}).length === 0 && <span className="text-[10px] text-slate-300">—</span>}
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5">
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div className="h-full bg-gradient-to-r from-pharma-500 to-emerald-500" style={{ width: `${pct}%` }} />
