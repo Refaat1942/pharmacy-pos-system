@@ -89,7 +89,8 @@ export default function Deliveries() {
           ) : rows.length === 0 ? (
             <div className="py-16 text-center text-slate-400 text-sm">{t('deliveries.none')}</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[72rem]">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-start">{t('deliveries.invoice')}</th>
@@ -110,16 +111,16 @@ export default function Deliveries() {
                   const st = r.delivery_status || 'pending'
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3 font-mono text-xs text-slate-700">{r.invoice_number}</td>
-                      <td className="px-4 py-3 text-slate-600 capitalize">{r.type}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-700 whitespace-nowrap">{r.invoice_number}</td>
+                      <td className="px-4 py-3 text-slate-600 capitalize whitespace-nowrap">{r.type}</td>
                       <td className="px-4 py-3 text-slate-600">
                         {r.payment_method === 'account'
                           ? t('deliveries.payment_on_account')
                           : t(`payment.${r.payment_method}`, r.payment_method)}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{r.delivery_customer_name || r.customer_name || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{r.delivery_customer_phone || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 max-w-[16rem] truncate" title={r.delivery_address || ''}>{r.delivery_address || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.delivery_customer_phone || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 min-w-[12rem] max-w-[24rem]">{r.delivery_address || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{r.delivery_person_name || '—'}</td>
                       <td className="px-4 py-3 text-end font-mono text-slate-700">{fmt(r.net_total)}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDT(r.created_at)}</td>
@@ -128,7 +129,7 @@ export default function Deliveries() {
                           {t(`deliveries.${st}`)}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {busyId === r.id ? (
                             <Loader2 className="animate-spin text-slate-400" size={16} />
@@ -167,6 +168,7 @@ export default function Deliveries() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
         {!loading && rows.length > 0 && (
