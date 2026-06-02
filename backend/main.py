@@ -573,13 +573,30 @@ def create_sale(req: SaleRequest,
         account_paid_method = None
         if req.payment_method == "cash" and req.cash_amount:
             change = max(0.0, req.cash_amount - net_total)
-        # Account (credit) sales require a customer + credit-limit check
+        # Account (credit) sales: walk-in customers on cash/delivery; platform partner on digital.
+        account_customer_id = req.customer_id
         if req.payment_method == "account" and req.type != "return":
-            if not req.customer_id:
+            if req.type == "digital":
+                if not req.digital_type:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Platform is required for digital on-account sales",
+                    )
+                from customers import lookup_platform_partner, platform_partner_display_name
+                cust = lookup_platform_partner(cur, req.digital_type)
+                if not cust:
+                    pname = platform_partner_display_name(req.digital_type)
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Create a customer named '{pname}' for platform on-account sales",
+                    )
+                account_customer_id = cust["id"]
+            elif not account_customer_id:
                 raise HTTPException(status_code=400, detail="Customer is required for account sales")
-            cur.execute("SELECT id, name, credit_limit, active FROM customers WHERE id=%s",
-                        (req.customer_id,))
-            cust = cur.fetchone()
+            else:
+                cur.execute("SELECT id, name, credit_limit, active FROM customers WHERE id=%s",
+                            (account_customer_id,))
+                cust = cur.fetchone()
             if not cust or not cust.get("active", True):
                 raise HTTPException(status_code=400, detail="Customer not found or inactive")
             cash_amount_val = None
@@ -602,11 +619,11 @@ def create_sale(req: SaleRequest,
             cur.execute(
                 """SELECT COALESCE(SUM(net_total),0) AS charged FROM invoices
                    WHERE customer_id=%s AND payment_method='account' AND type!='return'""",
-                (req.customer_id,))
+                (account_customer_id,))
             charged = float(cur.fetchone()["charged"])
             cur.execute(
                 "SELECT COALESCE(SUM(amount),0) AS paid FROM customer_payments WHERE customer_id=%s",
-                (req.customer_id,))
+                (account_customer_id,))
             paid = float(cur.fetchone()["paid"])
             current_bal = charged - paid
             limit = float(cust["credit_limit"] or 0)
@@ -631,10 +648,15 @@ def create_sale(req: SaleRequest,
             raise HTTPException(status_code=400, detail=f"Branch {branch_id} does not exist")
 
         # Non-admin: any sale that attaches a customer_id requires customer-branch authorization
-        if req.customer_id and current_user.get("role") != "admin":
+        invoice_customer_id = (
+            account_customer_id
+            if req.payment_method == "account" and req.type != "return"
+            else req.customer_id
+        )
+        if invoice_customer_id and current_user.get("role") != "admin":
             cur.execute(
                 "SELECT 1 FROM customer_branches WHERE customer_id=%s AND branch_id=%s",
-                (req.customer_id, branch_id),
+                (invoice_customer_id, branch_id),
             )
             if not cur.fetchone():
                 raise HTTPException(
@@ -699,7 +721,7 @@ def create_sale(req: SaleRequest,
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
-             change, seller_id, req.customer_id, branch_id, clinic_id, prescription_id, req.notes,
+             change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
              delivery_person_id, delivery_person_name, delivery_status),
@@ -707,12 +729,12 @@ def create_sale(req: SaleRequest,
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
 
-        if account_paid_now > 0 and req.customer_id:
+        if account_paid_now > 0 and invoice_customer_id:
             cur.execute(
                 """INSERT INTO customer_payments
                    (customer_id, invoice_id, amount, payment_method, reference, notes, recorded_by)
                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (req.customer_id, invoice_id, account_paid_now, account_paid_method,
+                (invoice_customer_id, invoice_id, account_paid_now, account_paid_method,
                  invoice_number, "Partial payment at sale", current_user.get("user_id")),
             )
 
