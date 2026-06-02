@@ -561,7 +561,9 @@
     "delivery_customer_name": "Customer name",
     "delivery_customer_phone": "Customer phone",
     "delivery_person": "Delivery person",
-    "delivery_required": "Delivery requires customer name, phone and address."
+    "delivery_required": "Delivery requires customer name, phone and address.",
+    "paid_now": "Amount paid now",
+    "remaining_on_account": "Remaining on account"
   },
   "common": {
     "loading": "Loading...",
@@ -616,7 +618,9 @@
     "print": "Print Receipt",
     "new_sale": "New Sale",
     "close": "Close",
-    "egp": "EGP"
+    "egp": "EGP",
+    "paid_now": "Paid now",
+    "on_account": "On account"
   },
   "units": {
     "box": "Box",

@@ -544,6 +544,8 @@ class SaleRequest(BaseModel):
     delivery_customer_phone: Optional[str] = None
     delivery_person_id: Optional[int] = None
     delivery_person_name: Optional[str] = None
+    account_paid_amount: Optional[float] = None
+    account_paid_method: Optional[str] = None
 
 
 @app.post("/api/sales")
@@ -565,6 +567,10 @@ def create_sale(req: SaleRequest,
         invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
 
         change = 0.0
+        cash_amount_val = req.cash_amount
+        visa_amount_val = req.visa_amount
+        account_paid_now = 0.0
+        account_paid_method = None
         if req.payment_method == "cash" and req.cash_amount:
             change = max(0.0, req.cash_amount - net_total)
         # Account (credit) sales require a customer + credit-limit check
@@ -576,6 +582,22 @@ def create_sale(req: SaleRequest,
             cust = cur.fetchone()
             if not cust or not cust.get("active", True):
                 raise HTTPException(status_code=400, detail="Customer not found or inactive")
+            cash_amount_val = None
+            visa_amount_val = None
+            account_paid_now = float(req.account_paid_amount or 0)
+            if account_paid_now < 0:
+                account_paid_now = 0.0
+            if account_paid_now > net_total:
+                account_paid_now = net_total
+            if account_paid_now > 0:
+                account_paid_method = req.account_paid_method or "cash"
+                if account_paid_method not in ("cash", "visa", "instapay", "vodafone_cash"):
+                    account_paid_method = "cash"
+                if account_paid_method == "cash":
+                    cash_amount_val = account_paid_now
+                else:
+                    visa_amount_val = account_paid_now
+            credit_portion = net_total - account_paid_now
             # Compute current balance
             cur.execute(
                 """SELECT COALESCE(SUM(net_total),0) AS charged FROM invoices
@@ -588,10 +610,10 @@ def create_sale(req: SaleRequest,
             paid = float(cur.fetchone()["paid"])
             current_bal = charged - paid
             limit = float(cust["credit_limit"] or 0)
-            if limit > 0 and (current_bal + net_total) > limit:
+            if limit > 0 and (current_bal + credit_portion) > limit:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Credit limit exceeded for {cust['name']} (balance {current_bal:.2f} + sale {net_total:.2f} > limit {limit:.2f})",
+                    detail=f"Credit limit exceeded for {cust['name']} (balance {current_bal:.2f} + sale {credit_portion:.2f} > limit {limit:.2f})",
                 )
 
         if not req.seller_id:
@@ -675,7 +697,7 @@ def create_sale(req: SaleRequest,
                 delivery_person_id, delivery_person_name)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
-             subtotal, req.discount, net_total, req.cash_amount, req.visa_amount,
+             subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, req.customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
@@ -683,6 +705,15 @@ def create_sale(req: SaleRequest,
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
+
+        if account_paid_now > 0 and req.customer_id:
+            cur.execute(
+                """INSERT INTO customer_payments
+                   (customer_id, invoice_id, amount, payment_method, reference, notes, recorded_by)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                (req.customer_id, invoice_id, account_paid_now, account_paid_method,
+                 invoice_number, "Partial payment at sale", current_user.get("user_id")),
+            )
 
         if prescription_id and req.type != "return":
             cur.execute(

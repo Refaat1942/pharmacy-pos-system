@@ -319,6 +319,23 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 <span className="tabular-nums">{tr('receipt.egp')} {invoice.change_amount.toFixed(2)}</span>
               </div>
             )}
+            {invoice.payment_method === 'account' &&
+              ((invoice.cash_amount || 0) + (invoice.visa_amount || 0)) > 0 && (
+              <>
+                <div className="flex justify-between text-xs text-blue-600">
+                  <span>{tr('receipt.paid_now')}</span>
+                  <span className="tabular-nums">
+                    {tr('receipt.egp')} {((invoice.cash_amount || 0) + (invoice.visa_amount || 0)).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm font-semibold text-blue-700">
+                  <span>{tr('receipt.on_account')}</span>
+                  <span className="tabular-nums">
+                    {tr('receipt.egp')} {(invoice.net_total - (invoice.cash_amount || 0) - (invoice.visa_amount || 0)).toFixed(2)}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           <p className="text-center text-xs text-gray-500 pb-2 whitespace-pre-line">{footerText}</p>

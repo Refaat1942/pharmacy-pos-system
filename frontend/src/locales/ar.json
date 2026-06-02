@@ -561,7 +561,9 @@
     "delivery_customer_name": "اسم العميل",
     "delivery_person": "مندوب التوصيل",
     "delivery_customer_phone": "هاتف العميل",
-    "delivery_required": "التوصيل يتطلب اسم العميل ورقم الهاتف والعنوان."
+    "delivery_required": "التوصيل يتطلب اسم العميل ورقم الهاتف والعنوان.",
+    "paid_now": "المبلغ المدفوع الآن",
+    "remaining_on_account": "المتبقي على الحساب"
   },
   "common": {
     "loading": "جاري التحميل...",
@@ -616,7 +618,9 @@
     "print": "طباعة الفاتورة",
     "new_sale": "بيع جديد",
     "close": "إغلاق",
-    "egp": "ج.م"
+    "egp": "ج.م",
+    "paid_now": "المدفوع الآن",
+    "on_account": "على الحساب"
   },
   "units": {
     "box": "علبة",

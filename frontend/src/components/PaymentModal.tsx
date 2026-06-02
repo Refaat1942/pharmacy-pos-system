@@ -39,6 +39,8 @@ export default function PaymentModal({
   const [deliveryCustomerPhone, setDeliveryCustomerPhone] = useState(selectedCustomer?.phone || '')
   const [deliveryPeople, setDeliveryPeople] = useState<{ id: number; name: string }[]>([])
   const [deliveryPersonId, setDeliveryPersonId] = useState<number | ''>('')
+  const [accountPaidAmount, setAccountPaidAmount] = useState('')
+  const [accountPaidMethod, setAccountPaidMethod] = useState('cash')
 
   useEffect(() => {
     employeesAPI.deliveryRoster().then((r) => setDeliveryPeople(r.data)).catch(() => {})
@@ -62,6 +64,9 @@ export default function PaymentModal({
 
   const hybridSum = (parseFloat(cashPart) || 0) + (parseFloat(cardPart) || 0)
   const hybridDiff = hybridSum - effectiveTotal
+
+  const accountPaidNow = Math.min(Math.max(parseFloat(accountPaidAmount) || 0, 0), effectiveTotal)
+  const accountRemaining = Math.max(0, effectiveTotal - accountPaidNow)
 
   const isValid = () => {
     if (!selectedSeller) return false
@@ -125,6 +130,8 @@ export default function PaymentModal({
             : paymentMethod === 'hybrid'
             ? parseFloat(cardPart) || 0
             : undefined,
+        account_paid_amount: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidNow : undefined,
+        account_paid_method: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidMethod : undefined,
         customer_id: selectedCustomer?.id,
         seller_id: selectedSeller?.id,
         clinic_id: clinicId ?? undefined,
@@ -394,6 +401,41 @@ export default function PaymentModal({
                 <p className={`text-2xl font-bold ${selectedCustomer ? 'text-amber-900' : 'text-red-900'}`}>
                   {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </p>
+                {selectedCustomer && (
+                  <div className="pt-3 mt-2 border-t border-amber-200 text-left space-y-2">
+                    <label className="text-xs font-semibold text-amber-800 block">
+                      {t('payment.paid_now')}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={effectiveTotal}
+                        value={accountPaidAmount}
+                        onChange={(e) => setAccountPaidAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="flex-1 border-2 border-amber-200 focus:border-amber-400 rounded-xl px-3 py-2 text-sm focus:outline-none transition-all"
+                      />
+                      <select
+                        value={accountPaidMethod}
+                        onChange={(e) => setAccountPaidMethod(e.target.value)}
+                        className="border-2 border-amber-200 focus:border-amber-400 rounded-xl px-3 py-2 text-sm focus:outline-none transition-all"
+                      >
+                        {['cash', 'visa', 'instapay', 'vodafone_cash'].map((m) => (
+                          <option key={m} value={m}>
+                            {t(`payment.${m}`)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {accountPaidNow > 0 && (
+                      <div className="flex justify-between text-sm font-semibold text-amber-900">
+                        <span>{t('payment.remaining_on_account')}</span>
+                        <span className="tabular-nums">{t('receipt.egp')} {accountRemaining.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

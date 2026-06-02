@@ -210,6 +210,8 @@ export const salesAPI = {
     delivery_customer_phone?: string
     delivery_person_id?: number
     delivery_person_name?: string
+    account_paid_amount?: number
+    account_paid_method?: string
   }) => api.post<SaleResponse>('/sales', data),
   list: (params: {
     limit?: number; offset?: number;
