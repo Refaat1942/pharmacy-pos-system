@@ -898,7 +898,8 @@
     "vat_pct": "الضريبة %",
     "public_price": "سعر الجمهور",
     "show_all_items": "عرض كل الأصناف",
-    "items_total": "صنف"
+    "items_total": "صنف",
+    "search_items": "ابحث بالاسم أو الباركود…"
   },
   "customers": {
     "title": "العملاء",

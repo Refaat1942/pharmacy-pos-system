@@ -898,7 +898,8 @@
     "vat_pct": "VAT %",
     "public_price": "Public Price",
     "show_all_items": "Show all items",
-    "items_total": "items"
+    "items_total": "items",
+    "search_items": "Search by name or barcode…"
   },
   "customers": {
     "title": "Customers",

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown } from 'lucide-react'
+import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search } from 'lucide-react'
 import Layout from '../components/Layout'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -453,6 +453,7 @@ function ReplenishmentModal({
   const [supplierFilter, setSupplierFilter] = useState<number | ''>('')
   const [onlyZero, setOnlyZero] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [lines, setLines] = useState<ReplLine[]>([])
   const [poSupplier, setPoSupplier] = useState<number | ''>('')
@@ -480,7 +481,21 @@ function ReplenishmentModal({
 
   const update = (id: number, patch: Partial<ReplLine>) =>
     setLines((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l))
-  const toggleAll = (v: boolean) => setLines((prev) => prev.map((l) => ({ ...l, selected: v })))
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return lines
+    return lines.filter((l) =>
+      (l.name_en || '').toLowerCase().includes(term) ||
+      (l.name_ar || '').toLowerCase().includes(term) ||
+      (l.barcode || '').toLowerCase().includes(term),
+    )
+  }, [lines, search])
+
+  const toggleAll = (v: boolean) => {
+    const ids = new Set(filtered.map((l) => l.id))
+    setLines((prev) => prev.map((l) => ids.has(l.id) ? { ...l, selected: v } : l))
+  }
 
   // When a PO supplier is chosen, lock out lines that belong to a *different* supplier
   // (lines with no supplier set remain selectable since they're "unassigned").
@@ -498,18 +513,18 @@ function ReplenishmentModal({
     () => selected.reduce((s, l) => s + l.qty * l.cost, 0),
     [selected],
   )
-  const allSelected = lines.length > 0 && lines.every((l) => l.selected)
+  const allSelected = filtered.length > 0 && filtered.every((l) => l.selected)
 
   // Group by supplier for visual grouping
   const groups = useMemo(() => {
     const m = new Map<string, ReplLine[]>()
-    lines.forEach((l) => {
+    filtered.forEach((l) => {
       const key = l.supplier_name || t('purchases.unassigned_supplier') as string
       if (!m.has(key)) m.set(key, [])
       m.get(key)!.push(l)
     })
     return Array.from(m.entries())
-  }, [lines, t])
+  }, [filtered, t])
 
   const downloadExcel = async () => {
     if (selected.length === 0) { alert(t('purchases.repl_select_items')); return }
@@ -615,7 +630,20 @@ function ReplenishmentModal({
             </label>
           </div>
           <div className="flex items-end justify-end text-xs text-slate-500">
-            {lines.length} {showAll ? t('purchases.items_total') : t('purchases.items_need')}
+            {filtered.length} {showAll ? t('purchases.items_total') : t('purchases.items_need')}
+          </div>
+        </div>
+
+        <div className="px-5 py-2 border-b bg-white">
+          <div className="relative">
+            <Search size={15} className="absolute top-1/2 -translate-y-1/2 start-3 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('purchases.search_items') as string}
+              className="input w-full ps-9"
+            />
           </div>
         </div>
 
