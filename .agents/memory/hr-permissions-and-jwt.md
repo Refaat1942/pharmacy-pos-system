@@ -20,3 +20,9 @@ Goal: a user with the `hr` permission (role NOT admin/branch) should reach **onl
 - Frontend gates: Sidebar bypasses the `roles` gate for the `hr` nav item only when the user's own permission set includes `hr` (other gates still apply); HR.tsx allows entry for hr-permission users but non-admins still see attendance tab only.
 
 **Why:** matching UI visibility without also locking down the backend is a real authz hole — full employees list must stay admin/branch only.
+
+# POS needs HR data but cashiers aren't admin/branch
+
+The POS delivery-person picker must read HR `employees` (role='delivery'), but cashiers can't hit `_require_admin_or_branch` endpoints. Pattern: expose a **slim, permission-free** roster endpoint (`GET /hr/delivery-roster`, any authenticated user, returns only id+name of active delivery employees) — never open the full `/hr/employees` to them.
+
+**Why:** the POS must surface narrow HR data to non-admin staff without exposing the sensitive master record; a purpose-built minimal endpoint is the safe seam. Derive the stored display name server-side from the id (don't trust a client-sent name).

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2 } from 'lucide-react'
-import { salesAPI } from '../lib/api'
+import { salesAPI, employeesAPI } from '../lib/api'
 import type { CartItem, Employee, Customer, SaleResponse } from '../lib/api'
 import i18n from '../lib/i18n'
 
@@ -37,6 +37,12 @@ export default function PaymentModal({
   const [deliveryFee, setDeliveryFee] = useState('')
   const [deliveryCustomerName, setDeliveryCustomerName] = useState(selectedCustomer?.name || '')
   const [deliveryCustomerPhone, setDeliveryCustomerPhone] = useState(selectedCustomer?.phone || '')
+  const [deliveryPeople, setDeliveryPeople] = useState<{ id: number; name: string }[]>([])
+  const [deliveryPersonId, setDeliveryPersonId] = useState<number | ''>('')
+
+  useEffect(() => {
+    employeesAPI.deliveryRoster().then((r) => setDeliveryPeople(r.data)).catch(() => {})
+  }, [])
 
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
@@ -127,6 +133,11 @@ export default function PaymentModal({
         delivery_fee: needsDelivery ? deliveryFeeNum : undefined,
         delivery_customer_name: needsDelivery ? deliveryCustomerName.trim() : undefined,
         delivery_customer_phone: needsDelivery ? deliveryCustomerPhone.trim() : undefined,
+        delivery_person_id: needsDelivery && deliveryPersonId ? Number(deliveryPersonId) : undefined,
+        delivery_person_name:
+          needsDelivery && deliveryPersonId
+            ? deliveryPeople.find((p) => p.id === Number(deliveryPersonId))?.name
+            : undefined,
       })
       onSuccess(data)
     } catch (e: any) {
@@ -221,6 +232,16 @@ export default function PaymentModal({
                   rows={2}
                   className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400"
                 />
+                <select
+                  value={deliveryPersonId}
+                  onChange={(e) => setDeliveryPersonId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-amber-400"
+                >
+                  <option value="">{t('payment.delivery_person')}</option>
+                  {deliveryPeople.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
                 <div className="flex items-center gap-2">
                   <label className="text-xs font-semibold text-amber-800 whitespace-nowrap">
                     {t('payment.delivery_fee')}

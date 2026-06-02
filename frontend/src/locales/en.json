@@ -560,6 +560,7 @@
     "delivery_fee": "Delivery fee",
     "delivery_customer_name": "Customer name",
     "delivery_customer_phone": "Customer phone",
+    "delivery_person": "Delivery person",
     "delivery_required": "Delivery requires customer name, phone and address."
   },
   "common": {
@@ -599,6 +600,7 @@
     "_units_note": "Per-line unit labels shown on the receipt",
     "seller": "Seller",
     "customer": "Customer",
+    "delivery_person": "Delivery person",
     "walk_in": "Walk-in",
     "item": "Item",
     "qty": "Qty",

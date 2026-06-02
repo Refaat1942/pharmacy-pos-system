@@ -124,6 +124,7 @@ export interface Invoice {
   branch_name_ar?: string | null
   branch_address?: string | null
   branch_phone?: string | null
+  delivery_person_name?: string | null
 }
 
 export interface SaleResponse {
@@ -186,6 +187,7 @@ export const customersAPI = {
 
 export const employeesAPI = {
   list: () => api.get<Employee[]>('/employees'),
+  deliveryRoster: () => api.get<{ id: number; name: string }[]>('/hr/delivery-roster'),
 }
 
 export const salesAPI = {
@@ -206,6 +208,8 @@ export const salesAPI = {
     delivery_fee?: number
     delivery_customer_name?: string
     delivery_customer_phone?: string
+    delivery_person_id?: number
+    delivery_person_name?: string
   }) => api.post<SaleResponse>('/sales', data),
   list: (params: {
     limit?: number; offset?: number;

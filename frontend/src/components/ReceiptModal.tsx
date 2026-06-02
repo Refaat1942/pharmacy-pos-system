@@ -227,6 +227,12 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 <span className="text-gray-700">{invoice.customer_name}</span>
               </div>
             )}
+            {invoice.delivery_person_name && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('receipt.delivery_person')}</span>
+                <span className="text-gray-700">{invoice.delivery_person_name}</span>
+              </div>
+            )}
           </div>
 
           {/* Items */}

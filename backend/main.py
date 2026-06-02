@@ -542,6 +542,8 @@ class SaleRequest(BaseModel):
     delivery_fee: Optional[float] = None
     delivery_customer_name: Optional[str] = None
     delivery_customer_phone: Optional[str] = None
+    delivery_person_id: Optional[int] = None
+    delivery_person_name: Optional[str] = None
 
 
 @app.post("/api/sales")
@@ -651,18 +653,33 @@ def create_sale(req: SaleRequest,
             if cur.fetchone():
                 prescription_id = req.prescription_id
 
+        delivery_person_id = None
+        delivery_person_name = None
+        if req.type != "return" and req.delivery_person_id:
+            cur.execute(
+                "SELECT name FROM employees WHERE id=%s AND active=TRUE AND role='delivery'",
+                (req.delivery_person_id,),
+            )
+            dp = cur.fetchone()
+            if not dp:
+                raise HTTPException(status_code=400, detail="Selected delivery person is not valid")
+            delivery_person_id = req.delivery_person_id
+            delivery_person_name = dp["name"]
+
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
                 change_amount, seller_id, customer_id, branch_id, clinic_id, prescription_id, notes,
-                delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone,
+                delivery_person_id, delivery_person_name)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, req.cash_amount, req.visa_amount,
              change, seller_id, req.customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
-             req.delivery_customer_name, req.delivery_customer_phone),
+             req.delivery_customer_name, req.delivery_customer_phone,
+             delivery_person_id, delivery_person_name),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]

@@ -215,6 +215,17 @@ def attendance_roster(current_user=Depends(get_current_user)):
         cur.close(); conn.close()
 
 
+@router.get("/delivery-roster")
+def delivery_roster(current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, name FROM employees WHERE active = TRUE AND role = 'delivery' ORDER BY name")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close(); conn.close()
+
+
 def _calc_hours(ci: Optional[time], co: Optional[time]) -> Optional[float]:
     if not ci or not co: return None
     mins = (co.hour * 60 + co.minute) - (ci.hour * 60 + ci.minute)
