@@ -584,7 +584,8 @@
     "refresh": "تحديث",
     "print": "طباعة",
     "no_data": "لا توجد بيانات",
-    "admins_only": "للمسؤولين فقط"
+    "admins_only": "للمسؤولين فقط",
+    "export": "تصدير"
   },
   "receipt": {
     "title": "فاتورة",

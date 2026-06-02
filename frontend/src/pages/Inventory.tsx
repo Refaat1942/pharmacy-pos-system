@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
+import { exportCSV } from '../lib/csv'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint from '../components/BulkBarcodePrint'
 import { useAuth } from '../lib/auth'
@@ -122,6 +123,19 @@ export default function Inventory() {
     setCategories(data)
   }
 
+  const exportItems = () => {
+    exportCSV(`inventory-items-${new Date().toISOString().slice(0, 10)}.csv`, items, [
+      { label: t('inventory.col_barcode'), value: (i) => i.barcode || '' },
+      { label: t('inventory.col_name'), value: (i) => (isAr ? i.name_ar : i.name_en) },
+      { label: t('inventory.col_category'), value: (i) => i.category || '' },
+      { label: t('inventory.col_unit'), value: (i) => i.unit },
+      { label: t('inventory.col_price'), value: (i) => Number(i.price).toFixed(2) },
+      { label: t('inventory.col_cost'), value: (i) => (i.cost ? Number(i.cost).toFixed(2) : '') },
+      { label: t('inventory.col_stock'), value: (i) => i.stock },
+      { label: t('inventory.col_min'), value: (i) => i.min_stock },
+    ])
+  }
+
   useEffect(() => {
     if (tab === 'items') {
       loadItems()
@@ -232,6 +246,14 @@ export default function Inventory() {
               >
                 <FileSpreadsheet size={15} />
                 {t('inventory.bulk_upload')}
+              </button>
+              <button
+                onClick={exportItems}
+                disabled={items.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium disabled:opacity-40"
+              >
+                <Download size={15} />
+                {t('common.export')}
               </button>
               <button
                 onClick={() => setShowBulkPrint(true)}

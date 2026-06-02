@@ -373,6 +373,12 @@ def velocity_classification(days: int = 90,
     - slow:  1-9 units sold
     - dead:  0 units sold
     """
+    if date_from and date_to:
+        try:
+            date.fromisoformat(date_from)
+            date.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format, expected YYYY-MM-DD")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     if date_from and date_to:

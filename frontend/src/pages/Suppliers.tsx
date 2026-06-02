@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
+import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import { suppliersAPI, Supplier } from '../lib/api'
 import PhoneField from '../components/PhoneField'
@@ -8,6 +8,7 @@ import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
 import RegionSelect from '../components/RegionSelect'
 import { regionLabel } from '../lib/regions'
+import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
 
 export default function Suppliers() {
@@ -35,6 +36,19 @@ export default function Suppliers() {
     return () => clearTimeout(id)
   }, [q])
 
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const exportList = () => {
+    exportCSV(`suppliers-${new Date().toISOString().slice(0, 10)}.csv`, list, [
+      { label: t('suppliers.col_name'), value: (s) => s.name },
+      { label: t('suppliers.col_contact'), value: (s) => s.contact_person || '' },
+      { label: t('suppliers.col_phone'), value: (s) => s.phone || '' },
+      { label: t('suppliers.col_region'), value: (s) => regionLabel(s.region, lang) || '' },
+      { label: t('suppliers.col_charged'), value: (s) => Number(s.total_charged || 0).toFixed(2) },
+      { label: t('suppliers.col_paid'), value: (s) => Number(s.total_paid || 0).toFixed(2) },
+      { label: t('suppliers.col_balance'), value: (s) => Number(s.balance || 0).toFixed(2) },
+    ])
+  }
+
   return (
     <Layout>
       <main className="flex-1 overflow-auto p-6">
@@ -44,13 +58,20 @@ export default function Suppliers() {
             {t('suppliers.title')}
           </h1>
           {isAdmin && (
-            <button
-              onClick={() => setEditing({ name: '', active: true })}
-              className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
-            >
-              <Plus size={16} />
-              {t('suppliers.new')}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={exportList} disabled={list.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                <Download size={16} />
+                {t('common.export')}
+              </button>
+              <button
+                onClick={() => setEditing({ name: '', active: true })}
+                className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
+              >
+                <Plus size={16} />
+                {t('suppliers.new')}
+              </button>
+            </div>
           )}
         </div>
 

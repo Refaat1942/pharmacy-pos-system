@@ -584,7 +584,8 @@
     "refresh": "Refresh",
     "no_data": "No data",
     "print": "Print",
-    "admins_only": "Admins only"
+    "admins_only": "Admins only",
+    "export": "Export"
   },
   "receipt": {
     "title": "Invoice",

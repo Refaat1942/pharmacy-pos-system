@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2 } from 'lucide-react'
+import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import RegionSelect from '../components/RegionSelect'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
@@ -8,6 +8,7 @@ import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
 import { regionLabel } from '../lib/regions'
+import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
 
 export default function Customers() {
@@ -34,6 +35,18 @@ export default function Customers() {
     return () => clearTimeout(id)
   }, [q])
 
+  const exportList = () => {
+    exportCSV(`customers-${new Date().toISOString().slice(0, 10)}.csv`, list, [
+      { label: t('customers.col_name'), value: (c) => c.name },
+      { label: t('customers.col_phone'), value: (c) => c.phone || '' },
+      { label: t('customers.col_region'), value: (c) => regionLabel(c.region, lang) || '' },
+      { label: t('customers.col_limit'), value: (c) => Number(c.credit_limit || 0).toFixed(2) },
+      { label: t('customers.col_charged'), value: (c) => Number(c.total_charged || 0).toFixed(2) },
+      { label: t('customers.col_paid'), value: (c) => Number(c.total_paid || 0).toFixed(2) },
+      { label: t('customers.col_balance'), value: (c) => Number(c.balance || 0).toFixed(2) },
+    ])
+  }
+
   return (
     <Layout>
       <main className="flex-1 overflow-auto p-6">
@@ -43,11 +56,18 @@ export default function Customers() {
             {t('customers.title')}
           </h1>
           {isAdmin && (
-            <button onClick={() => setEditing({ name: '', active: true, credit_limit: 0 })}
-              className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-              <Plus size={16} />
-              {t('customers.new')}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={exportList} disabled={list.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                <Download size={16} />
+                {t('common.export')}
+              </button>
+              <button onClick={() => setEditing({ name: '', active: true, credit_limit: 0 })}
+                className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Plus size={16} />
+                {t('customers.new')}
+              </button>
+            </div>
           )}
         </div>
 
