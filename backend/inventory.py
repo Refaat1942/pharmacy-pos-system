@@ -1127,11 +1127,12 @@ def expiry_summary(days: int = 30,
     return dict(row)
 
 
-def _branch_stock_data(q, current_user):
+def _branch_stock_data(q, current_user, branch_id: Optional[int] = None):
     """Aggregated per-branch stock balances. Groups products that share the
     same barcode (or, when barcode is empty, the same EN+AR name) and returns
     one row per product family with a breakdown of stock across all branches.
-    Admins see every branch; non-admins are restricted to their own branch."""
+    Admins see every branch; non-admins are restricted to their own branch.
+    Optional branch_id limits rows to one branch (admins only)."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -1140,10 +1141,24 @@ def _branch_stock_data(q, current_user):
         if not is_admin and user_branch is None:
             raise HTTPException(status_code=403, detail="No branch assigned to this user")
 
-        if is_admin:
+        effective_branch = user_branch
+        if is_admin and branch_id is not None:
+            cur.execute("SELECT id FROM branches WHERE id=%s", [branch_id])
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Branch not found")
+            effective_branch = branch_id
+        elif not is_admin and branch_id is not None and branch_id != user_branch:
+            raise HTTPException(status_code=403, detail="Cannot view another branch")
+
+        if is_admin and branch_id is None:
             cur.execute("SELECT id, name_en, name_ar FROM branches ORDER BY id")
+        elif effective_branch is not None:
+            cur.execute(
+                "SELECT id, name_en, name_ar FROM branches WHERE id=%s ORDER BY id",
+                [effective_branch],
+            )
         else:
-            cur.execute("SELECT id, name_en, name_ar FROM branches WHERE id=%s", [user_branch])
+            cur.execute("SELECT id, name_en, name_ar FROM branches ORDER BY id")
         branches = [dict(r) for r in cur.fetchall()]
 
         where = ["p.active = true"]
@@ -1153,13 +1168,16 @@ def _branch_stock_data(q, current_user):
             if terms:
                 ors = []
                 for term in terms:
-                    ors.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s)")
+                    ors.append(
+                        "(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR COALESCE(p.barcode,'') ILIKE %s "
+                        "OR COALESCE(p.international_barcode,'') ILIKE %s)"
+                    )
                     like = f"%{term}%"
-                    params += [like, like, like]
+                    params += [like, like, like, like]
                 where.append("(" + " OR ".join(ors) + ")")
-        if not is_admin:
+        if effective_branch is not None:
             where.append("p.branch_id = %s")
-            params.append(user_branch)
+            params.append(effective_branch)
 
         cur.execute(
             f"""WITH grouped AS (
@@ -1170,6 +1188,7 @@ def _branch_stock_data(q, current_user):
                     SUM(p.min_stock)::int   AS branch_min,
                     MIN(p.id)               AS product_id,
                     MAX(p.barcode)          AS barcode,
+                    MAX(p.international_barcode) AS international_barcode,
                     MAX(p.name_en)          AS name_en,
                     MAX(p.name_ar)          AS name_ar,
                     MAX(p.category)         AS category,
@@ -1181,6 +1200,7 @@ def _branch_stock_data(q, current_user):
                 SELECT
                   key,
                   MAX(barcode)   AS barcode,
+                  MAX(international_barcode) AS international_barcode,
                   MAX(name_en)   AS name_en,
                   MAX(name_ar)   AS name_ar,
                   MAX(category)  AS category,
@@ -1221,12 +1241,20 @@ def _branch_stock_data(q, current_user):
 
 
 @router.get("/branch-stock")
-def branch_stock(q: Optional[str] = None, current_user=Depends(get_current_user)):
-    return _branch_stock_data(q, current_user)
+def branch_stock(
+    q: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
+    return _branch_stock_data(q, current_user, branch_id)
 
 
 @router.get("/branch-stock/export")
-def branch_stock_export(q: Optional[str] = None, current_user=Depends(get_current_user)):
+def branch_stock_export(
+    q: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
 
@@ -1240,14 +1268,14 @@ def branch_stock_export(q: Optional[str] = None, current_user=Depends(get_curren
             s = "'" + s
         return s
 
-    data = _branch_stock_data(q, current_user)
+    data = _branch_stock_data(q, current_user, branch_id)
     branches = data["branches"]
     items = data["items"]
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Branches Stock"
-    headers = ["Name (EN)", "Name (AR)", "Barcode", "Category"]
+    headers = ["Name (EN)", "Name (AR)", "Barcode", "International Barcode", "Category", "Unit"]
     headers += [b["name_en"] for b in branches]
     headers += ["Total"]
     ws.append(headers)
@@ -1263,7 +1291,9 @@ def branch_stock_export(q: Optional[str] = None, current_user=Depends(get_curren
             _safe(row.get("name_en")),
             _safe(row.get("name_ar")),
             _safe(row.get("barcode")),
+            _safe(row.get("international_barcode")),
             _safe(row.get("category")),
+            _safe(row.get("unit")),
         ]
         for b in branches:
             cell = by_branch.get(b["id"])

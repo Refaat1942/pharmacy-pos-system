@@ -52,6 +52,7 @@ type Tab = 'items' | 'branch_stock' | 'stocktake' | 'movements' | 'velocity' | '
 type BranchStockRow = {
   key: string
   barcode: string | null
+  international_barcode?: string | null
   name_en: string
   name_ar: string
   category: string | null
@@ -1262,19 +1263,31 @@ function Field({ label, children }: any) {
 
 function BranchStockTab() {
   const { t, i18n } = useTranslation()
+  const { user } = useAuth()
   const isAr = i18n.language === 'ar'
+  const isAdmin = user?.role === 'admin'
   const [data, setData] = useState<{ branches: { id: number; name_en: string; name_ar: string }[]; items: BranchStockRow[] }>({ branches: [], items: [] })
+  const [allBranches, setAllBranches] = useState<{ id: number; name_en: string; name_ar: string }[]>([])
   const [q, setQ] = useState('')
+  const [branchFilter, setBranchFilter] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    api.get('/inventory/branches').then((r) => setAllBranches(r.data)).catch(() => setAllBranches([]))
+  }, [isAdmin])
 
   const load = async () => {
     setLoading(true)
     try {
-      const { data } = await api.get('/inventory/branch-stock', { params: q ? { q } : {} })
+      const params: Record<string, string | number> = {}
+      if (q.trim()) params.q = q.trim()
+      if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
+      const { data } = await api.get('/inventory/branch-stock', { params })
       setData(data)
     } finally { setLoading(false) }
   }
-  useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [q])
+  useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [q, branchFilter, isAdmin])
 
   const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
 
@@ -1282,6 +1295,7 @@ function BranchStockTab() {
     (r: BranchStockRow) => r.name_en,
     (r: BranchStockRow) => r.name_ar,
     (r: BranchStockRow) => r.barcode,
+    (r: BranchStockRow) => r.international_barcode,
     (r: BranchStockRow) => r.category,
   ])
   const bsAccessors = useMemo(() => ({
@@ -1293,28 +1307,40 @@ function BranchStockTab() {
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-end">
         <div className="flex-1 min-w-64 relative">
           <Search size={16} className="absolute top-1/2 -translate-y-1/2 start-3 text-slate-400" />
           <input
             type="text"
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder={t('inventory.search_placeholder') as string}
+            placeholder={t('inventory.bs_multi_search_placeholder') as string}
             className="w-full ps-10 pe-3 py-2 border border-slate-300 rounded-lg text-sm"
           />
         </div>
+        {isAdmin && (
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="border border-slate-300 rounded-lg px-3 py-2 text-sm min-w-[10rem]"
+          >
+            <option value="">{t('inventory.bs_all_branches')}</option>
+            {allBranches.map((b) => (
+              <option key={b.id} value={b.id}>{branchName(b)}</option>
+            ))}
+          </select>
+        )}
         <TableFilter value={bsFilter.query} onChange={bsFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
-        <div className="text-xs text-slate-500">{t('inventory.bs_hint')}</div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[48rem]">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <SortTh k="name" sort={bsSort} onToggle={bsToggle} align="start">{t('inventory.col_name')}</SortTh>
                 <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start">{t('inventory.col_barcode')}</SortTh>
+                <th className="px-3 py-2.5 text-start whitespace-nowrap">{t('inventory.col_intl_barcode')}</th>
                 {data.branches.map(b => (
                   <th key={b.id} className="px-3 py-2.5 text-center whitespace-nowrap">{branchName(b)}</th>
                 ))}
@@ -1322,9 +1348,9 @@ function BranchStockTab() {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={data.branches.length + 3} className="text-center py-8 text-slate-400">…</td></tr>}
+              {loading && <tr><td colSpan={data.branches.length + 4} className="text-center py-8 text-slate-400">…</td></tr>}
               {!loading && sortedBs.length === 0 && (
-                <tr><td colSpan={data.branches.length + 3} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                <tr><td colSpan={data.branches.length + 4} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
               {sortedBs.map(row => (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/50">
@@ -1332,7 +1358,12 @@ function BranchStockTab() {
                     <div className="font-medium text-slate-800">{isAr ? row.name_ar : row.name_en}</div>
                     {row.category && <div className="text-[11px] text-slate-400">{row.category}</div>}
                   </td>
-                  <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{row.barcode || '—'}</td>
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono text-[11px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">{row.barcode || '—'}</span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="font-mono text-[11px] bg-indigo-50 text-indigo-900 px-2 py-0.5 rounded border border-indigo-100">{row.international_barcode || '—'}</span>
+                  </td>
                   {data.branches.map(b => {
                     const cell = row.branches.find(x => x.branch_id === b.id)
                     const stock = cell?.stock ?? 0
