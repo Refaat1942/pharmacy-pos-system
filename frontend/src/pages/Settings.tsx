@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -244,11 +245,31 @@ function UsersTab() {
   )
 }
 
+function SettingsModal({ children, onBackdropClick }: { children: React.ReactNode; onBackdropClick?: () => void }) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] bg-black/50 flex items-start justify-center p-4 sm:items-center overflow-y-auto overscroll-contain"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onBackdropClick?.()
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  )
+}
+
 function UserModal({ user, branches, onClose, onSaved }: {
   user?: UserRow; branches: BranchRow[]; onClose: () => void; onSaved: () => void
 }) {
   const { t } = useTranslation()
   const isEdit = !!user
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
   const [form, setForm] = useState({
     username: user?.username || '',
     name_en: user?.name_en || '',
@@ -319,13 +340,16 @@ function UserModal({ user, branches, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-        <div className="px-5 py-3 border-b flex items-center justify-between">
+    <SettingsModal onBackdropClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[min(90vh,calc(100dvh-2rem))] shrink-0 my-2 sm:my-4"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 border-b flex items-center justify-between shrink-0">
           <h3 className="font-semibold text-slate-800">{isEdit ? t('settings.edit_user') : t('settings.add_user')}</h3>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-3 overflow-y-auto flex-1 min-h-0 overscroll-contain">
           {!isEdit && (
             <Field label={t('settings.username')}>
               <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="input w-full" autoFocus />
@@ -473,14 +497,14 @@ function UserModal({ user, branches, onClose, onSaved }: {
           )}
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
         </div>
-        <div className="px-5 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
-          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
+        <div className="px-5 py-3 border-t flex justify-end gap-2 shrink-0 bg-white rounded-b-2xl">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+          <button type="button" onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
             {saving ? t('common.saving') : t('common.save')}
           </button>
         </div>
       </div>
-    </div>
+    </SettingsModal>
   )
 }
 
