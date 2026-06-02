@@ -1281,21 +1281,7 @@ def _branch_stock_data(
             params.append(effective_branch)
 
         where_sql = " AND ".join(where)
-
-        # Avoid scanning the full catalog when no search — keeps the page fast.
-        if not q and not keys:
-            return {
-                "branches": branches,
-                "items": [],
-                "summary": {
-                    "total_count": 0,
-                    "shown_count": 0,
-                    "low_stock": 0,
-                    "out_of_stock": 0,
-                    "truncated": False,
-                },
-                "search_required": True,
-            }
+        row_limit = BRANCH_STOCK_LIMIT if (q or keys) else MAX_INVENTORY_ROWS
 
         grouped_cte = f"""WITH grouped AS (
                   SELECT
@@ -1353,7 +1339,7 @@ def _branch_stock_data(
                 GROUP BY key
                 ORDER BY MAX(name_en), key
                 LIMIT %s""",
-            params + [BRANCH_STOCK_LIMIT],
+            params + [row_limit],
         )
         items = []
         for r in cur.fetchall():
@@ -1373,10 +1359,7 @@ def _branch_stock_data(
             items.append(d)
         shown = len(items)
         summary["shown_count"] = shown
-        if summary["total_count"] > shown:
-            summary["truncated"] = True
-        else:
-            summary["truncated"] = False
+        summary["truncated"] = summary["total_count"] > shown
         return {"branches": branches, "items": items, "summary": summary}
     finally:
         cur.close(); conn.close()

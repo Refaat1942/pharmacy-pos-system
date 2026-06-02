@@ -85,15 +85,15 @@ export default function BranchesStock() {
   }>({ branches: [], items: [] })
   const [allBranches, setAllBranches] = useState<Branch[]>([])
   const [q, setQ] = useState('')
-  const [appliedQ, setAppliedQ] = useState('')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
   const lastAutoPickQ = useRef('')
 
-  const searchTerms = useMemo(() => parseSearchTerms(appliedQ), [appliedQ])
-  const multiPick = isMultiTermSearch(appliedQ)
+  const query = q.trim()
+  const searchTerms = useMemo(() => parseSearchTerms(query), [query])
+  const multiPick = isMultiTermSearch(query)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -105,27 +105,18 @@ export default function BranchesStock() {
 
   const branchName = (b: { name_en: string; name_ar: string }) => (isAr ? b.name_ar : b.name_en)
 
-  const runSearch = () => setAppliedQ(q.trim())
-
   const load = async () => {
-    if (!appliedQ) {
-      setData({ branches: allBranches, items: [] })
-      setPickedKeys(new Set())
-      lastAutoPickQ.current = ''
-      return
-    }
     setLoading(true)
     try {
-      const params: Record<string, string | number> = { q: appliedQ }
+      const params: Record<string, string | number> = {}
+      if (query) params.q = query
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
       const { data: res } = await api.get('/inventory/branch-stock', { params })
       setData(res)
-      const terms = parseSearchTerms(appliedQ)
-      const multi = isMultiTermSearch(appliedQ)
-      if (multi && lastAutoPickQ.current !== appliedQ) {
-        lastAutoPickQ.current = appliedQ
-        setPickedKeys(defaultPickedKeys(res.items || [], terms))
-      } else if (!multi) {
+      if (multiPick && lastAutoPickQ.current !== query) {
+        lastAutoPickQ.current = query
+        setPickedKeys(defaultPickedKeys(res.items || [], searchTerms))
+      } else if (!multiPick) {
         setPickedKeys(new Set())
         lastAutoPickQ.current = ''
       }
@@ -135,9 +126,10 @@ export default function BranchesStock() {
   }
 
   useEffect(() => {
-    load()
+    const id = setTimeout(load, 400)
+    return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedQ, branchFilter, isAdmin, allBranches.length])
+  }, [q, branchFilter, isAdmin])
 
   useEffect(() => {
     if (!multiPick) {
@@ -165,7 +157,7 @@ export default function BranchesStock() {
     setExporting(true)
     try {
       const params: Record<string, string | number> = {}
-      if (appliedQ) params.q = appliedQ
+      if (query) params.q = query
       if (multiPick && pickedKeys.size > 0) params.keys = Array.from(pickedKeys).join(',')
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
       const res = await api.get('/inventory/branch-stock/export', {
@@ -187,14 +179,7 @@ export default function BranchesStock() {
   }
 
   const singleBranch = isAdmin && branchFilter !== ''
-  const visibleBranches = useMemo(() => {
-    if (data.branches.length > 0) return data.branches
-    if (singleBranch && branchFilter) {
-      const b = allBranches.find((x) => x.id === parseInt(branchFilter, 10))
-      return b ? [b] : []
-    }
-    return allBranches
-  }, [data.branches, allBranches, singleBranch, branchFilter])
+  const visibleBranches = data.branches.length > 0 ? data.branches : allBranches
 
   const stats = useMemo(() => {
     const s = data.summary
@@ -295,26 +280,11 @@ export default function BranchesStock() {
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  runSearch()
-                }
-              }}
               placeholder={t('inventory.bs_multi_search_placeholder')}
               className="w-full ps-10 pe-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pharma-400/40"
               autoComplete="off"
             />
           </div>
-          <button
-            type="button"
-            onClick={runSearch}
-            disabled={loading}
-            className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
-          >
-            <Search size={16} />
-            {t('inventory.bs_search_btn')}
-          </button>
           {isAdmin && (
             <div className="min-w-[12rem]">
               <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
@@ -337,19 +307,13 @@ export default function BranchesStock() {
           )}
           <button
             onClick={exportExcel}
-            disabled={exporting || !appliedQ || (multiPick ? pickedKeys.size === 0 : data.items.length === 0)}
+            disabled={exporting || (multiPick ? pickedKeys.size === 0 : data.items.length === 0)}
             className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
           >
             <Download size={16} />
             {exporting ? '…' : t('inventory.bs_export')}
           </button>
         </div>
-
-        {!appliedQ && !loading && (
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
-            {t('inventory.bs_search_required')}
-          </div>
-        )}
 
         {multiPick && !loading && data.items.length > 0 && (
           <BranchStockPickPanel
@@ -407,7 +371,7 @@ export default function BranchesStock() {
                     </td>
                   </tr>
                 )}
-                {!loading && appliedQ && data.items.length === 0 && (
+                {!loading && data.items.length === 0 && (
                   <tr>
                     <td colSpan={colSpan} className="text-center py-12 text-slate-400">
                       {t('inventory.no_items')}
