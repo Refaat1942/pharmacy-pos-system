@@ -188,6 +188,8 @@ When a customer has an account, you can sell to them on credit (**Account** paym
 
 ## 8. Shifts (cashier cash drawer)
 
+> **One open shift per person.** Each user can have only one open shift at a time. Close your current shift before starting a new one.
+
 At the start of the day:
 1. **Shifts → Start Shift** → enter opening cash (the money in the drawer).
 

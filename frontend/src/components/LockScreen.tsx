@@ -5,6 +5,13 @@ import { useAuth } from '../lib/auth'
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
 
+type LockBranding = {
+  name_en?: string | null
+  name_ar?: string | null
+  logo_data_url?: string | null
+  show_logo?: boolean
+}
+
 export default function LockScreen() {
   const { t, i18n } = useTranslation()
   const { user, token, unlock, logout } = useAuth()
@@ -12,11 +19,27 @@ export default function LockScreen() {
   const [scan, setScan] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [branding, setBranding] = useState<LockBranding | null>(null)
   const pwRef = useRef<HTMLInputElement>(null)
 
   const name = (i18n.language === 'ar' ? user?.name_ar : user?.name_en) || user?.name_en || user?.name_ar || user?.username || ''
+  const pharmacyName = (i18n.language === 'ar'
+    ? (branding?.name_ar || branding?.name_en)
+    : (branding?.name_en || branding?.name_ar)) || ''
+  const showLogo = branding?.show_logo !== false && !!branding?.logo_data_url
 
   useEffect(() => { pwRef.current?.focus() }, [])
+
+  useEffect(() => {
+    let alive = true
+    fetch(`${API_BASE}/api/settings/profile`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (alive && data) setBranding(data) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [token])
 
   // Use a raw fetch (not the shared api client) so a wrong password — which the
   // server answers with 401 — does NOT trigger the global logout-redirect.
@@ -72,6 +95,12 @@ export default function LockScreen() {
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900/95 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl p-7 text-center">
+        {showLogo ? (
+          <img src={branding!.logo_data_url as string} alt={pharmacyName || ''} className="mx-auto h-14 object-contain mb-2" />
+        ) : null}
+        {pharmacyName && (
+          <p className="text-sm font-semibold text-slate-700 mb-3">{pharmacyName}</p>
+        )}
         <div className="mx-auto w-16 h-16 rounded-2xl bg-pharma-100 flex items-center justify-center mb-4">
           <Lock className="text-pharma-700" size={28} />
         </div>
