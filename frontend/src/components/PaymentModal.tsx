@@ -52,6 +52,12 @@ export default function PaymentModal({
     else if (paymentMethod === 'digital' || paymentMethod === 'account') setPaymentMethod('cash')
   }
 
+  useEffect(() => {
+    if (saleType !== 'digital' && paymentMethod === 'account') {
+      setPaymentMethod('cash')
+    }
+  }, [saleType, paymentMethod])
+
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
@@ -78,7 +84,7 @@ export default function PaymentModal({
     }
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
-    if (paymentMethod === 'account') return !!selectedCustomer
+    if (paymentMethod === 'account') return saleType === 'digital' && !!selectedCustomer
     return true
   }
 
@@ -99,6 +105,8 @@ export default function PaymentModal({
       setError(
         paymentMethod === 'cash'
           ? `Minimum amount: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
+          : paymentMethod === 'account'
+          ? 'On Account payment is only available in Digital payment mode and requires a customer'
           : `Amounts must sum to: ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`
       )
       return
