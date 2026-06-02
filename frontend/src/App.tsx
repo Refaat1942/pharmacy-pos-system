@@ -45,9 +45,8 @@ const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
 ]
 
 function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature?: string }) {
-  const { isAuthenticated, hasFeature, user } = useAuth()
+  const { isAuthenticated, hasFeature } = useAuth()
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (user && user.role !== 'admin') return <Navigate to="/clock" replace />
   if (feature && !hasFeature(feature)) {
     const home = FEATURE_HOME_ORDER.find((r) => !r.feature || hasFeature(r.feature))
     return <Navigate to={home ? home.path : '/clock'} replace />
