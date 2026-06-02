@@ -7,6 +7,9 @@ import { exportCSV } from '../lib/csv'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint from '../components/BulkBarcodePrint'
 import { useAuth } from '../lib/auth'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+
+const SORT_TH_CLASS = 'font-semibold text-xs uppercase tracking-wider'
 
 type Product = {
   id: number
@@ -93,9 +96,9 @@ export default function Inventory() {
   const toggleOne = (id: number) => {
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
-  const toggleAll = () => {
+  const toggleAll = (rows: Product[]) => {
     setSelected(s => {
-      const visibleIds = items.map(i => i.id)
+      const visibleIds = rows.map(i => i.id)
       const allSelected = visibleIds.every(id => s.has(id))
       if (allSelected) {
         const n = new Set(s); visibleIds.forEach(id => n.delete(id)); return n
@@ -156,6 +159,25 @@ export default function Inventory() {
     const totalValue = items.reduce((s, i) => s + Number(i.stock) * Number(i.cost || 0), 0)
     return { total, zero, totalValue }
   }, [items])
+
+  const itemFilter = useQuickFilter(items, [
+    i => i.barcode,
+    i => i.name_en,
+    i => i.name_ar,
+    i => i.category,
+    i => i.unit,
+  ])
+  const itemAccessors = useMemo(() => ({
+    barcode: (i: Product) => i.barcode,
+    name: (i: Product) => (isAr ? i.name_ar : i.name_en),
+    category: (i: Product) => i.category,
+    unit: (i: Product) => i.unit,
+    price: (i: Product) => Number(i.price),
+    cost: (i: Product) => (i.cost == null ? null : Number(i.cost)),
+    stock: (i: Product) => Number(i.stock),
+    min_stock: (i: Product) => Number(i.min_stock),
+  }), [isAr])
+  const { sorted: sortedItems, sort: itemSort, toggle: itemToggle } = useSort(itemFilter.filtered, itemAccessors)
 
   const onDelete = async (id: number) => {
     if (!confirm(t('inventory.confirm_delete') as string)) return
@@ -272,6 +294,10 @@ export default function Inventory() {
               </button>
             </div>
 
+            <div className="mb-4 max-w-sm">
+              <TableFilter value={itemFilter.query} onChange={itemFilter.setQuery} placeholder={t('common.filter_placeholder') as string} />
+            </div>
+
             {/* Table */}
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
@@ -280,17 +306,17 @@ export default function Inventory() {
                     <tr>
                       <Th className="w-8 text-center">
                         <input type="checkbox"
-                          checked={items.length > 0 && items.every(i => selected.has(i.id))}
-                          onChange={toggleAll} />
+                          checked={sortedItems.length > 0 && sortedItems.every(i => selected.has(i.id))}
+                          onChange={() => toggleAll(sortedItems)} />
                       </Th>
-                      <Th>{t('inventory.col_barcode')}</Th>
-                      <Th>{t('inventory.col_name')}</Th>
-                      <Th>{t('inventory.col_category')}</Th>
-                      <Th>{t('inventory.col_unit')}</Th>
-                      <Th className="text-end">{t('inventory.col_price')}</Th>
-                      <Th className="text-end">{t('inventory.col_cost')}</Th>
-                      <Th className="text-center">{t('inventory.col_stock')}</Th>
-                      <Th className="text-center">{t('inventory.col_min')}</Th>
+                      <SortTh k="barcode" sort={itemSort} onToggle={itemToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_barcode')}</SortTh>
+                      <SortTh k="name" sort={itemSort} onToggle={itemToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_name')}</SortTh>
+                      <SortTh k="category" sort={itemSort} onToggle={itemToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_category')}</SortTh>
+                      <SortTh k="unit" sort={itemSort} onToggle={itemToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_unit')}</SortTh>
+                      <SortTh k="price" sort={itemSort} onToggle={itemToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_price')}</SortTh>
+                      <SortTh k="cost" sort={itemSort} onToggle={itemToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_cost')}</SortTh>
+                      <SortTh k="stock" sort={itemSort} onToggle={itemToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_stock')}</SortTh>
+                      <SortTh k="min_stock" sort={itemSort} onToggle={itemToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_min')}</SortTh>
                       <Th className="text-end">{t('inventory.col_actions')}</Th>
                     </tr>
                   </thead>
@@ -298,10 +324,10 @@ export default function Inventory() {
                     {loading && (
                       <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
                     )}
-                    {!loading && items.length === 0 && (
+                    {!loading && sortedItems.length === 0 && (
                       <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
                     )}
-                    {items.map(it => {
+                    {sortedItems.map(it => {
                       const isZero = it.stock <= 0
                       return (
                         <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
@@ -805,9 +831,28 @@ function MovementsTab() {
   }
   useEffect(() => { load() }, [type, start, end])
 
+  const moveFilter = useQuickFilter(moves, [
+    (m: any) => m.product_name_en,
+    (m: any) => m.product_name_ar,
+    (m: any) => m.reason,
+    (m: any) => m.user_name_en,
+    (m: any) => m.user_name_ar,
+    (m: any) => t(`inventory.move_${m.movement_type}`, { defaultValue: m.movement_type }),
+  ])
+  const moveAccessors = useMemo(() => ({
+    created_at: (m: any) => m.created_at,
+    product: (m: any) => (i18n.language === 'ar' ? m.product_name_ar : m.product_name_en),
+    movement_type: (m: any) => m.movement_type,
+    quantity: (m: any) => Number(m.quantity),
+    balance_after: (m: any) => Number(m.balance_after),
+    reason: (m: any) => m.reason,
+    user: (m: any) => (i18n.language === 'ar' ? m.user_name_ar : m.user_name_en),
+  }), [i18n.language])
+  const { sorted: sortedMoves, sort: moveSort, toggle: moveToggle } = useSort(moveFilter.filtered, moveAccessors)
+
   return (
     <div>
-      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3">
+      <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
         <select value={type} onChange={e => setType(e.target.value)} className="input max-w-48">
           <option value="">{t('inventory.filter_all_types')}</option>
           <option value="sale">{t('inventory.move_sale')}</option>
@@ -819,25 +864,26 @@ function MovementsTab() {
         </select>
         <input type="date" value={start} onChange={e => setStart(e.target.value)} className="input max-w-40" placeholder={t('inventory.from') as string} />
         <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="input max-w-40" placeholder={t('inventory.to') as string} />
+        <TableFilter value={moveFilter.query} onChange={moveFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
       </div>
 
       <div className="bg-white rounded-xl shadow-sm overflow-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
-              <Th>{t('inventory.col_date')}</Th>
-              <Th>{t('inventory.col_product')}</Th>
-              <Th>{t('inventory.col_type')}</Th>
-              <Th className="text-end">{t('inventory.col_qty')}</Th>
-              <Th className="text-end">{t('inventory.col_balance')}</Th>
-              <Th>{t('inventory.col_reason')}</Th>
-              <Th>{t('inventory.col_user')}</Th>
+              <SortTh k="created_at" sort={moveSort} onToggle={moveToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_date')}</SortTh>
+              <SortTh k="product" sort={moveSort} onToggle={moveToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_product')}</SortTh>
+              <SortTh k="movement_type" sort={moveSort} onToggle={moveToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_type')}</SortTh>
+              <SortTh k="quantity" sort={moveSort} onToggle={moveToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_qty')}</SortTh>
+              <SortTh k="balance_after" sort={moveSort} onToggle={moveToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_balance')}</SortTh>
+              <SortTh k="reason" sort={moveSort} onToggle={moveToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_reason')}</SortTh>
+              <SortTh k="user" sort={moveSort} onToggle={moveToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_user')}</SortTh>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={7} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
-            {!loading && moves.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-400">{t('inventory.no_movements')}</td></tr>}
-            {moves.map((m: any) => (
+            {!loading && sortedMoves.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-400">{t('inventory.no_movements')}</td></tr>}
+            {sortedMoves.map((m: any) => (
               <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-1.5 text-xs">{new Date(m.created_at).toLocaleString()}</td>
                 <td className="px-3 py-1.5 font-medium">{i18n.language === 'ar' ? m.product_name_ar : m.product_name_en}</td>
@@ -890,6 +936,20 @@ function VelocityTab() {
     dead: rows.filter(r => r.classification === 'dead').length,
   }), [rows])
 
+  const velFilter = useQuickFilter(shown, [
+    (r: any) => r.name_en,
+    (r: any) => r.name_ar,
+    (r: any) => r.barcode,
+  ])
+  const velAccessors = useMemo(() => ({
+    name: (r: any) => (i18n.language === 'ar' ? r.name_ar : r.name_en),
+    barcode: (r: any) => r.barcode,
+    stock: (r: any) => Number(r.stock),
+    sold_qty: (r: any) => Number(r.sold_qty),
+    classification: (r: any) => r.classification,
+  }), [i18n.language])
+  const { sorted: sortedVel, sort: velSort, toggle: velToggle } = useSort(velFilter.filtered, velAccessors)
+
   return (
     <div>
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-center">
@@ -916,6 +976,7 @@ function VelocityTab() {
               onChange={e => setDateTo(e.target.value)} className="input max-w-40" />
           </div>
         )}
+        <TableFilter value={velFilter.query} onChange={velFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <div className="flex gap-2 ms-auto">
           <ClsPill label={t('inventory.cls_fast')} count={counts.fast} active={filter === 'fast'} color="emerald" onClick={() => setFilter(filter === 'fast' ? '' : 'fast')} />
           <ClsPill label={t('inventory.cls_slow')} count={counts.slow} active={filter === 'slow'} color="amber" onClick={() => setFilter(filter === 'slow' ? '' : 'slow')} />
@@ -926,16 +987,16 @@ function VelocityTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
-              <Th>{t('inventory.col_product')}</Th>
-              <Th>{t('inventory.col_barcode')}</Th>
-              <Th className="text-center">{t('inventory.col_stock')}</Th>
-              <Th className="text-end">{t('inventory.col_sold')}</Th>
-              <Th className="text-center">{t('inventory.col_class')}</Th>
+              <SortTh k="name" sort={velSort} onToggle={velToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_product')}</SortTh>
+              <SortTh k="barcode" sort={velSort} onToggle={velToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_barcode')}</SortTh>
+              <SortTh k="stock" sort={velSort} onToggle={velToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_stock')}</SortTh>
+              <SortTh k="sold_qty" sort={velSort} onToggle={velToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_sold')}</SortTh>
+              <SortTh k="classification" sort={velSort} onToggle={velToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_class')}</SortTh>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={5} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
-            {shown.map((r: any) => (
+            {sortedVel.map((r: any) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-1.5 font-medium">{i18n.language === 'ar' ? r.name_ar : r.name_en}</td>
                 <td className="px-3 py-1.5 font-mono text-xs">{r.barcode || '—'}</td>
@@ -986,6 +1047,19 @@ function AlertsTab() {
       .finally(() => setLoading(false))
   }, [days, coverage])
 
+  const alertFilter = useQuickFilter(rows, [
+    (r: any) => r.name_en,
+    (r: any) => r.name_ar,
+  ])
+  const alertAccessors = useMemo(() => ({
+    name: (r: any) => (i18n.language === 'ar' ? r.name_ar : r.name_en),
+    stock: (r: any) => Number(r.stock),
+    avg_daily: (r: any) => Number(r.avg_daily),
+    days_remaining: (r: any) => (r.days_remaining == null ? null : Number(r.days_remaining)),
+    suggested_min: (r: any) => Number(r.suggested_min),
+  }), [i18n.language])
+  const { sorted: sortedAlerts, sort: alertSort, toggle: alertToggle } = useSort(alertFilter.filtered, alertAccessors)
+
   return (
     <div>
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-center">
@@ -1008,6 +1082,7 @@ function AlertsTab() {
             <option value={30}>30</option>
           </select>
         </div>
+        <TableFilter value={alertFilter.query} onChange={alertFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <div className="ms-auto flex items-center gap-2 text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg text-sm">
           <AlertTriangle size={15} /> {rows.length} {t('inventory.alerts')}
         </div>
@@ -1016,17 +1091,17 @@ function AlertsTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
-              <Th>{t('inventory.col_product')}</Th>
-              <Th className="text-center">{t('inventory.col_stock')}</Th>
-              <Th className="text-end">{t('inventory.avg_daily')}</Th>
-              <Th className="text-end">{t('inventory.days_left')}</Th>
-              <Th className="text-end">{t('inventory.suggested_min')}</Th>
+              <SortTh k="name" sort={alertSort} onToggle={alertToggle} align="start" className={SORT_TH_CLASS}>{t('inventory.col_product')}</SortTh>
+              <SortTh k="stock" sort={alertSort} onToggle={alertToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_stock')}</SortTh>
+              <SortTh k="avg_daily" sort={alertSort} onToggle={alertToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.avg_daily')}</SortTh>
+              <SortTh k="days_remaining" sort={alertSort} onToggle={alertToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.days_left')}</SortTh>
+              <SortTh k="suggested_min" sort={alertSort} onToggle={alertToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.suggested_min')}</SortTh>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={5} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
-            {!loading && rows.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-emerald-600"><TrendingUp size={28} className="inline mb-1" /> {t('inventory.no_alerts')}</td></tr>}
-            {rows.map((r: any) => (
+            {!loading && sortedAlerts.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-emerald-600"><TrendingUp size={28} className="inline mb-1" /> {t('inventory.no_alerts')}</td></tr>}
+            {sortedAlerts.map((r: any) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-1.5 font-medium">{i18n.language === 'ar' ? r.name_ar : r.name_en}</td>
                 <td className="px-3 py-1.5 text-center">
@@ -1170,6 +1245,19 @@ function BranchStockTab() {
 
   const branchName = (b: { name_en: string; name_ar: string }) => isAr ? b.name_ar : b.name_en
 
+  const bsFilter = useQuickFilter(data.items, [
+    (r: BranchStockRow) => r.name_en,
+    (r: BranchStockRow) => r.name_ar,
+    (r: BranchStockRow) => r.barcode,
+    (r: BranchStockRow) => r.category,
+  ])
+  const bsAccessors = useMemo(() => ({
+    name: (r: BranchStockRow) => (isAr ? r.name_ar : r.name_en),
+    barcode: (r: BranchStockRow) => r.barcode,
+    total_stock: (r: BranchStockRow) => Number(r.total_stock),
+  }), [isAr])
+  const { sorted: sortedBs, sort: bsSort, toggle: bsToggle } = useSort(bsFilter.filtered, bsAccessors)
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
@@ -1183,6 +1271,7 @@ function BranchStockTab() {
             className="w-full ps-10 pe-3 py-2 border border-slate-300 rounded-lg text-sm"
           />
         </div>
+        <TableFilter value={bsFilter.query} onChange={bsFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <div className="text-xs text-slate-500">{t('inventory.bs_hint')}</div>
       </div>
 
@@ -1191,20 +1280,20 @@ function BranchStockTab() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2.5 text-start">{t('inventory.col_name')}</th>
-                <th className="px-3 py-2.5 text-start">{t('inventory.col_barcode')}</th>
+                <SortTh k="name" sort={bsSort} onToggle={bsToggle} align="start">{t('inventory.col_name')}</SortTh>
+                <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start">{t('inventory.col_barcode')}</SortTh>
                 {data.branches.map(b => (
                   <th key={b.id} className="px-3 py-2.5 text-center whitespace-nowrap">{branchName(b)}</th>
                 ))}
-                <th className="px-3 py-2.5 text-center bg-slate-100">{t('inventory.bs_total')}</th>
+                <SortTh k="total_stock" sort={bsSort} onToggle={bsToggle} align="center" className="bg-slate-100">{t('inventory.bs_total')}</SortTh>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={data.branches.length + 3} className="text-center py-8 text-slate-400">…</td></tr>}
-              {!loading && data.items.length === 0 && (
+              {!loading && sortedBs.length === 0 && (
                 <tr><td colSpan={data.branches.length + 3} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
-              {data.items.map(row => (
+              {sortedBs.map(row => (
                 <tr key={row.key} className="border-t border-slate-100 hover:bg-slate-50/50">
                   <td className="px-3 py-2.5">
                     <div className="font-medium text-slate-800">{isAr ? row.name_ar : row.name_en}</div>
@@ -1292,6 +1381,19 @@ function StocktakeTab() {
     })
     .filter(r => r.countChanged || r.expChanged)
 
+  const stFilter = useQuickFilter(items, [
+    (it: any) => it.name_en,
+    (it: any) => it.name_ar,
+    (it: any) => it.barcode,
+    (it: any) => it.category,
+  ])
+  const stAccessors = useMemo(() => ({
+    name: (it: any) => (isAr ? it.name_ar : it.name_en),
+    barcode: (it: any) => it.barcode,
+    stock: (it: any) => Number(it.stock),
+  }), [isAr])
+  const { sorted: sortedSt, sort: stSort, toggle: stToggle } = useSort(stFilter.filtered, stAccessors)
+
   const apply = async () => {
     if (toApply.length === 0) return
     const msg = (t('inventory.st_confirm') as string).replace('{n}', String(toApply.length))
@@ -1353,6 +1455,7 @@ function StocktakeTab() {
           placeholder={t('inventory.st_note_ph') as string}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm min-w-48"
         />
+        <TableFilter value={stFilter.query} onChange={stFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <button
           onClick={apply}
           disabled={toApply.length === 0 || applying}
@@ -1369,9 +1472,9 @@ function StocktakeTab() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2.5 text-start">{t('inventory.col_name')}</th>
-                <th className="px-3 py-2.5 text-start">{t('inventory.col_barcode')}</th>
-                <th className="px-3 py-2.5 text-center">{t('inventory.st_system')}</th>
+                <SortTh k="name" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_name')}</SortTh>
+                <SortTh k="barcode" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_barcode')}</SortTh>
+                <SortTh k="stock" sort={stSort} onToggle={stToggle} align="center">{t('inventory.st_system')}</SortTh>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_counted')}</th>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_variance')}</th>
                 <th className="px-3 py-2.5 text-center">{t('inventory.f_expiry')}</th>
@@ -1382,10 +1485,10 @@ function StocktakeTab() {
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
               )}
               {branchId && loading && <tr><td colSpan={6} className="text-center py-8 text-slate-400">…</td></tr>}
-              {branchId && !loading && items.length === 0 && (
+              {branchId && !loading && sortedSt.length === 0 && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
-              {branchId && items.map(it => {
+              {branchId && sortedSt.map(it => {
                 const raw = counted[it.id]
                 const has = raw !== '' && raw !== undefined
                 const val = has ? Number(raw) : null

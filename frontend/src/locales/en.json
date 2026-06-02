@@ -632,7 +632,8 @@
     "no_data": "No data",
     "print": "Print",
     "admins_only": "Admins only",
-    "export": "Export"
+    "export": "Export",
+    "filter_placeholder": "Filter results…"
   },
   "receipt": {
     "title": "Invoice",

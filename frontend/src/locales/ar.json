@@ -632,7 +632,8 @@
     "print": "طباعة",
     "no_data": "لا توجد بيانات",
     "admins_only": "للمسؤولين فقط",
-    "export": "تصدير"
+    "export": "تصدير",
+    "filter_placeholder": "تصفية النتائج…"
   },
   "receipt": {
     "title": "فاتورة",

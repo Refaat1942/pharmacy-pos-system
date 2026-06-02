@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search, Download } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -214,6 +215,28 @@ export default function Sales() {
     ? invoices.filter((i) => (i.invoice_number || '').toLowerCase().includes(invoiceSearch.trim().toLowerCase()))
     : invoices
 
+  const quick = useQuickFilter(visibleInvoices, [
+    (r) => r.invoice_number,
+    (r) => typeLabel[r.type] || r.type,
+    (r) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method),
+    (r) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en),
+    (r) => r.customer_name,
+    (r) => r.clinic_name,
+  ])
+  const sortAccessors = useMemo(() => ({
+    invoice_number: (r: SalesRow) => r.invoice_number,
+    created_at: (r: SalesRow) => r.created_at,
+    type: (r: SalesRow) => typeLabel[r.type] || r.type,
+    payment: (r: SalesRow) => (r.isReturn ? t('sales.return_type') : paymentLabel[r.payment_method] || r.payment_method),
+    seller: (r: SalesRow) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || '',
+    customer: (r: SalesRow) => r.customer_name || '',
+    clinic: (r: SalesRow) => r.clinic_name || '',
+    net_total: (r: SalesRow) => Number(r.net_total || 0),
+    status: (r: SalesRow) => r.status,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [lang, t, typeLabel, paymentLabel])
+  const { sorted, sort, toggle } = useSort(quick.filtered, sortAccessors)
+
   return (
     <Layout>
       <div className="flex-1 overflow-y-auto">
@@ -342,15 +365,19 @@ export default function Sales() {
             </button>
           </div>
 
+          <div className="mb-3 max-w-xs">
+            <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} />
+          </div>
+
           {loading ? (
             <div className="flex items-center justify-center py-24 text-gray-400">
               <Loader2 size={24} className="animate-spin me-2" />
               {t('common.loading')}
             </div>
-          ) : visibleInvoices.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-3">
               <TrendingUp size={48} className="opacity-20" />
-              <p>{invoiceSearch ? t('sales.no_search_match') : t('sales.no_sales')}</p>
+              <p>{invoiceSearch || quick.query ? t('sales.no_search_match') : t('sales.no_sales')}</p>
               {invoiceSearch && (
                 <button onClick={() => setInvoiceSearch('')} className="text-xs text-pharma-700 hover:underline">
                   {t('sales.clear_search')}
@@ -362,32 +389,21 @@ export default function Sales() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      {[
-                        t('sales.invoice_no'),
-                        t('sales.date'),
-                        t('sales.type'),
-                        t('sales.payment'),
-                        t('sales.seller'),
-                        t('sales.customer'),
-                        t('sales.clinic'),
-                        t('sales.total'),
-                        t('sales.status'),
-                        '',
-                      ].map((h, i) => (
-                        <th
-                          key={i}
-                          className={`px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider ${
-                            i === 7 ? 'text-end' : i === 8 ? 'text-center' : 'text-start'
-                          }`}
-                        >
-                          {h}
-                        </th>
-                      ))}
+                    <tr className="bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      <SortTh k="invoice_number" sort={sort} onToggle={toggle} align="start">{t('sales.invoice_no')}</SortTh>
+                      <SortTh k="created_at" sort={sort} onToggle={toggle} align="start">{t('sales.date')}</SortTh>
+                      <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('sales.type')}</SortTh>
+                      <SortTh k="payment" sort={sort} onToggle={toggle} align="start">{t('sales.payment')}</SortTh>
+                      <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.seller')}</SortTh>
+                      <SortTh k="customer" sort={sort} onToggle={toggle} align="start">{t('sales.customer')}</SortTh>
+                      <SortTh k="clinic" sort={sort} onToggle={toggle} align="start">{t('sales.clinic')}</SortTh>
+                      <SortTh k="net_total" sort={sort} onToggle={toggle} align="end">{t('sales.total')}</SortTh>
+                      <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('sales.status')}</SortTh>
+                      <th className="px-4 py-3 text-center" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {visibleInvoices.map((inv) => (
+                    {sorted.map((inv) => (
                       <tr
                         key={`${inv.isReturn ? 'ret' : 'inv'}-${inv.id}`}
                         className="hover:bg-gray-50/80 transition-colors"

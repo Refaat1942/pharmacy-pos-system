@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Lock, Unlock, FileText, X, AlertCircle } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 type ShiftType = 'morning' | 'evening' | 'night'
 
@@ -77,6 +78,27 @@ export default function Shifts() {
   const [shiftType, setShiftType] = useState<ShiftType>('morning')
   const [autoDetected, setAutoDetected] = useState(true)
   const [schedule, setSchedule] = useState({ m: '06:00', e: '14:00', n: '22:00' })
+
+  const isAr = i18n.language === 'ar'
+  const userName = (s: Shift) => (isAr ? s.user_name_ar : s.user_name_en) || ''
+  const branchName = (s: Shift) => (isAr ? s.branch_name_ar : s.branch_name_en) || ''
+  const filter = useQuickFilter(shifts, [
+    (s) => `#${s.id}`,
+    (s) => userName(s),
+    (s) => branchName(s),
+  ])
+  const accessors = useMemo(() => ({
+    id: (s: Shift) => s.id,
+    user: (s: Shift) => userName(s),
+    branch: (s: Shift) => branchName(s),
+    opened_at: (s: Shift) => s.opened_at,
+    closed_at: (s: Shift) => s.closed_at,
+    opening_cash: (s: Shift) => Number(s.opening_cash || 0),
+    closing_cash: (s: Shift) => (s.closing_cash == null ? null : Number(s.closing_cash)),
+    variance: (s: Shift) => (s.variance == null ? null : Number(s.variance)),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [isAr])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -198,27 +220,31 @@ export default function Shifts() {
 
         {/* Shift history */}
         <div>
-          <h2 className="text-base font-semibold text-slate-700 mb-2">{t('shifts.history')}</h2>
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <h2 className="text-base font-semibold text-slate-700">{t('shifts.history')}</h2>
+            <TableFilter value={filter.query} onChange={filter.setQuery}
+              placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
+          </div>
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-2.5 text-start">#</th>
-                  {isAdmin && <th className="px-4 py-2.5 text-start">{t('shifts.user')}</th>}
-                  <th className="px-4 py-2.5 text-start">{t('shifts.branch')}</th>
-                  <th className="px-4 py-2.5 text-start">{t('shifts.opened_at')}</th>
-                  <th className="px-4 py-2.5 text-start">{t('shifts.closed_at')}</th>
-                  <th className="px-4 py-2.5 text-end">{t('shifts.opening_cash')}</th>
-                  <th className="px-4 py-2.5 text-end">{t('shifts.closing_cash')}</th>
-                  <th className="px-4 py-2.5 text-end">{t('shifts.variance')}</th>
+                  <SortTh k="id" sort={sort} onToggle={toggle} align="start" className="px-4 py-2.5">#</SortTh>
+                  {isAdmin && <SortTh k="user" sort={sort} onToggle={toggle} align="start" className="px-4 py-2.5">{t('shifts.user')}</SortTh>}
+                  <SortTh k="branch" sort={sort} onToggle={toggle} align="start" className="px-4 py-2.5">{t('shifts.branch')}</SortTh>
+                  <SortTh k="opened_at" sort={sort} onToggle={toggle} align="start" className="px-4 py-2.5">{t('shifts.opened_at')}</SortTh>
+                  <SortTh k="closed_at" sort={sort} onToggle={toggle} align="start" className="px-4 py-2.5">{t('shifts.closed_at')}</SortTh>
+                  <SortTh k="opening_cash" sort={sort} onToggle={toggle} align="end" className="px-4 py-2.5">{t('shifts.opening_cash')}</SortTh>
+                  <SortTh k="closing_cash" sort={sort} onToggle={toggle} align="end" className="px-4 py-2.5">{t('shifts.closing_cash')}</SortTh>
+                  <SortTh k="variance" sort={sort} onToggle={toggle} align="end" className="px-4 py-2.5">{t('shifts.variance')}</SortTh>
                   <th className="px-4 py-2.5 text-center">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {shifts.length === 0 && (
+                {sorted.length === 0 && (
                   <tr><td colSpan={isAdmin ? 9 : 8} className="text-center py-8 text-slate-400">{t('shifts.no_history')}</td></tr>
                 )}
-                {shifts.map((s) => (
+                {sorted.map((s) => (
                   <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                     <td className="px-4 py-2.5 font-mono text-slate-500">#{s.id}</td>
                     {isAdmin && <td className="px-4 py-2.5">{i18n.language === 'ar' ? s.user_name_ar : s.user_name_en}</td>}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { regionLabel } from '../lib/regions'
 import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 export default function Customers() {
   const { t } = useTranslation()
@@ -22,6 +23,22 @@ export default function Customers() {
   const [statement, setStatement] = useState<any>(null)
   const [paying, setPaying] = useState<Customer | null>(null)
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
+
+  const filter = useQuickFilter(list, [
+    (c) => c.name,
+    (c) => c.phone,
+    (c) => regionLabel(c.region, lang),
+  ])
+  const accessors = useMemo(() => ({
+    name: (c: Customer) => c.name,
+    phone: (c: Customer) => c.phone,
+    region: (c: Customer) => regionLabel(c.region, lang),
+    limit: (c: Customer) => Number(c.credit_limit || 0),
+    charged: (c: Customer) => Number(c.total_charged || 0),
+    paid: (c: Customer) => Number(c.total_paid || 0),
+    balance: (c: Customer) => Number(c.balance || 0),
+  }), [lang])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const load = () => {
     setLoading(true)
@@ -71,30 +88,32 @@ export default function Customers() {
           )}
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <input value={q} onChange={(e) => setQ(e.target.value)}
             placeholder={t('customers.search_placeholder') as string}
             className="input w-full md:w-96" />
+          <TableFilter value={filter.query} onChange={filter.setQuery}
+            placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('customers.col_name')}</th>
-                <th className="px-3 py-2 text-start">{t('customers.col_phone')}</th>
-                <th className="px-3 py-2 text-start">{t('customers.col_region')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_limit')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_charged')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_paid')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_balance')}</th>
+                <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('customers.col_name')}</SortTh>
+                <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('customers.col_phone')}</SortTh>
+                <SortTh k="region" sort={sort} onToggle={toggle} align="start">{t('customers.col_region')}</SortTh>
+                <SortTh k="limit" sort={sort} onToggle={toggle} align="end">{t('customers.col_limit')}</SortTh>
+                <SortTh k="charged" sort={sort} onToggle={toggle} align="end">{t('customers.col_charged')}</SortTh>
+                <SortTh k="paid" sort={sort} onToggle={toggle} align="end">{t('customers.col_paid')}</SortTh>
+                <SortTh k="balance" sort={sort} onToggle={toggle} align="end">{t('customers.col_balance')}</SortTh>
                 <th className="px-3 py-2 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && list.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
-              {list.map((c) => {
+              {!loading && sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
+              {sorted.map((c) => {
                 const bal = Number(c.balance)
                 const limit = Number(c.credit_limit || 0)
                 const overLimit = limit > 0 && bal > limit

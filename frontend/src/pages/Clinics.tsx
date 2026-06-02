@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Stethoscope, Plus, Edit2, RefreshCw, Copy, Check, Link as LinkIcon, X } from 'lucide-react'
 import Layout from '../components/Layout'
 import { clinicsAPI, Clinic } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 export default function Clinics() {
   const { t } = useTranslation()
@@ -14,6 +15,17 @@ export default function Clinics() {
   const [editing, setEditing] = useState<Partial<Clinic> | null>(null)
   const [saving, setSaving] = useState(false)
   const [copied, setCopied] = useState<number | null>(null)
+
+  const filter = useQuickFilter(list, [
+    (c) => c.name,
+    (c) => c.phone,
+  ])
+  const accessors = useMemo(() => ({
+    name: (c: Clinic) => c.name,
+    phone: (c: Clinic) => c.phone,
+    status: (c: Clinic) => !!c.active,
+  }), [])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const load = () => {
     setLoading(true)
@@ -83,21 +95,26 @@ export default function Clinics() {
 
         <p className="text-sm text-slate-500 mb-4 max-w-2xl">{t('clinics.intro')}</p>
 
+        <div className="mb-4">
+          <TableFilter value={filter.query} onChange={filter.setQuery}
+            placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('clinics.col_name')}</th>
-                <th className="px-3 py-2 text-start">{t('clinics.col_phone')}</th>
-                <th className="px-3 py-2 text-center">{t('clinics.col_status')}</th>
+                <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('clinics.col_name')}</SortTh>
+                <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('clinics.col_phone')}</SortTh>
+                <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('clinics.col_status')}</SortTh>
                 <th className="px-3 py-2 text-start">{t('clinics.col_link')}</th>
                 <th className="px-3 py-2 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && list.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('clinics.empty')}</td></tr>}
-              {list.map((c) => (
+              {!loading && sorted.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('clinics.empty')}</td></tr>}
+              {sorted.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2 font-medium text-slate-800">{c.name}</td>
                   <td className="px-3 py-2 text-slate-600 font-mono text-xs">{c.phone || '—'}</td>

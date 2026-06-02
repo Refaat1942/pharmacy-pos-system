@@ -5,6 +5,7 @@ import {
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Calendar, Stethoscope,
 } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -232,7 +233,7 @@ export default function Reports() {
             <DataTable
               empty={t('reports.no_data')}
               cols={[
-                { key: 'name', label: t('reports.branch'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
+                { key: 'name', label: t('reports.branch'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en, sortValue: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
                 { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
                 { key: 'revenue', label: t('reports.gross_revenue'), align: 'end', render: (r) => fmt(r.revenue) },
                 { key: 'returns_value', label: t('reports.returns'), align: 'end', render: (r) => fmt(r.returns_value) },
@@ -316,7 +317,7 @@ export default function Reports() {
           <DataTable
             empty={t('reports.no_data')}
             cols={[
-              { key: 'name', label: t('reports.product'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
+              { key: 'name', label: t('reports.product'), render: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en, sortValue: (r) => i18n.language === 'ar' ? r.name_ar : r.name_en },
               { key: 'category', label: t('reports.category') },
               { key: 'qty', label: t('reports.qty'), align: 'end', render: (r) => fmtInt(r.qty) },
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
@@ -373,26 +374,42 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
 }
 
 function DataTable({ cols, rows, empty }: {
-  cols: { key: string; label: string; align?: 'start' | 'end'; render?: (r: any) => React.ReactNode }[]
+  cols: { key: string; label: string; align?: 'start' | 'end'; render?: (r: any) => React.ReactNode; sortValue?: (r: any) => unknown }[]
   rows: any[]
   empty: string
 }) {
+  const { t } = useTranslation()
+  const fields = useMemo(
+    () => cols.map((c) => (r: any) => (c.sortValue ? c.sortValue(r) : r[c.key])),
+    [cols],
+  )
+  const quick = useQuickFilter(rows, fields)
+  const accessors = useMemo(() => {
+    const acc: Record<string, (r: any) => unknown> = {}
+    cols.forEach((c) => { acc[c.key] = c.sortValue ? c.sortValue : (r: any) => r[c.key] })
+    return acc
+  }, [cols])
+  const { sorted, sort, toggle } = useSort(quick.filtered, accessors)
+
   if (!rows || rows.length === 0) {
     return <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-400">{empty}</div>
   }
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="p-3 border-b border-slate-100">
+        <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} className="max-w-xs" />
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
               {cols.map((c) => (
-                <th key={c.key} className={`px-4 py-2.5 ${c.align === 'end' ? 'text-end' : 'text-start'}`}>{c.label}</th>
+                <SortTh key={c.key} k={c.key} sort={sort} onToggle={toggle} align={c.align === 'end' ? 'end' : 'start'}>{c.label}</SortTh>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, idx) => (
+            {sorted.map((r, idx) => (
               <tr key={idx} className="border-t border-slate-100 hover:bg-slate-50/50">
                 {cols.map((c) => (
                   <td key={c.key} className={`px-4 py-2.5 ${c.align === 'end' ? 'text-end font-mono tabular-nums' : 'text-slate-700'}`}>

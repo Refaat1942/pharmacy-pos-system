@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -53,6 +54,25 @@ export default function Purchases() {
     catch (e: any) { alert(e.response?.data?.detail || 'Error') }
   }
 
+  const quick = useQuickFilter(pos, [
+    (p) => p.po_number,
+    (p) => p.supplier_name,
+    (p) => (i18n.language === 'ar' ? p.branch_name_ar : p.branch_name_en),
+    (p) => p.supplier_invoice_number,
+    (p) => t(`purchases.status_${p.status}`),
+  ])
+  const sortAccessors = useMemo(() => ({
+    po_number: (p: PurchaseOrder) => p.po_number,
+    supplier_name: (p: PurchaseOrder) => p.supplier_name,
+    branch: (p: PurchaseOrder) => (i18n.language === 'ar' ? p.branch_name_ar : p.branch_name_en),
+    supplier_invoice_number: (p: PurchaseOrder) => p.supplier_invoice_number,
+    total: (p: PurchaseOrder) => Number(p.total || 0),
+    status: (p: PurchaseOrder) => p.status,
+    created_at: (p: PurchaseOrder) => p.created_at,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [])
+  const { sorted, sort, toggle } = useSort(quick.filtered, sortAccessors)
+
   return (
     <Layout>
       <main className="flex-1 overflow-auto p-6">
@@ -75,7 +95,7 @@ export default function Purchases() {
           </div>
         </div>
 
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           {(['', 'draft', 'received', 'cancelled'] as StatusFilter[]).map((s) => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
@@ -84,26 +104,27 @@ export default function Purchases() {
               {s === '' ? t('purchases.all') : t(`purchases.status_${s}`)}
             </button>
           ))}
+          <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} className="ms-auto w-64" />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('purchases.col_number')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_supplier')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_branch')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_invoice')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.col_total')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_status')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_date')}</th>
+                <SortTh k="po_number" sort={sort} onToggle={toggle} align="start">{t('purchases.col_number')}</SortTh>
+                <SortTh k="supplier_name" sort={sort} onToggle={toggle} align="start">{t('purchases.col_supplier')}</SortTh>
+                <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('purchases.col_branch')}</SortTh>
+                <SortTh k="supplier_invoice_number" sort={sort} onToggle={toggle} align="start">{t('purchases.col_invoice')}</SortTh>
+                <SortTh k="total" sort={sort} onToggle={toggle} align="end">{t('purchases.col_total')}</SortTh>
+                <SortTh k="status" sort={sort} onToggle={toggle} align="start">{t('purchases.col_status')}</SortTh>
+                <SortTh k="created_at" sort={sort} onToggle={toggle} align="start">{t('purchases.col_date')}</SortTh>
                 <th className="px-3 py-2 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && pos.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('purchases.empty')}</td></tr>}
-              {pos.map((po) => (
+              {!loading && sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('purchases.empty')}</td></tr>}
+              {sorted.map((po) => (
                 <tr key={po.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2 font-mono text-xs">{po.po_number}</td>
                   <td className="px-3 py-2 font-medium">{po.supplier_name}</td>

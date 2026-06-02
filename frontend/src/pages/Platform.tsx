@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent } from 'react'
+import { useEffect, useMemo, useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Edit2, Trash2, Pause, Play, LogOut, ShieldCheck, KeyRound,
@@ -6,6 +6,7 @@ import {
   CalendarClock, Sparkles,
 } from 'lucide-react'
 import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef } from '../lib/platform'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 const PLAN_PRESETS: Record<string, string[]> = {
   basic:      ['dashboard','pos','sales','returns','inventory','customers','shifts','settings'],
@@ -85,6 +86,28 @@ export default function Platform() {
 
   useEffect(() => { load() }, [])
 
+  const filter = useQuickFilter(tenants, [
+    (tn) => tn.name,
+    (tn) => tn.slug,
+    (tn) => tn.plan,
+    (tn) => tn.contact_name,
+    (tn) => tn.contact_email,
+    (tn) => tn.status,
+  ])
+  const accessors = useMemo(() => ({
+    name: (tn: Tenant) => tn.name,
+    slug: (tn: Tenant) => tn.slug,
+    plan: (tn: Tenant) => tn.plan,
+    subscription: (tn: Tenant) => tn.subscription_end,
+    features: (tn: Tenant) => (tn.features?.length ?? featureDefaults.length),
+    contact: (tn: Tenant) => tn.contact_name,
+    users: (tn: Tenant) => stats[tn.id]?.users,
+    products: (tn: Tenant) => stats[tn.id]?.products,
+    invoices: (tn: Tenant) => stats[tn.id]?.invoices,
+    status: (tn: Tenant) => tn.status,
+  }), [stats, featureDefaults])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   const logout = () => {
     localStorage.removeItem('platform_token')
     localStorage.removeItem('platform_admin')
@@ -153,9 +176,11 @@ export default function Platform() {
         </div>
 
         {/* Actions bar */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h2 className="text-xl font-bold text-slate-800">Pharmacy Customers</h2>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <TableFilter value={filter.query} onChange={filter.setQuery}
+              placeholder="Filter results…" className="w-64" />
             <button onClick={runMigration} disabled={migrating}
               className="flex items-center gap-2 bg-white border border-slate-300 hover:bg-slate-50 text-sm px-3 py-2 rounded-lg">
               <RefreshCw size={14} className={migrating ? 'animate-spin' : ''} />
@@ -176,24 +201,24 @@ export default function Platform() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 text-start">Pharmacy</th>
-                  <th className="px-4 py-3 text-start">Code</th>
-                  <th className="px-4 py-3 text-start">Plan</th>
-                  <th className="px-4 py-3 text-start">Subscription</th>
-                  <th className="px-4 py-3 text-center">Features</th>
-                  <th className="px-4 py-3 text-start">Contact</th>
-                  <th className="px-4 py-3 text-center">Users</th>
-                  <th className="px-4 py-3 text-center">Products</th>
-                  <th className="px-4 py-3 text-center">Invoices</th>
-                  <th className="px-4 py-3 text-center">Status</th>
+                  <SortTh k="name" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Pharmacy</SortTh>
+                  <SortTh k="slug" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Code</SortTh>
+                  <SortTh k="plan" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Plan</SortTh>
+                  <SortTh k="subscription" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Subscription</SortTh>
+                  <SortTh k="features" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Features</SortTh>
+                  <SortTh k="contact" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Contact</SortTh>
+                  <SortTh k="users" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Users</SortTh>
+                  <SortTh k="products" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Products</SortTh>
+                  <SortTh k="invoices" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Invoices</SortTh>
+                  <SortTh k="status" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Status</SortTh>
                   <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {tenants.length === 0 && (
+                {sorted.length === 0 && (
                   <tr><td colSpan={11} className="text-center py-10 text-slate-400">No pharmacies yet. Click "New Pharmacy" to add your first customer.</td></tr>
                 )}
-                {tenants.map((t) => {
+                {sorted.map((t) => {
                   const s = stats[t.id]
                   const featCount = (t.features?.length ?? featureDefaults.length)
                   return (

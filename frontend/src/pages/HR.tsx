@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert, QrCode, Printer, Download } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -106,6 +107,22 @@ function EmployeesTab() {
     await api.delete(`/hr/employees/${id}`); await load()
   }
 
+  const filter = useQuickFilter(rows, [
+    (r) => r.name, (r) => r.role, (r) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en,
+    (r) => r.phone, (r) => r.clock_code, (r) => r.national_id,
+  ])
+  const accessors = useMemo(() => ({
+    name: (r: Employee) => r.name,
+    role: (r: Employee) => r.role,
+    branch: (r: Employee) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en,
+    base_salary: (r: Employee) => Number(r.base_salary || 0),
+    hire_date: (r: Employee) => r.hire_date,
+    phone: (r: Employee) => r.phone,
+    clock_code: (r: Employee) => r.clock_code,
+    status: (r: Employee) => r.active,
+  }), [])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   return (
     <div className="space-y-3">
       <div className="flex justify-end gap-2">
@@ -119,24 +136,25 @@ function EmployeesTab() {
           <UserPlus size={14} /> {t('hr.add_employee')}
         </button>
       </div>
+      <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-3 py-2.5 text-start">{t('hr.name')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.role')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.branch')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.base_salary')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.hire_date')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.phone')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.clock_code')}</th>
-              <th className="px-3 py-2.5 text-center">{t('hr.status')}</th>
+              <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('hr.name')}</SortTh>
+              <SortTh k="role" sort={sort} onToggle={toggle} align="start">{t('hr.role')}</SortTh>
+              <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('hr.branch')}</SortTh>
+              <SortTh k="base_salary" sort={sort} onToggle={toggle} align="end">{t('hr.base_salary')}</SortTh>
+              <SortTh k="hire_date" sort={sort} onToggle={toggle} align="start">{t('hr.hire_date')}</SortTh>
+              <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('hr.phone')}</SortTh>
+              <SortTh k="clock_code" sort={sort} onToggle={toggle} align="start">{t('hr.clock_code')}</SortTh>
+              <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('hr.status')}</SortTh>
               <th className="px-3 py-2.5 text-center">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('hr.no_employees')}</td></tr>}
-            {rows.map((r) => (
+            {sorted.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('hr.no_employees')}</td></tr>}
+            {sorted.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-medium">{r.name}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.role || '—'}</td>
@@ -250,6 +268,19 @@ function AttendanceTab() {
     await api.delete(`/hr/attendance/${id}`); await load()
   }
 
+  const filter = useQuickFilter(rows, [
+    (r) => r.employee_name, (r) => r.work_date, (r) => t(`hr.status_${r.status}`),
+  ])
+  const accessors = useMemo(() => ({
+    employee: (r: Att) => r.employee_name,
+    date: (r: Att) => r.work_date,
+    check_in: (r: Att) => r.check_in,
+    check_out: (r: Att) => r.check_out,
+    hours: (r: Att) => r.hours == null ? null : Number(r.hours),
+    status: (r: Att) => r.status,
+  }), [t])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   return (
     <div className="space-y-3">
       <div className="flex items-end justify-between">
@@ -262,23 +293,24 @@ function AttendanceTab() {
         </button>
       </div>
 
+      <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-3 py-2.5 text-start">{t('hr.employee')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.date')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.check_in')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.check_out')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.hours')}</th>
-              <th className="px-3 py-2.5 text-center">{t('hr.status')}</th>
+              <SortTh k="employee" sort={sort} onToggle={toggle} align="start">{t('hr.employee')}</SortTh>
+              <SortTh k="date" sort={sort} onToggle={toggle} align="start">{t('hr.date')}</SortTh>
+              <SortTh k="check_in" sort={sort} onToggle={toggle} align="start">{t('hr.check_in')}</SortTh>
+              <SortTh k="check_out" sort={sort} onToggle={toggle} align="start">{t('hr.check_out')}</SortTh>
+              <SortTh k="hours" sort={sort} onToggle={toggle} align="end">{t('hr.hours')}</SortTh>
+              <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('hr.status')}</SortTh>
               <th className="px-3 py-2.5 text-center">{t('hr.pass_day')}</th>
               <th className="px-3 py-2.5 text-center">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_attendance')}</td></tr>}
-            {rows.map((r) => (
+            {sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_attendance')}</td></tr>}
+            {sorted.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-medium">{r.employee_name}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.work_date}</td>
@@ -407,6 +439,23 @@ function PayrollTab() {
   const total = rows.reduce((s, r) => s + Number(r.net_amount || 0), 0)
   const unpaid = rows.filter((r) => r.status === 'draft').reduce((s, r) => s + Number(r.net_amount || 0), 0)
 
+  const filter = useQuickFilter(rows, [
+    (r) => r.period_month, (r) => r.employee_name, (r) => r.employee_role, (r) => t(`hr.slip_${r.status}`),
+  ])
+  const accessors = useMemo(() => ({
+    period_month: (r: Slip) => r.period_month,
+    employee: (r: Slip) => r.employee_name,
+    role: (r: Slip) => r.employee_role,
+    days_worked: (r: Slip) => Number(r.days_worked || 0),
+    hours: (r: Slip) => r.hours_worked == null ? null : Number(r.hours_worked),
+    base_salary: (r: Slip) => Number(r.base_salary || 0),
+    bonus: (r: Slip) => Number(r.bonus || 0),
+    deductions: (r: Slip) => Number(r.deductions || 0),
+    net_amount: (r: Slip) => Number(r.net_amount || 0),
+    status: (r: Slip) => r.status,
+  }), [t])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   return (
     <div className="space-y-3">
       <div className="flex items-end justify-between flex-wrap gap-2">
@@ -423,6 +472,9 @@ function PayrollTab() {
             <input type="checkbox" checked={allMonths} onChange={(e) => setAllMonths(e.target.checked)} />
             {t('hr.all_months')}
           </label>
+          <div className="pb-0.5">
+            <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="w-48" />
+          </div>
         </div>
         <div className="flex items-end gap-2">
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs">
@@ -446,22 +498,22 @@ function PayrollTab() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-3 py-2.5 text-start">{t('hr.period_month')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.employee')}</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.role')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.days_worked')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.hours')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.base_salary')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.bonus')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.deductions')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.net_amount')}</th>
-              <th className="px-3 py-2.5 text-center">{t('hr.status')}</th>
+              <SortTh k="period_month" sort={sort} onToggle={toggle} align="start">{t('hr.period_month')}</SortTh>
+              <SortTh k="employee" sort={sort} onToggle={toggle} align="start">{t('hr.employee')}</SortTh>
+              <SortTh k="role" sort={sort} onToggle={toggle} align="start">{t('hr.role')}</SortTh>
+              <SortTh k="days_worked" sort={sort} onToggle={toggle} align="end">{t('hr.days_worked')}</SortTh>
+              <SortTh k="hours" sort={sort} onToggle={toggle} align="end">{t('hr.hours')}</SortTh>
+              <SortTh k="base_salary" sort={sort} onToggle={toggle} align="end">{t('hr.base_salary')}</SortTh>
+              <SortTh k="bonus" sort={sort} onToggle={toggle} align="end">{t('hr.bonus')}</SortTh>
+              <SortTh k="deductions" sort={sort} onToggle={toggle} align="end">{t('hr.deductions')}</SortTh>
+              <SortTh k="net_amount" sort={sort} onToggle={toggle} align="end">{t('hr.net_amount')}</SortTh>
+              <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('hr.status')}</SortTh>
               <th className="px-3 py-2.5 text-center">{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
-            {rows.map((r) => (
+            {sorted.length === 0 && <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
+            {sorted.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-mono text-slate-500">{r.period_month}</td>
                 <td className="px-3 py-2.5 font-medium">{r.employee_name}</td>
@@ -553,6 +605,19 @@ function PerformanceTab() {
 
   const max = Math.max(1, ...rows.map(r => r.revenue))
 
+  const filter = useQuickFilter(rows, [
+    (r) => i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en, (r) => r.seller_name_en,
+    (r) => r.seller_name_ar, (r) => r.username, (r) => r.seller_role,
+  ])
+  const accessors = useMemo(() => ({
+    seller: (r: SellerRow) => (i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en) || r.username || `#${r.seller_id}`,
+    invoices: (r: SellerRow) => Number(r.invoices || 0),
+    items: (r: SellerRow) => Number(r.items_sold || 0),
+    avg_ticket: (r: SellerRow) => Number(r.avg_ticket || 0),
+    revenue: (r: SellerRow) => Number(r.revenue || 0),
+  }), [])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   return (
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-wrap gap-3 items-end">
@@ -578,26 +643,27 @@ function PerformanceTab() {
         )}
       </div>
 
+      <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
               <th className="px-3 py-2.5 text-center w-12">#</th>
-              <th className="px-3 py-2.5 text-start">{t('hr.perf_seller')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.perf_invoices')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.perf_items')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.perf_avg_ticket')}</th>
-              <th className="px-3 py-2.5 text-end">{t('hr.perf_revenue')}</th>
+              <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('hr.perf_seller')}</SortTh>
+              <SortTh k="invoices" sort={sort} onToggle={toggle} align="end">{t('hr.perf_invoices')}</SortTh>
+              <SortTh k="items" sort={sort} onToggle={toggle} align="end">{t('hr.perf_items')}</SortTh>
+              <SortTh k="avg_ticket" sort={sort} onToggle={toggle} align="end">{t('hr.perf_avg_ticket')}</SortTh>
+              <SortTh k="revenue" sort={sort} onToggle={toggle} align="end">{t('hr.perf_revenue')}</SortTh>
               <th className="px-3 py-2.5 text-start">{t('hr.perf_by_type')}</th>
               <th className="px-3 py-2.5 text-start w-1/5">{t('hr.perf_share')}</th>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">…</td></tr>}
-            {!loading && rows.length === 0 && (
+            {!loading && sorted.length === 0 && (
               <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('hr.no_sales_in_range')}</td></tr>
             )}
-            {rows.map((r, idx) => {
+            {sorted.map((r, idx) => {
               const name = (i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en) || r.username || `#${r.seller_id}`
               const pct = (r.revenue / max) * 100
               return (

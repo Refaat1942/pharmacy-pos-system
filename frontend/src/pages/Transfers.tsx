@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ArrowRightLeft, Plus, Check, X, Eye, Trash2, ScanLine, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -6,6 +6,7 @@ import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../li
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 type StatusFilter = '' | 'in_transit' | 'completed' | 'cancelled'
 
@@ -35,6 +36,25 @@ export default function Transfers() {
 
   const branchName = (b?: Branch | null) =>
     b ? (i18n.language === 'ar' ? b.name_ar : b.name_en) : '—'
+
+  const isAr = i18n.language === 'ar'
+  const fromName = (t2: Transfer) => (isAr ? t2.from_name_ar : t2.from_name_en) || ''
+  const toName = (t2: Transfer) => (isAr ? t2.to_name_ar : t2.to_name_en) || ''
+  const filter = useQuickFilter(transfers, [
+    (t2) => t2.transfer_number,
+    (t2) => fromName(t2),
+    (t2) => toName(t2),
+    (t2) => t2.status,
+  ])
+  const accessors = useMemo(() => ({
+    number: (t2: Transfer) => t2.transfer_number,
+    from: (t2: Transfer) => fromName(t2),
+    to: (t2: Transfer) => toName(t2),
+    status: (t2: Transfer) => t2.status,
+    date: (t2: Transfer) => t2.created_at,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [isAr])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const statusBadge = (s: string) => {
     const map: Record<string, string> = {
@@ -87,7 +107,7 @@ export default function Transfers() {
           </button>
         </div>
 
-        <div className="mb-4 flex gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           {(['', 'in_transit', 'completed', 'cancelled'] as StatusFilter[]).map((s) => (
             <button
               key={s}
@@ -101,17 +121,19 @@ export default function Transfers() {
               {s === '' ? t('transfers.all') : t(`transfers.status_${s}`)}
             </button>
           ))}
+          <TableFilter value={filter.query} onChange={filter.setQuery}
+            placeholder={t('common.filter_placeholder') as string} className="ms-auto w-full md:w-64" />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('transfers.col_number')}</th>
-                <th className="px-3 py-2 text-start">{t('transfers.col_from')}</th>
-                <th className="px-3 py-2 text-start">{t('transfers.col_to')}</th>
-                <th className="px-3 py-2 text-start">{t('transfers.col_status')}</th>
-                <th className="px-3 py-2 text-start">{t('transfers.col_date')}</th>
+                <SortTh k="number" sort={sort} onToggle={toggle} align="start">{t('transfers.col_number')}</SortTh>
+                <SortTh k="from" sort={sort} onToggle={toggle} align="start">{t('transfers.col_from')}</SortTh>
+                <SortTh k="to" sort={sort} onToggle={toggle} align="start">{t('transfers.col_to')}</SortTh>
+                <SortTh k="status" sort={sort} onToggle={toggle} align="start">{t('transfers.col_status')}</SortTh>
+                <SortTh k="date" sort={sort} onToggle={toggle} align="start">{t('transfers.col_date')}</SortTh>
                 <th className="px-3 py-2 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
@@ -119,10 +141,10 @@ export default function Transfers() {
               {loading && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
               )}
-              {!loading && transfers.length === 0 && (
+              {!loading && sorted.length === 0 && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('transfers.empty')}</td></tr>
               )}
-              {transfers.map((t2) => (
+              {sorted.map((t2) => (
                 <tr key={t2.id} className="border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-2 font-mono text-xs">{t2.transfer_number}</td>
                   <td className="px-3 py-2">{i18n.language === 'ar' ? t2.from_name_ar : t2.from_name_en}</td>

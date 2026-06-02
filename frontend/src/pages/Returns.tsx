@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RotateCcw, Filter, Loader2 } from 'lucide-react'
 import Layout from '../components/Layout'
 import { returnsAPI, salesAPI } from '../lib/api'
 import type { ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 export default function Returns() {
   const { t } = useTranslation()
@@ -42,6 +43,26 @@ export default function Returns() {
 
   const totalReturned = rows.reduce((s, r) => s + Number(r.total_returned || 0), 0)
   const ratio = salesTotal > 0 ? (totalReturned / salesTotal) * 100 : 0
+
+  const sellerName = (r: ReturnRow) => (lang === 'ar' ? r.seller_name_ar : r.seller_name_en) || ''
+  const filter = useQuickFilter(rows, [
+    (r) => r.return_invoice_number,
+    (r) => r.invoice_number,
+    (r) => r.type,
+    (r) => sellerName(r),
+    (r) => r.reason,
+  ])
+  const accessors = useMemo(() => ({
+    return_no: (r: ReturnRow) => r.return_invoice_number,
+    invoice_no: (r: ReturnRow) => r.invoice_number,
+    date: (r: ReturnRow) => r.created_at,
+    type: (r: ReturnRow) => r.type,
+    seller: (r: ReturnRow) => sellerName(r),
+    reason: (r: ReturnRow) => r.reason,
+    value: (r: ReturnRow) => Number(r.total_returned || 0),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [lang])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   return (
     <Layout>
@@ -97,6 +118,10 @@ export default function Returns() {
               className="text-gray-500 hover:text-gray-700 text-sm font-medium">
               {t('sales.reset')}
             </button>
+            <div className="ms-auto">
+              <TableFilter value={filter.query} onChange={filter.setQuery}
+                placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
+            </div>
           </div>
 
           {loading ? (
@@ -104,7 +129,7 @@ export default function Returns() {
               <Loader2 size={24} className="animate-spin me-2" />
               {t('common.loading')}
             </div>
-          ) : rows.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 text-gray-400 gap-3">
               <RotateCcw size={48} className="opacity-20" />
               <p>{t('returns.empty')}</p>
@@ -113,24 +138,18 @@ export default function Returns() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    {[
-                      t('returns.return_no'),
-                      t('returns.invoice_no'),
-                      t('returns.date'),
-                      t('returns.type'),
-                      t('sales.seller'),
-                      t('returns.reason'),
-                      t('returns.value'),
-                    ].map((h, i) => (
-                      <th key={i} className={`px-4 py-3 text-[11px] font-bold text-gray-400 uppercase tracking-wider ${
-                        i === 6 ? 'text-end' : 'text-start'
-                      }`}>{h}</th>
-                    ))}
+                  <tr className="bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                    <SortTh k="return_no" sort={sort} onToggle={toggle} align="start">{t('returns.return_no')}</SortTh>
+                    <SortTh k="invoice_no" sort={sort} onToggle={toggle} align="start">{t('returns.invoice_no')}</SortTh>
+                    <SortTh k="date" sort={sort} onToggle={toggle} align="start">{t('returns.date')}</SortTh>
+                    <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('returns.type')}</SortTh>
+                    <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.seller')}</SortTh>
+                    <SortTh k="reason" sort={sort} onToggle={toggle} align="start">{t('returns.reason')}</SortTh>
+                    <SortTh k="value" sort={sort} onToggle={toggle} align="end">{t('returns.value')}</SortTh>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {rows.map((r) => (
+                  {sorted.map((r) => (
                     <tr key={r.id} className="hover:bg-gray-50/80 transition-colors">
                       <td className="px-4 py-3 font-mono text-xs font-bold text-gray-800">{r.return_invoice_number}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.invoice_number || '—'}</td>

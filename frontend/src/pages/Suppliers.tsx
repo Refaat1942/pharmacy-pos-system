@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2, Download } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -10,6 +10,7 @@ import RegionSelect from '../components/RegionSelect'
 import { regionLabel } from '../lib/regions'
 import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 export default function Suppliers() {
   const { t } = useTranslation()
@@ -37,6 +38,24 @@ export default function Suppliers() {
   }, [q])
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
+
+  const filter = useQuickFilter(list, [
+    (s) => s.name,
+    (s) => s.contact_person,
+    (s) => s.phone,
+    (s) => regionLabel((s as any).region, lang),
+  ])
+  const accessors = useMemo(() => ({
+    name: (s: Supplier) => s.name,
+    contact: (s: Supplier) => s.contact_person,
+    phone: (s: Supplier) => s.phone,
+    region: (s: Supplier) => regionLabel((s as any).region, lang),
+    charged: (s: Supplier) => Number(s.total_charged || 0),
+    paid: (s: Supplier) => Number(s.total_paid || 0),
+    balance: (s: Supplier) => Number(s.balance || 0),
+  }), [lang])
+  const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
+
   const exportList = () => {
     exportCSV(`suppliers-${new Date().toISOString().slice(0, 10)}.csv`, list, [
       { label: t('suppliers.col_name'), value: (s) => s.name },
@@ -75,33 +94,35 @@ export default function Suppliers() {
           )}
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t('suppliers.search_placeholder') as string}
             className="input w-full md:w-96"
           />
+          <TableFilter value={filter.query} onChange={filter.setQuery}
+            placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('suppliers.col_name')}</th>
-                <th className="px-3 py-2 text-start">{t('suppliers.col_contact')}</th>
-                <th className="px-3 py-2 text-start">{t('suppliers.col_phone')}</th>
-                <th className="px-3 py-2 text-start">{t('suppliers.col_region')}</th>
-                <th className="px-3 py-2 text-end">{t('suppliers.col_charged')}</th>
-                <th className="px-3 py-2 text-end">{t('suppliers.col_paid')}</th>
-                <th className="px-3 py-2 text-end">{t('suppliers.col_balance')}</th>
+                <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('suppliers.col_name')}</SortTh>
+                <SortTh k="contact" sort={sort} onToggle={toggle} align="start">{t('suppliers.col_contact')}</SortTh>
+                <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('suppliers.col_phone')}</SortTh>
+                <SortTh k="region" sort={sort} onToggle={toggle} align="start">{t('suppliers.col_region')}</SortTh>
+                <SortTh k="charged" sort={sort} onToggle={toggle} align="end">{t('suppliers.col_charged')}</SortTh>
+                <SortTh k="paid" sort={sort} onToggle={toggle} align="end">{t('suppliers.col_paid')}</SortTh>
+                <SortTh k="balance" sort={sort} onToggle={toggle} align="end">{t('suppliers.col_balance')}</SortTh>
                 <th className="px-3 py-2 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
               {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && list.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('suppliers.empty')}</td></tr>}
-              {list.map((s) => {
+              {!loading && sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('suppliers.empty')}</td></tr>}
+              {sorted.map((s) => {
                 const bal = Number(s.balance)
                 return (
                   <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">

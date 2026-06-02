@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Calendar, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import { expiryAPI, ExpiryItem, ExpirySummary } from '../lib/api'
 import i18n from '../lib/i18n'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 type Tab = 'near' | 'expired'
 
@@ -91,6 +92,26 @@ export default function Expiry() {
     return ''
   }
 
+  const expFilter = useQuickFilter(items, [
+    (i) => i.barcode,
+    (i) => i.name_en,
+    (i) => i.name_ar,
+    (i) => i.category,
+    (i) => i.branch_name_en,
+    (i) => i.branch_name_ar,
+  ])
+  const expAccessors = useMemo(() => ({
+    barcode: (i: ExpiryItem) => i.barcode,
+    name: (i: ExpiryItem) => (i18n.language === 'ar' ? i.name_ar : i.name_en),
+    category: (i: ExpiryItem) => i.category,
+    branch: (i: ExpiryItem) => (i18n.language === 'ar' ? i.branch_name_ar : i.branch_name_en),
+    stock: (i: ExpiryItem) => Number(i.stock),
+    expiry_date: (i: ExpiryItem) => i.expiry_date,
+    days_left: (i: ExpiryItem) => Number(i.days_left),
+    loss_value: (i: ExpiryItem) => Number(i.loss_value),
+  }), [])
+  const { sorted: sortedItems, sort, toggle } = useSort(expFilter.filtered, expAccessors)
+
   return (
     <Layout>
       <main className="flex-1 overflow-auto p-6">
@@ -164,28 +185,32 @@ export default function Expiry() {
           )}
         </div>
 
+        <div className="mb-4 max-w-sm">
+          <TableFilter value={expFilter.query} onChange={expFilter.setQuery} placeholder={t('common.filter_placeholder') as string} />
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('expiry.col_barcode')}</th>
-                <th className="px-3 py-2 text-start">{t('expiry.col_name')}</th>
-                <th className="px-3 py-2 text-start">{t('expiry.col_category')}</th>
-                <th className="px-3 py-2 text-start">{t('expiry.col_branch')}</th>
-                <th className="px-3 py-2 text-end">{t('expiry.col_stock')}</th>
-                <th className="px-3 py-2 text-start">{t('expiry.col_expiry')}</th>
-                <th className="px-3 py-2 text-end">{t('expiry.col_days_left')}</th>
-                <th className="px-3 py-2 text-end">{t('expiry.col_loss_value')}</th>
+                <SortTh k="barcode" sort={sort} onToggle={toggle} align="start">{t('expiry.col_barcode')}</SortTh>
+                <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('expiry.col_name')}</SortTh>
+                <SortTh k="category" sort={sort} onToggle={toggle} align="start">{t('expiry.col_category')}</SortTh>
+                <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('expiry.col_branch')}</SortTh>
+                <SortTh k="stock" sort={sort} onToggle={toggle} align="end">{t('expiry.col_stock')}</SortTh>
+                <SortTh k="expiry_date" sort={sort} onToggle={toggle} align="start">{t('expiry.col_expiry')}</SortTh>
+                <SortTh k="days_left" sort={sort} onToggle={toggle} align="end">{t('expiry.col_days_left')}</SortTh>
+                <SortTh k="loss_value" sort={sort} onToggle={toggle} align="end">{t('expiry.col_loss_value')}</SortTh>
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
               )}
-              {!loading && items.length === 0 && (
+              {!loading && sortedItems.length === 0 && (
                 <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('expiry.empty')}</td></tr>
               )}
-              {items.map((it) => (
+              {sortedItems.map((it) => (
                 <tr key={it.id} className={`border-t border-slate-100 ${rowColor(Number(it.days_left))}`}>
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
                   <td className="px-3 py-2 font-medium">{i18n.language === 'ar' ? it.name_ar : it.name_en}</td>
