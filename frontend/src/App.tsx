@@ -27,30 +27,19 @@ import UserCards from './pages/UserCards'
 import PlatformLogin from './pages/PlatformLogin'
 import Platform from './pages/Platform'
 import LockScreen from './components/LockScreen'
+import { canAccessFeature, getDefaultHomePath } from './lib/routeAccess'
 
 function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem('platform_token')
   return token ? <>{children}</> : <Navigate to="/platform/login" replace />
 }
 
-const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
-  { path: '/', feature: 'pos' },
-  { path: '/dashboard', feature: 'dashboard' },
-  { path: '/sales', feature: 'sales' },
-  { path: '/inventory', feature: 'inventory' },
-  { path: '/shifts', feature: 'shifts' },
-  { path: '/customers', feature: 'customers' },
-  { path: '/reports', feature: 'reports' },
-  { path: '/clock' },
-]
-
 function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature?: string }) {
   const { isAuthenticated, hasFeature, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/login" replace />
-  if (!user || user.role !== 'admin') return <Navigate to="/clock" replace />
-  if (feature && !hasFeature(feature)) {
-    const home = FEATURE_HOME_ORDER.find((r) => !r.feature || hasFeature(r.feature))
-    return <Navigate to={home ? home.path : '/clock'} replace />
+  if (!user) return <Navigate to="/login" replace />
+  if (feature && !canAccessFeature(user, feature, hasFeature)) {
+    return <Navigate to={getDefaultHomePath(user, hasFeature)} replace />
   }
   return <>{children}</>
 }

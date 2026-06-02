@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff, Loader2, Globe, Pill, Building2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
+import { getDefaultHomePath } from '../lib/routeAccess'
 import { authAPI } from '../lib/api'
 import i18n from '../lib/i18n'
 
@@ -28,7 +29,12 @@ export default function Login() {
       const { data } = await authAPI.login(slug, username, password)
       localStorage.setItem('pharma_tenant_slug', slug)
       login(data.token, data.user, data.tenant)
-      navigate('/')
+      const tenantHas = (key: string) => {
+        const feats = data.tenant?.features
+        if (!feats) return true
+        return feats.includes(key)
+      }
+      navigate(getDefaultHomePath(data.user, tenantHas), { replace: true })
     } catch (err: any) {
       setError(err?.response?.data?.detail || t('login.error'))
     } finally {
