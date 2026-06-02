@@ -69,6 +69,8 @@ export default function Shifts() {
   const [showOpen, setShowOpen] = useState(false)
   const [showClose, setShowClose] = useState(false)
   const [closePreview, setClosePreview] = useState<Breakdown | null>(null)
+  const [pendingDeliveries, setPendingDeliveries] = useState(0)
+  const [closeError, setCloseError] = useState<string | null>(null)
   const [openingCash, setOpeningCash] = useState('')
   const [countedCash, setCountedCash] = useState('')
   const [countedVisa, setCountedVisa] = useState('')
@@ -150,15 +152,23 @@ export default function Shifts() {
   const openCloseModal = async () => {
     if (!current) return
     setClosePreview(null)
+    setPendingDeliveries(0)
+    setCloseError(null)
     setShowClose(true)
     try {
       const r = await api.get(`/shifts/${current.id}/report`)
       setClosePreview(r.data.breakdown)
+      setPendingDeliveries(Number(r.data.pending_deliveries) || 0)
     } catch { /* preview is optional */ }
   }
 
   const closeShift = async () => {
     if (!current) return
+    if (pendingDeliveries > 0) {
+      setCloseError(t('shifts.close_blocked_pending') as string)
+      return
+    }
+    setCloseError(null)
     try {
       const r = await api.post(`/shifts/${current.id}/close`, {
         counted_cash: parseFloat(countedCash) || 0,
@@ -166,9 +176,13 @@ export default function Shifts() {
         notes: notes || null,
       })
       setShowClose(false); setCountedCash(''); setCountedVisa(''); setNotes(''); setClosePreview(null)
+      setPendingDeliveries(0); setCloseError(null)
       setReportShift({ shift: r.data, breakdown: r.data.breakdown, report_type: 'Z' })
       await load()
-    } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail
+      setCloseError(typeof detail === 'string' ? detail : 'Failed to close shift')
+    }
   }
 
   const viewReport = async (id: number) => {
@@ -311,37 +325,65 @@ export default function Shifts() {
 
         {/* Close shift modal */}
         {showClose && current && (
-          <Modal onClose={() => { setShowClose(false); setClosePreview(null) }} title={t('shifts.close_shift')}>
-            <div className="space-y-3">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-xs text-amber-800 flex gap-1.5">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                {t('shifts.close_warning')}
-              </div>
-              {closePreview && (
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs space-y-1">
-                  <div className="flex justify-between text-slate-600">
-                    <span>{t('shifts.expected_cash')}</span>
-                    <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.expected_cash)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>{t('shifts.expected_visa')}</span>
-                    <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.visa_sales)}</span>
-                  </div>
+          <Modal
+            onClose={() => { setShowClose(false); setClosePreview(null); setPendingDeliveries(0); setCloseError(null) }}
+            title={t('shifts.close_shift')}
+            headerExtra={(
+              <div className="space-y-3 mt-3">
+                <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-4 flex gap-3 shadow-sm">
+                  <AlertCircle size={24} className="shrink-0 text-amber-600" strokeWidth={2} />
+                  <p className="text-sm font-semibold text-amber-950 leading-snug">{t('shifts.close_warning')}</p>
                 </div>
-              )}
+                {pendingDeliveries > 0 && (
+                  <div className="rounded-xl border-2 border-red-400 bg-red-50 p-4 flex gap-3 shadow-sm">
+                    <AlertCircle size={24} className="shrink-0 text-red-600" strokeWidth={2} />
+                    <p className="text-sm font-semibold text-red-900 leading-snug">
+                      {t('shifts.pending_deliveries_warning', { count: pendingDeliveries })}
+                    </p>
+                  </div>
+                )}
+                {closeError && (
+                  <div className="rounded-xl border-2 border-red-400 bg-red-50 p-4 text-sm font-semibold text-red-900">
+                    {closeError}
+                  </div>
+                )}
+              </div>
+            )}
+            footer={(
+              <button
+                onClick={closeShift}
+                disabled={pendingDeliveries > 0}
+                className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-base"
+              >
+                {t('shifts.close_shift')}
+              </button>
+            )}
+          >
+            {closePreview && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm space-y-2 mb-4">
+                <div className="flex justify-between text-slate-600">
+                  <span>{t('shifts.expected_cash')}</span>
+                  <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.expected_cash)}</span>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>{t('shifts.expected_visa')}</span>
+                  <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.visa_sales)}</span>
+                </div>
+              </div>
+            )}
+            <div className="space-y-3">
               <div>
-                <label className="text-xs text-slate-600">{t('shifts.counted_cash')}</label>
+                <label className="text-xs font-medium text-slate-600">{t('shifts.counted_cash')}</label>
                 <input type="number" value={countedCash} onChange={(e) => setCountedCash(e.target.value)} className="input w-full" autoFocus />
               </div>
               <div>
-                <label className="text-xs text-slate-600">{t('shifts.counted_visa')}</label>
+                <label className="text-xs font-medium text-slate-600">{t('shifts.counted_visa')}</label>
                 <input type="number" value={countedVisa} onChange={(e) => setCountedVisa(e.target.value)} className="input w-full" placeholder="0.00" />
               </div>
               <div>
-                <label className="text-xs text-slate-600">{t('common.notes')}</label>
+                <label className="text-xs font-medium text-slate-600">{t('common.notes')}</label>
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full" rows={2} />
               </div>
-              <button onClick={closeShift} className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 rounded-lg">{t('shifts.close_shift')}</button>
             </div>
           </Modal>
         )}
@@ -426,15 +468,33 @@ function Line({ label, value, bold, negative, variance }: { label: string; value
   )
 }
 
-function Modal({ children, onClose, title, wide }: { children: React.ReactNode; onClose: () => void; title: string; wide?: boolean }) {
+function Modal({
+  children, onClose, title, wide, headerExtra, footer,
+}: {
+  children: React.ReactNode
+  onClose: () => void
+  title: string
+  wide?: boolean
+  headerExtra?: React.ReactNode
+  footer?: React.ReactNode
+}) {
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className={`bg-white rounded-2xl shadow-xl ${wide ? 'max-w-lg' : 'max-w-sm'} w-full p-5`}>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 no-print"><X size={20} /></button>
+    <div className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-[100] p-4 overflow-y-auto">
+      <div
+        className={`bg-white rounded-2xl shadow-2xl ${wide ? 'max-w-lg' : 'max-w-md'} w-full max-h-[min(92vh,calc(100dvh-2rem))] flex flex-col my-2 sm:my-4`}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 px-5 pt-5 pb-3 border-b border-slate-100">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-slate-800">{title}</h2>
+            <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 no-print p-1"><X size={20} /></button>
+          </div>
+          {headerExtra}
         </div>
-        {children}
+        <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4">{children}</div>
+        {footer ? (
+          <div className="shrink-0 px-5 pb-5 pt-2 border-t border-slate-100 bg-white rounded-b-2xl">{footer}</div>
+        ) : null}
       </div>
     </div>
   )

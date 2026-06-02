@@ -22,6 +22,21 @@ class CloseShiftIn(BaseModel):
     notes: Optional[str] = None
 
 
+def _count_pending_deliveries(cur, shift) -> int:
+    cur.execute("""
+        SELECT COUNT(*)::int AS cnt
+        FROM invoices
+        WHERE seller_id = %s AND branch_id = %s
+          AND status = 'completed'
+          AND (type = 'delivery'
+               OR (type = 'digital'
+                   AND NULLIF(TRIM(COALESCE(delivery_address, '')), '') IS NOT NULL))
+          AND COALESCE(delivery_status, 'pending') <> 'delivered'
+          AND created_at >= %s AND created_at <= now()
+    """, [shift['user_id'], shift['branch_id'], shift['opened_at']])
+    return int(cur.fetchone()['cnt'])
+
+
 def _compute_expected(cur, shift) -> dict:
     """Compute expected cash + payment breakdown for shift window."""
     cur.execute("""
@@ -148,18 +163,7 @@ def close_shift(
             raise HTTPException(400, "Shift already closed")
         if shift['user_id'] != current_user['user_id'] and current_user.get('role') != 'admin':
             raise HTTPException(403, "Cannot close another user's shift")
-        cur.execute("""
-            SELECT COUNT(*)::int AS cnt
-            FROM invoices
-            WHERE seller_id = %s AND branch_id = %s
-              AND status = 'completed'
-              AND (type = 'delivery'
-                   OR (type = 'digital'
-                       AND NULLIF(TRIM(COALESCE(delivery_address, '')), '') IS NOT NULL))
-              AND COALESCE(delivery_status, 'pending') <> 'delivered'
-              AND created_at >= %s AND created_at <= now()
-        """, [shift['user_id'], shift['branch_id'], shift['opened_at']])
-        pending_deliveries = cur.fetchone()['cnt']
+        pending_deliveries = _count_pending_deliveries(cur, shift)
         if pending_deliveries > 0:
             raise HTTPException(
                 400,
@@ -204,10 +208,12 @@ def shift_report(shift_id: int, current_user: dict = Depends(get_current_user)):
         if shift['user_id'] != current_user['user_id'] and current_user.get('role') != 'admin':
             raise HTTPException(403, "Forbidden")
         exp = _compute_expected(cur, shift)
+        pending_deliveries = _count_pending_deliveries(cur, shift)
         return {
             "report_type": "Z" if shift['status'] == 'closed' else "X",
             "shift": shift,
             "breakdown": exp,
+            "pending_deliveries": pending_deliveries,
         }
     finally:
         cur.close(); conn.close()
