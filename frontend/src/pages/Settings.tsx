@@ -319,13 +319,13 @@ function UserModal({ user, branches, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-        <div className="px-5 py-3 border-b flex items-center justify-between">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl max-h-[min(90vh,calc(100dvh-2rem))] flex flex-col my-auto">
+        <div className="px-5 py-3 border-b flex items-center justify-between shrink-0">
           <h3 className="font-semibold text-slate-800">{isEdit ? t('settings.edit_user') : t('settings.add_user')}</h3>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-3 overflow-y-auto flex-1 min-h-0 overscroll-contain">
           {!isEdit && (
             <Field label={t('settings.username')}>
               <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} className="input w-full" autoFocus />
@@ -473,7 +473,7 @@ function UserModal({ user, branches, onClose, onSaved }: {
           )}
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{error}</div>}
         </div>
-        <div className="px-5 py-3 border-t flex justify-end gap-2">
+        <div className="px-5 py-3 border-t flex justify-end gap-2 shrink-0">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
           <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
             {saving ? t('common.saving') : t('common.save')}
