@@ -38,6 +38,7 @@ export function canAccessHr(user: UserLike): boolean {
 export function hasHrTab(user: UserLike, tab: HrTab): boolean {
   if (!user) return false
   if (user.role === 'admin') return true
+  if (tab === 'employees') return false
   if (user.role === 'branch') return tab === 'attendance'
   const s = permSet(user)
   if (!s) return false

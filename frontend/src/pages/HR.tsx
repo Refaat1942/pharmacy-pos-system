@@ -52,6 +52,16 @@ export default function HR() {
     )
   }
 
+  if (allowedTabs.length === 0) {
+    return (
+      <Layout>
+        <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full">
+          <HrUnauthorized />
+        </div>
+      </Layout>
+    )
+  }
+
   return (
     <Layout>
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full space-y-5">
@@ -94,10 +104,11 @@ function EmployeesTab() {
   const [editing, setEditing] = useState<Partial<Employee> | null>(null)
 
   const load = async () => {
+    if (!manage) return
     const [e, b] = await Promise.all([api.get('/hr/employees'), api.get('/settings/branches').catch(() => ({ data: [] }))])
     setRows(e.data); setBranches(b.data)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (manage) load() }, [manage])
 
   const save = async () => {
     if (!editing?.name) return
@@ -137,23 +148,31 @@ function EmployeesTab() {
   }), [])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
+  if (!manage) {
+    return (
+      <div className="space-y-4">
+        <HrUnauthorized />
+        <div className="flex justify-center sm:justify-end">
+          <a href="/clock" target="_blank" rel="noopener" className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg text-sm">
+            <QrCode size={16} /> {t('hr.open_clock')}
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
-      {!manage && <HrUnauthorized />}
       <div className="flex justify-end gap-2 flex-wrap">
         <a href="/clock" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
           <QrCode size={14} /> {t('hr.open_clock')}
         </a>
-        {manage && (
-          <>
-            <a href="/hr/cards" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
-              <Printer size={14} /> {t('hr.print_cards')}
-            </a>
-            <button type="button" onClick={() => setEditing({ active: true, base_salary: 0 })} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
-              <UserPlus size={14} /> {t('hr.add_employee')}
-            </button>
-          </>
-        )}
+        <a href="/hr/cards" target="_blank" rel="noopener" className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm">
+          <Printer size={14} /> {t('hr.print_cards')}
+        </a>
+        <button type="button" onClick={() => setEditing({ active: true, base_salary: 0 })} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
+          <UserPlus size={14} /> {t('hr.add_employee')}
+        </button>
       </div>
       <TableFilter value={filter.query} onChange={filter.setQuery} placeholder={t('common.filter_placeholder') as string} className="max-w-xs" />
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
@@ -188,14 +207,8 @@ function EmployeesTab() {
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-center">
-                  {manage ? (
-                    <>
-                      <button onClick={() => setEditing(r)} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
-                      <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700 mx-1"><Trash2 size={14} /></button>
-                    </>
-                  ) : (
-                    <span className="text-[10px] text-slate-400">—</span>
-                  )}
+                  <button type="button" onClick={() => setEditing(r)} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
+                  <button type="button" onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700 mx-1"><Trash2 size={14} /></button>
                 </td>
               </tr>
             ))}

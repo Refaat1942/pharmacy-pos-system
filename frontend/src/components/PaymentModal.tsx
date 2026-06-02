@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2 } from 'lucide-react'
+import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2, AlertCircle } from 'lucide-react'
 import { salesAPI, employeesAPI } from '../lib/api'
 import type { CartItem, Employee, Customer, SaleResponse } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -104,6 +104,22 @@ export default function PaymentModal({
     return true
   }
 
+  const topAlert = useMemo(() => {
+    if (error) return error
+    if (!selectedSeller) return t('payment.seller_required') as string
+    if (requiresCustomerInfo && !hasCustomerInfo) return t('payment.customer_required_over_100') as string
+    if (needsDelivery) {
+      if (!deliveryPersonId) return t('payment.delivery_person_required') as string
+      if (!hasCustomerForShipment) return t('payment.delivery_customer_required') as string
+      if (!deliveryAddress.trim()) return t('payment.delivery_address_required') as string
+    }
+    return null
+  }, [
+    error, selectedSeller, requiresCustomerInfo, hasCustomerInfo, needsDelivery,
+    deliveryPersonId, hasCustomerForShipment, deliveryAddress, paymentMethod,
+    cashAmount, effectiveTotal, cashPart, cardPart, hybridDiff, t,
+  ])
+
   const handleSubmit = async () => {
     if (!selectedSeller) {
       setError(t('payment.seller_required') as string)
@@ -197,20 +213,31 @@ export default function PaymentModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start sm:items-center justify-center p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[min(92vh,calc(100dvh-2rem))] my-2 sm:my-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900">{t('payment.title')}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-all"
-          >
-            <X size={20} />
-          </button>
+        <div className="shrink-0 border-b border-gray-100">
+          <div className="flex items-center justify-between px-6 py-4">
+            <h2 className="text-lg font-bold text-gray-900">{t('payment.title')}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-all"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          {topAlert && (
+            <div className="px-6 pb-4">
+              <div className="rounded-xl border-2 border-red-400 bg-red-50 p-4 flex gap-3 shadow-sm" role="alert">
+                <AlertCircle size={22} className="shrink-0 text-red-600" strokeWidth={2} />
+                <p className="text-sm font-semibold text-red-900 leading-snug">{topAlert}</p>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden min-h-0">
           {/* ── Left: payment form ── */}
           <div className="flex-1 p-6 overflow-y-auto space-y-5">
             {/* Salesperson confirmation */}
@@ -555,11 +582,6 @@ export default function PaymentModal({
               </div>
             )}
 
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm p-3 rounded-xl">
-                {error}
-              </div>
-            )}
           </div>
 
           {/* ── Right: order summary ── */}
@@ -610,7 +632,7 @@ export default function PaymentModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
+        <div className="shrink-0 px-6 py-4 border-t border-gray-100 flex gap-3 justify-end bg-white">
           <button
             onClick={onClose}
             className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"

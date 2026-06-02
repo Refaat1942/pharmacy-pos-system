@@ -63,6 +63,8 @@ def _user_permissions(user) -> set:
 def _has_hr_tab(user, tab: str) -> bool:
     if user.get("role") == "admin":
         return True
+    if tab == "employees":
+        return False
     if user.get("role") == "branch":
         return tab == "attendance"
     perms = _user_permissions(user)
@@ -132,7 +134,7 @@ class EmployeeIn(BaseModel):
 
 @router.get("/employees")
 def list_employees(active_only: bool = False, current_user=Depends(get_current_user)):
-    _require_hr_tab(current_user, "employees")
+    _require_manage_employees(current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
