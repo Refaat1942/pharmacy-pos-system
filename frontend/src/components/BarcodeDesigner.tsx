@@ -3,12 +3,15 @@ import { useTranslation } from 'react-i18next'
 import { X, RefreshCw, Printer, Download, Check } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
+import { appendLabelMeta, formatExpiryForLabel } from '../lib/barcodeLabel'
 
 type CodeType = 'CODE128' | 'EAN13' | 'EAN8' | 'CODE39' | 'UPC' | 'ITF14' | 'QR'
 
 interface Props {
   initialValue?: string
   productName?: string
+  /** Expiry date (YYYY-MM-DD) printed on the label below the barcode */
+  expiryDate?: string | null
   onClose: () => void
   onUse?: (value: string) => void
 }
@@ -48,11 +51,12 @@ function validForType(value: string, type: CodeType): boolean {
   }
 }
 
-export default function BarcodeDesigner({ initialValue, productName, onClose, onUse }: Props) {
+export default function BarcodeDesigner({ initialValue, productName, expiryDate, onClose, onUse }: Props) {
   const { t } = useTranslation()
   const [type, setType] = useState<CodeType>('CODE128')
   const [value, setValue] = useState(initialValue || '')
   const [showText, setShowText] = useState(true)
+  const [showExpiry, setShowExpiry] = useState(true)
   const [scale, setScale] = useState(2)
   const [height, setHeight] = useState(70)
   const [margin, setMargin] = useState(10)
@@ -64,6 +68,10 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const valid = useMemo(() => validForType(value, type), [value, type])
+  const expiryLabel = useMemo(
+    () => (showExpiry ? formatExpiryForLabel(expiryDate) : null),
+    [expiryDate, showExpiry],
+  )
 
   useEffect(() => {
     if (type === 'QR') {
@@ -165,19 +173,19 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
     openPrintWindow(`Barcode ${value}`, (doc) => {
       const wrap = doc.createElement('div')
       wrap.className = 'label'
-      if (productName) {
-        const n = doc.createElement('div')
-        n.className = 'name'
-        n.textContent = productName
-        wrap.appendChild(n)
-      }
+      appendLabelMeta(wrap, doc, {
+        productName,
+        expiryDate: showExpiry ? expiryDate : null,
+        expiryPrefix: t('barcode_studio.exp_label'),
+      })
       const img = doc.createElement('img')
       img.src = url
       wrap.appendChild(img)
       doc.body.appendChild(wrap)
     }, `body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#fff}
       .label{text-align:center;font-family:Inter,sans-serif}
-      .name{font-size:12px;margin-bottom:6px;color:#0f172a}
+      .name{font-size:12px;margin-bottom:4px;color:#0f172a;font-weight:600}
+      .expiry{font-size:11px;margin-bottom:6px;color:#b45309;font-weight:600}
       img{max-width:80mm}
       @media print { @page { margin: 4mm } }`)
   }
@@ -193,12 +201,11 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
       for (let i = 0; i < n; i++) {
         const cell = doc.createElement('div')
         cell.className = 'cell'
-        if (productName) {
-          const nm = doc.createElement('div')
-          nm.className = 'name'
-          nm.textContent = productName
-          cell.appendChild(nm)
-        }
+        appendLabelMeta(cell, doc, {
+          productName,
+          expiryDate: showExpiry ? expiryDate : null,
+          expiryPrefix: t('barcode_studio.exp_label'),
+        })
         const img = doc.createElement('img')
         img.src = url
         cell.appendChild(img)
@@ -208,7 +215,8 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
     }, `body{margin:8mm;font-family:Inter,sans-serif;background:#fff;color:#0f172a}
       .grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:6mm}
       .cell{border:1px dashed #cbd5e1;border-radius:4px;padding:4mm;text-align:center;page-break-inside:avoid}
-      .name{font-size:10px;margin-bottom:4px}
+      .name{font-size:10px;margin-bottom:2px;font-weight:600}
+      .expiry{font-size:9px;margin-bottom:4px;color:#b45309;font-weight:600}
       img{max-width:100%;height:auto}
       @media print { .cell{border-color:transparent} @page { margin: 6mm } }`)
   }
@@ -265,6 +273,18 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
                     {t('barcode_studio.show_text')}
                   </label>
                 )}
+                <label className="flex items-center gap-2 col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={showExpiry}
+                    onChange={(e) => setShowExpiry(e.target.checked)}
+                    disabled={!formatExpiryForLabel(expiryDate)}
+                  />
+                  {t('barcode_studio.show_expiry')}
+                  {formatExpiryForLabel(expiryDate) && (
+                    <span className="text-slate-400 font-mono">({formatExpiryForLabel(expiryDate)})</span>
+                  )}
+                </label>
                 <div>
                   <label className="text-slate-600">{t('barcode_studio.scale')}</label>
                   <input type="range" min={1} max={6} value={scale} onChange={(e) => setScale(Number(e.target.value))} className="w-full" />
@@ -302,7 +322,15 @@ export default function BarcodeDesigner({ initialValue, productName, onClose, on
 
           <div>
             <p className="text-xs font-semibold text-slate-700 mb-2">{t('barcode_studio.preview')}</p>
-            <div className="border border-slate-200 rounded-lg p-4 flex items-center justify-center min-h-[200px]" style={{ background: bg }}>
+            <div className="border border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center min-h-[200px]" style={{ background: bg }}>
+              {productName && (
+                <div className="text-xs font-semibold text-slate-800 mb-1 text-center px-2">{productName}</div>
+              )}
+              {showExpiry && expiryLabel && (
+                <div className="text-[11px] font-semibold text-amber-800 mb-2">
+                  {t('barcode_studio.exp_label')} {expiryLabel}
+                </div>
+              )}
               {!valid ? (
                 <span className="text-xs text-slate-400">—</span>
               ) : type === 'QR' ? (

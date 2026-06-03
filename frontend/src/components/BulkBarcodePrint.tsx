@@ -3,20 +3,24 @@ import { useTranslation } from 'react-i18next'
 import { X, Printer, Minus, Plus } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
+import { formatExpiryForLabel } from '../lib/barcodeLabel'
 
 export interface BulkItem {
   id: number
   barcode: string | null
   name: string
   price?: number | null
+  expiryDate?: string | null
+  /** Default label count (e.g. batch quantity) */
+  defaultQty?: number
 }
 
 type LabelSize = 'sm' | 'md' | 'lg'
 
-const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; nameFs: string; priceFs: string; imgMaxW: string }> = {
-  sm: { cols: 5, cellPad: '2mm', nameFs: '8px', priceFs: '8px', imgMaxW: '36mm' },
-  md: { cols: 3, cellPad: '4mm', nameFs: '10px', priceFs: '10px', imgMaxW: '58mm' },
-  lg: { cols: 2, cellPad: '5mm', nameFs: '12px', priceFs: '13px', imgMaxW: '90mm' },
+const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string }> = {
+  sm: { cols: 5, cellPad: '2mm', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm' },
+  md: { cols: 3, cellPad: '4mm', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm' },
+  lg: { cols: 2, cellPad: '5mm', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm' },
 }
 
 function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
@@ -58,11 +62,14 @@ interface Props {
 export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
   const { t } = useTranslation()
   const printable = items.filter(i => i.barcode && i.barcode.trim().length > 0)
-  const [qty, setQty] = useState<Record<number, number>>(() => Object.fromEntries(printable.map(i => [i.id, 1])))
+  const [qty, setQty] = useState<Record<number, number>>(() =>
+    Object.fromEntries(printable.map((i) => [i.id, i.defaultQty ?? 1])),
+  )
   const [size, setSize] = useState<LabelSize>('md')
   const [useQR, setUseQR] = useState(false)
   const [showName, setShowName] = useState(true)
   const [showPrice, setShowPrice] = useState(true)
+  const [showExpiry, setShowExpiry] = useState(true)
   const [busy, setBusy] = useState(false)
 
   const totalLabels = useMemo(() => printable.reduce((s, i) => s + (qty[i.id] || 0), 0), [qty, printable])
@@ -92,6 +99,7 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
         .cell{border:1px dashed #cbd5e1;border-radius:3px;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
         .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:600;line-height:1.15;max-height:2.5em;overflow:hidden}
         .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700}
+        .expiry{font-size:${cfg.expiryFs};margin-bottom:2px;font-weight:600;color:#b45309}
         img{max-width:${cfg.imgMaxW};height:auto}
         @media print{ .cell{border-color:transparent} @page{margin:5mm} }
       `
@@ -114,6 +122,13 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
             nm.className = 'name'
             nm.textContent = it.name
             cell.appendChild(nm)
+          }
+          const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
+          if (exp) {
+            const ex = w.document.createElement('div')
+            ex.className = 'expiry'
+            ex.textContent = `${t('barcode_studio.exp_label')} ${exp}`
+            cell.appendChild(ex)
           }
           const img = w.document.createElement('img')
           img.src = url
@@ -173,6 +188,10 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
             <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
             <span>{t('bulk_barcode.show_price')}</span>
           </label>
+          <label className="flex items-end gap-2 pb-1">
+            <input type="checkbox" checked={showExpiry} onChange={e => setShowExpiry(e.target.checked)} />
+            <span>{t('bulk_barcode.show_expiry')}</span>
+          </label>
         </div>
 
         <div className="flex-1 overflow-auto">
@@ -181,6 +200,7 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
               <tr>
                 <th className="px-3 py-2 text-start">{t('bulk_barcode.item')}</th>
                 <th className="px-3 py-2 text-start font-mono">{t('bulk_barcode.barcode')}</th>
+                <th className="px-3 py-2 text-start">{t('bulk_barcode.expiry')}</th>
                 <th className="px-3 py-2 text-center">{t('bulk_barcode.qty')}</th>
               </tr>
             </thead>
@@ -189,6 +209,9 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{it.name}</td>
                   <td className="px-3 py-2 font-mono text-xs text-slate-600" dir="ltr">{it.barcode}</td>
+                  <td className="px-3 py-2 text-xs text-slate-600 font-mono">
+                    {formatExpiryForLabel(it.expiryDate) || '—'}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => bump(it.id, -1)} className="p-1 rounded border border-slate-200 hover:bg-slate-100"><Minus size={12} /></button>
@@ -201,7 +224,7 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
                 </tr>
               ))}
               {printable.length === 0 && (
-                <tr><td colSpan={3} className="text-center py-8 text-slate-400">{t('bulk_barcode.none')}</td></tr>
+                <tr><td colSpan={4} className="text-center py-8 text-slate-400">{t('bulk_barcode.none')}</td></tr>
               )}
             </tbody>
           </table>
