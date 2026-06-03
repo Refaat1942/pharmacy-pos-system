@@ -7,8 +7,45 @@ import { LoadingSpinner } from '../components/LoadingSpinner'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { formatMoney, formatInt, formatNumber } from '../lib/formatNumber'
 
 type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
+
+type POExpiryLot = { expiry_date: string; quantity: number }
+
+type POItemDraft = POItem & { expiry_lots: POExpiryLot[] }
+
+function defaultExpiryLots(qty = 1): POExpiryLot[] {
+  return [{ expiry_date: '', quantity: qty }]
+}
+
+function lotsTotal(lots: POExpiryLot[]): number {
+  return lots.reduce((s, l) => s + (Number(l.quantity) || 0), 0)
+}
+
+function flattenPOItemsForApi(items: POItemDraft[]): POItem[] {
+  return items.flatMap((it) => {
+    const lots = (it.expiry_lots || []).filter((l) => (Number(l.quantity) || 0) > 0)
+    if (lots.length === 0) {
+      return [{
+        ...it,
+        expiry_date: it.expiry_date || undefined,
+      }]
+    }
+    if (lots.length === 1 && !lots[0].expiry_date?.trim()) {
+      return [{
+        ...it,
+        quantity: lots[0].quantity || it.quantity,
+        expiry_date: undefined,
+      }]
+    }
+    return lots.map((l) => ({
+      ...it,
+      quantity: Number(l.quantity) || 1,
+      expiry_date: l.expiry_date?.trim() || undefined,
+    }))
+  })
+}
 
 function initialPOBranchId(userBranchId?: number | null): number | '' {
   if (userBranchId) return userBranchId
@@ -141,7 +178,7 @@ export default function Purchases() {
                   <td className="px-3 py-2 font-medium">{po.supplier_name}</td>
                   <td className="px-3 py-2 text-slate-600">{i18n.language === 'ar' ? po.branch_name_ar : po.branch_name_en}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{po.supplier_invoice_number || '—'}</td>
-                  <td className="px-3 py-2 text-end font-semibold">{Number(po.total).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-end font-semibold">{formatMoney(po.total)}</td>
                   <td className="px-3 py-2">{statusBadge(po.status)}</td>
                   <td className="px-3 py-2 text-xs text-slate-500">{new Date(po.created_at).toLocaleString()}</td>
                   <td className="px-3 py-2 text-end">
@@ -215,7 +252,7 @@ function CreatePOModal({
   const [results, setResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [items, setItems] = useState<POItem[]>([])
+  const [items, setItems] = useState<POItemDraft[]>([])
   const [saving, setSaving] = useState(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -240,7 +277,18 @@ function CreatePOModal({
       setItems((prev) => {
         const existing = prev.find((i) => i.product_id === p.id)
         if (existing) {
-          return prev.map((i) => i.product_id === p.id ? { ...i, quantity: i.quantity + 1 } : i)
+          return prev.map((i) => {
+            if (i.product_id !== p.id) return i
+            const lots = i.expiry_lots?.length
+              ? i.expiry_lots.map((l, li, arr) =>
+                  li === arr.length - 1
+                    ? { ...l, quantity: (Number(l.quantity) || 0) + 1 }
+                    : l,
+                )
+              : defaultExpiryLots(i.quantity + 1)
+            const quantity = lotsTotal(lots)
+            return { ...i, quantity, expiry_lots: lots }
+          })
         }
         return [...prev, {
           product_id: p.id,
@@ -253,6 +301,7 @@ function CreatePOModal({
           vat_pct: 0,
           public_price: p.price ?? null,
           expiry_date: null,
+          expiry_lots: defaultExpiryLots(1),
         }]
       })
       setSearch('')
@@ -270,11 +319,42 @@ function CreatePOModal({
         vat_pct: 0,
         public_price: null,
         expiry_date: null,
+        expiry_lots: defaultExpiryLots(1),
       }])
     }
   }
-  const update = (i: number, patch: Partial<POItem>) =>
-    setItems((prev) => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it))
+  const update = (i: number, patch: Partial<POItemDraft>) =>
+    setItems((prev) => prev.map((it, idx) => {
+      if (idx !== i) return it
+      const next = { ...it, ...patch }
+      if (patch.quantity != null && next.expiry_lots?.length === 1) {
+        next.expiry_lots = [{ ...next.expiry_lots[0], quantity: patch.quantity }]
+      }
+      return next
+    }))
+  const updateLot = (itemIdx: number, lotIdx: number, patch: Partial<POExpiryLot>) => {
+    setItems((prev) => prev.map((it, idx) => {
+      if (idx !== itemIdx) return it
+      const lots = it.expiry_lots.map((l, li) => (li === lotIdx ? { ...l, ...patch } : l))
+      const qty = lotsTotal(lots)
+      return { ...it, expiry_lots: lots, quantity: qty > 0 ? qty : it.quantity }
+    }))
+  }
+  const addLot = (itemIdx: number) => {
+    setItems((prev) => prev.map((it, idx) => {
+      if (idx !== itemIdx) return it
+      return { ...it, expiry_lots: [...it.expiry_lots, { expiry_date: '', quantity: 1 }] }
+    }))
+  }
+  const removeLot = (itemIdx: number, lotIdx: number) => {
+    setItems((prev) => prev.map((it, idx) => {
+      if (idx !== itemIdx) return it
+      const lots = it.expiry_lots.filter((_, li) => li !== lotIdx)
+      const nextLots = lots.length > 0 ? lots : defaultExpiryLots(1)
+      const qty = lotsTotal(nextLots)
+      return { ...it, expiry_lots: nextLots, quantity: qty > 0 ? qty : 1 }
+    }))
+  }
   const remove = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i))
 
   const lineNet = (i: POItem) => i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100) * (1 + (i.vat_pct || 0) / 100)
@@ -283,15 +363,23 @@ function CreatePOModal({
 
   const submit = async () => {
     if (!supplierId || !branchId || items.length === 0) { alert(t('purchases.fill_required')); return }
+    for (const it of items) {
+      const lt = lotsTotal(it.expiry_lots)
+      if (lt > 0 && lt !== it.quantity) {
+        alert(t('purchases.expiry_lots_qty_mismatch', { name: it.product_name_en || it.barcode || '#' }) as string)
+        return
+      }
+    }
     setSaving(true)
     try {
+      const flat = flattenPOItemsForApi(items)
       await purchasesAPI.create({
         supplier_id: Number(supplierId),
         branch_id: Number(branchId),
         supplier_invoice_number: invNum || undefined,
         supplier_invoice_date: invDate || undefined,
         discount, tax, notes: notes || undefined,
-        items: items.map((i) => ({
+        items: flat.map((i) => ({
           product_id: i.product_id ?? undefined,
           barcode: i.barcode || undefined,
           product_name_ar: i.product_name_ar || undefined,
@@ -409,39 +497,78 @@ function CreatePOModal({
                   <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
                   <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
                   <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
-                  <div className="col-span-2">{t('purchases.col_expiry')}</div>
+                  <div className="col-span-3">{t('purchases.col_expiry')}</div>
                   <div className="col-span-1" />
                 </div>
               )}
-              {items.map((it, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg">
-                  <input className="input col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
-                         value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
-                  <input className="input col-span-2 text-xs" placeholder={t('purchases.col_barcode') as string}
-                         value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
-                  <input type="number" min={1} className="input col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
-                         value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
-                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.cost') as string}
-                         value={it.unit_cost} onChange={(e) => update(i, { unit_cost: Math.max(0, Number(e.target.value)) })} />
-                  <input type="number" min={0} max={100} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
-                         value={it.discount_pct ?? 0} onChange={(e) => update(i, { discount_pct: Math.min(100, Math.max(0, Number(e.target.value))) })} />
-                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
-                         value={it.vat_pct ?? 0} onChange={(e) => update(i, { vat_pct: Math.max(0, Number(e.target.value)) })} />
-                  <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
-                         value={it.public_price ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
-                  <input type="date" className="input col-span-2 text-xs" value={it.expiry_date || ''} onChange={(e) => update(i, { expiry_date: e.target.value })} />
-                  <button onClick={() => remove(i)} className="p-1 hover:bg-red-100 rounded text-red-600 col-span-1 justify-self-end">
-                    <Trash2 size={14} />
-                  </button>
+              {items.map((it, i) => {
+                const lotSum = lotsTotal(it.expiry_lots)
+                const qtyMismatch = lotSum > 0 && lotSum !== it.quantity
+                return (
+                <div key={i} className="bg-slate-50 p-2 rounded-lg space-y-2 border border-slate-100">
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    <input className="input col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
+                           value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
+                    <input className="input col-span-2 text-xs" placeholder={t('purchases.col_barcode') as string}
+                           value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
+                    <input type="number" min={1} className="input col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
+                           value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
+                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.cost') as string}
+                           value={it.unit_cost} onChange={(e) => update(i, { unit_cost: Math.max(0, Number(e.target.value)) })} />
+                    <input type="number" min={0} max={100} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
+                           value={it.discount_pct ?? 0} onChange={(e) => update(i, { discount_pct: Math.min(100, Math.max(0, Number(e.target.value))) })} />
+                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
+                           value={it.vat_pct ?? 0} onChange={(e) => update(i, { vat_pct: Math.max(0, Number(e.target.value)) })} />
+                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
+                           value={it.public_price ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
+                    <div className="col-span-2 text-[10px] text-slate-500 text-end">
+                      {t('purchases.expiry_lots_sum')}: <b className={qtyMismatch ? 'text-red-600' : 'text-slate-800'}>{formatInt(lotSum)}</b>
+                    </div>
+                    <button onClick={() => remove(i)} className="p-1 hover:bg-red-100 rounded text-red-600 col-span-1 justify-self-end">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                        {t('purchases.expiry_lots_title')}
+                      </span>
+                      <button type="button" onClick={() => addLot(i)}
+                        className="text-[10px] font-medium text-pharma-700 hover:underline inline-flex items-center gap-0.5">
+                        <Plus size={12} /> {t('purchases.expiry_lot_add')}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-amber-800/90">{t('purchases.expiry_lots_hint')}</p>
+                    {it.expiry_lots.map((lot, li) => (
+                      <div key={li} className="flex flex-wrap items-center gap-2">
+                        <input type="date" className="input text-xs flex-1 min-w-[8rem]"
+                          value={lot.expiry_date || ''}
+                          onChange={(e) => updateLot(i, li, { expiry_date: e.target.value })} />
+                        <input type="number" min={1} className="input text-xs w-20 text-end"
+                          value={lot.quantity}
+                          onChange={(e) => updateLot(i, li, { quantity: Math.max(1, Number(e.target.value)) })} />
+                        <span className="text-[10px] text-slate-500">{t('purchases.qty')}</span>
+                        {it.expiry_lots.length > 1 && (
+                          <button type="button" onClick={() => removeLot(i, li)}
+                            className="text-[10px] text-red-600 hover:underline">
+                            {t('common.remove')}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {qtyMismatch && (
+                      <p className="text-[10px] text-red-700 font-medium">{t('purchases.expiry_lots_qty_mismatch_short')}</p>
+                    )}
+                  </div>
                 </div>
-              ))}
+              )})}
               {items.length === 0 && <div className="text-sm text-slate-400 py-4 text-center">{t('purchases.no_items')}</div>}
             </div>
           </div>
 
           <div className="mt-4 border-t pt-3 text-sm space-y-1 text-end">
-            <div>{t('purchases.subtotal')}: <b>{subtotal.toFixed(2)}</b></div>
-            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{total.toFixed(2)}</b></div>
+            <div>{t('purchases.subtotal')}: <b>{formatMoney(subtotal)}</b></div>
+            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(total)}</b></div>
           </div>
         </div>
         <div className="px-5 py-3 border-t flex justify-end gap-2">
@@ -507,22 +634,22 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
-                  <td className="px-3 py-2 text-end">{it.quantity}</td>
-                  <td className="px-3 py-2 text-end">{Number(it.unit_cost).toFixed(2)}</td>
-                  <td className="px-3 py-2 text-end">{Number(it.discount_pct || 0).toFixed(2)}%</td>
-                  <td className="px-3 py-2 text-end">{Number(it.vat_pct || 0).toFixed(2)}%</td>
-                  <td className="px-3 py-2 text-end">{it.public_price != null ? Number(it.public_price).toFixed(2) : '—'}</td>
+                  <td className="px-3 py-2 text-end">{formatInt(it.quantity)}</td>
+                  <td className="px-3 py-2 text-end">{formatMoney(it.unit_cost)}</td>
+                  <td className="px-3 py-2 text-end">{formatNumber(it.discount_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
+                  <td className="px-3 py-2 text-end">{formatNumber(it.vat_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
+                  <td className="px-3 py-2 text-end">{it.public_price != null ? formatMoney(it.public_price) : '—'}</td>
                   <td className="px-3 py-2 text-xs">{it.expiry_date || '—'}</td>
-                  <td className="px-3 py-2 text-end font-semibold">{Number(it.total).toFixed(2)}</td>
+                  <td className="px-3 py-2 text-end font-semibold">{formatMoney(it.total)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <div className="mt-4 text-sm text-end space-y-1">
-            <div>{t('purchases.subtotal')}: <b>{Number(po.subtotal).toFixed(2)}</b></div>
-            <div>{t('purchases.discount')}: <b>{Number(po.discount).toFixed(2)}</b></div>
-            <div>{t('purchases.tax')}: <b>{Number(po.tax).toFixed(2)}</b></div>
-            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{Number(po.total).toFixed(2)}</b></div>
+            <div>{t('purchases.subtotal')}: <b>{formatMoney(po.subtotal)}</b></div>
+            <div>{t('purchases.discount')}: <b>{formatMoney(po.discount)}</b></div>
+            <div>{t('purchases.tax')}: <b>{formatMoney(po.tax)}</b></div>
+            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b></div>
           </div>
         </div>
         {po.status === 'draft' && (canReceive || canCancel) && (
@@ -820,7 +947,7 @@ function ReplenishmentModal({
                         className="input w-24 text-end"
                       />
                     </td>
-                    <td className="px-3 py-2 text-end font-semibold">{(l.qty * l.cost).toFixed(2)}</td>
+                    <td className="px-3 py-2 text-end font-semibold">{formatMoney(l.qty * l.cost)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -847,7 +974,7 @@ function ReplenishmentModal({
           </div>
           <div className="text-end">
             <div className="text-xs text-slate-500">{t('purchases.selected_total')}</div>
-            <div className="text-lg font-bold text-pharma-700">{totalCost.toFixed(2)}</div>
+            <div className="text-lg font-bold text-pharma-700">{formatMoney(totalCost)}</div>
           </div>
         </div>
 

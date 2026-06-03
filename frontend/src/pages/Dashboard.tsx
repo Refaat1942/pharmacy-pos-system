@@ -14,6 +14,7 @@ import type {
 } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import type { Branch } from '../lib/api'
+import { formatMoney, formatNumber } from '../lib/formatNumber'
 
 type Period = 'today' | 'month' | 'year'
 const todayStr = () => new Date().toISOString().slice(0, 10)
@@ -202,25 +203,25 @@ export default function Dashboard() {
                 <KpiCard
                   icon={<TrendingUp size={18} />}
                   label={t('dashboard.today_sales')}
-                  value={`${egp} ${(summary?.today_sales ?? 0).toFixed(2)}`}
+                  value={`${egp} ${formatMoney(summary?.today_sales ?? 0)}`}
                   tone="pharma"
                 />
                 <KpiCard
                   icon={<ShoppingCart size={18} />}
                   label={t('dashboard.invoice_count')}
-                  value={String(summary?.invoice_count ?? 0)}
+                  value={formatNumber(summary?.invoice_count ?? 0, { maxDecimals: 0 })}
                   tone="blue"
                 />
                 <KpiCard
                   icon={<RotateCcw size={18} />}
                   label={t('dashboard.returns_total')}
-                  value={`${egp} ${(summary?.returns_total ?? 0).toFixed(2)}`}
+                  value={`${egp} ${formatMoney(summary?.returns_total ?? 0)}`}
                   tone="amber"
                 />
                 <KpiCard
                   icon={<BarChart3 size={18} />}
                   label={t('dashboard.net_sales')}
-                  value={`${egp} ${(summary?.net_sales ?? 0).toFixed(2)}`}
+                  value={`${egp} ${formatMoney(summary?.net_sales ?? 0)}`}
                   tone="green"
                 />
               </div>
@@ -257,25 +258,25 @@ export default function Dashboard() {
                     <KpiCard
                       icon={<DollarSign size={18} />}
                       label={t('dashboard.net_revenue')}
-                      value={`${egp} ${pnl.net_revenue.toFixed(2)}`}
+                      value={`${egp} ${formatMoney(pnl.net_revenue)}`}
                       tone="blue"
                     />
                     <KpiCard
                       icon={<Package size={18} />}
                       label={t('dashboard.cogs')}
-                      value={`${egp} ${pnl.cogs.toFixed(2)}`}
+                      value={`${egp} ${formatMoney(pnl.cogs)}`}
                       tone="amber"
                     />
                     <KpiCard
                       icon={<TrendingUp size={18} />}
                       label={t('dashboard.gross_profit')}
-                      value={`${egp} ${pnl.gross_profit.toFixed(2)}`}
+                      value={`${egp} ${formatMoney(pnl.gross_profit)}`}
                       tone="green"
                     />
                     <KpiCard
                       icon={<Percent size={18} />}
                       label={t('dashboard.margin_pct')}
-                      value={`${pnl.margin_pct.toFixed(2)}%`}
+                      value={`${formatNumber(pnl.margin_pct, { minDecimals: 2, maxDecimals: 2 })}%`}
                       tone="pharma"
                     />
                   </div>
@@ -304,7 +305,7 @@ export default function Dashboard() {
                     )}
                     {alerts.returns_high && (
                       <AlertRow tone="red" icon={<RotateCcw size={14} />}
-                        text={`${t('dashboard.alert_high_returns')} (${(alerts.returns_ratio * 100).toFixed(1)}%)`} />
+                        text={`${t('dashboard.alert_high_returns')} (${formatNumber(alerts.returns_ratio * 100, { minDecimals: 1, maxDecimals: 1 })}%)`} />
                     )}
                   </div>
                 </div>
@@ -318,7 +319,7 @@ export default function Dashboard() {
                     return (
                       <div key={p.date} className="flex-1 flex flex-col items-center gap-1">
                         <div className="text-[10px] font-semibold text-gray-500 tabular-nums">
-                          {p.sales > 0 ? p.sales.toFixed(0) : ''}
+                          {p.sales > 0 ? formatNumber(p.sales, { maxDecimals: 0 }) : ''}
                         </div>
                         <div className="w-full bg-gray-100 rounded-t-md flex-1 flex flex-col justify-end">
                           <div
@@ -361,9 +362,9 @@ export default function Dashboard() {
                             <td className="py-2 text-gray-800 font-medium">
                               {lang === 'ar' ? p.name_ar : p.name_en}
                             </td>
-                            <td className="py-2 text-end font-bold tabular-nums">{p.qty}</td>
+                            <td className="py-2 text-end font-bold tabular-nums">{formatNumber(p.qty, { maxDecimals: 0 })}</td>
                             <td className="py-2 text-end text-pharma-700 tabular-nums">
-                              {egp} {p.revenue.toFixed(2)}
+                              {egp} {formatMoney(p.revenue)}
                             </td>
                           </tr>
                         ))}
@@ -396,9 +397,9 @@ export default function Dashboard() {
                             <td className="py-2 text-gray-800 font-medium">
                               {lang === 'ar' ? s.name_ar : s.name_en}
                             </td>
-                            <td className="py-2 text-end tabular-nums">{s.invoices}</td>
+                            <td className="py-2 text-end tabular-nums">{formatNumber(s.invoices, { maxDecimals: 0 })}</td>
                             <td className="py-2 text-end text-pharma-700 font-bold tabular-nums">
-                              {egp} {s.sales.toFixed(2)}
+                              {egp} {formatMoney(s.sales)}
                             </td>
                           </tr>
                         ))}

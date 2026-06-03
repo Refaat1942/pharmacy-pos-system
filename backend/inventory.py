@@ -349,34 +349,35 @@ def inventory_summary(
         if branch_id != current_user.get("branch_id"):
             raise HTTPException(status_code=403, detail="Cross-branch access denied")
     effective_branch = branch_id if branch_id is not None else active_branch
-    where = ["active = true"]
+    where = ["p.active = true"]
     params: list = []
     if q:
         where.append(
-            "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode ILIKE %s OR international_barcode ILIKE %s)"
+            "(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s OR p.international_barcode ILIKE %s)"
         )
         s = f"%{q}%"
         params += [s, s, s, s]
     if effective_branch is not None:
-        where.append("branch_id = %s")
+        where.append("p.branch_id = %s")
         params.append(effective_branch)
     if category:
-        where.append("category = %s")
+        where.append("p.category = %s")
         params.append(category)
     if stock_filter == "low":
-        where.append("stock > 0 AND stock <= min_stock")
+        where.append("p.stock > 0 AND p.stock <= p.min_stock")
     elif stock_filter == "zero":
-        where.append("stock <= 0")
+        where.append("p.stock <= 0")
     elif stock_filter == "ok":
-        where.append("stock > min_stock")
+        where.append("p.stock > p.min_stock")
     w = " AND ".join(where)
+    # Stock value uses products.stock (kept in sync with batch totals) × cost, else selling price.
     cur.execute(
         f"""SELECT
               COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE stock <= 0)::int AS zero_stock,
-              COUNT(*) FILTER (WHERE stock > 0 AND stock <= min_stock)::int AS low_stock,
-              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}), 0)::float AS stock_value
-            FROM products WHERE {w}""",
+              COUNT(*) FILTER (WHERE p.stock <= 0)::int AS zero_stock,
+              COUNT(*) FILTER (WHERE p.stock > 0 AND p.stock <= p.min_stock)::int AS low_stock,
+              COALESCE(SUM(p.stock * {_STOCK_UNIT_VALUE_P}), 0)::float AS stock_value
+            FROM products p WHERE {w}""",
         params,
     )
     row = dict(cur.fetchone())

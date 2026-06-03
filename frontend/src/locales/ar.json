@@ -1050,7 +1050,13 @@
     "public_price": "سعر الجمهور",
     "show_all_items": "عرض كل الأصناف",
     "items_total": "صنف",
-    "search_items": "ابحث بالاسم أو الباركود…"
+    "search_items": "ابحث بالاسم أو الباركود…",
+    "expiry_lots_title": "توزيع تواريخ الصلاحية",
+    "expiry_lots_hint": "قسّم كمية السطر على أكثر من تاريخ صلاحية (مثلاً 50 قريب + 50 بعيد). مجموع الدفعات = كمية السطر.",
+    "expiry_lots_sum": "مجموع الدفعات",
+    "expiry_lot_add": "إضافة صلاحية",
+    "expiry_lots_qty_mismatch": "{{name}}: كميات دفعات الصلاحية يجب أن تساوي كمية السطر",
+    "expiry_lots_qty_mismatch_short": "مجموع الدفعات يجب أن يطابق كمية السطر"
   },
   "customers": {
     "title": "العملاء",

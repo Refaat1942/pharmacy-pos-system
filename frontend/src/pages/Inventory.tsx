@@ -11,6 +11,7 @@ import {
   parseSearchTerms,
 } from '../lib/branchStockPick'
 import { downloadApiExcel } from '../lib/downloadExcel'
+import { formatInt, formatMoney } from '../lib/formatNumber'
 import {
   formatPackStockInput,
   formatPackStockLabel,
@@ -347,12 +348,12 @@ export default function Inventory() {
           <>
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <StatCard label={t('inventory.stat_total')} value={stats.total} color="slate" />
-              <StatCard label={t('inventory.stat_low')} value={stats.low} color="amber" />
-              <StatCard label={t('inventory.stat_zero')} value={stats.zero} color="red" />
+              <StatCard label={t('inventory.stat_total')} value={formatInt(stats.total)} color="slate" />
+              <StatCard label={t('inventory.stat_low')} value={formatInt(stats.low)} color="amber" />
+              <StatCard label={t('inventory.stat_zero')} value={formatInt(stats.zero)} color="red" />
               <StatCard
                 label={t('inventory.stat_value')}
-                value={`${stats.totalValue.toFixed(0)} ${t('pos.egp')}`}
+                value={`${formatInt(stats.totalValue)} ${t('pos.egp')}`}
                 color="emerald"
               />
             </div>
@@ -464,13 +465,13 @@ export default function Inventory() {
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-end font-medium">{Number(it.price).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-end text-slate-600">{it.cost ? Number(it.cost).toFixed(2) : '—'}</td>
+                          <td className="px-3 py-2 text-end font-medium">{formatMoney(it.price)}</td>
+                          <td className="px-3 py-2 text-end text-slate-600">{it.cost ? formatMoney(it.cost) : '—'}</td>
                           <td className="px-3 py-2 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
                               isZero ? 'bg-red-100 text-red-700' :
                               'bg-emerald-100 text-emerald-700'
-                            }`}>{it.stock}</span>
+                            }`}>{formatInt(it.stock)}</span>
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (
                               <div className="text-[10px] text-slate-500 mt-0.5">
                                 {Math.floor(it.stock / it.pack_size)} {it.unit}

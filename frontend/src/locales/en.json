@@ -1050,7 +1050,13 @@
     "public_price": "Public Price",
     "show_all_items": "Show all items",
     "items_total": "items",
-    "search_items": "Search by name or barcode…"
+    "search_items": "Search by name or barcode…",
+    "expiry_lots_title": "Expiry breakdown",
+    "expiry_lots_hint": "Split line quantity across expiry dates (e.g. 50 near-term + 50 long-dated). Lot quantities must equal line qty.",
+    "expiry_lots_sum": "Lots total",
+    "expiry_lot_add": "Add expiry",
+    "expiry_lots_qty_mismatch": "{{name}}: expiry lot quantities must equal line quantity",
+    "expiry_lots_qty_mismatch_short": "Lot quantities must match line quantity"
   },
   "customers": {
     "title": "Customers",

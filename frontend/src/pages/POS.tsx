@@ -28,6 +28,7 @@ import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
 import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
+import { formatMoney } from '../lib/formatNumber'
 
 interface HeldCart {
   id: string
@@ -595,7 +596,7 @@ export default function POS() {
                           </div>
                           <div className="text-end flex-shrink-0">
                             <p className="text-pharma-700 font-bold tabular-nums">
-                              {t('pos.egp')} {p.price.toFixed(2)}
+                              {t('pos.egp')} {formatMoney(p.price)}
                             </p>
                           </div>
                           {idx === highlight && (
@@ -665,7 +666,7 @@ export default function POS() {
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-slate-800 text-sm truncate">{name}</p>
                             <p className="text-[11px] text-slate-400 tabular-nums">
-                              {t('pos.egp')} {item.unit_price.toFixed(2)} × {item.quantity} {unitLabel}
+                              {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
                             </p>
                             {hasSub && (
                               <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
@@ -718,7 +719,7 @@ export default function POS() {
                                 />
                                 {item.discount > 0 && (
                                   <span className="self-center text-xs text-emerald-700 font-bold tabular-nums px-1">
-                                    − {item.discount.toFixed(2)} {t('pos.egp')}
+                                    − {formatMoney(item.discount)} {t('pos.egp')}
                                   </span>
                                 )}
                               </div>
@@ -751,7 +752,7 @@ export default function POS() {
                             </button>
                           </div>
                           <div className="w-24 text-end font-bold text-pharma-700 tabular-nums text-sm">
-                            {t('pos.egp')} {itemTotal.toFixed(2)}
+                            {t('pos.egp')} {formatMoney(itemTotal)}
                           </div>
                           <button
                             onClick={() => removeFromCart(item.product.id)}
@@ -937,7 +938,7 @@ export default function POS() {
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">{t('pos.subtotal')}</span>
               <span className="font-semibold text-slate-800 tabular-nums">
-                {t('pos.egp')} {subtotal.toFixed(2)}
+                {t('pos.egp')} {formatMoney(subtotal)}
               </span>
             </div>
 
@@ -968,7 +969,7 @@ export default function POS() {
             {invoiceDiscountMode === 'percent' && effectiveInvoiceDiscount > 0 && (
               <div className="flex justify-between text-xs text-slate-400">
                 <span>{t('pos.discount')} ({invoiceDiscount}%)</span>
-                <span className="tabular-nums">- {t('pos.egp')} {effectiveInvoiceDiscount.toFixed(2)}</span>
+                <span className="tabular-nums">- {t('pos.egp')} {formatMoney(effectiveInvoiceDiscount)}</span>
               </div>
             )}
 
@@ -979,7 +980,7 @@ export default function POS() {
                 {t('pos.total')}
               </span>
               <span className="text-pharma-700 font-extrabold text-3xl tabular-nums leading-none">
-                {netTotal.toFixed(2)}
+                {formatMoney(netTotal)}
               </span>
             </div>
             <p className="text-end text-[10px] text-slate-400 uppercase tracking-wider -mt-1">
@@ -1073,7 +1074,7 @@ export default function POS() {
                           {h.customer ? h.customer.name : t('pos.walk_in')}
                         </div>
                         <div className="text-[11px] text-slate-400 tabular-nums">
-                          {count} {t('pos.items_n')} · {t('pos.egp')} {total.toFixed(2)} · {new Date(h.ts).toLocaleTimeString()}
+                          {count} {t('pos.items_n')} · {t('pos.egp')} {formatMoney(total)} · {new Date(h.ts).toLocaleTimeString()}
                         </div>
                       </div>
                       <button
