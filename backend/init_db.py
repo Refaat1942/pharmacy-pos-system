@@ -189,6 +189,27 @@ CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id, 
 CREATE INDEX IF NOT EXISTS idx_movements_branch ON stock_movements(branch_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movements_type ON stock_movements(movement_type);
 
+-- Per-expiry stock lots (multiple expiry dates per product at one branch)
+CREATE TABLE IF NOT EXISTS product_batches (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    branch_id INTEGER REFERENCES branches(id),
+    expiry_date DATE,
+    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_product_batches_product ON product_batches(product_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_batches_product_expiry
+    ON product_batches (product_id, (COALESCE(expiry_date, DATE '9999-12-31')));
+
+-- Backfill: one batch row per product that has stock but no batch rows yet
+INSERT INTO product_batches (product_id, branch_id, expiry_date, quantity)
+SELECT p.id, p.branch_id, p.expiry_date, p.stock
+FROM products p
+WHERE p.stock > 0
+  AND NOT EXISTS (SELECT 1 FROM product_batches pb WHERE pb.product_id = p.id);
+
 CREATE TABLE IF NOT EXISTS stock_transfers (
     id SERIAL PRIMARY KEY,
     transfer_number VARCHAR(40) UNIQUE NOT NULL,

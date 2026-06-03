@@ -8,6 +8,13 @@ import io
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
+from stock_batches import (
+    add_batch_stock,
+    deduct_stock_fefo,
+    list_batches,
+    set_batch_quantity,
+    sync_product_from_batches,
+)
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -108,6 +115,145 @@ def delete_product(product_id: int,
         cur.execute("UPDATE products SET active=false WHERE id=%s", (product_id,))
         conn.commit()
         return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ─── STOCK BATCHES (multiple expiry per product) ───────────────────────────
+
+class BatchCreate(BaseModel):
+    expiry_date: Optional[date] = None
+    quantity: int
+
+
+class BatchUpdate(BaseModel):
+    expiry_date: Optional[date] = None
+    quantity: Optional[int] = None
+
+
+@router.get("/products/{product_id}/batches")
+def get_product_batches(product_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT branch_id FROM products WHERE id=%s", (product_id,))
+        p = cur.fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="Product not found")
+        _assert_branch_access(current_user, p["branch_id"])
+        rows = list_batches(cur, product_id)
+        return rows
+    finally:
+        conn.close()
+
+
+@router.post("/products/{product_id}/batches")
+def create_product_batch(
+    product_id: int,
+    req: BatchCreate,
+    current_user=Depends(get_current_user),
+):
+    if req.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be positive")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT branch_id FROM products WHERE id=%s FOR UPDATE", (product_id,))
+        p = cur.fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="Product not found")
+        _assert_branch_access(current_user, p["branch_id"])
+        add_batch_stock(cur, product_id, p["branch_id"], req.quantity, req.expiry_date)
+        new_stock = sync_product_from_batches(cur, product_id)
+        log_movement(
+            cur, product_id, p["branch_id"], "adjustment",
+            req.quantity, new_stock,
+            reference_type="batch", reason="Expiry lot added",
+            user_id=current_user.get("user_id"),
+        )
+        conn.commit()
+        return {"ok": True, "batches": list_batches(cur, product_id)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.put("/batches/{batch_id}")
+def update_product_batch(
+    batch_id: int,
+    req: BatchUpdate,
+    current_user=Depends(get_current_user),
+):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """SELECT pb.*, p.branch_id FROM product_batches pb
+               JOIN products p ON p.id = pb.product_id WHERE pb.id=%s FOR UPDATE""",
+            (batch_id,),
+        )
+        batch = cur.fetchone()
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        _assert_branch_access(current_user, batch["branch_id"])
+        qty = req.quantity if req.quantity is not None else int(batch["quantity"])
+        expiry_set = req.expiry_date is not None
+        result = set_batch_quantity(
+            cur, batch_id, qty, req.expiry_date, expiry_set=expiry_set,
+        )
+        delta = qty - int(batch["quantity"])
+        if delta != 0:
+            log_movement(
+                cur, batch["product_id"], batch["branch_id"], "adjustment",
+                delta, result["new_stock"],
+                reference_type="batch", reason="Expiry lot updated",
+                user_id=current_user.get("user_id"),
+            )
+        conn.commit()
+        return {"ok": True, "batches": list_batches(cur, batch["product_id"])}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.delete("/batches/{batch_id}")
+def delete_product_batch(batch_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """SELECT pb.*, p.branch_id FROM product_batches pb
+               JOIN products p ON p.id = pb.product_id WHERE pb.id=%s FOR UPDATE""",
+            (batch_id,),
+        )
+        batch = cur.fetchone()
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        _assert_branch_access(current_user, batch["branch_id"])
+        old_qty = int(batch["quantity"])
+        set_batch_quantity(cur, batch_id, 0)
+        if old_qty:
+            log_movement(
+                cur, batch["product_id"], batch["branch_id"], "adjustment",
+                -old_qty, sync_product_from_batches(cur, batch["product_id"]),
+                reference_type="batch", reason="Expiry lot removed",
+                user_id=current_user.get("user_id"),
+            )
+        conn.commit()
+        return {"ok": True}
+    except HTTPException:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -238,7 +384,14 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
         where.append("p.stock > p.min_stock")
 
     sql = (
-        "SELECT p.*, b.name_en AS branch_name_en, b.name_ar AS branch_name_ar "
+        "SELECT p.*, b.name_en AS branch_name_en, b.name_ar AS branch_name_ar, "
+        "COALESCE("
+        "  (SELECT json_agg(json_build_object("
+        "     'id', pb.id, 'expiry_date', pb.expiry_date, 'quantity', pb.quantity"
+        "   ) ORDER BY COALESCE(pb.expiry_date, DATE '9999-12-31'), pb.id)"
+        "   FROM product_batches pb WHERE pb.product_id = p.id AND pb.quantity > 0),"
+        "  '[]'::json"
+        ") AS batches "
         "FROM products p LEFT JOIN branches b ON p.branch_id = b.id"
     )
     if where:
@@ -324,11 +477,13 @@ def create_adjustment(req: AdjustmentRequest,
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         _assert_branch_access(current_user, product["branch_id"])
-        new_stock = int(product["stock"]) + req.delta
+        if req.delta > 0:
+            add_batch_stock(cur, req.product_id, product["branch_id"], req.delta, None)
+        else:
+            deduct_stock_fefo(cur, req.product_id, -req.delta, sellable_only=False)
+        new_stock = sync_product_from_batches(cur, req.product_id)
         if new_stock < 0:
             raise HTTPException(status_code=400, detail="Adjustment would result in negative stock")
-        cur.execute("UPDATE products SET stock=%s WHERE id=%s",
-                    (new_stock, req.product_id))
         log_movement(
             cur, req.product_id, product["branch_id"], "adjustment",
             req.delta, new_stock,
@@ -385,14 +540,14 @@ def apply_stocktake(req: StocktakeRequest,
             expiry_change = line.expiry_date is not None and line.expiry_date != product["expiry_date"]
             if delta == 0 and not expiry_change:
                 continue
-            set_parts = []
-            set_vals = []
-            if delta != 0:
-                set_parts.append("stock=%s"); set_vals.append(line.counted)
-            if expiry_change:
-                set_parts.append("expiry_date=%s"); set_vals.append(line.expiry_date)
-            cur.execute(f"UPDATE products SET {', '.join(set_parts)} WHERE id=%s",
-                        set_vals + [line.product_id])
+            if delta != 0 or expiry_change:
+                cur.execute("DELETE FROM product_batches WHERE product_id=%s", (line.product_id,))
+                exp = line.expiry_date if expiry_change else product["expiry_date"]
+                qty = line.counted if delta != 0 else int(product["stock"])
+                if qty > 0:
+                    add_batch_stock(cur, line.product_id, product["branch_id"], qty, exp)
+                else:
+                    sync_product_from_batches(cur, line.product_id)
             if delta != 0:
                 log_movement(
                     cur, line.product_id, product["branch_id"], "adjustment",
@@ -903,8 +1058,8 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
                     status_code=400,
                     detail=f"Insufficient stock for {p['name_en']} (have {p['stock']}, need {it.quantity})",
                 )
-            new_stock = int(p["stock"]) - it.quantity
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, p["id"]))
+            deduct_stock_fefo(cur, p["id"], it.quantity, sellable_only=False)
+            new_stock = sync_product_from_batches(cur, p["id"])
             # Use sub_unit when pack_size > 1 (stock is tracked in sub-units), else main unit.
             unit_label = (p.get("sub_unit") if (p.get("pack_size") or 1) > 1 and p.get("sub_unit")
                           else p.get("unit") or "unit")
@@ -1015,8 +1170,10 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
         cur.execute("SELECT * FROM stock_transfer_items WHERE transfer_id=%s", (transfer_id,))
         items = cur.fetchall()
         for it in items:
-            # Find or create destination product by barcode in destination branch.
-            # Use INSERT ... ON CONFLICT to be safe against concurrent receives.
+            cur.execute("SELECT * FROM products WHERE id=%s", (it["source_product_id"],))
+            src = cur.fetchone()
+            if not src:
+                raise HTTPException(status_code=404, detail="Source product not found")
             dest = None
             if it["barcode"]:
                 cur.execute(
@@ -1025,9 +1182,6 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
                 )
                 dest = cur.fetchone()
             if not dest:
-                # Clone from source product
-                cur.execute("SELECT * FROM products WHERE id=%s", (it["source_product_id"],))
-                src = cur.fetchone()
                 cur.execute(
                     """INSERT INTO products
                        (barcode, name_ar, name_en, category, unit, price, cost,
@@ -1052,8 +1206,8 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
                             status_code=409,
                             detail=f"Could not resolve destination product for barcode {src['barcode']}",
                         )
-            new_stock = int(dest["stock"]) + int(it["quantity"])
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, dest["id"]))
+            add_batch_stock(cur, dest["id"], to_branch, int(it["quantity"]), src.get("expiry_date"))
+            new_stock = sync_product_from_batches(cur, dest["id"])
             cur.execute(
                 "UPDATE stock_transfer_items SET dest_product_id=%s WHERE id=%s",
                 (dest["id"], it["id"]),
@@ -1105,8 +1259,8 @@ def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
             p = cur.fetchone()
             if not p:
                 continue
-            new_stock = int(p["stock"]) + int(it["quantity"])
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, it["source_product_id"]))
+            add_batch_stock(cur, it["source_product_id"], t["from_branch_id"], int(it["quantity"]), None)
+            new_stock = sync_product_from_batches(cur, it["source_product_id"])
             log_movement(
                 cur, it["source_product_id"], t["from_branch_id"], "adjustment",
                 int(it["quantity"]), new_stock,
@@ -1139,21 +1293,20 @@ def expiry_report(
     branch_id: Optional[int] = None,
     current_user=Depends(get_current_user),
 ):
-    """Expiry report: products by expiry status."""
+    """Expiry report: stock lots by expiry (supports multiple expiries per product)."""
     from datetime import timedelta
     today = date.today()
     cutoff = today + timedelta(days=days)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    where = ["p.active = true", "p.expiry_date IS NOT NULL"]
+    where = ["p.active = true", "pb.quantity > 0", "pb.expiry_date IS NOT NULL"]
     params: list = []
     if status == "expired":
-        where.append("p.expiry_date < %s")
+        where.append("pb.expiry_date < %s")
         params.append(today)
     elif status == "near":
-        where.append("p.expiry_date >= %s AND p.expiry_date <= %s")
+        where.append("pb.expiry_date >= %s AND pb.expiry_date <= %s")
         params += [today, cutoff]
-    # restrict by branch
     if current_user.get("role") != "admin":
         ub = current_user.get("branch_id")
         if ub is None:
@@ -1164,19 +1317,23 @@ def expiry_report(
         where.append("p.branch_id = %s")
         params.append(branch_id)
 
+    w = " AND ".join(where)
     sql = f"""SELECT p.id, p.barcode, p.name_ar, p.name_en, p.category, p.unit,
-                     p.stock, p.price, p.cost, p.expiry_date, p.branch_id,
+                     pb.quantity AS stock, p.price, p.cost, pb.expiry_date, p.branch_id,
+                     pb.id AS batch_id,
                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
-                     (p.expiry_date - CURRENT_DATE) AS days_left,
-                     (p.stock * {_STOCK_UNIT_VALUE_P}) AS loss_value
-              FROM products p
+                     (pb.expiry_date - CURRENT_DATE) AS days_left,
+                     (pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0)) AS loss_value
+              FROM product_batches pb
+              JOIN products p ON p.id = pb.product_id
               LEFT JOIN branches b ON p.branch_id = b.id
-              WHERE {' AND '.join(where)}
-              ORDER BY p.expiry_date ASC
+              WHERE {w}
+              ORDER BY pb.expiry_date ASC, p.name_en
               LIMIT %s"""
     count_sql = f"""SELECT COUNT(*)::int AS total
-                    FROM products p
-                    WHERE {' AND '.join(where)}"""
+                    FROM product_batches pb
+                    JOIN products p ON p.id = pb.product_id
+                    WHERE {w}"""
     cur.execute(count_sql, params)
     total_count = int(cur.fetchone()["total"])
     cur.execute(sql, params + [MAX_INVENTORY_ROWS])
@@ -1204,20 +1361,23 @@ def expiry_summary(days: int = 30,
         ub = current_user.get("branch_id")
         if ub is None:
             raise HTTPException(status_code=403, detail="No branch assigned to this user")
-        branch_filter = " AND branch_id = %s"
+        branch_filter = " AND p.branch_id = %s"
         params.append(ub)
     elif branch_id is not None:
-        branch_filter = " AND branch_id = %s"
+        branch_filter = " AND p.branch_id = %s"
         params.append(branch_id)
 
     cur.execute(
         f"""SELECT
-              COUNT(*) FILTER (WHERE expiry_date < %s) AS expired_count,
-              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}) FILTER (WHERE expiry_date < %s), 0) AS expired_value,
-              COUNT(*) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s) AS near_count,
-              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s), 0) AS near_value
-            FROM products
-            WHERE active = true AND expiry_date IS NOT NULL{branch_filter}""",
+              COUNT(*) FILTER (WHERE pb.expiry_date < %s) AS expired_count,
+              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0))
+                FILTER (WHERE pb.expiry_date < %s), 0) AS expired_value,
+              COUNT(*) FILTER (WHERE pb.expiry_date >= %s AND pb.expiry_date <= %s) AS near_count,
+              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0))
+                FILTER (WHERE pb.expiry_date >= %s AND pb.expiry_date <= %s), 0) AS near_value
+            FROM product_batches pb
+            JOIN products p ON p.id = pb.product_id AND p.active = true
+            WHERE pb.quantity > 0 AND pb.expiry_date IS NOT NULL{branch_filter}""",
         [today, today, today, cutoff, today, cutoff] + params,
     )
     row = cur.fetchone()
