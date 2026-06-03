@@ -467,15 +467,16 @@ export default function POS() {
 
   return (
     <Layout>
+      <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
       {!shiftLoading && !openShift && (
-        <div className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mx-4 mt-3 flex-shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <span>{t('pos.shift_required')}</span>
           <Link to="/shifts" className="font-semibold text-pharma-700 hover:underline whitespace-nowrap">
             {t('pos.open_shift')} →
           </Link>
         </div>
       )}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* ──────────── Main work area: scan + cart ──────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header strip: title + refund-receipt shortcut */}
@@ -771,13 +772,14 @@ export default function POS() {
         </div>
 
         {/* ──────────── Summary sidebar ──────────── */}
-        <aside className="w-[340px] xl:w-[380px] flex-shrink-0 flex flex-col border-s border-slate-200 bg-white shadow-xl">
-          <div className="px-5 py-4 border-b border-slate-100">
+        <aside className="w-[340px] xl:w-[380px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden border-s border-slate-200 bg-white shadow-xl">
+          <div className="shrink-0 px-5 py-4 border-b border-slate-100">
             <h3 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
               {t('payment.summary')}
             </h3>
           </div>
 
+          <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Seller / Customer */}
           <div className="px-5 py-4 space-y-3 border-b border-slate-100">
             <div>
@@ -934,7 +936,7 @@ export default function POS() {
           </div>
 
           {/* Totals */}
-          <div className="flex-1 px-5 py-4 space-y-3">
+          <div className="px-5 py-4 space-y-3">
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">{t('pos.subtotal')}</span>
               <span className="font-semibold text-slate-800 tabular-nums">
@@ -987,9 +989,10 @@ export default function POS() {
               {t('pos.egp')}
             </p>
           </div>
+          </div>
 
-          {/* Checkout */}
-          <div className="px-5 pb-5 space-y-2">
+          {/* Checkout — pinned so it is never clipped below the viewport */}
+          <div className="shrink-0 px-5 pt-3 pb-5 space-y-2 border-t border-slate-100 bg-white shadow-[0_-4px_12px_rgba(15,23,42,0.06)]">
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={suspendCurrent}
@@ -1020,6 +1023,7 @@ export default function POS() {
             </button>
           </div>
         </aside>
+      </div>
       </div>
 
       {showPaymentModal && (
