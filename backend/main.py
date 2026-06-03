@@ -13,6 +13,7 @@ from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, resolve_analytics_branch
 from tenant_ctx import set_current_schema
 from inventory import router as inventory_router, log_movement
+from stock_batches import add_batch_stock, assert_sellable, deduct_stock_fefo, sync_product_from_batches
 from purchasing import router as purchasing_router
 from customers import router as customers_router
 from clinics import router as clinics_router
@@ -422,9 +423,11 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
         )
         product = cur.fetchone()
         if req.stock and req.stock > 0:
+            add_batch_stock(cur, product["id"], branch_id, req.stock, req.expiry_date)
+            new_stock = sync_product_from_batches(cur, product["id"])
             log_movement(
                 cur, product["id"], branch_id, "initial",
-                req.stock, req.stock,
+                req.stock, new_stock,
                 reference_type="initial", reason="Initial stock on item creation",
                 user_id=current_user.get("user_id"),
             )
@@ -780,12 +783,8 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {item.product_id} belongs to branch {p['branch_id']}, not active branch {branch_id}",
                 )
-            # Block selling expired items (sales only; returns are allowed)
-            if req.type != "return" and p["expiry_date"] and p["expiry_date"] < today:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot sell expired product '{p['name_en']}' (expired on {p['expiry_date']})",
-                )
+            if req.type != "return":
+                assert_sellable(cur, item.product_id, today)
 
         clinic_id = None
         if req.clinic_id:
@@ -895,9 +894,8 @@ def create_sale(req: SaleRequest,
                  prod["barcode"], item.quantity, item.unit_price, item.discount,
                  item_total, unit_label, line_pack),
             )
-            new_stock = int(prod["stock"]) - stock_used
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
-                        (new_stock, item.product_id))
+            deduct_stock_fefo(cur, item.product_id, stock_used, today=today)
+            new_stock = sync_product_from_batches(cur, item.product_id)
             log_movement(
                 cur, item.product_id, prod["branch_id"] or branch_id, "sale",
                 -stock_used, new_stock,
@@ -1330,9 +1328,8 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
             cur.execute("SELECT stock, branch_id FROM products WHERE id=%s FOR UPDATE",
                         (inv_item["product_id"],))
             p = cur.fetchone()
-            new_stock = int(p["stock"]) + req_sub
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s",
-                        (new_stock, inv_item["product_id"]))
+            add_batch_stock(cur, inv_item["product_id"], p["branch_id"], req_sub, None)
+            new_stock = sync_product_from_batches(cur, inv_item["product_id"])
             unit_lbl = inv_item["sub_unit"] if line_pack > 1 else inv_item["unit_label"]
             log_movement(
                 cur, inv_item["product_id"], p["branch_id"], "return",

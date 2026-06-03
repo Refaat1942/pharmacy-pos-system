@@ -8,6 +8,7 @@ import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
 from inventory import log_movement
+from stock_batches import add_batch_stock, sync_product_from_batches
 
 router = APIRouter(prefix="/api", tags=["purchasing"])
 
@@ -429,19 +430,13 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
                     raise HTTPException(status_code=500, detail="Could not create/find destination product")
                 pid = p["id"]
 
-            cur.execute("SELECT stock FROM products WHERE id=%s FOR UPDATE", (pid,))
-            cur_stock = int(cur.fetchone()["stock"])
-            new_stock = cur_stock + int(it["quantity"])
-            # Update stock, cost (effective landed cost), selling price (if public price given),
-            # and expiry if provided.
-            sets = ["stock=%s", "cost=%s"]
-            params: list = [new_stock, eff_cost]
+            add_batch_stock(cur, pid, branch_id, int(it["quantity"]), it["expiry_date"])
+            new_stock = sync_product_from_batches(cur, pid)
+            sets = ["cost=%s"]
+            params: list = [eff_cost]
             if new_price is not None:
                 sets.append("price=%s")
                 params.append(new_price)
-            if it["expiry_date"]:
-                sets.append("expiry_date=%s")
-                params.append(it["expiry_date"])
             params.append(pid)
             cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
             cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s",

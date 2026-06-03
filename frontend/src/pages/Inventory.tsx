@@ -18,6 +18,12 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 
 const SORT_TH_CLASS = 'font-semibold text-xs uppercase tracking-wider'
 
+type ProductBatch = {
+  id: number
+  expiry_date: string | null
+  quantity: number
+}
+
 type Product = {
   id: number
   barcode: string | null
@@ -31,6 +37,7 @@ type Product = {
   stock: number
   min_stock: number
   expiry_date: string | null
+  batches?: ProductBatch[] | null
   branch_id: number | null
   active: boolean
   branch_name_en?: string
@@ -38,6 +45,19 @@ type Product = {
   pack_size?: number | null
   sub_unit?: string | null
   sub_price?: number | null
+}
+
+function formatExpiryLots(it: Product): string {
+  const batches = Array.isArray(it.batches) ? it.batches : []
+  if (batches.length > 0) {
+    return batches
+      .map((b) => {
+        const d = b.expiry_date ? String(b.expiry_date).slice(0, 10) : '—'
+        return `${b.quantity}× ${d}`
+      })
+      .join(' · ')
+  }
+  return it.expiry_date ? String(it.expiry_date).slice(0, 10) : '—'
 }
 
 type Movement = {
@@ -346,16 +366,17 @@ export default function Inventory() {
                       <SortTh k="price" sort={itemSort} onToggle={itemToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_price')}</SortTh>
                       <SortTh k="cost" sort={itemSort} onToggle={itemToggle} align="end" className={SORT_TH_CLASS}>{t('inventory.col_cost')}</SortTh>
                       <SortTh k="stock" sort={itemSort} onToggle={itemToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_stock')}</SortTh>
+                      <Th className="text-start">{t('inventory.col_expiry_lots')}</Th>
                       <SortTh k="min_stock" sort={itemSort} onToggle={itemToggle} align="center" className={SORT_TH_CLASS}>{t('inventory.col_min')}</SortTh>
                       <Th className="text-end">{t('inventory.col_actions')}</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {loading && (
-                      <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
+                      <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
                     )}
                     {!loading && sortedItems.length === 0 && (
-                      <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                      <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
                     )}
                     {sortedItems.map(it => {
                       const isZero = it.stock <= 0
@@ -388,6 +409,9 @@ export default function Inventory() {
                                 {it.stock % it.pack_size > 0 && ` + ${it.stock % it.pack_size} ${it.sub_unit}`}
                               </div>
                             )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-slate-600 max-w-[12rem]">
+                            <span className="line-clamp-2" title={formatExpiryLots(it)}>{formatExpiryLots(it)}</span>
                           </td>
                           <td className="px-3 py-2 text-center text-slate-500">{it.min_stock}</td>
                           <td className="px-3 py-2 text-end">
@@ -471,6 +495,107 @@ function IconBtn({ onClick, title, color, children }: any) {
   )
 }
 
+// ─── Expiry lots (multiple batches per product) ──────────────────────────
+
+function ExpiryBatchesPanel({ productId, onChanged }: { productId: number; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const [batches, setBatches] = useState<ProductBatch[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expiry, setExpiry] = useState('')
+  const [qty, setQty] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const load = () => {
+    setLoading(true)
+    api.get<ProductBatch[]>(`/inventory/products/${productId}/batches`)
+      .then((r) => setBatches(r.data))
+      .catch(() => setBatches([]))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { load() }, [productId])
+
+  const addLot = async () => {
+    const n = parseInt(qty, 10)
+    if (!n || n <= 0) return
+    setSaving(true)
+    try {
+      await api.post(`/inventory/products/${productId}/batches`, {
+        expiry_date: expiry || null,
+        quantity: n,
+      })
+      setExpiry('')
+      setQty('')
+      load()
+      onChanged()
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeLot = async (batchId: number) => {
+    if (!confirm(t('inventory.batches_remove_confirm') as string)) return
+    try {
+      await api.delete(`/inventory/batches/${batchId}`)
+      load()
+      onChanged()
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Error')
+    }
+  }
+
+  return (
+    <div className="col-span-2 mt-2 p-3 rounded-lg bg-amber-50/80 border border-amber-200">
+      <div className="text-xs font-semibold text-amber-900 mb-1">{t('inventory.batches_title')}</div>
+      <p className="text-[11px] text-amber-800/90 mb-3">{t('inventory.batches_hint')}</p>
+      {loading ? (
+        <div className="text-xs text-slate-500">{t('common.loading')}</div>
+      ) : batches.length === 0 ? (
+        <div className="text-xs text-slate-500 mb-2">{t('inventory.batches_none')}</div>
+      ) : (
+        <ul className="space-y-1 mb-3">
+          {batches.map((b) => (
+            <li key={b.id} className="flex items-center justify-between gap-2 text-sm bg-white rounded-lg px-2 py-1.5 border border-amber-100">
+              <span className="font-mono tabular-nums">
+                <b>{b.quantity}</b>
+                <span className="text-slate-500 mx-1">×</span>
+                {b.expiry_date ? String(b.expiry_date).slice(0, 10) : '—'}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeLot(b.id)}
+                className="text-xs text-red-600 hover:bg-red-50 px-2 py-0.5 rounded"
+              >
+                {t('inventory.batches_remove')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap gap-2 items-end">
+        <div>
+          <label className="text-[10px] text-slate-600 block mb-0.5">{t('inventory.batches_expiry')}</label>
+          <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className="input text-sm w-36" />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-600 block mb-0.5">{t('inventory.batches_qty')}</label>
+          <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} className="input text-sm w-24" />
+        </div>
+        <button
+          type="button"
+          onClick={addLot}
+          disabled={saving}
+          className="px-3 py-2 text-xs rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50"
+        >
+          {t('inventory.batches_add')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Item Create/Edit Modal ─────────────────────────────────────────────
 
 function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: () => void; onSaved: () => void }) {
@@ -512,7 +637,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         price: priceNum,
         cost: f.cost ? parseFloat(f.cost) : null,
         min_stock: parseInt(f.min_stock) || 0,
-        expiry_date: f.expiry_date || null,
+        ...(item ? {} : { expiry_date: f.expiry_date || null }),
         pack_size: packSize,
         sub_unit: packSize > 1 ? (f.sub_unit || 'piece') : null,
         sub_price: packSize > 1
@@ -591,9 +716,14 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             <option value="l">Liter</option>
           </select>
         </Field>
-        <Field label={t('inventory.f_expiry')}>
-          <input type="date" value={f.expiry_date} onChange={e => setF({ ...f, expiry_date: e.target.value })} className="input" />
-        </Field>
+        {!item && (
+          <Field label={t('inventory.f_expiry')}>
+            <input type="date" value={f.expiry_date} onChange={e => setF({ ...f, expiry_date: e.target.value })} className="input" />
+          </Field>
+        )}
+        {item && (
+          <ExpiryBatchesPanel productId={item.id} onChanged={() => {}} />
+        )}
         <Field label={t('inventory.f_price') + ' *'}>
           <input required type="number" step="0.01" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} className="input" />
         </Field>
