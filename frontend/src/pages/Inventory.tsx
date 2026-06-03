@@ -79,6 +79,13 @@ const STANDARD_CATEGORIES = [
   'Other',
 ] as const
 
+/** Prefer purchase cost; use selling price when cost is unset (matches backend valuation). */
+function stockUnitValue(i: { cost?: number | null; price?: number | null }): number {
+  const cost = Number(i.cost || 0)
+  if (cost > 0) return cost
+  return Number(i.price || 0)
+}
+
 export default function Inventory() {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
@@ -185,7 +192,7 @@ export default function Inventory() {
     }
     const total = items.length
     const zero = items.filter((i) => i.stock <= 0).length
-    const totalValue = items.reduce((s, i) => s + Number(i.stock) * Number(i.cost || 0), 0)
+    const totalValue = items.reduce((s, i) => s + Number(i.stock) * stockUnitValue(i), 0)
     return { total, zero, low: 0, totalValue }
   }, [items, itemStats])
 
@@ -510,7 +517,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         category: f.category || null,
         unit: f.unit,
         price: priceNum,
-        cost: f.cost ? parseFloat(f.cost) : null,
+        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? priceNum : null),
         min_stock: parseInt(f.min_stock) || 0,
         expiry_date: f.expiry_date || null,
         pack_size: packSize,
