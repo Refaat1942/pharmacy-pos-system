@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer } from 'lucide-react'
@@ -137,6 +138,16 @@ function UsersTab() {
 
   useEffect(() => { load() }, [])
 
+  const userAccessors = useMemo(() => ({
+    username: (u: UserRow) => u.username || '',
+    name: (u: UserRow) => (i18n.language === 'ar' ? u.name_ar : u.name_en) || u.name_en || u.name_ar || u.username,
+    role: (u: UserRow) => u.role || '',
+    branch: (u: UserRow) => (i18n.language === 'ar' ? u.branch_name_ar : u.branch_name_en) || '',
+    salary: (u: UserRow) => u.salary == null ? null : Number(u.salary),
+    status: (u: UserRow) => u.status || '',
+  }), [])
+  const { sorted: sortedUsers, sort: userSort, toggle: userToggle } = useSort(users, userAccessors)
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
@@ -164,17 +175,17 @@ function UsersTab() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-2.5 text-start">{t('settings.username')}</th>
-                <th className="px-4 py-2.5 text-start">{t('settings.name')}</th>
-                <th className="px-4 py-2.5 text-start">{t('settings.role')}</th>
-                <th className="px-4 py-2.5 text-start">{t('settings.branch')}</th>
-                <th className="px-4 py-2.5 text-end">{t('settings.salary')}</th>
-                <th className="px-4 py-2.5 text-start">{t('settings.status')}</th>
+                <SortTh k="username" sort={userSort} onToggle={userToggle} align="start" className="px-4 py-2.5">{t('settings.username')}</SortTh>
+                <SortTh k="name" sort={userSort} onToggle={userToggle} align="start" className="px-4 py-2.5">{t('settings.name')}</SortTh>
+                <SortTh k="role" sort={userSort} onToggle={userToggle} align="start" className="px-4 py-2.5">{t('settings.role')}</SortTh>
+                <SortTh k="branch" sort={userSort} onToggle={userToggle} align="start" className="px-4 py-2.5">{t('settings.branch')}</SortTh>
+                <SortTh k="salary" sort={userSort} onToggle={userToggle} align="end" className="px-4 py-2.5">{t('settings.salary')}</SortTh>
+                <SortTh k="status" sort={userSort} onToggle={userToggle} align="start" className="px-4 py-2.5">{t('settings.status')}</SortTh>
                 <th className="px-4 py-2.5 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => {
+              {sortedUsers.map((u) => {
                 const name = (i18n.language === 'ar' ? u.name_ar : u.name_en) || u.name_en || u.name_ar || u.username
                 const branch = i18n.language === 'ar' ? u.branch_name_ar : u.branch_name_en
                 return (

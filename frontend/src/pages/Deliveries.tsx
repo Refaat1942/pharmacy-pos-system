@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Truck, PackageCheck, RotateCcw, Wallet } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh } from '../components/DataTable'
 import { employeesAPI, salesAPI } from '../lib/api'
 import type { Invoice } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -65,6 +66,21 @@ export default function Deliveries() {
   useEffect(() => {
     load()
   }, [statusFilter, driverFilter])
+
+  const deliveryAccessors = useMemo(() => ({
+    invoice: (r: Invoice) => r.invoice_number || '',
+    type: (r: Invoice) => r.type || '',
+    payment: (r: Invoice) => r.payment_method || '',
+    customer: (r: Invoice) => r.delivery_customer_name || r.customer_name || '',
+    phone: (r: Invoice) => r.delivery_customer_phone || '',
+    address: (r: Invoice) => r.delivery_address || '',
+    driver: (r: Invoice) => r.delivery_person_name || '',
+    delivery_fee: (r: Invoice) => Number(r.delivery_fee) || 0,
+    total: (r: Invoice) => Number(r.net_total) || 0,
+    created_at: (r: Invoice) => r.created_at || '',
+    status: (r: Invoice) => r.delivery_status || 'pending',
+  }), [])
+  const { sorted: sortedRows, sort: deliverySort, toggle: deliveryToggle } = useSort(rows, deliveryAccessors)
 
   const summary = useMemo(() => {
     if (driverFilter === '') return null
@@ -185,22 +201,22 @@ export default function Deliveries() {
             <table className="text-sm min-w-[80rem] w-max">
               <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
                 <tr>
-                  <th className="px-4 py-3 text-start">{t('deliveries.invoice')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.sale_type')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.payment')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.customer')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.phone')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.address')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.driver')}</th>
-                  <th className="px-4 py-3 text-end">{t('deliveries.delivery_fee_col')}</th>
-                  <th className="px-4 py-3 text-end">{t('deliveries.total')}</th>
-                  <th className="px-4 py-3 text-start">{t('deliveries.created')}</th>
-                  <th className="px-4 py-3 text-center">{t('deliveries.status')}</th>
+                  <SortTh k="invoice" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.invoice')}</SortTh>
+                  <SortTh k="type" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.sale_type')}</SortTh>
+                  <SortTh k="payment" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.payment')}</SortTh>
+                  <SortTh k="customer" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.customer')}</SortTh>
+                  <SortTh k="phone" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.phone')}</SortTh>
+                  <SortTh k="address" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.address')}</SortTh>
+                  <SortTh k="driver" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.driver')}</SortTh>
+                  <SortTh k="delivery_fee" sort={deliverySort} onToggle={deliveryToggle} align="end" className="px-4 py-3">{t('deliveries.delivery_fee_col')}</SortTh>
+                  <SortTh k="total" sort={deliverySort} onToggle={deliveryToggle} align="end" className="px-4 py-3">{t('deliveries.total')}</SortTh>
+                  <SortTh k="created_at" sort={deliverySort} onToggle={deliveryToggle} align="start" className="px-4 py-3">{t('deliveries.created')}</SortTh>
+                  <SortTh k="status" sort={deliverySort} onToggle={deliveryToggle} align="center" className="px-4 py-3">{t('deliveries.status')}</SortTh>
                   <th className="px-4 py-3 text-end whitespace-nowrap">{t('deliveries.actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((r) => {
+                {sortedRows.map((r) => {
                   const st = r.delivery_status || 'pending'
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/60">
