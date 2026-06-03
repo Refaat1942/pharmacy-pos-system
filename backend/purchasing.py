@@ -609,13 +609,19 @@ def replenishment_list(
     supplier_id: Optional[int] = None,
     only_zero: bool = False,
     include_all: bool = False,
+    q: str = "",
     current_user=Depends(get_current_user),
     active_branch=Depends(get_active_branch_id),
 ):
     """List items that need replenishment (stock <= min_stock).
     When include_all is set, every active product is returned and each row
     carries needs_replenish so the UI can pre-select only the low ones.
+    Pass q to search by name/barcode without loading the full catalog.
+    Returns [] unless include_all, q, or only_zero is set (avoids slow full loads).
     Non-admins are constrained to their own branch."""
+    q = (q or "").strip()
+    if not include_all and not q and not only_zero:
+        return []
     if current_user.get("role") != "admin":
         ub = current_user.get("branch_id")
         if ub is None:
@@ -635,9 +641,15 @@ def replenishment_list(
     if supplier_id is not None:
         where.append("p.supplier_id = %s")
         params.append(supplier_id)
+    if q:
+        where.append(
+            "(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s OR p.international_barcode ILIKE %s)"
+        )
+        s = f"%{q}%"
+        params += [s, s, s, s]
     if only_zero:
         where.append("p.stock <= 0")
-    elif not include_all:
+    elif not include_all and not q:
         where.append("p.stock <= p.min_stock")
 
     sql = (

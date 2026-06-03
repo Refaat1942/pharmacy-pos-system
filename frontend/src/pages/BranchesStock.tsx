@@ -93,6 +93,7 @@ export default function BranchesStock() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
+  const [showAllItems, setShowAllItems] = useState(false)
   const [showAllStockInTable, setShowAllStockInTable] = useState(false)
   const [catalog, setCatalog] = useState<{ branches: Branch[]; items: Row[] }>({ branches: [], items: [] })
   const lastAutoPickQ = useRef('')
@@ -118,24 +119,45 @@ export default function BranchesStock() {
   }
 
   const loadCatalog = async () => {
-    const { data: res } = await api.get('/inventory/branch-stock', { params: branchParams() })
+    const { data: res } = await api.get('/inventory/branch-stock', {
+      params: { ...branchParams(), load_all: true },
+    })
     setCatalog({ branches: res.branches || [], items: res.items || [] })
     return res
   }
+
+  const emptyBranchData = () => ({
+    branches: allBranches.length > 0 ? allBranches : data.branches,
+    items: [] as Row[],
+    summary: {
+      total_count: 0,
+      shown_count: 0,
+      low_stock: 0,
+      out_of_stock: 0,
+      truncated: false,
+    },
+  })
 
   const load = async () => {
     setLoading(true)
     try {
       const searchQ = activeQ.trim()
-      if (!searchQ) {
-        const res = await loadCatalog()
-        setData(res)
+      if (!searchQ && !showAllItems) {
+        setData(emptyBranchData())
         setPickedKeys(new Set())
         setShowAllStockInTable(false)
         lastAutoPickQ.current = ''
         return
       }
-      const params: Record<string, string | number> = { ...branchParams(), q: searchQ }
+      if (!searchQ && showAllItems) {
+        const res = await loadCatalog()
+        setData(res)
+        setPickedKeys(new Set())
+        setShowAllStockInTable(true)
+        lastAutoPickQ.current = ''
+        return
+      }
+      const params: Record<string, string | number | boolean> = { ...branchParams(), q: searchQ }
       const { data: res } = await api.get('/inventory/branch-stock', { params })
       setData(res)
       if (multiPick) {
@@ -168,7 +190,7 @@ export default function BranchesStock() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeQ, branchFilter, isAdmin])
+  }, [activeQ, branchFilter, showAllItems, isAdmin])
 
   useEffect(() => {
     if (!multiPick) {
@@ -184,11 +206,12 @@ export default function BranchesStock() {
     tableBranches.length > 0 ? tableBranches : data.branches.length > 0 ? data.branches : allBranches
 
   const displayItems = useMemo(() => {
+    if (!activeQ.trim() && !showAllItems) return []
     if (!multiPick) return data.items
-    if (showAllStockInTable) return catalog.items
+    if (showAllStockInTable || showAllItems) return catalog.items.length > 0 ? catalog.items : data.items
     if (pickedKeys.size === 0) return []
     return data.items.filter((r) => pickedKeys.has(r.key))
-  }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
+  }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable, showAllItems, activeQ])
 
   const bsFilter = useQuickFilter(displayItems, [
     (r: Row) => r.name_en,
@@ -230,9 +253,10 @@ export default function BranchesStock() {
   const exportExcel = async () => {
     setExporting(true)
     try {
-      const params: Record<string, string | number> = {}
+      const params: Record<string, string | number | boolean> = {}
       if (activeQ.trim()) params.q = activeQ.trim()
-      if (multiPick && !showAllStockInTable && pickedKeys.size > 0) {
+      else if (showAllItems) params.load_all = true
+      if (multiPick && !showAllStockInTable && !showAllItems && pickedKeys.size > 0) {
         params.keys = Array.from(pickedKeys).join(',')
       }
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
@@ -373,6 +397,21 @@ export default function BranchesStock() {
             <Search size={16} />
             {t('inventory.bs_search_btn')}
           </button>
+          <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer whitespace-nowrap px-3 py-2 border border-slate-200 rounded-xl bg-slate-50">
+            <input
+              type="checkbox"
+              checked={showAllItems}
+              onChange={(e) => {
+                setShowAllItems(e.target.checked)
+                if (e.target.checked) {
+                  setActiveQ('')
+                  setQ('')
+                }
+              }}
+              className="rounded border-slate-300 text-pharma-600 focus:ring-pharma-500"
+            />
+            {t('inventory.show_all_items')}
+          </label>
           {isAdmin && (
             <div className="min-w-[12rem]">
               <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
@@ -478,10 +517,12 @@ export default function BranchesStock() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {loading && <TableLoadingRow colSpan={colSpan} />}
-                {!loading && data.items.length === 0 && (
+                {!loading && displayItems.length === 0 && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={colSpan} className="text-center py-12 text-slate-400">
-                      {t('inventory.no_items')}
+                    <td colSpan={colSpan} className="text-center py-12 text-slate-500 text-sm max-w-lg mx-auto">
+                      {!activeQ.trim() && !showAllItems
+                        ? t('inventory.search_or_show_all_hint')
+                        : t('inventory.no_items')}
                     </td>
                   </tr>
                 )}

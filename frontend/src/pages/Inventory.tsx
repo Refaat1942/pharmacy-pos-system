@@ -205,6 +205,7 @@ export default function Inventory() {
   const [showExcel, setShowExcel] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showBulkPrint, setShowBulkPrint] = useState(false)
+  const [showAllItems, setShowAllItems] = useState(false)
 
   const toggleOne = (id: number) => {
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -221,17 +222,26 @@ export default function Inventory() {
   }
 
   const loadItems = async () => {
+    const searchQ = q.trim()
+    if (!showAllItems && !searchQ) {
+      setItems([])
+      setItemStats(null)
+      return
+    }
     setLoading(true)
     try {
       const params: Record<string, string> = {}
-      if (q) params.q = q
+      if (searchQ) params.q = searchQ
+      if (showAllItems) params.load_all = 'true'
       if (stockFilter) params.stock_filter = stockFilter
       if (categoryFilter) params.category = categoryFilter
+      const summaryParams = { ...params }
+      delete summaryParams.load_all
       const [listRes, sumRes] = await Promise.all([
         api.get<Product[]>('/inventory/items', { params }),
         api.get<{ total: number; zero_stock: number; low_stock: number; stock_value: number }>(
           '/inventory/summary',
-          { params },
+          { params: summaryParams },
         ),
       ])
       setItems(listRes.data)
@@ -253,24 +263,21 @@ export default function Inventory() {
 
   const exportItems = () =>
     downloadApiExcel('/inventory/items/export', `inventory-items-${new Date().toISOString().slice(0, 10)}.xlsx`, {
-      q: q || undefined,
+      q: q.trim() || undefined,
+      load_all: showAllItems && !q.trim() ? true : undefined,
       stock_filter: stockFilter || undefined,
       category: categoryFilter || undefined,
     })
 
   useEffect(() => {
-    if (tab === 'items') {
-      loadItems()
-      loadCategories()
-    }
+    if (tab === 'items') loadCategories()
   }, [tab])
 
-  // Debounced search
   useEffect(() => {
     if (tab !== 'items') return
     const id = setTimeout(loadItems, 300)
     return () => clearTimeout(id)
-  }, [q, stockFilter, categoryFilter])
+  }, [tab, q, stockFilter, categoryFilter, showAllItems])
 
   const stats = useMemo(() => {
     if (itemStats) {
@@ -281,11 +288,14 @@ export default function Inventory() {
         totalValue: itemStats.stock_value,
       }
     }
+    if (!showAllItems && !q.trim()) {
+      return { total: 0, zero: 0, low: 0, totalValue: 0 }
+    }
     const total = items.length
     const zero = items.filter((i) => i.stock <= 0).length
     const totalValue = items.reduce((s, i) => s + Number(i.stock) * stockUnitValue(i), 0)
     return { total, zero, low: 0, totalValue }
-  }, [items, itemStats])
+  }, [items, itemStats, showAllItems, q])
 
   const itemFilter = useQuickFilter(items, [
     i => i.barcode,
@@ -393,6 +403,15 @@ export default function Inventory() {
                 {STANDARD_CATEGORIES.map(c => <option key={c} value={c}>{t(`inventory.cat_${c}`, c)}</option>)}
                 {categories.filter(c => !(STANDARD_CATEGORIES as readonly string[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+              <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer whitespace-nowrap px-2 py-2 border border-slate-200 rounded-lg bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={showAllItems}
+                  onChange={(e) => setShowAllItems(e.target.checked)}
+                  className="rounded border-slate-300 text-pharma-600 focus:ring-pharma-500"
+                />
+                {t('inventory.show_all_items')}
+              </label>
               <button
                 onClick={() => setShowExcel(true)}
                 className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium"
@@ -449,7 +468,13 @@ export default function Inventory() {
                   <tbody>
                     {loading && <TableLoadingRow colSpan={11} />}
                     {!loading && sortedItems.length === 0 && (
-                      <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                      <tr>
+                        <td colSpan={11} className="text-center py-8 text-slate-500 text-sm max-w-md mx-auto">
+                          {!showAllItems && !q.trim()
+                            ? t('inventory.search_or_show_all_hint')
+                            : t('inventory.no_items')}
+                        </td>
+                      </tr>
                     )}
                     {sortedItems.map(it => {
                       const isZero = it.stock <= 0
@@ -1583,6 +1608,7 @@ function BranchStockTab() {
   const [branchFilter, setBranchFilter] = useState('')
   const [loading, setLoading] = useState(false)
   const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
+  const [showAllItems, setShowAllItems] = useState(false)
   const [showAllStockInTable, setShowAllStockInTable] = useState(false)
   const [catalog, setCatalog] = useState<{ branches: { id: number; name_en: string; name_ar: string }[]; items: BranchStockRow[] }>({ branches: [], items: [] })
   const lastAutoPickQ = useRef('')
@@ -1603,20 +1629,35 @@ function BranchStockTab() {
   }
 
   const loadCatalog = async () => {
-    const { data: res } = await api.get('/inventory/branch-stock', { params: branchParams() })
+    const { data: res } = await api.get('/inventory/branch-stock', {
+      params: { ...branchParams(), load_all: true },
+    })
     setCatalog({ branches: res.branches || [], items: res.items || [] })
     return res
   }
+
+  const emptyBranchData = () => ({
+    branches: allBranches.length > 0 ? allBranches : data.branches,
+    items: [] as BranchStockRow[],
+    summary: { total_count: 0, shown_count: 0, low_stock: 0, out_of_stock: 0, truncated: false },
+  })
 
   const load = async () => {
     setLoading(true)
     try {
       const searchQ = activeQ.trim()
-      if (!searchQ) {
+      if (!searchQ && !showAllItems) {
+        setData(emptyBranchData())
+        setPickedKeys(new Set())
+        setShowAllStockInTable(false)
+        lastAutoPickQ.current = ''
+        return
+      }
+      if (!searchQ && showAllItems) {
         const res = await loadCatalog()
         setData(res)
         setPickedKeys(new Set())
-        setShowAllStockInTable(false)
+        setShowAllStockInTable(true)
         lastAutoPickQ.current = ''
         return
       }
@@ -1649,7 +1690,7 @@ function BranchStockTab() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeQ, branchFilter, isAdmin])
+  }, [activeQ, branchFilter, showAllItems, isAdmin])
 
   useEffect(() => {
     if (!multiPick) {
@@ -1662,11 +1703,12 @@ function BranchStockTab() {
   const tableBranches = multiPick && showAllStockInTable ? catalog.branches : data.branches
 
   const displayItems = useMemo(() => {
+    if (!activeQ.trim() && !showAllItems) return []
     if (!multiPick) return data.items
-    if (showAllStockInTable) return catalog.items
+    if (showAllStockInTable || showAllItems) return catalog.items.length > 0 ? catalog.items : data.items
     if (pickedKeys.size === 0) return []
     return data.items.filter((r) => pickedKeys.has(r.key))
-  }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
+  }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable, showAllItems, activeQ])
 
   const togglePick = (key: string) => {
     setPickedKeys((prev) => {
@@ -1731,6 +1773,21 @@ function BranchStockTab() {
         >
           {t('inventory.bs_search_btn')}
         </button>
+        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer whitespace-nowrap px-3 py-2 border border-slate-200 rounded-lg bg-slate-50">
+          <input
+            type="checkbox"
+            checked={showAllItems}
+            onChange={(e) => {
+              setShowAllItems(e.target.checked)
+              if (e.target.checked) {
+                setActiveQ('')
+                setQ('')
+              }
+            }}
+            className="rounded border-slate-300 text-pharma-600 focus:ring-pharma-500"
+          />
+          {t('inventory.show_all_items')}
+        </label>
         {isAdmin && (
           <select
             value={branchFilter}
@@ -1746,9 +1803,10 @@ function BranchStockTab() {
         <TableFilter value={bsFilter.query} onChange={bsFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <ExcelExportButton
           onExport={async () => {
-            const params: Record<string, string | number> = {}
+            const params: Record<string, string | number | boolean> = {}
             if (activeQ.trim()) params.q = activeQ.trim()
-            if (multiPick && !showAllStockInTable && pickedKeys.size > 0) {
+            else if (showAllItems) params.load_all = true
+            if (multiPick && !showAllStockInTable && !showAllItems && pickedKeys.size > 0) {
               params.keys = Array.from(pickedKeys).join(',')
             }
             if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
@@ -1796,8 +1854,14 @@ function BranchStockTab() {
             </thead>
             <tbody>
               {loading && <TableLoadingRow colSpan={visibleBranches.length + 4} />}
-              {!loading && data.items.length === 0 && (
-                <tr><td colSpan={visibleBranches.length + 4} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+              {!loading && displayItems.length === 0 && data.items.length === 0 && (
+                <tr>
+                  <td colSpan={visibleBranches.length + 4} className="text-center py-8 text-slate-500 text-sm">
+                    {!activeQ.trim() && !showAllItems
+                      ? t('inventory.search_or_show_all_hint')
+                      : t('inventory.no_items')}
+                  </td>
+                </tr>
               )}
               {!loading && multiPick && !showAllStockInTable && data.items.length > 0 && sortedBs.length === 0 && (
                 <tr><td colSpan={visibleBranches.length + 4} className="text-center py-8 text-slate-500">{t('inventory.bs_pick_none')}</td></tr>

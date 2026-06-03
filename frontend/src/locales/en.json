@@ -464,6 +464,8 @@
     "bs_multi_search_placeholder": "Barcode or name — separate several with commas or new lines",
     "bs_search_btn": "Search",
     "bs_search_required": "Enter a barcode or product name and press Search. The full catalog is not loaded automatically (faster with large inventories).",
+    "show_all_items": "Show all items",
+    "search_or_show_all_hint": "Search by name or barcode, or tick Show all items to load the full list.",
     "bs_show_all_stock": "Show all stock in table",
     "bs_show_all_stock_hint": "Table shows your full branch stock. Uncheck to show only the items you tick above.",
     "bs_multi_no_matches": "No products matched those codes or names. Check spelling or try one item per line.",

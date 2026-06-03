@@ -392,10 +392,13 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
                stock_filter: Optional[str] = None,
                category: Optional[str] = None,
                include_inactive: bool = False,
+               load_all: bool = False,
                limit: int = 20000,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
-    """stock_filter: 'low' | 'zero' | 'ok'"""
+    """stock_filter: 'low' | 'zero' | 'ok'. Requires search (q) or load_all=true."""
+    if not load_all and not (q or "").strip():
+        return []
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     where = []
@@ -450,6 +453,7 @@ def export_items(
     branch_id: Optional[int] = None,
     stock_filter: Optional[str] = None,
     category: Optional[str] = None,
+    load_all: bool = False,
     current_user=Depends(get_current_user),
     active_branch=Depends(get_active_branch_id),
 ):
@@ -458,6 +462,7 @@ def export_items(
         branch_id=branch_id,
         stock_filter=stock_filter,
         category=category,
+        load_all=load_all,
         current_user=current_user,
         active_branch=active_branch,
     )
@@ -1556,6 +1561,7 @@ def _branch_stock_data(
     current_user,
     branch_id: Optional[int] = None,
     keys: Optional[str] = None,
+    load_all: bool = False,
 ):
     """Aggregated per-branch stock balances. Groups products that share the
     same barcode (or, when barcode is empty, the same EN+AR name) and returns
@@ -1608,6 +1614,15 @@ def _branch_stock_data(
                     term_ors.append(clause)
                     params.extend(term_params)
                 where.append("(" + " OR ".join(term_ors) + ")")
+        elif not load_all and not keys:
+            summary = {
+                "total_count": 0,
+                "shown_count": 0,
+                "low_stock": 0,
+                "out_of_stock": 0,
+                "truncated": False,
+            }
+            return {"branches": branches, "items": [], "summary": summary}
         if effective_branch is not None:
             where.append("p.branch_id = %s")
             params.append(effective_branch)
@@ -1702,9 +1717,10 @@ def branch_stock(
     q: Optional[str] = None,
     branch_id: Optional[int] = None,
     keys: Optional[str] = None,
+    load_all: bool = False,
     current_user=Depends(get_current_user),
 ):
-    return _branch_stock_data(q, current_user, branch_id, keys)
+    return _branch_stock_data(q, current_user, branch_id, keys, load_all)
 
 
 @router.get("/branch-stock/export")
@@ -1712,6 +1728,7 @@ def branch_stock_export(
     q: Optional[str] = None,
     branch_id: Optional[int] = None,
     keys: Optional[str] = None,
+    load_all: bool = False,
     current_user=Depends(get_current_user),
 ):
     from openpyxl import Workbook
@@ -1727,7 +1744,7 @@ def branch_stock_export(
             s = "'" + s
         return s
 
-    data = _branch_stock_data(q, current_user, branch_id, keys)
+    data = _branch_stock_data(q, current_user, branch_id, keys, load_all=load_all)
     branches = data["branches"]
     items = data["items"]
 

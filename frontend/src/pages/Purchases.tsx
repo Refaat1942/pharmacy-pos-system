@@ -691,19 +691,27 @@ function ReplenishmentModal({
   const [onlyZero, setOnlyZero] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [search, setSearch] = useState('')
+  const [activeSearch, setActiveSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [lines, setLines] = useState<ReplLine[]>([])
   const [poSupplier, setPoSupplier] = useState<number | ''>('')
   const [notes, setNotes] = useState('')
   const [working, setWorking] = useState(false)
 
+  const shouldFetch = Boolean(branchId) && (showAll || onlyZero || activeSearch.trim().length >= 2)
+
   const load = () => {
+    if (!branchId) {
+      setLines([])
+      return
+    }
     setLoading(true)
     purchasesAPI.replenishment({
-      branch_id: branchId ? Number(branchId) : undefined,
+      branch_id: Number(branchId),
       supplier_id: supplierFilter ? Number(supplierFilter) : undefined,
       only_zero: onlyZero || undefined,
       include_all: showAll || undefined,
+      q: activeSearch.trim() || undefined,
     })
       .then((r) => setLines(r.data.map((it) => ({
         ...it,
@@ -714,7 +722,20 @@ function ReplenishmentModal({
       .catch(() => setLines([]))
       .finally(() => setLoading(false))
   }
-  useEffect(load, [branchId, supplierFilter, onlyZero, showAll])
+
+  useEffect(() => {
+    if (!shouldFetch) {
+      setLines([])
+      return
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, supplierFilter, onlyZero, showAll, activeSearch])
+
+  useEffect(() => {
+    const id = setTimeout(() => setActiveSearch(search.trim()), 400)
+    return () => clearTimeout(id)
+  }, [search])
 
   const update = (id: number, patch: Partial<ReplLine>) =>
     setLines((prev) => prev.map((l) => l.id === id ? { ...l, ...patch } : l))
@@ -869,11 +890,13 @@ function ReplenishmentModal({
             </label>
             <label className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
               <input type="checkbox" checked={showAll} onChange={(e) => { setShowAll(e.target.checked); if (e.target.checked) setOnlyZero(false) }} />
-              {t('purchases.show_all_items')}
+              {t('inventory.show_all_items')}
             </label>
           </div>
           <div className="flex items-end justify-end text-xs text-slate-500">
-            {filtered.length} {showAll ? t('purchases.items_total') : t('purchases.items_need')}
+            {shouldFetch
+              ? `${filtered.length} ${showAll ? t('purchases.items_total') : t('purchases.items_need')}`
+              : t('inventory.search_or_show_all_hint')}
           </div>
         </div>
 
@@ -888,11 +911,17 @@ function ReplenishmentModal({
               className="input w-full ps-9"
             />
           </div>
+          <p className="text-[11px] text-slate-500 mt-1.5">{t('inventory.search_or_show_all_hint')}</p>
         </div>
 
         <div className="flex-1 overflow-auto">
           {loading && <div className="text-center py-10 text-slate-400">{t('common.loading')}</div>}
-          {!loading && lines.length === 0 && (
+          {!loading && !shouldFetch && (
+            <div className="text-center py-10 text-slate-500 text-sm px-6">
+              {t('inventory.search_or_show_all_hint')}
+            </div>
+          )}
+          {!loading && shouldFetch && lines.length === 0 && (
             <div className="text-center py-10 text-slate-400">
               <Check size={32} className="mx-auto mb-2 text-emerald-500" />
               {t('purchases.repl_all_ok')}
