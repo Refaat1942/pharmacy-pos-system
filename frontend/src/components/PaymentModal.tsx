@@ -18,6 +18,9 @@ interface Props {
   onSuccess: (sale: SaleResponse) => void
 }
 
+const SETTLEMENT_METHODS = ['cash', 'visa', 'hybrid', 'instapay', 'vodafone_cash'] as const
+type SettlementMethod = (typeof SETTLEMENT_METHODS)[number]
+
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
   selectedSeller, selectedCustomer, clinicId, prescriptionId, onClose, onSuccess,
@@ -41,6 +44,11 @@ export default function PaymentModal({
   const [deliveryPersonId, setDeliveryPersonId] = useState<number | ''>('')
   const [accountPaidAmount, setAccountPaidAmount] = useState('')
   const [accountPaidMethod, setAccountPaidMethod] = useState('cash')
+  /** Digital sales: platform already paid vs billed to platform on account */
+  const [digitalBilling, setDigitalBilling] = useState<'paid' | 'account'>('paid')
+
+  const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
+  const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
 
   useEffect(() => {
     const load = () => {
@@ -60,8 +68,25 @@ export default function PaymentModal({
 
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
-    if (type === 'digital') setPaymentMethod('digital')
-    else if (paymentMethod === 'digital' || paymentMethod === 'account') setPaymentMethod('cash')
+    if (type === 'digital') {
+      setDigitalBilling('paid')
+      setPaymentMethod('cash')
+    } else if (paymentMethod === 'account') {
+      setPaymentMethod('cash')
+    }
+  }
+
+  const handleDigitalBillingChange = (mode: 'paid' | 'account') => {
+    setDigitalBilling(mode)
+    if (mode === 'account') {
+      setPaymentMethod('account')
+    } else {
+      setPaymentMethod((m) =>
+        m === 'account' || m === 'digital' || !SETTLEMENT_METHODS.includes(m as SettlementMethod)
+          ? 'cash'
+          : m,
+      )
+    }
   }
 
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
@@ -73,9 +98,9 @@ export default function PaymentModal({
   const hasCustomerForShipment =
     !!selectedCustomer ||
     hasDeliveryCustomerDetails ||
-    (saleType === 'digital' && paymentMethod === 'account')
+    isDigitalAccount
   const hasCustomerInfo =
-    !!selectedCustomer || hasDeliveryCustomerDetails || (saleType === 'digital' && paymentMethod === 'account')
+    !!selectedCustomer || hasDeliveryCustomerDetails || isDigitalAccount
   const change =
     paymentMethod === 'cash' && cashAmount
       ? Math.max(0, parseFloat(cashAmount) - effectiveTotal)
@@ -98,8 +123,12 @@ export default function PaymentModal({
     if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
     if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     if (paymentMethod === 'account') {
-      if (saleType === 'digital') return !!deliveryPersonId && hasCustomerForShipment
+      if (isDigitalAccount) return !!deliveryPersonId && hasCustomerForShipment
       return !!selectedCustomer && !!deliveryPersonId
+    }
+    if (isDigitalPaid) {
+      if (paymentMethod === 'cash') return parseFloat(cashAmount) >= effectiveTotal
+      if (paymentMethod === 'hybrid') return Math.abs(hybridDiff) < 0.01
     }
     return true
   }
@@ -142,7 +171,7 @@ export default function PaymentModal({
         setError(t('payment.delivery_address_required') as string)
         return
       }
-      if (!selectedCustomer && !hasDeliveryCustomerDetails && !(saleType === 'digital' && paymentMethod === 'account')) {
+      if (!selectedCustomer && !hasDeliveryCustomerDetails && !isDigitalAccount) {
         setError(t('payment.delivery_required') as string)
         return
       }
@@ -161,10 +190,7 @@ export default function PaymentModal({
       const { data } = await salesAPI.create({
         type: saleType,
         payment_method: paymentMethod,
-        digital_type:
-          saleType === 'digital' && (paymentMethod === 'digital' || paymentMethod === 'account')
-            ? digitalType
-            : undefined,
+        digital_type: saleType === 'digital' ? digitalType : undefined,
         items: cartItems.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -370,35 +396,62 @@ export default function PaymentModal({
               </div>
             )}
 
-            {/* Digital payment method (platform vs on-account) */}
+            {/* Digital: platform billing (paid vs on-account) */}
             {saleType === 'digital' && (
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                  {t('payment.payment_method')}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { value: 'digital', label: t('payment.platform_paid') },
-                    { value: 'account', label: t('payment.platform_on_account') },
-                  ].map(({ value, label }) => (
-                    <button
-                      key={value}
-                      onClick={() => setPaymentMethod(value)}
-                      className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                        paymentMethod === value
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                    {t('payment.platform_billing')}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'paid' as const, label: t('payment.platform_paid') },
+                      { value: 'account' as const, label: t('payment.platform_on_account') },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => handleDigitalBillingChange(value)}
+                        className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                          digitalBilling === value
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {isDigitalPaid && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                      {t('payment.platform_settlement')}
+                    </p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {SETTLEMENT_METHODS.map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setPaymentMethod(value)}
+                          className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                            paymentMethod === value
+                              ? 'border-pharma-500 bg-pharma-50 text-pharma-700'
+                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                          }`}
+                        >
+                          {t(`payment.${value}`)}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2">{t('payment.platform_settlement_hint')}</p>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Cash form */}
-            {paymentMethod === 'cash' && (
+            {paymentMethod === 'cash' && (saleType !== 'digital' || isDigitalPaid) && (
               <div className="space-y-3">
                 <div>
                   <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
@@ -427,7 +480,8 @@ export default function PaymentModal({
             )}
 
             {/* Electronic form */}
-            {(paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash') && (
+            {(paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash') &&
+              (saleType !== 'digital' || isDigitalPaid) && (
               <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-xl text-center space-y-2">
                 <CreditCard size={36} className="text-blue-500 mx-auto" />
                 <p className="text-sm font-semibold text-blue-700">{t(`payment.${paymentMethod}`)}</p>
@@ -442,7 +496,7 @@ export default function PaymentModal({
             )}
 
             {/* Hybrid form */}
-            {paymentMethod === 'hybrid' && (
+            {paymentMethod === 'hybrid' && (saleType !== 'digital' || isDigitalPaid) && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -489,42 +543,42 @@ export default function PaymentModal({
             )}
 
             {/* Account (on-credit) — digital bills the platform (Talabat, etc.), not the POS customer */}
-            {paymentMethod === 'account' && (
+            {paymentMethod === 'account' && (saleType !== 'digital' || isDigitalAccount) && (
               <div className={`p-5 rounded-xl border-2 text-center space-y-2 ${
-                saleType === 'digital' || selectedCustomer
+                isDigitalAccount || selectedCustomer
                   ? 'bg-amber-50 border-amber-200'
                   : 'bg-red-50 border-red-200'
               }`}>
                 <CreditCard
                   size={32}
                   className={
-                    saleType === 'digital' || selectedCustomer
+                    isDigitalAccount || selectedCustomer
                       ? 'text-amber-500 mx-auto'
                       : 'text-red-500 mx-auto'
                   }
                 />
                 <p
                   className={`text-sm font-semibold ${
-                    saleType === 'digital' || selectedCustomer ? 'text-amber-800' : 'text-red-800'
+                    isDigitalAccount || selectedCustomer ? 'text-amber-800' : 'text-red-800'
                   }`}
                 >
-                  {saleType === 'digital'
+                  {isDigitalAccount
                     ? `${t('payment.charge_to')} ${t(`payment.${digitalType}`)}`
                     : selectedCustomer
                     ? `${t('payment.charge_to')} ${selectedCustomer.name}`
                     : t('payment.account_requires_customer')}
                 </p>
-                {saleType === 'digital' && (
+                {isDigitalAccount && (
                   <p className="text-xs text-amber-700">{t('payment.platform_account_hint')}</p>
                 )}
                 <p
                   className={`text-2xl font-bold ${
-                    saleType === 'digital' || selectedCustomer ? 'text-amber-900' : 'text-red-900'
+                    isDigitalAccount || selectedCustomer ? 'text-amber-900' : 'text-red-900'
                   }`}
                 >
                   {t('receipt.egp')} {effectiveTotal.toFixed(2)}
                 </p>
-                {(saleType === 'digital' || selectedCustomer) && (
+                {(isDigitalAccount || selectedCustomer) && (
                   <div className="pt-3 mt-2 border-t border-amber-200 text-left space-y-2">
                     <label className="text-xs font-semibold text-amber-800 block">
                       {t('payment.paid_now')}
@@ -562,8 +616,8 @@ export default function PaymentModal({
               </div>
             )}
 
-            {/* Digital platform (settled or on-account) */}
-            {saleType === 'digital' && (paymentMethod === 'digital' || paymentMethod === 'account') && (
+            {/* Digital platform (Talabat, Vezeeta, …) */}
+            {saleType === 'digital' && (
               <div>
                 <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
                   {t('payment.digital_type')}
