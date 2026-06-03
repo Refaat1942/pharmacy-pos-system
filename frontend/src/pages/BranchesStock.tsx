@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -177,6 +178,9 @@ export default function BranchesStock() {
   }, [multiPick])
 
   const tableBranches = multiPick && showAllStockInTable ? catalog.branches : data.branches
+  const singleBranch = isAdmin && branchFilter !== ''
+  const visibleBranches =
+    tableBranches.length > 0 ? tableBranches : data.branches.length > 0 ? data.branches : allBranches
 
   const displayItems = useMemo(() => {
     if (!multiPick) return data.items
@@ -184,6 +188,34 @@ export default function BranchesStock() {
     if (pickedKeys.size === 0) return []
     return data.items.filter((r) => pickedKeys.has(r.key))
   }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
+
+  const bsFilter = useQuickFilter(displayItems, [
+    (r: Row) => r.name_en,
+    (r: Row) => r.name_ar,
+    (r: Row) => r.barcode,
+    (r: Row) => r.international_barcode,
+    (r: Row) => r.category,
+  ])
+  const bsAccessors = useMemo(() => {
+    const acc: Record<string, (r: Row) => unknown> = {
+      name: (r) => (isAr ? r.name_ar : r.name_en) || '',
+      barcode: (r) => r.barcode || '',
+      intl_barcode: (r) => r.international_barcode || '',
+      category: (r) => r.category || '',
+      total_stock: (r) => Number(r.total_stock) || 0,
+    }
+    if (singleBranch && visibleBranches[0]) {
+      const bid = visibleBranches[0].id
+      acc.stock = (r) => r.branches.find((x) => x.branch_id === bid)?.stock ?? 0
+      acc.min_stock = (r) => r.branches.find((x) => x.branch_id === bid)?.min_stock ?? 0
+    }
+    return acc
+  }, [isAr, singleBranch, visibleBranches])
+  const { sorted: sortedDisplayItems, sort: bsSort, toggle: bsToggle } = useSort(
+    bsFilter.filtered,
+    bsAccessors,
+    singleBranch ? { key: 'stock', dir: 'asc' } : { key: 'total_stock', dir: 'asc' },
+  )
 
   const togglePick = (key: string) => {
     setPickedKeys((prev) => {
@@ -220,10 +252,6 @@ export default function BranchesStock() {
       setExporting(false)
     }
   }
-
-  const singleBranch = isAdmin && branchFilter !== ''
-  const visibleBranches =
-    tableBranches.length > 0 ? tableBranches : data.branches.length > 0 ? data.branches : allBranches
 
   const stats = useMemo(() => {
     const s = data.summary
@@ -395,27 +423,42 @@ export default function BranchesStock() {
           </div>
         )}
 
+        <div className="mb-3">
+          <TableFilter
+            value={bsFilter.query}
+            onChange={bsFilter.setQuery}
+            placeholder={t('common.filter_placeholder') as string}
+            className="max-w-md"
+          />
+        </div>
+
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[56rem]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-start sticky start-0 bg-slate-50 z-10 min-w-[12rem]">
+                  <SortTh k="name" sort={bsSort} onToggle={bsToggle} align="start" className="px-4 py-3 sticky start-0 bg-slate-50 z-10 min-w-[12rem]">
                     {t('inventory.col_name')}
-                  </th>
-                  <th className="px-3 py-3 text-start whitespace-nowrap">{t('inventory.col_barcode')}</th>
-                  <th className="px-3 py-3 text-start whitespace-nowrap">
+                  </SortTh>
+                  <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
+                    {t('inventory.col_barcode')}
+                  </SortTh>
+                  <SortTh k="intl_barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
                     {t('inventory.col_intl_barcode')}
-                  </th>
+                  </SortTh>
                   {!singleBranch && (
-                    <th className="px-3 py-3 text-start whitespace-nowrap hidden lg:table-cell">
+                    <SortTh k="category" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap hidden lg:table-cell">
                       {t('inventory.col_category')}
-                    </th>
+                    </SortTh>
                   )}
                   {singleBranch ? (
                     <>
-                      <th className="px-3 py-3 text-center whitespace-nowrap">{t('inventory.bs_stock')}</th>
-                      <th className="px-3 py-3 text-center whitespace-nowrap">{t('inventory.bs_min')}</th>
+                      <SortTh k="stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
+                        {t('inventory.bs_stock')}
+                      </SortTh>
+                      <SortTh k="min_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
+                        {t('inventory.bs_min')}
+                      </SortTh>
                       <th className="px-3 py-3 text-center whitespace-nowrap">{t('inventory.bs_status')}</th>
                     </>
                   ) : (
@@ -425,9 +468,9 @@ export default function BranchesStock() {
                           {branchName(b)}
                         </th>
                       ))}
-                      <th className="px-3 py-3 text-center bg-pharma-50 text-pharma-800 whitespace-nowrap">
+                      <SortTh k="total_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 bg-pharma-50 text-pharma-800 whitespace-nowrap">
                         {t('inventory.bs_total')}
-                      </th>
+                      </SortTh>
                     </>
                   )}
                 </tr>
@@ -455,7 +498,7 @@ export default function BranchesStock() {
                   </tr>
                 )}
                 {!loading &&
-                  displayItems.map((row) => (
+                  sortedDisplayItems.map((row) => (
                     <tr key={row.key} className="hover:bg-slate-50/60 transition-colors">
                       <td className="px-4 py-3 sticky start-0 bg-white z-[1] border-e border-slate-50">
                         <div className="font-semibold text-slate-800 leading-snug">
