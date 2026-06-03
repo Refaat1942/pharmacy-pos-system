@@ -114,6 +114,10 @@ def delete_product(product_id: int,
 
 # Max rows returned by list-style endpoints (raise if you outgrow this).
 MAX_INVENTORY_ROWS = 100_000
+
+# Unit value for stock valuation: prefer purchase cost; fall back to selling price when cost unset.
+_STOCK_UNIT_VALUE = "COALESCE(NULLIF(cost, 0), price, 0)"
+_STOCK_UNIT_VALUE_P = "COALESCE(NULLIF(p.cost, 0), p.price, 0)"
 # Branch-stock search results cap (keeps UI and DB fast)
 BRANCH_STOCK_LIMIT = 1000
 
@@ -186,7 +190,7 @@ def inventory_summary(
               COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE stock <= 0)::int AS zero_stock,
               COUNT(*) FILTER (WHERE stock > 0 AND stock <= min_stock)::int AS low_stock,
-              COALESCE(SUM(stock * COALESCE(cost, 0)), 0)::float AS stock_value
+              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}), 0)::float AS stock_value
             FROM products WHERE {w}""",
         params,
     )
@@ -673,6 +677,8 @@ async def bulk_upload(file: UploadFile = File(...),
             price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
             cost_val = _row_get(r, "cost", "cost price", "purchase price")
             cost = float(cost_val) if cost_val not in (None, "") else None
+            if cost is None and price > 0:
+                cost = price
             min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
 
             pack_raw = _row_get(r, "pack_size", "pack size",
@@ -1162,7 +1168,7 @@ def expiry_report(
                      p.stock, p.price, p.cost, p.expiry_date, p.branch_id,
                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                      (p.expiry_date - CURRENT_DATE) AS days_left,
-                     (p.stock * COALESCE(p.cost, 0)) AS loss_value
+                     (p.stock * {_STOCK_UNIT_VALUE_P}) AS loss_value
               FROM products p
               LEFT JOIN branches b ON p.branch_id = b.id
               WHERE {' AND '.join(where)}
@@ -1207,9 +1213,9 @@ def expiry_summary(days: int = 30,
     cur.execute(
         f"""SELECT
               COUNT(*) FILTER (WHERE expiry_date < %s) AS expired_count,
-              COALESCE(SUM(stock * COALESCE(cost,0)) FILTER (WHERE expiry_date < %s), 0) AS expired_value,
+              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}) FILTER (WHERE expiry_date < %s), 0) AS expired_value,
               COUNT(*) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s) AS near_count,
-              COALESCE(SUM(stock * COALESCE(cost,0)) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s), 0) AS near_value
+              COALESCE(SUM(stock * {_STOCK_UNIT_VALUE}) FILTER (WHERE expiry_date >= %s AND expiry_date <= %s), 0) AS near_value
             FROM products
             WHERE active = true AND expiry_date IS NOT NULL{branch_filter}""",
         [today, today, today, cutoff, today, cutoff] + params,
