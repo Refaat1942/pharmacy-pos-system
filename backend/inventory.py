@@ -19,6 +19,45 @@ from stock_batches import (
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
 
+def _xlsx_safe(v):
+    if v is None:
+        return ""
+    s = str(v)
+    s = "".join(ch for ch in s if ch in ("\n", "\t") or ord(ch) >= 32)
+    s = s.lstrip(" \t\n")
+    if s and s[0] in ("=", "+", "-", "@"):
+        s = "'" + s
+    return s
+
+
+def _xlsx_response(headers: list, rows: list, filename: str):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Export"
+    ws.append([_xlsx_safe(h) for h in headers])
+    head_fill = PatternFill("solid", fgColor="1F8A4C")
+    for c in ws[1]:
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = head_fill
+        c.alignment = Alignment(horizontal="center")
+    for row in rows:
+        ws.append([_xlsx_safe(c) for c in row])
+    for col in ws.columns:
+        width = max((len(str(c.value)) if c.value is not None else 0) for c in col) + 2
+        ws.column_dimensions[col[0].column_letter].width = min(max(width, 10), 40)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _assert_branch_access(user, product_branch_id):
     """Non-admin users may only act on products in their own branch."""
     if user.get("role") == "admin":
@@ -404,6 +443,52 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     return [dict(r) for r in rows]
 
 
+@router.get("/items/export")
+def export_items(
+    q: str = "",
+    branch_id: Optional[int] = None,
+    stock_filter: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user=Depends(get_current_user),
+    active_branch=Depends(get_active_branch_id),
+):
+    rows = list_items(
+        q=q,
+        branch_id=branch_id,
+        stock_filter=stock_filter,
+        category=category,
+        current_user=current_user,
+        active_branch=active_branch,
+    )
+    headers = [
+        "Barcode", "International Barcode", "Name EN", "Name AR", "Category", "Unit",
+        "Price", "Cost", "Stock", "Min Stock", "Branch EN", "Branch AR", "Expiry",
+    ]
+    data = []
+    for r in rows:
+        exp = r.get("expiry_date")
+        if not exp and r.get("batches"):
+            batches = r["batches"] if isinstance(r["batches"], list) else []
+            if batches:
+                exp = batches[0].get("expiry_date")
+        data.append([
+            r.get("barcode"),
+            r.get("international_barcode"),
+            r.get("name_en"),
+            r.get("name_ar"),
+            r.get("category"),
+            r.get("unit"),
+            r.get("price"),
+            r.get("cost"),
+            r.get("stock"),
+            r.get("min_stock"),
+            r.get("branch_name_en"),
+            r.get("branch_name_ar"),
+            exp,
+        ])
+    return _xlsx_response(headers, data, "inventory_items.xlsx")
+
+
 @router.get("/items/across-branches")
 def search_across_branches(q: str,
                            current_user=Depends(get_current_user)):
@@ -673,6 +758,47 @@ def list_movements(product_id: Optional[int] = None,
     return [dict(r) for r in rows]
 
 
+@router.get("/movements/export")
+def export_movements(
+    product_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
+    movement_type: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    limit: int = 5000,
+    current_user=Depends(get_current_user),
+):
+    rows = list_movements(
+        product_id=product_id,
+        branch_id=branch_id,
+        movement_type=movement_type,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        current_user=current_user,
+    )
+    headers = [
+        "Date", "Product EN", "Product AR", "Type", "Qty", "Balance After",
+        "Reason", "User EN", "User AR", "Branch EN",
+    ]
+    data = [
+        [
+            r.get("created_at"),
+            r.get("product_name_en"),
+            r.get("product_name_ar"),
+            r.get("movement_type"),
+            r.get("quantity"),
+            r.get("balance_after"),
+            r.get("reason"),
+            r.get("user_name_en"),
+            r.get("user_name_ar"),
+            r.get("branch_name_en"),
+        ]
+        for r in rows
+    ]
+    return _xlsx_response(headers, data, "stock_movements.xlsx")
+
+
 # ─── FAST / SLOW / DEAD CLASSIFICATION ─────────────────────────────────────
 
 @router.get("/velocity")
@@ -739,6 +865,27 @@ def velocity_classification(days: int = 90,
         item["classification"] = cls
         result.append(item)
     return result
+
+
+@router.get("/velocity/export")
+def export_velocity(
+    days: int = 90,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user=Depends(get_current_user),
+):
+    rows = velocity_classification(
+        days=days, date_from=date_from, date_to=date_to, current_user=current_user,
+    )
+    headers = ["Name EN", "Name AR", "Barcode", "Stock", "Sold Qty", "Classification", "Unit", "Price"]
+    data = [
+        [
+            r.get("name_en"), r.get("name_ar"), r.get("barcode"), r.get("stock"),
+            r.get("sold_qty"), r.get("classification"), r.get("unit"), r.get("price"),
+        ]
+        for r in rows
+    ]
+    return _xlsx_response(headers, data, "inventory_velocity.xlsx")
 
 
 # ─── CONSUMPTION-BASED MIN STOCK SUGGESTION ────────────────────────────────
@@ -985,6 +1132,24 @@ def consumption_alerts(days: int = 30,
             d["days_remaining"] = round(int(r["stock"]) / avg, 1) if avg > 0 else None
             alerts.append(d)
     return alerts
+
+
+@router.get("/consumption-alerts/export")
+def export_consumption_alerts(
+    days: int = 30,
+    coverage_days: int = 7,
+    current_user=Depends(get_current_user),
+):
+    rows = consumption_alerts(days=days, coverage_days=coverage_days, current_user=current_user)
+    headers = ["Name EN", "Name AR", "Barcode", "Stock", "Avg Daily", "Days Left", "Suggested Min"]
+    data = [
+        [
+            r.get("name_en"), r.get("name_ar"), r.get("barcode"), r.get("stock"),
+            r.get("avg_daily"), r.get("days_remaining"), r.get("suggested_min"),
+        ]
+        for r in rows
+    ]
+    return _xlsx_response(headers, data, "inventory_alerts.xlsx")
 
 
 # ─── STOCK TRANSFERS ────────────────────────────────────────────────────────

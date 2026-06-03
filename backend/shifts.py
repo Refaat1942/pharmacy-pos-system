@@ -43,7 +43,8 @@ def _compute_expected(cur, shift) -> dict:
         SELECT
           COALESCE(SUM(CASE WHEN payment_method='cash' THEN net_total ELSE 0 END), 0)::float AS cash_sales,
           COALESCE(SUM(CASE WHEN payment_method='visa' THEN net_total ELSE 0 END), 0)::float AS visa_sales,
-          COALESCE(SUM(CASE WHEN payment_method NOT IN ('cash','visa') THEN net_total ELSE 0 END), 0)::float AS other_sales,
+          COALESCE(SUM(CASE WHEN payment_method='account' THEN net_total ELSE 0 END), 0)::float AS account_sales,
+          COALESCE(SUM(CASE WHEN payment_method NOT IN ('cash','visa','account') THEN net_total ELSE 0 END), 0)::float AS other_sales,
           COALESCE(SUM(net_total), 0)::float AS total_sales,
           COUNT(*)::int AS invoice_count,
           COALESCE(SUM(cash_amount), 0)::float AS cash_collected,

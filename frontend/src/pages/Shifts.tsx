@@ -21,7 +21,7 @@ type Shift = {
   branch_name_en?: string; branch_name_ar?: string
 }
 type Breakdown = {
-  cash_sales: number; visa_sales: number; other_sales: number
+  cash_sales: number; visa_sales: number; account_sales: number; other_sales: number
   total_sales: number; invoice_count: number
   cash_collected: number; cash_change: number
   returns_value: number; returns_count: number
@@ -369,6 +369,12 @@ export default function Shifts() {
                   <span>{t('shifts.expected_visa')}</span>
                   <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.visa_sales)}</span>
                 </div>
+                {(closePreview.account_sales ?? 0) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>{t('shifts.account_sales')}</span>
+                    <span className="font-mono font-semibold text-slate-800">{fmt(closePreview.account_sales)}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="space-y-3">
@@ -407,6 +413,7 @@ export default function Shifts() {
                 <Line label={t('shifts.invoices')} value={String(reportShift.breakdown.invoice_count)} />
                 <Line label={t('shifts.cash_sales')} value={fmt(reportShift.breakdown.cash_sales)} />
                 <Line label={t('shifts.visa_sales')} value={fmt(reportShift.breakdown.visa_sales)} />
+                <Line label={t('shifts.account_sales')} value={fmt(reportShift.breakdown.account_sales ?? 0)} />
                 <Line label={t('shifts.other_sales')} value={fmt(reportShift.breakdown.other_sales)} />
                 <Line label={t('shifts.total_sales')} value={fmt(reportShift.breakdown.total_sales)} bold />
                 <Line label={t('shifts.returns')} value={fmt(reportShift.breakdown.returns_value)} negative />

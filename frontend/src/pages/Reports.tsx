@@ -149,7 +149,6 @@ export default function Reports() {
           },
         }),
       ]
-      const salesByItemIdx = 6
       const clinicIdx = showClinics ? reqs.length : -1
       if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
       const branchIdx = isAdmin ? reqs.length : -1
@@ -159,9 +158,9 @@ export default function Reports() {
       setCats(results[1].data)
       setPays(results[2].data)
       setProds(results[3].data)
-      setTrend(results[4].data)
-      setDigitalAccount(results[5].data)
-      setSalesByItem(results[salesByItemIdx].data)
+      setSalesByItem(results[4].data)
+      setTrend(results[5].data)
+      setDigitalAccount(results[6].data)
       if (clinicIdx >= 0) setClinicRows(results[clinicIdx].data)
       if (branchIdx >= 0) setBranches(results[branchIdx].data)
     } catch (e: any) {
@@ -365,7 +364,7 @@ export default function Reports() {
         )}
 
         {/* Digital platform on-account (receivables) */}
-        {digitalAccount && (
+        {digitalAccount?.summary && (
           <section className="print:break-inside-avoid">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <SectionHead

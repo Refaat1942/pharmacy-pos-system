@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, Download } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api from '../lib/api'
@@ -10,7 +10,7 @@ import {
   looksLikeMultiInput,
   parseSearchTerms,
 } from '../lib/branchStockPick'
-import { exportCSV } from '../lib/csv'
+import { downloadApiExcel } from '../lib/downloadExcel'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
@@ -18,6 +18,35 @@ import { useAuth } from '../lib/auth'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 const SORT_TH_CLASS = 'font-semibold text-xs uppercase tracking-wider'
+
+function ExcelExportButton({
+  onExport,
+  disabled,
+}: {
+  onExport: () => Promise<void>
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={disabled || busy}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          await onExport()
+        } finally {
+          setBusy(false)
+        }
+      }}
+      className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium disabled:opacity-40"
+    >
+      <FileSpreadsheet size={15} />
+      {busy ? t('common.loading') : t('inventory.export_excel')}
+    </button>
+  )
+}
 
 type ProductBatch = {
   id: number
@@ -214,18 +243,12 @@ export default function Inventory() {
     setCategories(data)
   }
 
-  const exportItems = () => {
-    exportCSV(`inventory-items-${new Date().toISOString().slice(0, 10)}.csv`, items, [
-      { label: t('inventory.col_barcode'), value: (i) => i.barcode || '' },
-      { label: t('inventory.col_name'), value: (i) => (isAr ? i.name_ar : i.name_en) },
-      { label: t('inventory.col_category'), value: (i) => i.category || '' },
-      { label: t('inventory.col_unit'), value: (i) => i.unit },
-      { label: t('inventory.col_price'), value: (i) => Number(i.price).toFixed(2) },
-      { label: t('inventory.col_cost'), value: (i) => (i.cost ? Number(i.cost).toFixed(2) : '') },
-      { label: t('inventory.col_stock'), value: (i) => i.stock },
-      { label: t('inventory.col_min'), value: (i) => i.min_stock },
-    ])
-  }
+  const exportItems = () =>
+    downloadApiExcel('/inventory/items/export', `inventory-items-${new Date().toISOString().slice(0, 10)}.xlsx`, {
+      q: q || undefined,
+      stock_filter: stockFilter || undefined,
+      category: categoryFilter || undefined,
+    })
 
   useEffect(() => {
     if (tab === 'items') {
@@ -365,14 +388,7 @@ export default function Inventory() {
                 <FileSpreadsheet size={15} />
                 {t('inventory.bulk_upload')}
               </button>
-              <button
-                onClick={exportItems}
-                disabled={items.length === 0}
-                className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium disabled:opacity-40"
-              >
-                <Download size={15} />
-                {t('common.export')}
-              </button>
+              <ExcelExportButton onExport={exportItems} disabled={items.length === 0} />
               <button
                 onClick={() => setShowBulkPrint(true)}
                 disabled={selected.size === 0}
@@ -1068,6 +1084,16 @@ function MovementsTab() {
         <input type="date" value={start} onChange={e => setStart(e.target.value)} className="input max-w-40" placeholder={t('inventory.from') as string} />
         <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="input max-w-40" placeholder={t('inventory.to') as string} />
         <TableFilter value={moveFilter.query} onChange={moveFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
+        <ExcelExportButton
+          onExport={() =>
+            downloadApiExcel('/inventory/movements/export', `stock-movements-${new Date().toISOString().slice(0, 10)}.xlsx`, {
+              movement_type: type || undefined,
+              start_date: start || undefined,
+              end_date: end || undefined,
+            })
+          }
+          disabled={moves.length === 0}
+        />
       </div>
 
       <div className="bg-white rounded-xl shadow-sm overflow-auto">
@@ -1213,6 +1239,14 @@ function VelocityTab() {
           </button>
         )}
         <TableFilter value={velFilter.query} onChange={velFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
+        <ExcelExportButton
+          onExport={() =>
+            downloadApiExcel('/inventory/velocity/export', `inventory-velocity-${new Date().toISOString().slice(0, 10)}.xlsx`,
+              useCustom ? { date_from: dateFrom, date_to: dateTo } : { days },
+            )
+          }
+          disabled={rows.length === 0}
+        />
         <div className="flex gap-2 ms-auto">
           <ClsPill label={t('inventory.cls_fast')} count={counts.fast} active={filter === 'fast'} color="emerald" onClick={() => setFilter(filter === 'fast' ? '' : 'fast')} />
           <ClsPill label={t('inventory.cls_slow')} count={counts.slow} active={filter === 'slow'} color="amber" onClick={() => setFilter(filter === 'slow' ? '' : 'slow')} />
@@ -1319,6 +1353,15 @@ function AlertsTab() {
           </select>
         </div>
         <TableFilter value={alertFilter.query} onChange={alertFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
+        <ExcelExportButton
+          onExport={() =>
+            downloadApiExcel('/inventory/consumption-alerts/export', `inventory-alerts-${new Date().toISOString().slice(0, 10)}.xlsx`, {
+              days,
+              coverage_days: coverage,
+            })
+          }
+          disabled={rows.length === 0}
+        />
         <div className="ms-auto flex items-center gap-2 text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg text-sm">
           <AlertTriangle size={15} /> {rows.length} {t('inventory.alerts')}
         </div>
@@ -1636,6 +1679,22 @@ function BranchStockTab() {
           </select>
         )}
         <TableFilter value={bsFilter.query} onChange={bsFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
+        <ExcelExportButton
+          onExport={async () => {
+            const params: Record<string, string | number> = {}
+            if (activeQ.trim()) params.q = activeQ.trim()
+            if (multiPick && !showAllStockInTable && pickedKeys.size > 0) {
+              params.keys = Array.from(pickedKeys).join(',')
+            }
+            if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
+            await downloadApiExcel(
+              '/inventory/branch-stock/export',
+              `branches_stock_${new Date().toISOString().slice(0, 10)}.xlsx`,
+              params,
+            )
+          }}
+          disabled={displayItems.length === 0 && !activeQ.trim()}
+        />
       </div>
 
       {multiPick && !loading && activeQ && (
@@ -1846,6 +1905,16 @@ function StocktakeTab() {
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm min-w-48"
         />
         <TableFilter value={stFilter.query} onChange={stFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
+        <ExcelExportButton
+          onExport={() =>
+            downloadApiExcel('/inventory/items/export', `stocktake-${new Date().toISOString().slice(0, 10)}.xlsx`, {
+              branch_id: branchId as number,
+              q: q || undefined,
+              category: category || undefined,
+            })
+          }
+          disabled={!branchId || items.length === 0}
+        />
         <button
           onClick={apply}
           disabled={toApply.length === 0 || applying}
