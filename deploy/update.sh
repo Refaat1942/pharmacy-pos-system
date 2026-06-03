@@ -21,6 +21,8 @@ git -C "$APP_DIR" checkout -- . 2>/dev/null || true
 info "Pulling latest code..."
 git -C "$APP_DIR" pull --rebase --autostash || git -C "$APP_DIR" pull
 
+info "Deployed commit: $(git -C "$APP_DIR" rev-parse --short HEAD) — $(git -C "$APP_DIR" log -1 --pretty=%s)"
+
 # Restore ownership in case git/npm/pip wrote files as root.
 chown -R pharmapos:pharmapos "$APP_DIR" 2>/dev/null || true
 
@@ -36,6 +38,15 @@ info "Building frontend..."
 cd "$APP_DIR/frontend"
 npm install --legacy-peer-deps -q
 npm run build
+
+if [ -f "$APP_DIR/frontend/dist/index.html" ]; then
+  DEPLOY_REV="$(git -C "$APP_DIR" rev-parse --short HEAD)"
+  echo "$DEPLOY_REV" > "$APP_DIR/frontend/dist/build.txt"
+  info "Frontend bundle: $(grep -o 'index-[^.]*\\.js' "$APP_DIR/frontend/dist/index.html" | head -1 || echo 'unknown') (verify: /build.txt → $DEPLOY_REV)"
+else
+  echo "ERROR: frontend/dist/index.html missing — build failed?" >&2
+  exit 1
+fi
 
 info "Restarting backend service..."
 systemctl restart pharmapos
