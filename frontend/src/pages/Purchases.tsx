@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -8,6 +8,16 @@ import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 
 type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
+
+function initialPOBranchId(userBranchId?: number | null): number | '' {
+  if (userBranchId) return userBranchId
+  const raw = localStorage.getItem('pharma_active_branch')
+  if (raw && raw !== 'all') {
+    const n = Number(raw)
+    if (!Number.isNaN(n) && n > 0) return n
+  }
+  return ''
+}
 
 export default function Purchases() {
   const { t } = useTranslation()
@@ -194,7 +204,7 @@ function CreatePOModal({
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const [supplierId, setSupplierId] = useState<number | ''>('')
-  const [branchId, setBranchId] = useState<number | ''>(user?.branch_id || '')
+  const [branchId, setBranchId] = useState<number | ''>(() => initialPOBranchId(user?.branch_id))
   const [invNum, setInvNum] = useState('')
   const [invDate, setInvDate] = useState('')
   const [discount, setDiscount] = useState(0)
@@ -202,30 +212,69 @@ function CreatePOModal({
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<any[]>([])
+  const [showResults, setShowResults] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [items, setItems] = useState<POItem[]>([])
   const [saving, setSaving] = useState(false)
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!branchId) { setResults([]); return }
+    if (!branchId || !search.trim()) {
+      setResults([])
+      setSearchLoading(false)
+      return
+    }
+    setSearchLoading(true)
     const tm = setTimeout(() => {
-      api.get('/inventory/items', { params: { q: search, branch_id: branchId } })
+      api.get('/inventory/items', { params: { q: search.trim(), branch_id: branchId } })
         .then((r) => setResults(r.data))
         .catch(() => setResults([]))
+        .finally(() => setSearchLoading(false))
     }, 250)
     return () => clearTimeout(tm)
   }, [search, branchId])
 
   const addItem = (p?: any) => {
     if (p) {
-      if (items.find((i) => i.product_id === p.id)) return
-      setItems([...items, { product_id: p.id, barcode: p.barcode, product_name_en: p.name_en, product_name_ar: p.name_ar, quantity: 1, unit_cost: p.cost || 0, discount_pct: 0, vat_pct: 0, public_price: p.price ?? null, expiry_date: null }])
+      setItems((prev) => {
+        const existing = prev.find((i) => i.product_id === p.id)
+        if (existing) {
+          return prev.map((i) => i.product_id === p.id ? { ...i, quantity: i.quantity + 1 } : i)
+        }
+        return [...prev, {
+          product_id: p.id,
+          barcode: p.barcode,
+          product_name_en: p.name_en,
+          product_name_ar: p.name_ar,
+          quantity: 1,
+          unit_cost: p.cost || 0,
+          discount_pct: 0,
+          vat_pct: 0,
+          public_price: p.price ?? null,
+          expiry_date: null,
+        }]
+      })
+      setSearch('')
+      setResults([])
+      setShowResults(false)
     } else {
-      // blank line for new product
-      setItems([...items, { product_id: null, barcode: '', product_name_en: '', product_name_ar: '', quantity: 1, unit_cost: 0, discount_pct: 0, vat_pct: 0, public_price: null, expiry_date: null }])
+      setItems((prev) => [...prev, {
+        product_id: null,
+        barcode: '',
+        product_name_en: '',
+        product_name_ar: '',
+        quantity: 1,
+        unit_cost: 0,
+        discount_pct: 0,
+        vat_pct: 0,
+        public_price: null,
+        expiry_date: null,
+      }])
     }
   }
-  const update = (i: number, patch: Partial<POItem>) => setItems(items.map((it, idx) => idx === i ? { ...it, ...patch } : it))
-  const remove = (i: number) => setItems(items.filter((_, idx) => idx !== i))
+  const update = (i: number, patch: Partial<POItem>) =>
+    setItems((prev) => prev.map((it, idx) => idx === i ? { ...it, ...patch } : it))
+  const remove = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i))
 
   const lineNet = (i: POItem) => i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100) * (1 + (i.vat_pct || 0) / 100)
   const subtotal = items.reduce((s, i) => s + lineNet(i), 0)
@@ -308,19 +357,42 @@ function CreatePOModal({
             </div>
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setShowResults(true) }}
+              onFocus={() => {
+                if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+                setShowResults(true)
+              }}
+              onBlur={() => {
+                if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+                hideTimerRef.current = setTimeout(() => setShowResults(false), 200)
+              }}
               disabled={!branchId}
               className="input w-full mb-2"
-              placeholder={t('purchases.search_existing') as string}
+              placeholder={branchId ? (t('purchases.search_existing') as string) : (t('purchases.select_branch_first') as string)}
             />
-            {results.length > 0 && (
+            {!branchId && (
+              <p className="text-xs text-amber-600 mb-2">{t('purchases.select_branch_first')}</p>
+            )}
+            {showResults && branchId && search.trim() && (
               <div className="mb-2 max-h-40 overflow-auto border border-slate-200 rounded-lg">
-                {results.slice(0, 20).map((p) => (
-                  <button key={p.id} onClick={() => addItem(p)} className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between">
+                {searchLoading && (
+                  <div className="px-3 py-2 text-xs text-slate-400 text-center">{t('common.loading')}</div>
+                )}
+                {!searchLoading && results.slice(0, 20).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => addItem(p)}
+                    className="w-full px-3 py-1.5 text-start hover:bg-slate-50 text-sm border-b border-slate-100 flex justify-between"
+                  >
                     <span>{i18n.language === 'ar' ? p.name_ar : p.name_en}</span>
                     <span className="text-xs text-slate-500">{p.barcode} · {t('purchases.cost')}: {p.cost}</span>
                   </button>
                 ))}
+                {!searchLoading && results.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-slate-400 text-center">{t('purchases.no_results')}</div>
+                )}
               </div>
             )}
             <div className="space-y-2">

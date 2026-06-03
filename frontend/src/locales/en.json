@@ -973,6 +973,8 @@
     "no_items": "No items",
     "add_new_product": "Add Blank Line",
     "search_existing": "Search existing products",
+    "select_branch_first": "Select a branch to search products",
+    "no_results": "No matching products",
     "cost": "Unit Cost",
     "qty": "Qty",
     "create_draft": "Create Draft",
