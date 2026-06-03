@@ -455,6 +455,19 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
   po: PurchaseOrder; onClose: () => void; onReceive: () => void; onCancel: () => void; canReceive: boolean; canCancel: boolean
 }) {
   const { t } = useTranslation()
+  const items = po.items || []
+  const poItemAccessors = useMemo(() => ({
+    name: (it: POItem) => (i18n.language === 'ar' ? it.product_name_ar : it.product_name_en) || '',
+    barcode: (it: POItem) => it.barcode || '',
+    quantity: (it: POItem) => Number(it.quantity) || 0,
+    unit_cost: (it: POItem) => Number(it.unit_cost) || 0,
+    discount_pct: (it: POItem) => Number(it.discount_pct) || 0,
+    vat_pct: (it: POItem) => Number(it.vat_pct) || 0,
+    public_price: (it: POItem) => it.public_price == null ? null : Number(it.public_price),
+    expiry_date: (it: POItem) => it.expiry_date || '',
+    total: (it: POItem) => Number(it.total) || 0,
+  }), [])
+  const { sorted: sortedPoItems, sort: poItemSort, toggle: poItemToggle } = useSort(items, poItemAccessors)
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -474,19 +487,19 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('purchases.col_name')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_barcode')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.qty')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.cost')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.discount_pct')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.vat_pct')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.public_price')}</th>
-                <th className="px-3 py-2 text-start">{t('purchases.col_expiry')}</th>
-                <th className="px-3 py-2 text-end">{t('purchases.col_total')}</th>
+                <SortTh k="name" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_name')}</SortTh>
+                <SortTh k="barcode" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_barcode')}</SortTh>
+                <SortTh k="quantity" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.qty')}</SortTh>
+                <SortTh k="unit_cost" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.cost')}</SortTh>
+                <SortTh k="discount_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.discount_pct')}</SortTh>
+                <SortTh k="vat_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.vat_pct')}</SortTh>
+                <SortTh k="public_price" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.public_price')}</SortTh>
+                <SortTh k="expiry_date" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_expiry')}</SortTh>
+                <SortTh k="total" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.col_total')}</SortTh>
               </tr>
             </thead>
             <tbody>
-              {(po.items || []).map((it: any) => (
+              {sortedPoItems.map((it: any) => (
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
@@ -581,12 +594,29 @@ function ReplenishmentModal({
     return lines.filter((l) =>
       (l.name_en || '').toLowerCase().includes(term) ||
       (l.name_ar || '').toLowerCase().includes(term) ||
-      (l.barcode || '').toLowerCase().includes(term),
+      (l.barcode || '').toLowerCase().includes(term) ||
+      (l.supplier_name || '').toLowerCase().includes(term),
     )
   }, [lines, search])
 
+  const replAccessors = useMemo(() => ({
+    name: (l: ReplLine) => (i18n.language === 'ar' ? l.name_ar : l.name_en) || '',
+    barcode: (l: ReplLine) => l.barcode || '',
+    supplier: (l: ReplLine) => l.supplier_name || '',
+    stock: (l: ReplLine) => Number(l.stock) || 0,
+    min_stock: (l: ReplLine) => Number(l.min_stock) || 0,
+    qty: (l: ReplLine) => Number(l.qty) || 0,
+    cost: (l: ReplLine) => Number(l.cost) || 0,
+    line_total: (l: ReplLine) => (Number(l.qty) || 0) * (Number(l.cost) || 0),
+  }), [])
+  const { sorted: sortedRepl, sort: replSort, toggle: replToggle } = useSort(
+    filtered,
+    replAccessors,
+    { key: 'stock', dir: 'asc' },
+  )
+
   const toggleAll = (v: boolean) => {
-    const ids = new Set(filtered.map((l) => l.id))
+    const ids = new Set(sortedRepl.map((l) => l.id))
     setLines((prev) => prev.map((l) => ids.has(l.id) ? { ...l, selected: v } : l))
   }
 
@@ -606,18 +636,7 @@ function ReplenishmentModal({
     () => selected.reduce((s, l) => s + l.qty * l.cost, 0),
     [selected],
   )
-  const allSelected = filtered.length > 0 && filtered.every((l) => l.selected)
-
-  // Group by supplier for visual grouping
-  const groups = useMemo(() => {
-    const m = new Map<string, ReplLine[]>()
-    filtered.forEach((l) => {
-      const key = l.supplier_name || t('purchases.unassigned_supplier') as string
-      if (!m.has(key)) m.set(key, [])
-      m.get(key)!.push(l)
-    })
-    return Array.from(m.entries())
-  }, [filtered, t])
+  const allSelected = sortedRepl.length > 0 && sortedRepl.every((l) => l.selected)
 
   const downloadExcel = async () => {
     if (selected.length === 0) { alert(t('purchases.repl_select_items')); return }
@@ -755,55 +774,50 @@ function ReplenishmentModal({
                   <th className="px-3 py-2 w-8">
                     <input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} />
                   </th>
-                  <th className="px-3 py-2 text-start">{t('purchases.col_name')}</th>
-                  <th className="px-3 py-2 text-start">{t('purchases.col_barcode')}</th>
-                  <th className="px-3 py-2 text-end">{t('purchases.in_stock')}</th>
-                  <th className="px-3 py-2 text-end">{t('purchases.min_stock')}</th>
-                  <th className="px-3 py-2 text-end">{t('purchases.order_qty')}</th>
-                  <th className="px-3 py-2 text-end">{t('purchases.cost')}</th>
-                  <th className="px-3 py-2 text-end">{t('purchases.line_total')}</th>
+                  <SortTh k="name" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_name')}</SortTh>
+                  <SortTh k="barcode" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_barcode')}</SortTh>
+                  <SortTh k="supplier" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_supplier')}</SortTh>
+                  <SortTh k="stock" sort={replSort} onToggle={replToggle} align="end">{t('purchases.in_stock')}</SortTh>
+                  <SortTh k="min_stock" sort={replSort} onToggle={replToggle} align="end">{t('purchases.min_stock')}</SortTh>
+                  <SortTh k="qty" sort={replSort} onToggle={replToggle} align="end">{t('purchases.order_qty')}</SortTh>
+                  <SortTh k="cost" sort={replSort} onToggle={replToggle} align="end">{t('purchases.cost')}</SortTh>
+                  <SortTh k="line_total" sort={replSort} onToggle={replToggle} align="end">{t('purchases.line_total')}</SortTh>
                 </tr>
               </thead>
               <tbody>
-                {groups.map(([sup, gLines]) => (
-                  <>
-                    <tr key={`g-${sup}`} className="bg-slate-50">
-                      <td colSpan={8} className="px-3 py-1.5 text-xs font-semibold text-slate-600">{sup}</td>
-                    </tr>
-                    {gLines.map((l) => (
-                      <tr key={l.id} className={`border-t border-slate-100 ${l.stock <= 0 ? 'bg-red-50/40' : ''}`}>
-                        <td className="px-3 py-2 text-center">
-                          <input type="checkbox" checked={l.selected} onChange={(e) => update(l.id, { selected: e.target.checked })} />
-                        </td>
-                        <td className="px-3 py-2">{i18n.language === 'ar' ? l.name_ar : l.name_en}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-slate-500">{l.barcode || '—'}</td>
-                        <td className={`px-3 py-2 text-end ${l.stock <= 0 ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>
-                          {l.stock} {l.unit_label}
-                        </td>
-                        <td className="px-3 py-2 text-end text-slate-500">{l.min_stock}</td>
-                        <td className="px-3 py-2 text-end">
-                          <input
-                            type="number"
-                            min={1}
-                            value={l.qty}
-                            onChange={(e) => update(l.id, { qty: Math.max(1, Number(e.target.value)) })}
-                            className="input w-20 text-end"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-end">
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={l.cost}
-                            onChange={(e) => update(l.id, { cost: Math.max(0, Number(e.target.value)) })}
-                            className="input w-24 text-end"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-end font-semibold">{(l.qty * l.cost).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </>
+                {sortedRepl.map((l) => (
+                  <tr key={l.id} className={`border-t border-slate-100 ${l.stock <= 0 ? 'bg-red-50/40' : ''}`}>
+                    <td className="px-3 py-2 text-center">
+                      <input type="checkbox" checked={l.selected} onChange={(e) => update(l.id, { selected: e.target.checked })} />
+                    </td>
+                    <td className="px-3 py-2">{i18n.language === 'ar' ? l.name_ar : l.name_en}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-slate-500">{l.barcode || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 text-xs">{l.supplier_name || t('purchases.unassigned_supplier')}</td>
+                    <td className={`px-3 py-2 text-end ${l.stock <= 0 ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>
+                      {l.stock} {l.unit_label}
+                    </td>
+                    <td className="px-3 py-2 text-end text-slate-500">{l.min_stock}</td>
+                    <td className="px-3 py-2 text-end">
+                      <input
+                        type="number"
+                        min={1}
+                        value={l.qty}
+                        onChange={(e) => update(l.id, { qty: Math.max(1, Number(e.target.value)) })}
+                        className="input w-20 text-end"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-end">
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={l.cost}
+                        onChange={(e) => update(l.id, { cost: Math.max(0, Number(e.target.value)) })}
+                        className="input w-24 text-end"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-end font-semibold">{(l.qty * l.cost).toFixed(2)}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>

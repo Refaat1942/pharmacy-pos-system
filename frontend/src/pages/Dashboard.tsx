@@ -6,6 +6,7 @@ import {
   Building2,
 } from 'lucide-react'
 import Layout from '../components/Layout'
+import { useSort, SortTh } from '../components/DataTable'
 import i18n from '../lib/i18n'
 import api, { branchesAPI, dashboardAPI } from '../lib/api'
 import type {
@@ -127,6 +128,19 @@ export default function Dashboard() {
     new Date(d).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', {
       weekday: 'short', day: 'numeric',
     })
+
+  const topProductAccessors = useMemo(() => ({
+    name: (p: TopProduct) => (lang === 'ar' ? p.name_ar : p.name_en) || '',
+    qty: (p: TopProduct) => Number(p.qty) || 0,
+    revenue: (p: TopProduct) => Number(p.revenue) || 0,
+  }), [lang])
+  const topSellerAccessors = useMemo(() => ({
+    name: (s: TopSeller) => (lang === 'ar' ? s.name_ar : s.name_en) || '',
+    invoices: (s: TopSeller) => Number(s.invoices) || 0,
+    sales: (s: TopSeller) => Number(s.sales) || 0,
+  }), [lang])
+  const { sorted: sortedTopProducts, sort: productSort, toggle: productToggle } = useSort(topProducts, topProductAccessors)
+  const { sorted: sortedTopSellers, sort: sellerSort, toggle: sellerToggle } = useSort(topSellers, topSellerAccessors)
 
   return (
     <Layout>
@@ -335,13 +349,13 @@ export default function Dashboard() {
                       <thead>
                         <tr className="text-[11px] uppercase text-gray-400 border-b">
                           <th className="text-start py-2 font-semibold">#</th>
-                          <th className="text-start py-2 font-semibold">{t('dashboard.product')}</th>
-                          <th className="text-end py-2 font-semibold">{t('dashboard.qty')}</th>
-                          <th className="text-end py-2 font-semibold">{t('dashboard.revenue')}</th>
+                          <SortTh k="name" sort={productSort} onToggle={productToggle} align="start" className="py-2">{t('dashboard.product')}</SortTh>
+                          <SortTh k="qty" sort={productSort} onToggle={productToggle} align="end" className="py-2">{t('dashboard.qty')}</SortTh>
+                          <SortTh k="revenue" sort={productSort} onToggle={productToggle} align="end" className="py-2">{t('dashboard.revenue')}</SortTh>
                         </tr>
                       </thead>
                       <tbody>
-                        {topProducts.map((p, idx) => (
+                        {sortedTopProducts.map((p, idx) => (
                           <tr key={p.id} className="border-b border-gray-50">
                             <td className="py-2 text-gray-400 text-xs tabular-nums">{idx + 1}</td>
                             <td className="py-2 text-gray-800 font-medium">
@@ -370,13 +384,13 @@ export default function Dashboard() {
                       <thead>
                         <tr className="text-[11px] uppercase text-gray-400 border-b">
                           <th className="text-start py-2 font-semibold">#</th>
-                          <th className="text-start py-2 font-semibold">{t('dashboard.seller')}</th>
-                          <th className="text-end py-2 font-semibold">{t('dashboard.invoices')}</th>
-                          <th className="text-end py-2 font-semibold">{t('dashboard.sales')}</th>
+                          <SortTh k="name" sort={sellerSort} onToggle={sellerToggle} align="start" className="py-2">{t('dashboard.seller')}</SortTh>
+                          <SortTh k="invoices" sort={sellerSort} onToggle={sellerToggle} align="end" className="py-2">{t('dashboard.invoices')}</SortTh>
+                          <SortTh k="sales" sort={sellerSort} onToggle={sellerToggle} align="end" className="py-2">{t('dashboard.sales')}</SortTh>
                         </tr>
                       </thead>
                       <tbody>
-                        {topSellers.map((s, idx) => (
+                        {sortedTopSellers.map((s, idx) => (
                           <tr key={s.id} className="border-b border-gray-50">
                             <td className="py-2 text-gray-400 text-xs tabular-nums">{idx + 1}</td>
                             <td className="py-2 text-gray-800 font-medium">

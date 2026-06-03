@@ -278,6 +278,16 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
 
 function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
   const { t } = useTranslation()
+  const txns = data.transactions || []
+  const stmtAccessors = useMemo(() => ({
+    date: (tx: any) => tx.at || '',
+    kind: (tx: any) => tx.kind || '',
+    reference: (tx: any) => tx.reference || '',
+    debit: (tx: any) => Number(tx.debit) || 0,
+    credit: (tx: any) => Number(tx.credit) || 0,
+    balance: (tx: any) => Number(tx.balance) || 0,
+  }), [])
+  const { sorted: sortedTxns, sort: stmtSort, toggle: stmtToggle } = useSort(txns, stmtAccessors)
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -293,17 +303,17 @@ function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('customers.col_date')}</th>
-                <th className="px-3 py-2 text-start">{t('customers.col_kind')}</th>
-                <th className="px-3 py-2 text-start">{t('customers.col_reference')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_debit')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_credit')}</th>
-                <th className="px-3 py-2 text-end">{t('customers.col_balance')}</th>
+                <SortTh k="date" sort={stmtSort} onToggle={stmtToggle} align="start">{t('customers.col_date')}</SortTh>
+                <SortTh k="kind" sort={stmtSort} onToggle={stmtToggle} align="start">{t('customers.col_kind')}</SortTh>
+                <SortTh k="reference" sort={stmtSort} onToggle={stmtToggle} align="start">{t('customers.col_reference')}</SortTh>
+                <SortTh k="debit" sort={stmtSort} onToggle={stmtToggle} align="end">{t('customers.col_debit')}</SortTh>
+                <SortTh k="credit" sort={stmtSort} onToggle={stmtToggle} align="end">{t('customers.col_credit')}</SortTh>
+                <SortTh k="balance" sort={stmtSort} onToggle={stmtToggle} align="end">{t('customers.col_balance')}</SortTh>
               </tr>
             </thead>
             <tbody>
-              {data.transactions.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-slate-400">{t('customers.no_txns')}</td></tr>}
-              {data.transactions.map((tx: any, i: number) => (
+              {sortedTxns.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-slate-400">{t('customers.no_txns')}</td></tr>}
+              {sortedTxns.map((tx: any, i: number) => (
                 <tr key={i} className="border-t border-slate-100">
                   <td className="px-3 py-2 text-xs">{tx.at ? new Date(tx.at).toLocaleString() : '—'}</td>
                   <td className="px-3 py-2">{tx.kind === 'sale' ? t('customers.kind_sale') : t('customers.kind_payment')}</td>

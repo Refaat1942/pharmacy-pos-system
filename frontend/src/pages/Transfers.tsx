@@ -529,6 +529,12 @@ function TransferDetailModal({
   const dir: 'rtl' | 'ltr' = isAr ? 'rtl' : 'ltr'
   const tr = (k: string) => i18n.getFixedT(isAr ? 'ar' : 'en')(k)
   const items = transfer.items || []
+  const itemAccessors = useMemo(() => ({
+    name: (it: TransferItem) => (isAr ? it.product_name_ar : it.product_name_en) || '',
+    barcode: (it: TransferItem) => it.barcode || '',
+    quantity: (it: TransferItem) => Number(it.quantity) || 0,
+  }), [isAr])
+  const { sorted: sortedItems, sort: itemSort, toggle: itemToggle } = useSort(items, itemAccessors)
   const totalQty = items.reduce((s, it) => s + (Number(it.quantity) || 0), 0)
   const fromName = isAr ? transfer.from_name_ar : transfer.from_name_en
   const toName = isAr ? transfer.to_name_ar : transfer.to_name_en
@@ -561,13 +567,13 @@ function TransferDetailModal({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-start">{t('transfers.product')}</th>
-                <th className="px-3 py-2 text-start">{t('transfers.col_barcode')}</th>
-                <th className="px-3 py-2 text-end">{t('transfers.quantity')}</th>
+                <SortTh k="name" sort={itemSort} onToggle={itemToggle} align="start">{t('transfers.product')}</SortTh>
+                <SortTh k="barcode" sort={itemSort} onToggle={itemToggle} align="start">{t('transfers.col_barcode')}</SortTh>
+                <SortTh k="quantity" sort={itemSort} onToggle={itemToggle} align="end">{t('transfers.quantity')}</SortTh>
               </tr>
             </thead>
             <tbody>
-              {(transfer.items || []).map((it: TransferItem) => (
+              {sortedItems.map((it: TransferItem) => (
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.barcode || '—'}</td>
