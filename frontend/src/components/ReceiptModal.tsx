@@ -96,6 +96,8 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
     cash: tr('payment.cash'),
     visa: tr('payment.visa'),
     hybrid: tr('payment.hybrid'),
+    instapay: tr('payment.instapay'),
+    vodafone_cash: tr('payment.vodafone_cash'),
     digital: tr('payment.digital'),
     account: tr('payment.account'),
   }
