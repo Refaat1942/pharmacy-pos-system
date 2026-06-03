@@ -17,6 +17,7 @@ import {
   ClipboardList,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import type { ComponentType } from 'react'
 import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
@@ -160,8 +161,20 @@ export default function POS() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
+  const [openShift, setOpenShift] = useState<{ id: number } | null>(null)
+  const [shiftLoading, setShiftLoading] = useState(true)
 
   const [pharmacyName, setPharmacyName] = useState<string>('')
+  const refreshShift = useCallback(() => {
+    setShiftLoading(true)
+    api.get('/shifts/current')
+      .then((r) => setOpenShift(r.data ? { id: r.data.id } : null))
+      .catch(() => setOpenShift(null))
+      .finally(() => setShiftLoading(false))
+  }, [])
+
+  useEffect(() => { refreshShift() }, [refreshShift])
+
   useEffect(() => {
     api.get<{ name_en?: string | null; name_ar?: string | null }>('/settings/profile')
       .then((r) => {
@@ -429,6 +442,7 @@ export default function POS() {
     setLastSale(sale)
     setShowPaymentModal(false)
     setShowReceiptModal(true)
+    refreshShift()
     setCartItems([])
     setInvoiceDiscount(0)
     setSelectedCustomer(null)
@@ -443,8 +457,23 @@ export default function POS() {
     searchRef.current?.focus()
   }
 
+  const canCheckout = !!openShift && !shiftLoading
+
+  const tryCheckout = () => {
+    if (!canCheckout) return
+    setShowPaymentModal(true)
+  }
+
   return (
     <Layout>
+      {!shiftLoading && !openShift && (
+        <div className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span>{t('pos.shift_required')}</span>
+          <Link to="/shifts" className="font-semibold text-pharma-700 hover:underline whitespace-nowrap">
+            {t('pos.open_shift')} →
+          </Link>
+        </div>
+      )}
       <div className="flex-1 flex overflow-hidden">
         {/* ──────────── Main work area: scan + cart ──────────── */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -981,8 +1010,9 @@ export default function POS() {
               </button>
             </div>
             <button
-              onClick={() => setShowPaymentModal(true)}
-              disabled={cartItems.length === 0}
+              onClick={tryCheckout}
+              disabled={cartItems.length === 0 || !canCheckout}
+              title={!canCheckout ? (t('pos.shift_required') as string) : undefined}
               className="w-full bg-gradient-to-br from-pharma-600 to-pharma-700 hover:from-pharma-700 hover:to-pharma-800 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-pharma-500/30 text-base tracking-wide"
             >
               {t('pos.checkout')} →

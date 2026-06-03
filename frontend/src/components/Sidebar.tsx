@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
-  LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike,
+  LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
@@ -15,6 +15,8 @@ interface NavItem {
   adminOnly?: boolean
   roles?: string[]
   feature?: string
+  /** Time clock kiosk — visible to every logged-in user */
+  clockScreen?: boolean
 }
 
 const NAV: NavItem[] = [
@@ -33,6 +35,7 @@ const NAV: NavItem[] = [
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
+  { to: '/clock',     labelKey: 'nav.clock',      Icon: Clock,        clockScreen: true },
   { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       roles: ['admin', 'branch'] },
   { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true },
 ]
@@ -63,6 +66,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
         {NAV.filter((n) => {
+          if (n.clockScreen) return true
           if (n.adminOnly && !isAdmin) return false
           if (n.roles && !n.roles.includes(user?.role || '')) {
             const permittedByUser = !!(userPerms && n.feature && (

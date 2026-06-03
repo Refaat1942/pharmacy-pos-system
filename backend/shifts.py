@@ -37,6 +37,24 @@ def _count_pending_deliveries(cur, shift) -> int:
     return int(cur.fetchone()['cnt'])
 
 
+def assert_open_shift_for_sales(cur, user_id: int, branch_id: int) -> None:
+    """Block POS sales until the cashier has an open shift on this branch."""
+    cur.execute(
+        """
+        SELECT id FROM shifts
+        WHERE user_id = %s AND branch_id = %s AND status = 'open'
+        ORDER BY opened_at DESC
+        LIMIT 1
+        """,
+        [user_id, branch_id],
+    )
+    if not cur.fetchone():
+        raise HTTPException(
+            400,
+            "Open a cash drawer shift before making sales. Go to Cash Drawer / Shifts and open your shift.",
+        )
+
+
 def _compute_expected(cur, shift) -> dict:
     """Compute expected cash + payment breakdown for shift window."""
     cur.execute("""

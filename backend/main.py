@@ -653,6 +653,12 @@ def create_sale(req: SaleRequest,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if req.type != "return":
+            if active_branch is None:
+                raise HTTPException(400, "Active branch is required to complete a sale")
+            from shifts import assert_open_shift_for_sales
+            assert_open_shift_for_sales(cur, current_user["user_id"], active_branch)
+
         subtotal = sum(i.quantity * i.unit_price for i in req.items)
         delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0
         net_total = subtotal - req.discount + delivery_fee
@@ -1261,6 +1267,8 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         if not inv_row:
             raise HTTPException(status_code=404, detail="Invoice not found")
         return_branch_id = inv_row["branch_id"]
+        from shifts import assert_open_shift_for_sales
+        assert_open_shift_for_sales(cur, current_user["user_id"], return_branch_id)
 
         cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
         count = cur.fetchone()["cnt"]

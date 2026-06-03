@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone,
+  Smartphone, ArrowLeft, FileSpreadsheet, type LucideIcon,
 } from 'lucide-react'
+import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
@@ -88,6 +89,38 @@ function PlatformBadge({ platformId, label }: { platformId: string; label: strin
   )
 }
 
+type ReportId =
+  | 'pnl'
+  | 'trend'
+  | 'category'
+  | 'branch'
+  | 'clinic'
+  | 'digital'
+  | 'payment'
+  | 'sales_by_item'
+  | 'top_products'
+
+type ReportDef = {
+  id: ReportId
+  labelKey: string
+  Icon: LucideIcon
+  adminOnly?: boolean
+  needsClinics?: boolean
+  fixedPeriod?: boolean
+}
+
+const REPORT_DEFS: ReportDef[] = [
+  { id: 'pnl', labelKey: 'reports.pnl_title', Icon: DollarSign },
+  { id: 'trend', labelKey: 'reports.monthly_trend', Icon: TrendingUp, fixedPeriod: true },
+  { id: 'category', labelKey: 'reports.by_category', Icon: PieChart },
+  { id: 'branch', labelKey: 'reports.by_branch', Icon: Building2, adminOnly: true },
+  { id: 'clinic', labelKey: 'reports.by_clinic', Icon: Stethoscope, needsClinics: true },
+  { id: 'digital', labelKey: 'reports.digital_account_title', Icon: Smartphone },
+  { id: 'payment', labelKey: 'reports.by_payment', Icon: CreditCard },
+  { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
+  { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
+]
+
 export default function Reports() {
   const { t } = useTranslation()
   const { user, hasFeature } = useAuth()
@@ -104,8 +137,8 @@ export default function Reports() {
   const [trend, setTrend] = useState<TrendRow[]>([])
   const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
   const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
+  const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
-  const [digitalLoading, setDigitalLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
@@ -113,64 +146,163 @@ export default function Reports() {
 
   const dateParams = useMemo(() => ({ date_from: from, date_to: to }), [from, to])
 
-  const loadDigitalAccount = async () => {
-    setDigitalLoading(true)
-    try {
-      const { data } = await api.get('/reports/digital-platform-account', {
-        params: {
-          ...dateParams,
-          ...(digitalPlatformFilter ? { digital_type: digitalPlatformFilter } : {}),
-        },
-      })
-      setDigitalAccount(data)
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Failed to load digital platform report')
-    } finally {
-      setDigitalLoading(false)
-    }
-  }
+  const visibleReports = useMemo(
+    () => REPORT_DEFS.filter((r) => {
+      if (r.adminOnly && !isAdmin) return false
+      if (r.needsClinics && !hasFeature('clinics')) return false
+      return true
+    }),
+    [isAdmin, hasFeature],
+  )
 
-  const load = async () => {
-    setLoading(true); setError(null)
+  const loadReport = async (id: ReportId) => {
+    setLoading(true)
+    setError(null)
     const params = dateParams
     try {
-      const showClinics = hasFeature('clinics')
-      const reqs: Promise<any>[] = [
-        api.get('/reports/pnl', { params }),
-        api.get('/reports/sales-by-category', { params }),
-        api.get('/reports/sales-by-payment', { params }),
-        api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
-        api.get('/reports/sales-by-item', { params: { ...params, limit: 2000 } }),
-        api.get('/reports/monthly-trend', { params: { months: 12 } }),
-        api.get('/reports/digital-platform-account', {
-          params: {
-            ...params,
-            ...(digitalPlatformFilter ? { digital_type: digitalPlatformFilter } : {}),
-          },
-        }),
-      ]
-      const clinicIdx = showClinics ? reqs.length : -1
-      if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
-      const branchIdx = isAdmin ? reqs.length : -1
-      if (isAdmin) reqs.push(api.get('/reports/sales-by-branch', { params }))
-      const results = await Promise.all(reqs)
-      setPnl(results[0].data)
-      setCats(results[1].data)
-      setPays(results[2].data)
-      setProds(results[3].data)
-      setSalesByItem(results[4].data)
-      setTrend(results[5].data)
-      setDigitalAccount(results[6].data)
-      if (clinicIdx >= 0) setClinicRows(results[clinicIdx].data)
-      if (branchIdx >= 0) setBranches(results[branchIdx].data)
+      switch (id) {
+        case 'pnl': {
+          const { data } = await api.get('/reports/pnl', { params })
+          setPnl(data)
+          break
+        }
+        case 'trend': {
+          const { data } = await api.get('/reports/monthly-trend', { params: { months: 12 } })
+          setTrend(data)
+          break
+        }
+        case 'category': {
+          const { data } = await api.get('/reports/sales-by-category', { params })
+          setCats(data)
+          break
+        }
+        case 'branch': {
+          const { data } = await api.get('/reports/sales-by-branch', { params })
+          setBranches(data)
+          break
+        }
+        case 'clinic': {
+          const { data } = await api.get('/sales/by-clinic', { params })
+          setClinicRows(data)
+          break
+        }
+        case 'digital': {
+          const { data } = await api.get('/reports/digital-platform-account', {
+            params: {
+              ...params,
+              ...(digitalPlatformFilter ? { digital_type: digitalPlatformFilter } : {}),
+            },
+          })
+          setDigitalAccount(data)
+          break
+        }
+        case 'payment': {
+          const { data } = await api.get('/reports/sales-by-payment', { params })
+          setPays(data)
+          break
+        }
+        case 'sales_by_item': {
+          const { data } = await api.get('/reports/sales-by-item', { params: { ...params, limit: 2000 } })
+          setSalesByItem(data)
+          break
+        }
+        case 'top_products': {
+          const { data } = await api.get('/reports/product-profitability', { params: { ...params, limit: 20 } })
+          setProds(data)
+          break
+        }
+      }
     } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Failed to load reports')
+      setError(e?.response?.data?.detail || 'Failed to load report')
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => { if (canSee) load() }, [])
+  const exportActiveReport = () => {
+    if (!activeReport) return
+    const suffix = `${from}_${to}`
+    switch (activeReport) {
+      case 'pnl':
+        if (pnl) exportCSV(`profit-and-loss-${suffix}.csv`, [pnl], [
+          { key: 'date_from', label: 'From' }, { key: 'date_to', label: 'To' },
+          { key: 'gross_revenue', label: 'Gross Revenue' }, { key: 'total_discount', label: 'Total Discount' },
+          { key: 'returns_value', label: 'Returns' }, { key: 'net_revenue', label: 'Net Revenue' },
+          { key: 'cogs', label: 'COGS' }, { key: 'gross_profit', label: 'Gross Profit' },
+          { key: 'margin_pct', label: 'Margin %' }, { key: 'invoice_count', label: 'Invoices' },
+          { key: 'returns_count', label: 'Returns Count' },
+        ])
+        break
+      case 'trend':
+        exportCSV(`monthly-trend.csv`, trend, [
+          { key: 'month', label: 'Month' }, { key: 'revenue', label: 'Revenue' },
+          { key: 'invoice_count', label: 'Invoices' }, { key: 'cogs', label: 'COGS' },
+          { key: 'profit', label: 'Profit' }, { key: 'returns_value', label: 'Returns' },
+        ])
+        break
+      case 'category':
+        exportCSV(`sales-by-category-${suffix}.csv`, cats, [
+          { key: 'category', label: 'Category' }, { key: 'qty', label: 'Qty' },
+          { key: 'revenue', label: 'Revenue' }, { key: 'cost', label: 'Cost' }, { key: 'profit', label: 'Profit' },
+        ])
+        break
+      case 'branch':
+        exportCSV(`sales-by-branch-${suffix}.csv`, branches, [
+          { key: 'name_en', label: 'Branch' }, { key: 'invoice_count', label: 'Invoices' },
+          { key: 'revenue', label: 'Gross Revenue' }, { key: 'returns_value', label: 'Returns' },
+          { key: 'net_revenue', label: 'Net Revenue' },
+        ])
+        break
+      case 'clinic':
+        exportCSV(`sales-by-clinic-${suffix}.csv`, clinicRows, [
+          { key: 'clinic_name', label: 'Clinic' }, { key: 'invoice_count', label: 'Invoices' },
+          { key: 'gross', label: 'Gross' }, { key: 'discount', label: 'Discount' }, { key: 'net', label: 'Net' },
+        ])
+        break
+      case 'digital':
+        if (digitalAccount?.invoices) {
+          exportCSV(`digital-platform-account-${suffix}.csv`, digitalAccount.invoices.map((r) => ({
+            ...r,
+            branch: i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en,
+            sale_date: r.created_at?.slice(0, 10),
+          })), [
+            { key: 'invoice_number', label: 'Invoice' }, { key: 'sale_date', label: 'Date' },
+            { key: 'platform_name', label: 'Platform' }, { key: 'branch', label: 'Branch' },
+            { key: 'net_total', label: 'Charged' }, { key: 'paid_total', label: 'Paid' },
+            { key: 'balance', label: 'Balance' }, { key: 'notes', label: 'Notes' },
+          ])
+        }
+        break
+      case 'payment':
+        exportCSV(`sales-by-payment-${suffix}.csv`, pays, [
+          { key: 'sale_type', label: 'Sale Type' }, { key: 'payment_method', label: 'Payment Method' },
+          { key: 'invoice_count', label: 'Invoices' }, { key: 'revenue', label: 'Revenue' },
+        ])
+        break
+      case 'sales_by_item':
+        exportCSV(`sales-by-item-${suffix}.csv`, salesByItem, [
+          { key: 'name_en', label: 'Name EN' }, { key: 'name_ar', label: 'Name AR' },
+          { key: 'barcode', label: 'Barcode' }, { key: 'category', label: 'Category' },
+          { key: 'current_stock', label: 'Stock' }, { key: 'qty_total', label: 'Qty total' },
+          { key: 'revenue_total', label: 'Revenue total' },
+          { key: 'qty_cash', label: 'Qty cash' }, { key: 'revenue_cash', label: 'Revenue cash' },
+          { key: 'qty_delivery', label: 'Qty delivery' }, { key: 'revenue_delivery', label: 'Revenue delivery' },
+          { key: 'qty_digital', label: 'Qty digital' }, { key: 'revenue_digital', label: 'Revenue digital' },
+          { key: 'qty_return', label: 'Qty return' }, { key: 'revenue_return', label: 'Revenue return' },
+        ])
+        break
+      case 'top_products':
+        exportCSV(`top-profit-products-${suffix}.csv`, prods, [
+          { key: 'name_en', label: 'Name' }, { key: 'category', label: 'Category' },
+          { key: 'qty', label: 'Qty' }, { key: 'revenue', label: 'Revenue' },
+          { key: 'cost', label: 'Cost' }, { key: 'profit', label: 'Profit' }, { key: 'margin_pct', label: 'Margin %' },
+        ])
+        break
+    }
+  }
+
+  const activeDef = visibleReports.find((r) => r.id === activeReport)
+  const showDateRange = activeDef && !activeDef.fixedPeriod
 
   if (!canSee) {
     return (
@@ -202,30 +334,82 @@ export default function Reports() {
   return (
     <Layout>
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full space-y-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">{t('reports.title')}</h1>
-            <p className="text-sm text-slate-500 mt-0.5">{t('reports.subtitle')}</p>
-          </div>
-          <div className="flex flex-wrap items-end gap-2 bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input text-sm" />
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
-            </div>
-            <button onClick={load} disabled={loading} className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50">
-              {loading ? t('common.loading') : t('reports.apply')}
-            </button>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">{t('reports.title')}</h1>
+          <p className="text-sm text-slate-500 mt-0.5">{t('reports.subtitle')}</p>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+          <p className="text-sm font-semibold text-slate-700 mb-1">{t('reports.pick_report')}</p>
+          <p className="text-xs text-slate-500 mb-3">{t('reports.pick_report_hint')}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {visibleReports.map(({ id, labelKey, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveReport(id)}
+                className={`flex items-center gap-2 px-3 py-3 rounded-xl border text-start text-sm font-medium transition-all ${
+                  activeReport === id
+                    ? 'border-pharma-500 bg-pharma-50 text-pharma-800 ring-2 ring-pharma-200'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-pharma-300 hover:bg-white'
+                }`}
+              >
+                <Icon size={18} className="shrink-0 text-pharma-600" />
+                <span className="leading-tight">{t(labelKey)}</span>
+              </button>
+            ))}
           </div>
         </div>
 
+        {activeReport && (
+          <div className="flex flex-wrap items-end justify-between gap-3 bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setActiveReport(null)}
+              className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-pharma-700"
+            >
+              <ArrowLeft size={16} /> {t('reports.back_to_list')}
+            </button>
+            {showDateRange && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
+                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
+                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
+                </div>
+              </>
+            )}
+            {activeReport === 'trend' && (
+              <p className="text-xs text-slate-500 self-center">{t('reports.last_12_months')}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => void loadReport(activeReport)}
+              disabled={loading}
+              className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50"
+            >
+              {loading ? t('common.loading') : t('reports.apply')}
+            </button>
+            <button
+              type="button"
+              onClick={exportActiveReport}
+              disabled={loading}
+              className="flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50"
+            >
+              <FileSpreadsheet size={15} /> {t('reports.export_excel')}
+            </button>
+          </div>
+        )}
+
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>}
 
+        {loading && activeReport && <ListLoadingPanel />}
+
         {/* P&L summary */}
-        {pnl && (
+        {!loading && activeReport === 'pnl' && pnl && (
           <section>
             <div className="flex items-center justify-between mb-2">
               <SectionHead icon={<DollarSign size={18} />} title={t('reports.pnl_title')}
@@ -261,6 +445,7 @@ export default function Reports() {
         )}
 
         {/* Monthly trend */}
+        {!loading && activeReport === 'trend' && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<TrendingUp size={18} />} title={t('reports.monthly_trend')} subtitle={t('reports.last_12_months')} inline />
@@ -277,8 +462,10 @@ export default function Reports() {
           </div>
           <TrendChart rows={trend} />
         </section>
+        )}
 
         {/* Category breakdown */}
+        {!loading && activeReport === 'category' && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<PieChart size={18} />} title={t('reports.by_category')} inline />
@@ -304,9 +491,10 @@ export default function Reports() {
             rows={cats}
           />
         </section>
+        )}
 
         {/* Branch performance — admin only */}
-        {isAdmin && (
+        {!loading && activeReport === 'branch' && isAdmin && (
           <section>
             <div className="flex items-center justify-between mb-2">
               <SectionHead icon={<Building2 size={18} />} title={t('reports.by_branch')} inline />
@@ -335,7 +523,7 @@ export default function Reports() {
         )}
 
         {/* Sales by clinic */}
-        {hasFeature('clinics') && (
+        {!loading && activeReport === 'clinic' && hasFeature('clinics') && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<Stethoscope size={18} />} title={t('reports.by_clinic')} inline />
@@ -364,7 +552,7 @@ export default function Reports() {
         )}
 
         {/* Digital platform on-account (receivables) */}
-        {digitalAccount?.summary && (
+        {!loading && activeReport === 'digital' && digitalAccount?.summary && (
           <section className="print:break-inside-avoid">
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <SectionHead
@@ -430,11 +618,11 @@ export default function Reports() {
               </div>
               <button
                 type="button"
-                onClick={() => void loadDigitalAccount()}
-                disabled={digitalLoading || loading}
+                onClick={() => void loadReport('digital')}
+                disabled={loading}
                 className="bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg"
               >
-                {digitalLoading ? t('common.loading') : t('reports.apply')}
+                {loading ? t('common.loading') : t('reports.apply')}
               </button>
               <p className="text-xs text-slate-500 w-full sm:w-auto sm:ms-1">
                 {t('reports.digital_account_dates_hint', { from, to })}
@@ -491,6 +679,7 @@ export default function Reports() {
         )}
 
         {/* Payment breakdown */}
+        {!loading && activeReport === 'payment' && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<CreditCard size={18} />} title={t('reports.by_payment')} inline />
@@ -514,8 +703,10 @@ export default function Reports() {
             rows={pays}
           />
         </section>
+        )}
 
         {/* Sales by item */}
+        {!loading && activeReport === 'sales_by_item' && (
         <section>
           <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <SectionHead icon={<BarChart3 size={18} />} title={t('reports.sales_by_item')} inline />
@@ -636,8 +827,10 @@ export default function Reports() {
             rows={salesByItem}
           />
         </section>
+        )}
 
         {/* Top profitable products */}
+        {!loading && activeReport === 'top_products' && (
         <section>
           <div className="flex items-center justify-between mb-2">
             <SectionHead icon={<PackageIcon size={18} />} title={t('reports.top_profit_products')} inline />
@@ -666,6 +859,7 @@ export default function Reports() {
             rows={prods}
           />
         </section>
+        )}
 
         <div className="h-4" />
       </div>
