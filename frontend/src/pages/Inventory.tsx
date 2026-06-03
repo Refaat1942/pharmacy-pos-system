@@ -11,6 +11,13 @@ import {
   parseSearchTerms,
 } from '../lib/branchStockPick'
 import { downloadApiExcel } from '../lib/downloadExcel'
+import {
+  formatPackStockInput,
+  formatPackStockLabel,
+  packSizeOf,
+  parsePackStockInput,
+} from '../lib/packStock'
+import { TableLoadingRow } from '../components/LoadingSpinner'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
@@ -435,9 +442,7 @@ export default function Inventory() {
                     </tr>
                   </thead>
                   <tbody>
-                    {loading && (
-                      <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
-                    )}
+                    {loading && <TableLoadingRow colSpan={11} />}
                     {!loading && sortedItems.length === 0 && (
                       <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
                     )}
@@ -667,7 +672,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     unit: item?.unit || 'box',
     price: item?.price?.toString() || '',
     cost: item?.cost?.toString() || '',
-    stock: item?.stock?.toString() || '0',
+    stock: item?.stock != null
+      ? formatPackStockInput(item.stock, packSizeOf(item))
+      : '0',
     min_stock: item?.min_stock?.toString() || '5',
     expiry_date: item?.expiry_date || '',
     pack_size: item?.pack_size?.toString() || '1',
@@ -677,13 +684,13 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
+  const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setSaving(true)
     try {
-      const packSize = Math.max(1, parseInt(f.pack_size) || 1)
       const priceNum = parseFloat(f.price)
       const payload: any = {
         barcode: f.barcode || null,
@@ -704,8 +711,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
       }
       if (item) {
         await api.put(`/inventory/products/${item.id}`, payload)
-        const newStock = parseInt(f.stock)
-        if (!Number.isNaN(newStock) && newStock !== Number(item.stock)) {
+        const newStock = parsePackStockInput(f.stock, packSize)
+        if (newStock !== null && newStock !== Number(item.stock)) {
           await api.post('/inventory/adjustments', {
             product_id: item.id,
             delta: newStock - Number(item.stock),
@@ -713,7 +720,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           })
         }
       } else {
-        payload.stock = parseInt(f.stock) || 0
+        payload.stock = parsePackStockInput(f.stock, packSize) ?? 0
         await api.post('/products', payload)
       }
       onSaved()
@@ -795,7 +802,23 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         )}
         {item && (
           <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
-            <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
+            <input
+              type="text"
+              inputMode="decimal"
+              value={f.stock}
+              onChange={e => setF({ ...f, stock: e.target.value })}
+              className="input"
+              placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+            />
+            {packSize > 1 && f.stock && (
+              <p className="text-[11px] text-slate-500 mt-1">
+                {t('inventory.pack_stock_hint', {
+                  unit: f.unit,
+                  sub: f.sub_unit || t('inventory.sub_unit_word'),
+                  pack: packSize,
+                })}
+              </p>
+            )}
           </Field>
         )}
         <Field label={t('inventory.f_min_stock')}>
@@ -881,11 +904,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
 
 function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () => void; onSaved: () => void }) {
   const { t, i18n } = useTranslation()
-  const pack = item.pack_size && item.pack_size > 1 ? item.pack_size : 1
+  const pack = packSizeOf(item)
   const [mode, setMode] = useState<'add' | 'remove' | 'set'>('add')
   const [qty, setQty] = useState('')
-  const [boxes, setBoxes] = useState('')
-  const [subs, setSubs] = useState('')
+  const [packQty, setPackQty] = useState('')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -894,9 +916,12 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
     e.preventDefault()
     setError('')
     const n = pack > 1
-      ? (parseInt(boxes) || 0) * pack + (parseInt(subs) || 0)
-      : parseInt(qty)
-    if (!n || n <= 0) { setError(t('inventory.err_qty') as string); return }
+      ? parsePackStockInput(packQty, pack)
+      : parseInt(qty, 10)
+    if (n === null || n <= 0) {
+      setError(pack > 1 ? (t('inventory.err_pack_qty') as string) : (t('inventory.err_qty') as string))
+      return
+    }
     if (!reason.trim()) { setError(t('inventory.err_reason') as string); return }
     let delta = mode === 'add' ? n : mode === 'remove' ? -n : (n - item.stock)
     if (delta === 0) { setError(t('inventory.err_same') as string); return }
@@ -915,9 +940,17 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
     <Modal onClose={onClose} title={t('inventory.adjust_title')}>
       <div className="mb-4 p-3 bg-slate-50 rounded-lg">
         <div className="font-semibold">{i18n.language === 'ar' ? item.name_ar : item.name_en}</div>
-        <div className="text-sm text-slate-600">{t('inventory.current_stock')}: <span className="font-bold">{item.stock}</span>
+        <div className="text-sm text-slate-600">
+          {t('inventory.current_stock')}:{' '}
+          <span className="font-bold">
+            {pack > 1
+              ? formatPackStockLabel(item.stock, pack, item.unit, item.sub_unit || t('inventory.sub_unit_word'))
+              : item.stock}
+          </span>
           {pack > 1 && (
-            <span className="text-slate-500"> ({Math.floor(item.stock / pack)} {item.unit} + {item.stock % pack} {item.sub_unit || t('inventory.sub_unit_word')})</span>
+            <span className="text-slate-400 text-xs ms-1">
+              ({formatPackStockInput(item.stock, pack)})
+            </span>
           )}
         </div>
       </div>
@@ -933,14 +966,24 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
           ))}
         </div>
         {pack > 1 ? (
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={`${mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')} — ${item.unit}`}>
-              <input type="number" min={0} value={boxes} onChange={e => setBoxes(e.target.value)} className="input" autoFocus placeholder="0" />
-            </Field>
-            <Field label={item.sub_unit || t('inventory.sub_unit_word')}>
-              <input type="number" min={0} value={subs} onChange={e => setSubs(e.target.value)} className="input" placeholder="0" />
-            </Field>
-          </div>
+          <Field label={mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')}>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={packQty}
+              onChange={e => setPackQty(e.target.value)}
+              className="input"
+              autoFocus
+              placeholder={t('inventory.pack_stock_ph') as string}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              {t('inventory.pack_stock_hint', {
+                unit: item.unit,
+                sub: item.sub_unit || t('inventory.sub_unit_word'),
+                pack,
+              })}
+            </p>
+          </Field>
         ) : (
           <Field label={mode === 'set' ? t('inventory.new_stock') : t('inventory.quantity')}>
             <input type="number" required value={qty} onChange={e => setQty(e.target.value)} className="input" autoFocus />
@@ -1110,7 +1153,7 @@ function MovementsTab() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={7} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
+            {loading && <TableLoadingRow colSpan={7} />}
             {!loading && sortedMoves.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-400">{t('inventory.no_movements')}</td></tr>}
             {sortedMoves.map((m: any) => (
               <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
@@ -1265,8 +1308,8 @@ function VelocityTab() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
-            {sortedVel.map((r: any) => (
+            {loading && <TableLoadingRow colSpan={5} />}
+            {!loading && sortedVel.map((r: any) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="px-3 py-1.5 font-medium">{i18n.language === 'ar' ? r.name_ar : r.name_en}</td>
                 <td className="px-3 py-1.5 font-mono text-xs">{r.barcode || '—'}</td>
@@ -1378,7 +1421,7 @@ function AlertsTab() {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={5} className="text-center py-6 text-slate-400">{t('common.loading')}</td></tr>}
+            {loading && <TableLoadingRow colSpan={5} />}
             {!loading && sortedAlerts.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-emerald-600"><TrendingUp size={28} className="inline mb-1" /> {t('inventory.no_alerts')}</td></tr>}
             {sortedAlerts.map((r: any) => (
               <tr key={r.id} className="border-t border-slate-100">
@@ -1730,7 +1773,7 @@ function BranchStockTab() {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={visibleBranches.length + 4} className="text-center py-8 text-slate-400">…</td></tr>}
+              {loading && <TableLoadingRow colSpan={visibleBranches.length + 4} />}
               {!loading && data.items.length === 0 && (
                 <tr><td colSpan={visibleBranches.length + 4} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
@@ -1822,11 +1865,12 @@ function StocktakeTab() {
     .map(it => {
       const raw = counted[it.id]
       const hasC = raw !== '' && raw !== undefined
-      const cnum = hasC ? Number(raw) : NaN
-      const countChanged = hasC && !Number.isNaN(cnum) && cnum !== Number(it.stock)
+      const pack = packSizeOf(it)
+      const cnum = hasC ? parsePackStockInput(String(raw), pack) : null
+      const countChanged = cnum !== null && cnum !== Number(it.stock)
       const curExp = curExpiry(it)
       const expChanged = curExp !== '' && curExp !== origExpiry(it)
-      return { it, counted: countChanged ? cnum : Number(it.stock), curExp, countChanged, expChanged }
+      return { it, counted: countChanged && cnum !== null ? cnum : Number(it.stock), curExp, countChanged, expChanged }
     })
     .filter(r => r.countChanged || r.expChanged)
 
@@ -1943,15 +1987,16 @@ function StocktakeTab() {
               {!branchId && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
               )}
-              {branchId && loading && <tr><td colSpan={6} className="text-center py-8 text-slate-400">…</td></tr>}
+              {branchId && loading && <TableLoadingRow colSpan={6} />}
               {branchId && !loading && sortedSt.length === 0 && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
               {branchId && sortedSt.map(it => {
                 const raw = counted[it.id]
                 const has = raw !== '' && raw !== undefined
-                const val = has ? Number(raw) : null
-                const variance = val !== null && !Number.isNaN(val) ? val - Number(it.stock) : null
+                const pack = packSizeOf(it)
+                const val = has ? parsePackStockInput(String(raw), pack) : null
+                const variance = val !== null ? val - Number(it.stock) : null
                 return (
                   <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                     <td className="px-3 py-2.5">
@@ -1959,14 +2004,19 @@ function StocktakeTab() {
                       {it.category && <div className="text-[11px] text-slate-400">{it.category}</div>}
                     </td>
                     <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{it.barcode || '—'}</td>
-                    <td className="px-3 py-2.5 text-center font-mono text-slate-700">{it.stock}</td>
+                    <td className="px-3 py-2.5 text-center font-mono text-slate-700">
+                      {pack > 1
+                        ? formatPackStockLabel(it.stock, pack, it.unit, it.sub_unit || t('inventory.sub_unit_word'))
+                        : it.stock}
+                    </td>
                     <td className="px-3 py-2.5 text-center">
                       <input
-                        type="number"
-                        min={0}
+                        type="text"
+                        inputMode="decimal"
                         value={raw ?? ''}
                         onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
-                        className="w-24 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                        placeholder={pack > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+                        className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
                       />
                     </td>
                     <td className="px-3 py-2.5 text-center font-mono font-semibold">

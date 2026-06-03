@@ -22,6 +22,7 @@ import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
+import { LoadingSpinner } from '../components/LoadingSpinner'
 import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
 import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
@@ -522,7 +523,10 @@ export default function POS() {
               {showResults && (
                 <div className="absolute z-20 inset-x-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[55vh] overflow-y-auto">
                   {searching && results.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-slate-400">{t('common.loading')}</div>
+                    <div className="p-6 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
+                      <LoadingSpinner size={16} />
+                      {t('common.loading')}
+                    </div>
                   ) : results.length === 0 ? (
                     <div className="p-6 text-center text-sm text-slate-400">{t('pos.no_products')}</div>
                   ) : (

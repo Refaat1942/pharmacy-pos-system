@@ -38,6 +38,10 @@ const AuthContext = createContext<AuthContextType | null>(null)
 const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
 
 const IDLE_LOCK_MS = 10 * 60 * 1000
+const LAST_ACTIVITY_KEY = 'pharma_last_activity'
+const ACTIVITY_WRITE_THROTTLE_MS = 3000
+const TENANT_REFRESH_KEY = 'pharma_tenant_refresh_ts'
+const TENANT_REFRESH_MIN_MS = 25_000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() =>
@@ -82,14 +86,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocked(false)
   }, [])
 
+  const touchActivity = useCallback(() => {
+    localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()))
+  }, [])
+
   const lock = useCallback(() => {
     localStorage.setItem('pharma_locked', '1')
     setLocked(true)
   }, [])
   const unlock = useCallback(() => {
     localStorage.removeItem('pharma_locked')
+    touchActivity()
     setLocked(false)
-  }, [])
+  }, [touchActivity])
 
   // Keep the lock state in sync across all tabs/windows of the same terminal.
   useEffect(() => {
@@ -155,37 +164,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Refresh on mount, every 60s, and whenever the window regains focus.
+  const refreshTenantThrottled = useCallback(async () => {
+    const now = Date.now()
+    const last = parseInt(localStorage.getItem(TENANT_REFRESH_KEY) || '0', 10)
+    if (now - last < TENANT_REFRESH_MIN_MS) return
+    localStorage.setItem(TENANT_REFRESH_KEY, String(now))
+    await refreshTenant()
+  }, [refreshTenant])
+
+  // Refresh tenant (throttled across tabs so many open tabs do not hammer /auth/me).
   useEffect(() => {
     if (!token) return
-    refreshTenant()
-    const id = setInterval(refreshTenant, 60_000)
-    const onFocus = () => refreshTenant()
+    refreshTenantThrottled()
+    const id = setInterval(refreshTenantThrottled, 60_000)
+    const onFocus = () => { refreshTenantThrottled() }
     window.addEventListener('focus', onFocus)
     return () => {
       clearInterval(id)
       window.removeEventListener('focus', onFocus)
     }
-  }, [token, refreshTenant])
+  }, [token, refreshTenantThrottled])
 
-  // Auto-lock the terminal after a period of inactivity. Any user activity
-  // resets the countdown. Locking keeps the session alive (token stays valid);
-  // the user just re-confirms via password or personal card.
+  // Auto-lock after idle time shared across all tabs (activity in any tab keeps all unlocked).
   useEffect(() => {
     if (!token || isLocked) return
-    let timer: ReturnType<typeof setTimeout>
-    const reset = () => {
-      clearTimeout(timer)
-      timer = setTimeout(lock, IDLE_LOCK_MS)
+
+    let lastWrite = 0
+    const touch = () => {
+      const now = Date.now()
+      if (now - lastWrite < ACTIVITY_WRITE_THROTTLE_MS) return
+      lastWrite = now
+      localStorage.setItem(LAST_ACTIVITY_KEY, String(now))
     }
+
+    const checkIdle = () => {
+      const last = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || '0', 10)
+      if (last > 0 && Date.now() - last >= IDLE_LOCK_MS) lock()
+    }
+
+    if (!localStorage.getItem(LAST_ACTIVITY_KEY)) touch()
+
     const events: (keyof WindowEventMap)[] = [
       'mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel',
     ]
-    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
-    reset()
+    events.forEach((e) => window.addEventListener(e, touch, { passive: true }))
+    const interval = setInterval(checkIdle, 15_000)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === LAST_ACTIVITY_KEY) checkIdle()
+    }
+    window.addEventListener('storage', onStorage)
+
     return () => {
-      clearTimeout(timer)
-      events.forEach((e) => window.removeEventListener(e, reset))
+      clearInterval(interval)
+      events.forEach((e) => window.removeEventListener(e, touch))
+      window.removeEventListener('storage', onStorage)
     }
   }, [token, isLocked, lock])
 

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search } from 'lucide-react'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import { LoadingSpinner } from '../components/LoadingSpinner'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -376,7 +377,10 @@ function CreatePOModal({
             {showResults && branchId && search.trim() && (
               <div className="mb-2 max-h-40 overflow-auto border border-slate-200 rounded-lg">
                 {searchLoading && (
-                  <div className="px-3 py-2 text-xs text-slate-400 text-center">{t('common.loading')}</div>
+                  <div className="px-3 py-3 text-xs text-slate-500 flex items-center justify-center gap-2">
+                    <LoadingSpinner size={16} />
+                    {t('common.loading')}
+                  </div>
                 )}
                 {!searchLoading && results.slice(0, 20).map((p) => (
                   <button

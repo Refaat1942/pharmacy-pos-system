@@ -4,6 +4,7 @@ import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import { TableLoadingRow } from '../components/LoadingSpinner'
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -476,13 +477,7 @@ export default function BranchesStock() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {loading && (
-                  <tr>
-                    <td colSpan={colSpan} className="text-center py-12 text-slate-400">
-                      {t('common.loading')}
-                    </td>
-                  </tr>
-                )}
+                {loading && <TableLoadingRow colSpan={colSpan} />}
                 {!loading && data.items.length === 0 && (
                   <tr>
                     <td colSpan={colSpan} className="text-center py-12 text-slate-400">

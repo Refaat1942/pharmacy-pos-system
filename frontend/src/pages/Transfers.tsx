@@ -7,6 +7,7 @@ import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import { LoadingSpinner, TableLoadingRow } from '../components/LoadingSpinner'
 
 type StatusFilter = '' | 'in_transit' | 'completed' | 'cancelled'
 
@@ -138,9 +139,7 @@ export default function Transfers() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>
-              )}
+              {loading && <TableLoadingRow colSpan={6} />}
               {!loading && sorted.length === 0 && (
                 <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('transfers.empty')}</td></tr>
               )}
@@ -246,6 +245,7 @@ function CreateTransferModal({
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
   const [lines, setLines] = useState<CartLine[]>([])
   const [saving, setSaving] = useState(false)
   const [scan, setScan] = useState('')
@@ -258,13 +258,21 @@ function CreateTransferModal({
   useEffect(() => {
     if (!fromBranch) {
       setResults([])
+      setSearchLoading(false)
       return
     }
+    if (!search.trim()) {
+      setResults([])
+      setSearchLoading(false)
+      return
+    }
+    setSearchLoading(true)
     const timer = setTimeout(() => {
       api
         .get('/inventory/items', { params: { q: search, branch_id: fromBranch } })
         .then((r) => setResults(r.data))
         .catch(() => setResults([]))
+        .finally(() => setSearchLoading(false))
     }, 250)
     return () => clearTimeout(timer)
   }, [search, fromBranch])
@@ -437,9 +445,15 @@ function CreateTransferModal({
               className="input mt-1 w-full"
               placeholder={t('transfers.search_placeholder') as string}
             />
-            {showResults && fromBranch && (
+            {showResults && fromBranch && search.trim() && (
               <div className="mt-2 max-h-56 overflow-auto border border-slate-200 rounded-lg">
-                {results.slice(0, 20).map((p) => (
+                {searchLoading && (
+                  <div className="px-3 py-3 text-xs text-slate-500 flex items-center justify-center gap-2">
+                    <LoadingSpinner size={16} />
+                    {t('common.loading')}
+                  </div>
+                )}
+                {!searchLoading && results.slice(0, 20).map((p) => (
                   <button
                     key={p.id}
                     onMouseDown={(e) => e.preventDefault()}
@@ -456,7 +470,7 @@ function CreateTransferModal({
                     </div>
                   </button>
                 ))}
-                {results.length === 0 && (
+                {!searchLoading && results.length === 0 && (
                   <div className="px-3 py-3 text-xs text-slate-400 text-center">{t('transfers.no_results')}</div>
                 )}
               </div>

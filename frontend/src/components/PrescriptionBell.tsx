@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell, X, ShoppingCart, Trash2, User, Stethoscope, RotateCcw, Clock } from 'lucide-react'
 import { prescriptionsAPI, Prescription } from '../lib/api'
+import { useTabLeader } from '../lib/tabLeader'
 
 interface Props {
   onLoad: (rx: Prescription) => Promise<string[]>
@@ -23,6 +24,7 @@ export default function PrescriptionBell({ onLoad }: Props) {
   const [busy, setBusy] = useState<number | null>(null)
   const prevPending = useRef(0)
   const audioRef = useRef<AudioContext | null>(null)
+  const isPollLeader = useTabLeader('prescriptions')
 
   const beep = useCallback(() => {
     try {
@@ -107,22 +109,27 @@ export default function PrescriptionBell({ onLoad }: Props) {
   }, [beep, notify])
 
   useEffect(() => {
+    if (!isPollLeader) {
+      if (!document.hidden) refreshCount()
+      return
+    }
     refreshCount()
     const id = setInterval(refreshCount, POLL_MS)
     return () => clearInterval(id)
-  }, [refreshCount])
+  }, [refreshCount, isPollLeader])
 
   useEffect(() => {
+    if (isPollLeader) return
     const onVis = () => { if (!document.hidden) refreshCount() }
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
-  }, [refreshCount])
+  }, [refreshCount, isPollLeader])
 
   useEffect(() => {
-    if (open || pending <= 0) return
+    if (!isPollLeader || document.hidden || open || pending <= 0) return
     const id = setInterval(beep, REPEAT_MS)
     return () => clearInterval(id)
-  }, [open, pending, beep])
+  }, [open, pending, beep, isPollLeader])
 
   const loadList = useCallback(() => {
     setLoadingList(true)
