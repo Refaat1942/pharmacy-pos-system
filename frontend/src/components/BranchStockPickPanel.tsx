@@ -7,6 +7,8 @@ type Props<T extends BranchStockPickRow> = {
   onToggle: (key: string) => void
   onSelectAll: () => void
   onClear: () => void
+  showAllStock: boolean
+  onShowAllStockChange: (value: boolean) => void
   isAr: boolean
 }
 
@@ -16,6 +18,8 @@ export default function BranchStockPickPanel<T extends BranchStockPickRow>({
   onToggle,
   onSelectAll,
   onClear,
+  showAllStock,
+  onShowAllStockChange,
   isAr,
 }: Props<T>) {
   const { t } = useTranslation()
@@ -45,8 +49,20 @@ export default function BranchStockPickPanel<T extends BranchStockPickRow>({
           >
             {t('inventory.bs_pick_clear')}
           </button>
+          <label className="flex items-center gap-2 text-xs font-semibold text-pharma-900 cursor-pointer ms-1 border-s border-pharma-200 ps-3">
+            <input
+              type="checkbox"
+              checked={showAllStock}
+              onChange={(e) => onShowAllStockChange(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-pharma-600 focus:ring-pharma-500"
+            />
+            {t('inventory.bs_show_all_stock')}
+          </label>
         </div>
       </div>
+      {showAllStock && (
+        <p className="text-xs text-pharma-800/90 mb-2">{t('inventory.bs_show_all_stock_hint')}</p>
+      )}
       <div className="max-h-52 overflow-y-auto rounded-xl border border-pharma-100 bg-white divide-y divide-slate-50">
         {items.map((row) => {
           const checked = pickedKeys.has(row.key)

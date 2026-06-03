@@ -11,7 +11,13 @@ export function parseSearchTerms(q: string): string[] {
 }
 
 export function isMultiTermSearch(q: string): boolean {
+  if (!q.trim()) return false
+  if (/[,;\n\r|]/.test(q)) return true
   return parseSearchTerms(q).length > 1
+}
+
+export function looksLikeMultiInput(q: string): boolean {
+  return /[,;\n\r|]/.test(q) || parseSearchTerms(q).length > 1
 }
 
 export type BranchStockPickRow = {
@@ -60,12 +66,15 @@ export function autoPickKeys<T extends BranchStockPickRow>(items: T[], terms: st
   return picked
 }
 
-/** After multi-term search: ensure at least matches are selected for the table. */
-export function defaultPickedKeys<T extends BranchStockPickRow>(
+/** One best match per search term (exact code preferred). */
+export function autoPickKeysPerTerm<T extends BranchStockPickRow>(
   items: T[],
   terms: string[],
 ): Set<string> {
-  const auto = autoPickKeys(items, terms)
-  if (auto.size > 0) return auto
-  return new Set(items.map((r) => r.key))
+  const picked = new Set<string>()
+  for (const term of terms) {
+    const forTerm = autoPickKeys(items, [term])
+    forTerm.forEach((k) => picked.add(k))
+  }
+  return picked
 }

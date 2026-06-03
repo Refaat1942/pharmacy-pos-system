@@ -6,8 +6,9 @@ import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
-  defaultPickedKeys,
+  autoPickKeysPerTerm,
   isMultiTermSearch,
+  looksLikeMultiInput,
   parseSearchTerms,
 } from '../lib/branchStockPick'
 import i18n from '../lib/i18n'
@@ -85,15 +86,18 @@ export default function BranchesStock() {
   }>({ branches: [], items: [] })
   const [allBranches, setAllBranches] = useState<Branch[]>([])
   const [q, setQ] = useState('')
+  const [activeQ, setActiveQ] = useState('')
   const [branchFilter, setBranchFilter] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [pickedKeys, setPickedKeys] = useState<Set<string>>(() => new Set())
+  const [showAllStockInTable, setShowAllStockInTable] = useState(false)
+  const [catalog, setCatalog] = useState<{ branches: Branch[]; items: Row[] }>({ branches: [], items: [] })
   const lastAutoPickQ = useRef('')
 
-  const query = q.trim()
-  const searchTerms = useMemo(() => parseSearchTerms(query), [query])
-  const multiPick = isMultiTermSearch(query)
+  const searchTerms = useMemo(() => parseSearchTerms(activeQ), [activeQ])
+  const multiPick = isMultiTermSearch(activeQ)
+  const inputLooksMulti = looksLikeMultiInput(q)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -105,44 +109,81 @@ export default function BranchesStock() {
 
   const branchName = (b: { name_en: string; name_ar: string }) => (isAr ? b.name_ar : b.name_en)
 
+  const branchParams = (): Record<string, number> => {
+    const p: Record<string, number> = {}
+    if (isAdmin && branchFilter) p.branch_id = parseInt(branchFilter, 10)
+    return p
+  }
+
+  const loadCatalog = async () => {
+    const { data: res } = await api.get('/inventory/branch-stock', { params: branchParams() })
+    setCatalog({ branches: res.branches || [], items: res.items || [] })
+    return res
+  }
+
   const load = async () => {
     setLoading(true)
     try {
-      const params: Record<string, string | number> = {}
-      if (query) params.q = query
-      if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
+      const searchQ = activeQ.trim()
+      if (!searchQ) {
+        const res = await loadCatalog()
+        setData(res)
+        setPickedKeys(new Set())
+        setShowAllStockInTable(false)
+        lastAutoPickQ.current = ''
+        return
+      }
+      const params: Record<string, string | number> = { ...branchParams(), q: searchQ }
       const { data: res } = await api.get('/inventory/branch-stock', { params })
       setData(res)
-      if (multiPick && lastAutoPickQ.current !== query) {
-        lastAutoPickQ.current = query
-        setPickedKeys(defaultPickedKeys(res.items || [], searchTerms))
-      } else if (!multiPick) {
+      if (multiPick) {
+        if (lastAutoPickQ.current !== searchQ) {
+          lastAutoPickQ.current = searchQ
+          setPickedKeys(autoPickKeysPerTerm(res.items || [], searchTerms))
+          setShowAllStockInTable(false)
+        }
+      } else {
         setPickedKeys(new Set())
+        setShowAllStockInTable(false)
         lastAutoPickQ.current = ''
+      }
+      if (catalog.items.length === 0) {
+        await loadCatalog()
       }
     } finally {
       setLoading(false)
     }
   }
 
+  const applySearch = () => setActiveQ(q.trim())
+
   useEffect(() => {
-    const id = setTimeout(load, 400)
+    if (inputLooksMulti) return
+    const id = setTimeout(() => setActiveQ(q.trim()), 400)
     return () => clearTimeout(id)
+  }, [q, inputLooksMulti])
+
+  useEffect(() => {
+    load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, branchFilter, isAdmin])
+  }, [activeQ, branchFilter, isAdmin])
 
   useEffect(() => {
     if (!multiPick) {
       setPickedKeys(new Set())
+      setShowAllStockInTable(false)
       lastAutoPickQ.current = ''
     }
   }, [multiPick])
 
+  const tableBranches = multiPick && showAllStockInTable ? catalog.branches : data.branches
+
   const displayItems = useMemo(() => {
     if (!multiPick) return data.items
+    if (showAllStockInTable) return catalog.items
     if (pickedKeys.size === 0) return []
     return data.items.filter((r) => pickedKeys.has(r.key))
-  }, [data.items, multiPick, pickedKeys])
+  }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
 
   const togglePick = (key: string) => {
     setPickedKeys((prev) => {
@@ -157,8 +198,10 @@ export default function BranchesStock() {
     setExporting(true)
     try {
       const params: Record<string, string | number> = {}
-      if (query) params.q = query
-      if (multiPick && pickedKeys.size > 0) params.keys = Array.from(pickedKeys).join(',')
+      if (activeQ.trim()) params.q = activeQ.trim()
+      if (multiPick && !showAllStockInTable && pickedKeys.size > 0) {
+        params.keys = Array.from(pickedKeys).join(',')
+      }
       if (isAdmin && branchFilter) params.branch_id = parseInt(branchFilter, 10)
       const res = await api.get('/inventory/branch-stock/export', {
         params,
@@ -179,7 +222,8 @@ export default function BranchesStock() {
   }
 
   const singleBranch = isAdmin && branchFilter !== ''
-  const visibleBranches = data.branches.length > 0 ? data.branches : allBranches
+  const visibleBranches =
+    tableBranches.length > 0 ? tableBranches : data.branches.length > 0 ? data.branches : allBranches
 
   const stats = useMemo(() => {
     const s = data.summary
@@ -280,11 +324,26 @@ export default function BranchesStock() {
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  applySearch()
+                }
+              }}
               placeholder={t('inventory.bs_multi_search_placeholder')}
               className="w-full ps-10 pe-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-pharma-400/40"
               autoComplete="off"
             />
           </div>
+          <button
+            type="button"
+            onClick={applySearch}
+            disabled={loading}
+            className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
+          >
+            <Search size={16} />
+            {t('inventory.bs_search_btn')}
+          </button>
           {isAdmin && (
             <div className="min-w-[12rem]">
               <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
@@ -307,7 +366,10 @@ export default function BranchesStock() {
           )}
           <button
             onClick={exportExcel}
-            disabled={exporting || (multiPick ? pickedKeys.size === 0 : data.items.length === 0)}
+            disabled={
+              exporting ||
+              (multiPick && !showAllStockInTable ? pickedKeys.size === 0 : displayItems.length === 0)
+            }
             className="inline-flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap"
           >
             <Download size={16} />
@@ -315,15 +377,22 @@ export default function BranchesStock() {
           </button>
         </div>
 
-        {multiPick && !loading && data.items.length > 0 && (
+        {multiPick && !loading && activeQ && (
           <BranchStockPickPanel
             items={data.items}
             pickedKeys={pickedKeys}
             onToggle={togglePick}
             onSelectAll={() => setPickedKeys(new Set(data.items.map((r) => r.key)))}
             onClear={() => setPickedKeys(new Set())}
+            showAllStock={showAllStockInTable}
+            onShowAllStockChange={setShowAllStockInTable}
             isAr={isAr}
           />
+        )}
+        {multiPick && !loading && activeQ && data.items.length === 0 && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {t('inventory.bs_multi_no_matches')}
+          </div>
         )}
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
@@ -378,7 +447,7 @@ export default function BranchesStock() {
                     </td>
                   </tr>
                 )}
-                {!loading && multiPick && data.items.length > 0 && displayItems.length === 0 && (
+                {!loading && multiPick && !showAllStockInTable && data.items.length > 0 && displayItems.length === 0 && (
                   <tr>
                     <td colSpan={colSpan} className="text-center py-12 text-slate-500">
                       {t('inventory.bs_pick_none')}
