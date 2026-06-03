@@ -304,6 +304,8 @@ MAX_INVENTORY_ROWS = 100_000
 # Unit value for stock valuation: prefer purchase cost; fall back to selling price when cost unset.
 _STOCK_UNIT_VALUE = "COALESCE(NULLIF(cost, 0), price, 0)"
 _STOCK_UNIT_VALUE_P = "COALESCE(NULLIF(p.cost, 0), p.price, 0)"
+# products.stock is in sub-units when pack_size > 1; cost/price are per box (main unit).
+_STOCK_QTY_BOXES_P = "(p.stock::float / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))"
 # Branch-stock search results cap (keeps UI and DB fast)
 BRANCH_STOCK_LIMIT = 1000
 
@@ -371,13 +373,13 @@ def inventory_summary(
     elif stock_filter == "ok":
         where.append("p.stock > p.min_stock")
     w = " AND ".join(where)
-    # Stock value uses products.stock (kept in sync with batch totals) × cost, else selling price.
+    # Stock value: box-equivalent qty × cost (or price); sub-unit stock divided by pack_size.
     cur.execute(
         f"""SELECT
               COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE p.stock <= 0)::int AS zero_stock,
               COUNT(*) FILTER (WHERE p.stock > 0 AND p.stock <= p.min_stock)::int AS low_stock,
-              COALESCE(SUM(p.stock * {_STOCK_UNIT_VALUE_P}), 0)::float AS stock_value
+              COALESCE(SUM({_STOCK_QTY_BOXES_P} * {_STOCK_UNIT_VALUE_P}), 0)::float AS stock_value
             FROM products p WHERE {w}""",
         params,
     )

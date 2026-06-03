@@ -183,6 +183,12 @@ function stockUnitValue(i: { cost?: number | null; price?: number | null }): num
   return Number(i.price || 0)
 }
 
+/** Box count for valuation (stock is stored in sub-units when pack_size > 1). */
+function stockQtyBoxes(i: { stock: number; pack_size?: number | null }): number {
+  const pack = i.pack_size && i.pack_size > 1 ? i.pack_size : 1
+  return Number(i.stock) / pack
+}
+
 export default function Inventory() {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
@@ -293,7 +299,7 @@ export default function Inventory() {
     }
     const total = items.length
     const zero = items.filter((i) => i.stock <= 0).length
-    const totalValue = items.reduce((s, i) => s + Number(i.stock) * stockUnitValue(i), 0)
+    const totalValue = items.reduce((s, i) => s + stockQtyBoxes(i) * stockUnitValue(i), 0)
     return { total, zero, low: 0, totalValue }
   }, [items, itemStats, showAllItems, q])
 
