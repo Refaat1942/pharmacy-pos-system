@@ -3,11 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
-<<<<<<< HEAD
-import { useSort, SortTh } from '../components/DataTable'
-=======
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
->>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -193,31 +189,6 @@ export default function BranchesStock() {
     return data.items.filter((r) => pickedKeys.has(r.key))
   }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
 
-<<<<<<< HEAD
-  const bsAccessors = useMemo(() => ({
-    name: (r: Row) => (isAr ? r.name_ar : r.name_en) || '',
-    barcode: (r: Row) => r.barcode || '',
-    intl_barcode: (r: Row) => r.international_barcode || '',
-    category: (r: Row) => r.category || '',
-    stock: (r: Row) => {
-      if (singleBranch && visibleBranches[0]) {
-        const cell = r.branches.find((x) => x.branch_id === visibleBranches[0].id)
-        return cell?.stock ?? 0
-      }
-      return Number(r.total_stock) || 0
-    },
-    min_stock: (r: Row) => {
-      if (singleBranch && visibleBranches[0]) {
-        const cell = r.branches.find((x) => x.branch_id === visibleBranches[0].id)
-        return cell?.min_stock ?? 0
-      }
-      return Number(r.total_min) || 0
-    },
-    total_stock: (r: Row) => Number(r.total_stock) || 0,
-  }), [isAr, singleBranch, visibleBranches])
-  const { sorted: sortedDisplayItems, sort: bsSort, toggle: bsToggle } = useSort(
-    displayItems,
-=======
   const bsFilter = useQuickFilter(displayItems, [
     (r: Row) => r.name_en,
     (r: Row) => r.name_ar,
@@ -242,7 +213,6 @@ export default function BranchesStock() {
   }, [isAr, singleBranch, visibleBranches])
   const { sorted: sortedDisplayItems, sort: bsSort, toggle: bsToggle } = useSort(
     bsFilter.filtered,
->>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
     bsAccessors,
     singleBranch ? { key: 'stock', dir: 'asc' } : { key: 'total_stock', dir: 'asc' },
   )
@@ -470,13 +440,9 @@ export default function BranchesStock() {
                   <SortTh k="name" sort={bsSort} onToggle={bsToggle} align="start" className="px-4 py-3 sticky start-0 bg-slate-50 z-10 min-w-[12rem]">
                     {t('inventory.col_name')}
                   </SortTh>
-<<<<<<< HEAD
-                  <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">{t('inventory.col_barcode')}</SortTh>
-=======
                   <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
                     {t('inventory.col_barcode')}
                   </SortTh>
->>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
                   <SortTh k="intl_barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
                     {t('inventory.col_intl_barcode')}
                   </SortTh>
@@ -487,17 +453,12 @@ export default function BranchesStock() {
                   )}
                   {singleBranch ? (
                     <>
-<<<<<<< HEAD
-                      <SortTh k="stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">{t('inventory.bs_stock')}</SortTh>
-                      <SortTh k="min_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">{t('inventory.bs_min')}</SortTh>
-=======
                       <SortTh k="stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
                         {t('inventory.bs_stock')}
                       </SortTh>
                       <SortTh k="min_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
                         {t('inventory.bs_min')}
                       </SortTh>
->>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
                       <th className="px-3 py-3 text-center whitespace-nowrap">{t('inventory.bs_status')}</th>
                     </>
                   ) : (
