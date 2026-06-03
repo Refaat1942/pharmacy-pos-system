@@ -12,7 +12,8 @@ import {
 } from '../lib/branchStockPick'
 import { exportCSV } from '../lib/csv'
 import BarcodeDesigner from '../components/BarcodeDesigner'
-import BulkBarcodePrint from '../components/BulkBarcodePrint'
+import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
+import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import { useAuth } from '../lib/auth'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
@@ -45,6 +46,45 @@ type Product = {
   pack_size?: number | null
   sub_unit?: string | null
   sub_price?: number | null
+}
+
+function productLabelExpiry(it: Product): string | null {
+  const batches = Array.isArray(it.batches) ? it.batches.filter((b) => b.quantity > 0) : []
+  if (batches.length === 1 && batches[0].expiry_date) {
+    return formatExpiryForLabel(batches[0].expiry_date)
+  }
+  if (batches.length > 1) {
+    const dated = batches
+      .map((b) => formatExpiryForLabel(b.expiry_date))
+      .filter(Boolean) as string[]
+    if (dated.length) return dated.sort()[0]
+  }
+  return formatExpiryForLabel(it.expiry_date)
+}
+
+function bulkItemsForProduct(it: Product, isAr: boolean): BulkItem[] {
+  const name = isAr ? it.name_ar : it.name_en
+  const batches = Array.isArray(it.batches) ? it.batches.filter((b) => b.quantity > 0) : []
+  if (batches.length > 0) {
+    return batches.map((b) => ({
+      id: b.id,
+      barcode: it.barcode,
+      name: batches.length > 1
+        ? `${name} · ${formatExpiryForLabel(b.expiry_date) || '—'}`
+        : name,
+      price: it.price,
+      expiryDate: b.expiry_date,
+      defaultQty: b.quantity,
+    }))
+  }
+  return [{
+    id: it.id,
+    barcode: it.barcode,
+    name,
+    price: it.price,
+    expiryDate: it.expiry_date,
+    defaultQty: 1,
+  }]
 }
 
 function formatExpiryLots(it: Product): string {
@@ -453,12 +493,7 @@ export default function Inventory() {
       {showExcel && <ExcelUploadModal onClose={() => setShowExcel(false)} onDone={() => { setShowExcel(false); loadItems() }} />}
       {showBulkPrint && (
         <BulkBarcodePrint
-          items={items.filter(i => selected.has(i.id)).map(i => ({
-            id: i.id,
-            barcode: i.barcode,
-            name: isAr ? i.name_ar : i.name_en,
-            price: i.price,
-          }))}
+          items={items.filter(i => selected.has(i.id)).flatMap((i) => bulkItemsForProduct(i, isAr))}
           currency={t('pos.egp') as string}
           onClose={() => setShowBulkPrint(false)}
         />
@@ -817,6 +852,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         <BarcodeDesigner
           initialValue={f.barcode}
           productName={f.name_en || f.name_ar}
+          expiryDate={f.expiry_date || (item ? productLabelExpiry(item) : null)}
           onClose={() => setShowBarcodeDesigner(false)}
           onUse={(v) => { setF({ ...f, barcode: v }); setShowBarcodeDesigner(false) }}
         />
