@@ -13,6 +13,7 @@ from stock_batches import (
     deduct_stock_fefo,
     list_batches,
     set_batch_quantity,
+    set_product_stock_absolute,
     sync_product_from_batches,
 )
 
@@ -547,40 +548,58 @@ def list_branches(current_user=Depends(get_current_user)):
 
 class AdjustmentRequest(BaseModel):
     product_id: int
-    delta: int  # positive or negative
+    delta: Optional[int] = None  # positive or negative change
+    set_to: Optional[int] = None  # exact stock in sub-units (pack-aware count)
     reason: str
 
 
 @router.post("/adjustments")
 def create_adjustment(req: AdjustmentRequest,
                       current_user=Depends(get_current_user)):
-    if req.delta == 0:
-        raise HTTPException(status_code=400, detail="Delta cannot be zero")
+    if req.set_to is None and (req.delta is None or req.delta == 0):
+        raise HTTPException(status_code=400, detail="Provide delta or set_to")
     if not req.reason or not req.reason.strip():
         raise HTTPException(status_code=400, detail="Reason is required")
 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE",
-                    (req.product_id,))
+        cur.execute(
+            "SELECT id, stock, branch_id, expiry_date FROM products WHERE id=%s FOR UPDATE",
+            (req.product_id,),
+        )
         product = cur.fetchone()
         if not product:
             raise HTTPException(status_code=404, detail="Product not found")
         _assert_branch_access(current_user, product["branch_id"])
-        if req.delta > 0:
-            add_batch_stock(cur, req.product_id, product["branch_id"], req.delta, None)
+        old_stock = int(product["stock"] or 0)
+        if req.set_to is not None:
+            if req.set_to < 0:
+                raise HTTPException(status_code=400, detail="Stock cannot be negative")
+            new_stock = set_product_stock_absolute(
+                cur,
+                req.product_id,
+                product["branch_id"],
+                int(req.set_to),
+                product["expiry_date"],
+            )
+            delta = new_stock - old_stock
         else:
-            deduct_stock_fefo(cur, req.product_id, -req.delta, sellable_only=False)
-        new_stock = sync_product_from_batches(cur, req.product_id)
+            delta = int(req.delta)
+            if delta > 0:
+                add_batch_stock(cur, req.product_id, product["branch_id"], delta, None)
+            else:
+                deduct_stock_fefo(cur, req.product_id, -delta, sellable_only=False)
+            new_stock = sync_product_from_batches(cur, req.product_id)
         if new_stock < 0:
             raise HTTPException(status_code=400, detail="Adjustment would result in negative stock")
-        log_movement(
-            cur, req.product_id, product["branch_id"], "adjustment",
-            req.delta, new_stock,
-            reference_type="adjustment", reason=req.reason,
-            user_id=current_user.get("user_id"),
-        )
+        if delta != 0:
+            log_movement(
+                cur, req.product_id, product["branch_id"], "adjustment",
+                delta, new_stock,
+                reference_type="adjustment", reason=req.reason,
+                user_id=current_user.get("user_id"),
+            )
         conn.commit()
         return {"ok": True, "new_stock": new_stock}
     except HTTPException:

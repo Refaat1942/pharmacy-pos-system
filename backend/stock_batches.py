@@ -30,6 +30,26 @@ def ensure_batches_migrated(cur, product_id: int) -> None:
     )
 
 
+def set_product_stock_absolute(
+    cur,
+    product_id: int,
+    branch_id: Optional[int],
+    quantity: int,
+    expiry_date: Optional[date] = None,
+) -> int:
+    """Set total stock to an exact quantity in sub-units (replaces batch rows)."""
+    if quantity < 0:
+        raise HTTPException(status_code=400, detail="Quantity cannot be negative")
+    cur.execute("DELETE FROM product_batches WHERE product_id=%s", (product_id,))
+    if quantity > 0:
+        cur.execute(
+            """INSERT INTO product_batches (product_id, branch_id, expiry_date, quantity)
+               VALUES (%s, %s, %s, %s)""",
+            (product_id, branch_id, expiry_date, quantity),
+        )
+    return sync_product_from_batches(cur, product_id)
+
+
 def sync_product_from_batches(cur, product_id: int) -> int:
     """Set products.stock and products.expiry_date from batch rows. Returns new stock."""
     cur.execute(

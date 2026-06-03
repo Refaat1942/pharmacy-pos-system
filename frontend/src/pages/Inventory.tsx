@@ -598,13 +598,26 @@ function IconBtn({ onClick, title, color, children }: any) {
 
 // ─── Expiry lots (multiple batches per product) ──────────────────────────
 
-function ExpiryBatchesPanel({ productId, onChanged }: { productId: number; onChanged: () => void }) {
+function ExpiryBatchesPanel({
+  productId,
+  packSize,
+  unit,
+  subUnit,
+  onChanged,
+}: {
+  productId: number
+  packSize: number
+  unit: string
+  subUnit: string
+  onChanged: () => void
+}) {
   const { t } = useTranslation()
   const [batches, setBatches] = useState<ProductBatch[]>([])
   const [loading, setLoading] = useState(true)
   const [expiry, setExpiry] = useState('')
   const [qty, setQty] = useState('')
   const [saving, setSaving] = useState(false)
+  const pack = packSize > 1 ? packSize : 1
 
   const load = () => {
     setLoading(true)
@@ -617,8 +630,8 @@ function ExpiryBatchesPanel({ productId, onChanged }: { productId: number; onCha
   useEffect(() => { load() }, [productId])
 
   const addLot = async () => {
-    const n = parseInt(qty, 10)
-    if (!n || n <= 0) return
+    const n = pack > 1 ? parsePackStockInput(qty, pack) : parseInt(qty, 10)
+    if (n === null || n <= 0) return
     setSaving(true)
     try {
       await api.post(`/inventory/products/${productId}/batches`, {
@@ -660,7 +673,16 @@ function ExpiryBatchesPanel({ productId, onChanged }: { productId: number; onCha
           {batches.map((b) => (
             <li key={b.id} className="flex items-center justify-between gap-2 text-sm bg-white rounded-lg px-2 py-1.5 border border-amber-100">
               <span className="font-mono tabular-nums">
-                <b>{b.quantity}</b>
+                <b>
+                  {pack > 1
+                    ? formatPackStockInput(b.quantity, pack)
+                    : b.quantity}
+                </b>
+                {pack > 1 && (
+                  <span className="text-slate-500 text-[10px] ms-1">
+                    ({formatPackStockLabel(b.quantity, pack, unit, subUnit || t('inventory.sub_unit_word'))})
+                  </span>
+                )}
                 <span className="text-slate-500 mx-1">×</span>
                 {b.expiry_date ? String(b.expiry_date).slice(0, 10) : '—'}
               </span>
@@ -682,7 +704,14 @@ function ExpiryBatchesPanel({ productId, onChanged }: { productId: number; onCha
         </div>
         <div>
           <label className="text-[10px] text-slate-600 block mb-0.5">{t('inventory.batches_qty')}</label>
-          <input type="number" min={1} value={qty} onChange={(e) => setQty(e.target.value)} className="input text-sm w-24" />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder={pack > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+            className="input text-sm w-24"
+          />
         </div>
         <button
           type="button"
@@ -759,7 +788,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           if (newStock !== Number(item.stock)) {
             await api.post('/inventory/adjustments', {
               product_id: item.id,
-              delta: newStock - Number(item.stock),
+              set_to: newStock,
               reason: t('inventory.edit_stock_reason'),
             })
           }
@@ -834,7 +863,13 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           </Field>
         )}
         {item && (
-          <ExpiryBatchesPanel productId={item.id} onChanged={() => {}} />
+          <ExpiryBatchesPanel
+            productId={item.id}
+            packSize={packSize}
+            unit={f.unit}
+            subUnit={f.sub_unit || t('inventory.sub_unit_word')}
+            onChanged={() => {}}
+          />
         )}
         <Field label={t('inventory.f_price') + ' *'}>
           <input required type="number" step="0.01" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} className="input" />
@@ -864,6 +899,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                   sub: f.sub_unit || t('inventory.sub_unit_word'),
                   pack: packSize,
                 })}
+                {' '}
+                ({t('inventory.stock_tracked_in', { unit: f.sub_unit || t('inventory.sub_unit_word') })})
               </p>
             )}
           </Field>
@@ -970,13 +1007,30 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
       return
     }
     if (!reason.trim()) { setError(t('inventory.err_reason') as string); return }
-    let delta = mode === 'add' ? n : mode === 'remove' ? -n : (n - item.stock)
-    if (delta === 0) { setError(t('inventory.err_same') as string); return }
+    if (mode === 'set' && n === Number(item.stock)) {
+      setError(t('inventory.err_same') as string)
+      return
+    }
+    if (mode !== 'set' && n <= 0) {
+      setError(pack > 1 ? (t('inventory.err_pack_qty') as string) : (t('inventory.err_qty') as string))
+      return
+    }
     setSaving(true)
     try {
-      await api.post('/inventory/adjustments', {
-        product_id: item.id, delta, reason,
-      })
+      if (mode === 'set') {
+        await api.post('/inventory/adjustments', {
+          product_id: item.id,
+          set_to: n,
+          reason,
+        })
+      } else {
+        const delta = mode === 'add' ? n : -n
+        await api.post('/inventory/adjustments', {
+          product_id: item.id,
+          delta,
+          reason,
+        })
+      }
       onSaved()
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Error')
