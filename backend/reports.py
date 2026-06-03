@@ -277,6 +277,86 @@ def product_profitability(
         conn.close()
 
 
+@router.get("/sales-by-item")
+def sales_by_item(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = Query(2000, ge=1, le=5000),
+    current_user: dict = Depends(get_current_user),
+):
+    """Per-product sales in the date range, broken down by sale type, with current stock."""
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            WITH sales AS (
+                SELECT
+                  ii.product_id,
+                  SUM(ii.quantity)::int AS qty_total,
+                  SUM(ii.total)::float AS revenue_total,
+                  SUM(ii.quantity) FILTER (WHERE i.type = 'cash')::int AS qty_cash,
+                  SUM(ii.total) FILTER (WHERE i.type = 'cash')::float AS revenue_cash,
+                  SUM(ii.quantity) FILTER (WHERE i.type = 'delivery')::int AS qty_delivery,
+                  SUM(ii.total) FILTER (WHERE i.type = 'delivery')::float AS revenue_delivery,
+                  SUM(ii.quantity) FILTER (WHERE i.type = 'digital')::int AS qty_digital,
+                  SUM(ii.total) FILTER (WHERE i.type = 'digital')::float AS revenue_digital
+                FROM invoice_items ii
+                JOIN invoices i ON i.id = ii.invoice_id
+                WHERE i.status = 'completed'
+                  AND i.created_at >= %s::date
+                  AND i.created_at < (%s::date + INTERVAL '1 day')
+                  {bf.replace('branch_id', 'i.branch_id')}
+                GROUP BY ii.product_id
+            ),
+            returns_agg AS (
+                SELECT
+                  ri.product_id,
+                  SUM(ri.quantity)::int AS qty_return,
+                  SUM(ri.total)::float AS revenue_return
+                FROM return_items ri
+                JOIN returns r ON r.id = ri.return_id
+                WHERE r.created_at >= %s::date
+                  AND r.created_at < (%s::date + INTERVAL '1 day')
+                  {bf.replace('branch_id', 'r.branch_id')}
+                GROUP BY ri.product_id
+            )
+            SELECT
+              p.id,
+              p.name_ar,
+              p.name_en,
+              p.barcode,
+              COALESCE(p.category, 'Uncategorized') AS category,
+              COALESCE(p.stock, 0)::int AS current_stock,
+              s.qty_total,
+              s.revenue_total,
+              s.qty_cash,
+              s.revenue_cash,
+              s.qty_delivery,
+              s.revenue_delivery,
+              s.qty_digital,
+              s.revenue_digital,
+              COALESCE(ret.qty_return, 0)::int AS qty_return,
+              COALESCE(ret.revenue_return, 0)::float AS revenue_return
+            FROM sales s
+            JOIN products p ON p.id = s.product_id
+            LEFT JOIN returns_agg ret ON ret.product_id = p.id
+            ORDER BY s.revenue_total DESC
+            LIMIT %s
+            """,
+            [df, dt] + bp + [df, dt] + bp + [limit],
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
 @router.get("/digital-platform-account")
 def digital_platform_account_report(
     request: Request,

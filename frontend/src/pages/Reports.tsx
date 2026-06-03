@@ -22,6 +22,24 @@ type CatRow = { category: string; qty: number; revenue: number; cost: number; pr
 type BranchRow = { branch_id: number; name_en: string; name_ar: string; revenue: number; invoice_count: number; returns_value: number; net_revenue: number }
 type PayRow = { payment_method: string; sale_type: string; invoice_count: number; revenue: number }
 type ProdRow = { id: number; name_en: string; name_ar: string; barcode: string | null; category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
+type SalesByItemRow = {
+  id: number
+  name_en: string
+  name_ar: string
+  barcode: string | null
+  category: string
+  current_stock: number
+  qty_total: number
+  revenue_total: number
+  qty_cash: number
+  revenue_cash: number
+  qty_delivery: number
+  revenue_delivery: number
+  qty_digital: number
+  revenue_digital: number
+  qty_return: number
+  revenue_return: number
+}
 type TrendRow = { month: string; revenue: number; invoice_count: number; cogs: number; profit: number; returns_value: number }
 type ClinicRow = { clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }
 type DigitalPlatformRow = {
@@ -82,6 +100,7 @@ export default function Reports() {
   const [branches, setBranches] = useState<BranchRow[]>([])
   const [pays, setPays] = useState<PayRow[]>([])
   const [prods, setProds] = useState<ProdRow[]>([])
+  const [salesByItem, setSalesByItem] = useState<SalesByItemRow[]>([])
   const [trend, setTrend] = useState<TrendRow[]>([])
   const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
   const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
@@ -121,6 +140,7 @@ export default function Reports() {
         api.get('/reports/sales-by-category', { params }),
         api.get('/reports/sales-by-payment', { params }),
         api.get('/reports/product-profitability', { params: { ...params, limit: 20 } }),
+        api.get('/reports/sales-by-item', { params: { ...params, limit: 2000 } }),
         api.get('/reports/monthly-trend', { params: { months: 12 } }),
         api.get('/reports/digital-platform-account', {
           params: {
@@ -129,6 +149,7 @@ export default function Reports() {
           },
         }),
       ]
+      const salesByItemIdx = 6
       const clinicIdx = showClinics ? reqs.length : -1
       if (showClinics) reqs.push(api.get('/sales/by-clinic', { params }))
       const branchIdx = isAdmin ? reqs.length : -1
@@ -140,6 +161,7 @@ export default function Reports() {
       setProds(results[3].data)
       setTrend(results[4].data)
       setDigitalAccount(results[5].data)
+      setSalesByItem(results[salesByItemIdx].data)
       if (clinicIdx >= 0) setClinicRows(results[clinicIdx].data)
       if (branchIdx >= 0) setBranches(results[branchIdx].data)
     } catch (e: any) {
@@ -491,6 +513,128 @@ export default function Reports() {
               { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => <span className={r.revenue < 0 ? 'text-red-600 font-medium' : undefined}>{fmt(r.revenue)}</span> },
             ]}
             rows={pays}
+          />
+        </section>
+
+        {/* Sales by item */}
+        <section>
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <SectionHead icon={<BarChart3 size={18} />} title={t('reports.sales_by_item')} inline />
+            <button
+              onClick={() => exportCSV('sales-by-item.csv', salesByItem, [
+                { key: 'name_en', label: 'Name EN' },
+                { key: 'name_ar', label: 'Name AR' },
+                { key: 'barcode', label: 'Barcode' },
+                { key: 'category', label: 'Category' },
+                { key: 'current_stock', label: 'Stock' },
+                { key: 'qty_total', label: 'Qty total' },
+                { key: 'revenue_total', label: 'Revenue total' },
+                { key: 'qty_cash', label: 'Qty cash' },
+                { key: 'revenue_cash', label: 'Revenue cash' },
+                { key: 'qty_delivery', label: 'Qty delivery' },
+                { key: 'revenue_delivery', label: 'Revenue delivery' },
+                { key: 'qty_digital', label: 'Qty digital' },
+                { key: 'revenue_digital', label: 'Revenue digital' },
+                { key: 'qty_return', label: 'Qty return' },
+                { key: 'revenue_return', label: 'Revenue return' },
+              ])}
+              disabled={salesByItem.length === 0}
+              className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700 disabled:opacity-50"
+            >
+              <Download size={13} /> CSV
+            </button>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">{t('reports.sales_by_item_hint')}</p>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={[
+              {
+                key: 'name',
+                label: t('reports.product'),
+                render: (r: SalesByItemRow) => (i18n.language === 'ar' ? r.name_ar : r.name_en),
+                sortValue: (r: SalesByItemRow) => (i18n.language === 'ar' ? r.name_ar : r.name_en),
+              },
+              { key: 'barcode', label: t('inventory.col_barcode'), render: (r: SalesByItemRow) => r.barcode || '—' },
+              { key: 'category', label: t('reports.category') },
+              {
+                key: 'current_stock',
+                label: t('reports.current_stock'),
+                align: 'end',
+                render: (r: SalesByItemRow) => fmtInt(r.current_stock),
+                sortValue: (r: SalesByItemRow) => r.current_stock,
+              },
+              {
+                key: 'qty_total',
+                label: t('reports.qty'),
+                align: 'end',
+                render: (r: SalesByItemRow) => fmtInt(r.qty_total),
+                sortValue: (r: SalesByItemRow) => r.qty_total,
+              },
+              {
+                key: 'revenue_total',
+                label: t('reports.revenue'),
+                align: 'end',
+                render: (r: SalesByItemRow) => fmt(r.revenue_total),
+                sortValue: (r: SalesByItemRow) => r.revenue_total,
+              },
+              {
+                key: 'qty_cash',
+                label: t('reports.qty_cash'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.qty_cash > 0 ? fmtInt(r.qty_cash) : '—'),
+                sortValue: (r: SalesByItemRow) => r.qty_cash,
+              },
+              {
+                key: 'revenue_cash',
+                label: t('reports.revenue_cash'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.revenue_cash > 0 ? fmt(r.revenue_cash) : '—'),
+                sortValue: (r: SalesByItemRow) => r.revenue_cash,
+              },
+              {
+                key: 'qty_delivery',
+                label: t('reports.qty_delivery'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.qty_delivery > 0 ? fmtInt(r.qty_delivery) : '—'),
+                sortValue: (r: SalesByItemRow) => r.qty_delivery,
+              },
+              {
+                key: 'revenue_delivery',
+                label: t('reports.revenue_delivery'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.revenue_delivery > 0 ? fmt(r.revenue_delivery) : '—'),
+                sortValue: (r: SalesByItemRow) => r.revenue_delivery,
+              },
+              {
+                key: 'qty_digital',
+                label: t('reports.qty_digital'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.qty_digital > 0 ? fmtInt(r.qty_digital) : '—'),
+                sortValue: (r: SalesByItemRow) => r.qty_digital,
+              },
+              {
+                key: 'revenue_digital',
+                label: t('reports.revenue_digital'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.revenue_digital > 0 ? fmt(r.revenue_digital) : '—'),
+                sortValue: (r: SalesByItemRow) => r.revenue_digital,
+              },
+              {
+                key: 'qty_return',
+                label: t('reports.qty_return'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.qty_return > 0 ? fmtInt(r.qty_return) : '—'),
+                sortValue: (r: SalesByItemRow) => r.qty_return,
+              },
+              {
+                key: 'revenue_return',
+                label: t('reports.revenue_return'),
+                align: 'end',
+                render: (r: SalesByItemRow) => (r.revenue_return > 0 ? fmt(r.revenue_return) : '—'),
+                sortValue: (r: SalesByItemRow) => r.revenue_return,
+              },
+            ]}
+            rows={salesByItem}
           />
         </section>
 

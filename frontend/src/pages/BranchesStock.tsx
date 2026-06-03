@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { Search, Layers, Download, Building2, Package } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
+<<<<<<< HEAD
 import { useSort, SortTh } from '../components/DataTable'
+=======
+import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+>>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
 import api, { branchesAPI, type Branch } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import {
@@ -189,6 +193,7 @@ export default function BranchesStock() {
     return data.items.filter((r) => pickedKeys.has(r.key))
   }, [data.items, catalog.items, multiPick, pickedKeys, showAllStockInTable])
 
+<<<<<<< HEAD
   const bsAccessors = useMemo(() => ({
     name: (r: Row) => (isAr ? r.name_ar : r.name_en) || '',
     barcode: (r: Row) => r.barcode || '',
@@ -212,6 +217,32 @@ export default function BranchesStock() {
   }), [isAr, singleBranch, visibleBranches])
   const { sorted: sortedDisplayItems, sort: bsSort, toggle: bsToggle } = useSort(
     displayItems,
+=======
+  const bsFilter = useQuickFilter(displayItems, [
+    (r: Row) => r.name_en,
+    (r: Row) => r.name_ar,
+    (r: Row) => r.barcode,
+    (r: Row) => r.international_barcode,
+    (r: Row) => r.category,
+  ])
+  const bsAccessors = useMemo(() => {
+    const acc: Record<string, (r: Row) => unknown> = {
+      name: (r) => (isAr ? r.name_ar : r.name_en) || '',
+      barcode: (r) => r.barcode || '',
+      intl_barcode: (r) => r.international_barcode || '',
+      category: (r) => r.category || '',
+      total_stock: (r) => Number(r.total_stock) || 0,
+    }
+    if (singleBranch && visibleBranches[0]) {
+      const bid = visibleBranches[0].id
+      acc.stock = (r) => r.branches.find((x) => x.branch_id === bid)?.stock ?? 0
+      acc.min_stock = (r) => r.branches.find((x) => x.branch_id === bid)?.min_stock ?? 0
+    }
+    return acc
+  }, [isAr, singleBranch, visibleBranches])
+  const { sorted: sortedDisplayItems, sort: bsSort, toggle: bsToggle } = useSort(
+    bsFilter.filtered,
+>>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
     bsAccessors,
     singleBranch ? { key: 'stock', dir: 'asc' } : { key: 'total_stock', dir: 'asc' },
   )
@@ -422,6 +453,15 @@ export default function BranchesStock() {
           </div>
         )}
 
+        <div className="mb-3">
+          <TableFilter
+            value={bsFilter.query}
+            onChange={bsFilter.setQuery}
+            placeholder={t('common.filter_placeholder') as string}
+            className="max-w-md"
+          />
+        </div>
+
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[56rem]">
@@ -430,7 +470,13 @@ export default function BranchesStock() {
                   <SortTh k="name" sort={bsSort} onToggle={bsToggle} align="start" className="px-4 py-3 sticky start-0 bg-slate-50 z-10 min-w-[12rem]">
                     {t('inventory.col_name')}
                   </SortTh>
+<<<<<<< HEAD
                   <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">{t('inventory.col_barcode')}</SortTh>
+=======
+                  <SortTh k="barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
+                    {t('inventory.col_barcode')}
+                  </SortTh>
+>>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
                   <SortTh k="intl_barcode" sort={bsSort} onToggle={bsToggle} align="start" className="px-3 py-3 whitespace-nowrap">
                     {t('inventory.col_intl_barcode')}
                   </SortTh>
@@ -441,8 +487,17 @@ export default function BranchesStock() {
                   )}
                   {singleBranch ? (
                     <>
+<<<<<<< HEAD
                       <SortTh k="stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">{t('inventory.bs_stock')}</SortTh>
                       <SortTh k="min_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">{t('inventory.bs_min')}</SortTh>
+=======
+                      <SortTh k="stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
+                        {t('inventory.bs_stock')}
+                      </SortTh>
+                      <SortTh k="min_stock" sort={bsSort} onToggle={bsToggle} align="center" className="px-3 py-3 whitespace-nowrap">
+                        {t('inventory.bs_min')}
+                      </SortTh>
+>>>>>>> origin/cursor/sales-by-item-branch-sort-49ee
                       <th className="px-3 py-3 text-center whitespace-nowrap">{t('inventory.bs_status')}</th>
                     </>
                   ) : (
