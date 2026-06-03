@@ -352,7 +352,11 @@ export default function Inventory() {
               <StatCard label={t('inventory.stat_low')} value={formatInt(stats.low)} color="amber" />
               <StatCard label={t('inventory.stat_zero')} value={formatInt(stats.zero)} color="red" />
               <StatCard
-                label={t('inventory.stat_value')}
+                label={
+                  q || stockFilter || categoryFilter
+                    ? t('inventory.stat_value_filtered')
+                    : t('inventory.stat_value')
+                }
                 value={`${formatInt(stats.totalValue)} ${t('pos.egp')}`}
                 color="emerald"
               />
@@ -471,11 +475,19 @@ export default function Inventory() {
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
                               isZero ? 'bg-red-100 text-red-700' :
                               'bg-emerald-100 text-emerald-700'
-                            }`}>{formatInt(it.stock)}</span>
+                            }`}>
+                              {it.pack_size && it.pack_size > 1
+                                ? formatPackStockInput(it.stock, it.pack_size)
+                                : formatInt(it.stock)}
+                            </span>
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (
                               <div className="text-[10px] text-slate-500 mt-0.5">
-                                {Math.floor(it.stock / it.pack_size)} {it.unit}
-                                {it.stock % it.pack_size > 0 && ` + ${it.stock % it.pack_size} ${it.sub_unit}`}
+                                {formatPackStockLabel(
+                                  it.stock,
+                                  it.pack_size,
+                                  it.unit,
+                                  it.sub_unit,
+                                )}
                               </div>
                             )}
                           </td>
@@ -711,14 +723,23 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           : null,
       }
       if (item) {
-        await api.put(`/inventory/products/${item.id}`, payload)
-        const newStock = parsePackStockInput(f.stock, packSize)
-        if (newStock !== null && newStock !== Number(item.stock)) {
-          await api.post('/inventory/adjustments', {
-            product_id: item.id,
-            delta: newStock - Number(item.stock),
-            reason: t('inventory.edit_stock_reason'),
-          })
+        if (f.stock.trim()) {
+          const newStock = parsePackStockInput(f.stock, packSize)
+          if (newStock === null) {
+            setError(t('inventory.err_pack_qty') as string)
+            setSaving(false)
+            return
+          }
+          await api.put(`/inventory/products/${item.id}`, payload)
+          if (newStock !== Number(item.stock)) {
+            await api.post('/inventory/adjustments', {
+              product_id: item.id,
+              delta: newStock - Number(item.stock),
+              reason: t('inventory.edit_stock_reason'),
+            })
+          }
+        } else {
+          await api.put(`/inventory/products/${item.id}`, payload)
         }
       } else {
         payload.stock = parsePackStockInput(f.stock, packSize) ?? 0

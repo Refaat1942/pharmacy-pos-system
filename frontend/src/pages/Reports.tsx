@@ -81,6 +81,25 @@ const firstOfMonth = () => {
 const fmt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtInt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')
 
+function exportCSV(filename: string, rows: any[], columns: { key: string; label: string }[]) {
+  const head = columns.map((c) => `"${c.label}"`).join(',')
+  const body = rows.map((r) =>
+    columns.map((c) => {
+      const v = r[c.key]
+      if (v == null) return ''
+      const s = String(v).replace(/"/g, '""')
+      return `"${s}"`
+    }).join(','),
+  ).join('\n')
+  const blob = new Blob(['\uFEFF' + head + '\n' + body], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function PlatformBadge({ platformId, label }: { platformId: string; label: string }) {
   return (
     <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(platformId)}`}>
@@ -219,6 +238,12 @@ export default function Reports() {
     }
   }
 
+  useEffect(() => {
+    if (!canSee || !activeReport) return
+    void loadReport(activeReport)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeReport, from, to, digitalPlatformFilter, canSee])
+
   const exportActiveReport = () => {
     if (!activeReport) return
     const suffix = `${from}_${to}`
@@ -313,22 +338,6 @@ export default function Reports() {
         </div>
       </Layout>
     )
-  }
-
-  const exportCSV = (filename: string, rows: any[], columns: { key: string; label: string }[]) => {
-    const head = columns.map((c) => `"${c.label}"`).join(',')
-    const body = rows.map((r) =>
-      columns.map((c) => {
-        const v = r[c.key]
-        if (v == null) return ''
-        const s = String(v).replace(/"/g, '""')
-        return `"${s}"`
-      }).join(',')
-    ).join('\n')
-    const blob = new Blob(['\uFEFF' + head + '\n' + body], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url)
   }
 
   return (

@@ -1,6 +1,9 @@
 /**
  * When pack_size > 1, stock is stored in sub-units (e.g. strips).
- * Entry "2.4" with pack_size 7 means 2 boxes + 4 strips → 2*7+4 = 18 sub-units.
+ * Entry formats:
+ * - Box.sub: "2.4" with pack_size 7 → 2 boxes + 4 strips → 18 sub-units.
+ * - Decimal boxes: "2.5" with pack_size 2 → 2½ boxes → 5 strips (when .fraction ≥ pack_size).
+ * - Whole boxes: "3" → 3 boxes → 3 * pack_size sub-units.
  */
 
 export function parsePackStockInput(raw: string, packSize: number): number | null {
@@ -14,12 +17,26 @@ export function parsePackStockInput(raw: string, packSize: number): number | nul
   }
 
   if (s.includes('.')) {
-    const [whole, frac = ''] = s.split('.', 2)
-    const boxes = whole === '' ? 0 : parseInt(whole, 10)
-    const subs = frac === '' ? 0 : parseInt(frac, 10)
-    if (Number.isNaN(boxes) || boxes < 0 || Number.isNaN(subs) || subs < 0) return null
-    if (subs >= packSize) return null
-    return boxes * packSize + subs
+    const [wholePart, fracPart = ''] = s.split('.', 2)
+    const boxes = wholePart === '' ? 0 : parseInt(wholePart, 10)
+    if (Number.isNaN(boxes) || boxes < 0) return null
+
+    if (fracPart === '') {
+      return boxes * packSize
+    }
+
+    const subs = parseInt(fracPart, 10)
+    if (Number.isNaN(subs) || subs < 0) return null
+
+    // e.g. 2.4 @ pack 7 → 2 boxes + 4 strips
+    if (subs < packSize) {
+      return boxes * packSize + subs
+    }
+
+    // e.g. 2.5 @ pack 2 → 2.5 boxes (fraction ≥ pack size → decimal boxes)
+    const asDecimal = parseFloat(s)
+    if (!Number.isFinite(asDecimal) || asDecimal < 0) return null
+    return Math.round(asDecimal * packSize)
   }
 
   const boxes = parseInt(s, 10)
