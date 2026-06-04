@@ -64,6 +64,30 @@ def _parse_bool(v) -> bool:
     return True
 
 
+def _norm_customer_code(code: str | None) -> str | None:
+    if code in (None, ""):
+        return None
+    c = str(code).strip().upper()
+    return c or None
+
+
+def _default_customer_code(customer_id: int) -> str:
+    return f"C{customer_id:06d}"
+
+
+def _ensure_customer_code(cur, customer_id: int, code: str | None) -> str:
+    norm = _norm_customer_code(code)
+    if norm:
+        cur.execute(
+            "SELECT id FROM customers WHERE UPPER(TRIM(code)) = %s AND id <> %s LIMIT 1",
+            (norm, customer_id),
+        )
+        if cur.fetchone():
+            raise HTTPException(status_code=400, detail=f"Customer code '{norm}' already in use")
+        return norm
+    return _default_customer_code(customer_id)
+
+
 def _parse_branch_ids(raw, branch_by_id: dict[int, dict], branch_by_name: dict[str, int]) -> list[int]:
     if raw in (None, ""):
         return []
@@ -84,7 +108,7 @@ def _parse_branch_ids(raw, branch_by_id: dict[int, dict], branch_by_name: dict[s
 
 
 CUSTOMER_TEMPLATE_HEADERS = [
-    "Name", "Phone", "Email", "Region", "Address Details",
+    "Code", "Name", "Phone", "Email", "Region", "Address Details",
     "Tax #", "Credit Limit", "Notes", "Active", "Authorized Branches",
 ]
 
@@ -100,6 +124,7 @@ def customers_bulk_template(current_user=Depends(get_current_user)):
     ws.title = "Customers"
     ws.append(CUSTOMER_TEMPLATE_HEADERS)
     ws.append([
+        "C000001",
         "Ahmed Pharmacy Co.",
         "01001234567",
         "ahmed@example.com",
@@ -217,6 +242,9 @@ async def customers_bulk_upload(
                 branch_by_name,
             )
 
+            code_raw = _row_get(r, "code", "customer code", "customer_code")
+            code_val = _norm_customer_code(str(code_raw).strip() if code_raw not in (None, "") else None)
+
             existing = None
             if cust_id_raw not in (None, ""):
                 try:
@@ -227,6 +255,13 @@ async def customers_bulk_upload(
                 existing = cur.fetchone()
                 if not existing:
                     raise ValueError(f"Customer ID {cid} not found")
+
+            if not existing and code_val:
+                cur.execute(
+                    "SELECT id FROM customers WHERE UPPER(TRIM(code)) = %s ORDER BY id LIMIT 1",
+                    (code_val,),
+                )
+                existing = cur.fetchone()
 
             if not existing and phone:
                 norm = _norm_phone(phone)
@@ -241,11 +276,12 @@ async def customers_bulk_upload(
 
             if existing:
                 cid = existing["id"]
+                final_code = _ensure_customer_code(cur, cid, code_val)
                 cur.execute(
-                    """UPDATE customers SET name=%s, phone=%s, email=%s, region=%s,
+                    """UPDATE customers SET code=%s, name=%s, phone=%s, email=%s, region=%s,
                        address_details=%s, tax_number=%s, credit_limit=%s, notes=%s, active=%s
                        WHERE id=%s""",
-                    (name_val, phone, email, region, address, tax_number,
+                    (final_code, name_val, phone, email, region, address, tax_number,
                      credit_limit, notes, active, cid),
                 )
                 if branch_ids:
@@ -267,6 +303,8 @@ async def customers_bulk_upload(
                      credit_limit, notes, active),
                 )
                 cid = cur.fetchone()["id"]
+                final_code = _ensure_customer_code(cur, cid, code_val)
+                cur.execute("UPDATE customers SET code=%s WHERE id=%s", (final_code, cid))
                 for bid in branch_ids:
                     cur.execute(
                         "INSERT INTO customer_branches (customer_id, branch_id, authorized_by) "
@@ -293,6 +331,7 @@ async def customers_bulk_upload(
 
 class CustomerIn(BaseModel):
     name: str
+    code: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     region: Optional[str] = None
@@ -315,9 +354,9 @@ def list_customers_v2(q: str = "", active_only: bool = True,
     if active_only:
         where.append("c.active = true")
     if q:
-        where.append("(c.name ILIKE %s OR c.phone ILIKE %s OR c.email ILIKE %s)")
+        where.append("(c.name ILIKE %s OR c.phone ILIKE %s OR c.email ILIKE %s OR c.code ILIKE %s)")
         like = f"%{q}%"
-        params += [like, like, like]
+        params += [like, like, like, like]
     # Non-admin: row-level branch-scope — only customers with at least one
     # invoice in the user's branch are visible; aggregates also branch-scoped.
     if current_user.get("role") != "admin":
@@ -364,6 +403,9 @@ def create_customer_v2(req: CustomerIn, current_user=Depends(get_current_user)):
              req.tax_number, req.credit_limit, req.notes, req.active),
         )
         row = cur.fetchone()
+        final_code = _ensure_customer_code(cur, row["id"], req.code)
+        cur.execute("UPDATE customers SET code=%s WHERE id=%s RETURNING *", (final_code, row["id"]))
+        row = cur.fetchone()
         if req.branch_ids:
             for bid in set(req.branch_ids):
                 cur.execute(
@@ -387,11 +429,19 @@ def update_customer_v2(customer_id: int, req: CustomerIn,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        cur.execute("SELECT code FROM customers WHERE id=%s", (customer_id,))
+        existing_code_row = cur.fetchone()
+        if not existing_code_row:
+            raise HTTPException(status_code=404, detail="Customer not found")
+        if req.code not in (None, ""):
+            final_code = _ensure_customer_code(cur, customer_id, req.code)
+        else:
+            final_code = (existing_code_row.get("code") or "").strip() or _default_customer_code(customer_id)
         cur.execute(
-            """UPDATE customers SET name=%s, phone=%s, email=%s, region=%s,
+            """UPDATE customers SET code=%s, name=%s, phone=%s, email=%s, region=%s,
                address_details=%s, tax_number=%s, credit_limit=%s, notes=%s, active=%s
                WHERE id=%s RETURNING *""",
-            (req.name, req.phone, req.email, req.region, req.address_details,
+            (final_code, req.name, req.phone, req.email, req.region, req.address_details,
              req.tax_number, req.credit_limit, req.notes, req.active, customer_id),
         )
         row = cur.fetchone()

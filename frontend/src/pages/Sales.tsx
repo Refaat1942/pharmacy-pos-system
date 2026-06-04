@@ -9,6 +9,8 @@ import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/
 import i18n from '../lib/i18n'
 import type { TFunction } from 'i18next'
 import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
+import { formatDateTime } from '../lib/formatDate'
+import DateInput from '../components/DateInput'
 
 type SalesRow = Invoice & { isReturn?: boolean }
 
@@ -253,7 +255,7 @@ export default function Sales() {
   const exportCSV = () => {
     const columns: { label: string; value: (r: SalesRow) => string | number }[] = [
       { label: t('sales.invoice_no'), value: (r) => r.invoice_number },
-      { label: t('sales.date'), value: (r) => new Date(r.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US') },
+      { label: t('sales.date'), value: (r) => formatDateTime(r.created_at) },
       { label: t('sales.sale_type'), value: (r) => typeLabel[r.type] || r.type },
       {
         label: t('sales.payment_method'),
@@ -417,13 +419,11 @@ export default function Sales() {
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_from')}</label>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+              <DateInput value={dateFrom} onChange={setDateFrom} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_to')}</label>
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+              <DateInput value={dateTo} onChange={setDateTo} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.type')}</label>
@@ -553,15 +553,7 @@ export default function Sales() {
                           {inv.invoice_number}
                         </td>
                         <td className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">
-                          {new Date(inv.created_at).toLocaleString(
-                            lang === 'ar' ? 'ar-EG' : 'en-US',
-                            {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }
-                          )}
+                          {formatDateTime(inv.created_at)}
                         </td>
                         <td className={`px-3 py-3 text-xs font-medium whitespace-nowrap ${inv.isReturn ? 'text-red-600' : 'text-gray-700'}`}>
                           {typeLabel[inv.type] || inv.type}
@@ -696,7 +688,7 @@ export default function Sales() {
                 <h3 className="font-bold text-gray-900">{t('sales.detail_title')}</h3>
                 <p className="font-mono text-sm text-pharma-700">{inv.invoice_number}</p>
                 <p className="text-xs text-gray-500">
-                  {new Date(inv.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US')}
+                  {formatDateTime(inv.created_at)}
                 </p>
               </div>
               <button

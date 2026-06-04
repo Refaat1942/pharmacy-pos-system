@@ -15,9 +15,12 @@ import { formatInt, formatMoney } from '../lib/formatNumber'
 import {
   formatPackStockInput,
   formatPackStockLabel,
+  formatVarianceMajorUnits,
   packSizeOf,
   parsePackStockInput,
+  stockVarianceMajorUnits,
 } from '../lib/packStock'
+import { formatDate } from '../lib/formatDate'
 import { TableLoadingRow } from '../components/LoadingSpinner'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
@@ -2028,6 +2031,7 @@ function StocktakeTab() {
   ])
   const stAccessors = useMemo(() => ({
     name: (it: any) => (isAr ? it.name_ar : it.name_en),
+    category: (it: any) => it.category || '',
     barcode: (it: any) => it.barcode,
     stock: (it: any) => Number(it.stock),
   }), [isAr])
@@ -2122,6 +2126,7 @@ function StocktakeTab() {
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
                 <SortTh k="name" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_name')}</SortTh>
+                <SortTh k="category" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_category')}</SortTh>
                 <SortTh k="barcode" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_barcode')}</SortTh>
                 <SortTh k="stock" sort={stSort} onToggle={stToggle} align="center">{t('inventory.st_system')}</SortTh>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_counted')}</th>
@@ -2131,24 +2136,24 @@ function StocktakeTab() {
             </thead>
             <tbody>
               {!branchId && (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
               )}
-              {branchId && loading && <TableLoadingRow colSpan={6} />}
+              {branchId && loading && <TableLoadingRow colSpan={7} />}
               {branchId && !loading && sortedSt.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
               {branchId && sortedSt.map(it => {
                 const raw = counted[it.id]
                 const has = raw !== '' && raw !== undefined
                 const pack = packSizeOf(it)
                 const val = has ? parsePackStockInput(String(raw), pack) : null
-                const variance = val !== null ? val - Number(it.stock) : null
+                const variance = val !== null ? stockVarianceMajorUnits(val, Number(it.stock), pack) : null
                 return (
                   <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-slate-800">{isAr ? it.name_ar : it.name_en}</div>
-                      {it.category && <div className="text-[11px] text-slate-400">{it.category}</div>}
                     </td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600">{it.category ? String(t(`inventory.cat_${it.category}`, it.category)) : '—'}</td>
                     <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{it.barcode || '—'}</td>
                     <td className="px-3 py-2.5 text-center font-mono text-slate-700">
                       {pack > 1
@@ -2168,8 +2173,8 @@ function StocktakeTab() {
                     <td className="px-3 py-2.5 text-center font-mono font-semibold">
                       {variance === null ? <span className="text-slate-300">—</span>
                         : variance === 0 ? <span className="text-slate-400">0</span>
-                        : variance > 0 ? <span className="text-emerald-600">+{variance}</span>
-                        : <span className="text-red-600">{variance}</span>}
+                        : variance > 0 ? <span className="text-emerald-600">{formatVarianceMajorUnits(variance)}</span>
+                        : <span className="text-red-600">{formatVarianceMajorUnits(variance)}</span>}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <input
@@ -2178,6 +2183,7 @@ function StocktakeTab() {
                         onChange={e => setExpiries(prev => ({ ...prev, [it.id]: e.target.value }))}
                         className="w-36 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
                       />
+                      {curExpiry(it) ? <div className="text-[10px] text-slate-400 mt-0.5">{formatDate(curExpiry(it))}</div> : null}
                     </td>
                   </tr>
                 )

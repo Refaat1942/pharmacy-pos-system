@@ -313,6 +313,9 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS address_details TEXT;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS tax_number VARCHAR(50);
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit DECIMAL(12,2) DEFAULT 0;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS code VARCHAR(50);
+CREATE UNIQUE INDEX IF NOT EXISTS customers_code_unique ON customers (code) WHERE code IS NOT NULL AND code <> '';
+UPDATE customers SET code = 'C' || LPAD(id::text, 6, '0') WHERE code IS NULL OR TRIM(code) = '';
 
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS region VARCHAR(100);
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address_details TEXT;

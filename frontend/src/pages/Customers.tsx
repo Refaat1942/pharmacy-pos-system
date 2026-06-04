@@ -28,10 +28,12 @@ export default function Customers() {
 
   const filter = useQuickFilter(list, [
     (c) => c.name,
+    (c) => c.code,
     (c) => c.phone,
     (c) => regionLabel(c.region, lang),
   ])
   const accessors = useMemo(() => ({
+    code: (c: Customer) => c.code || '',
     name: (c: Customer) => c.name,
     phone: (c: Customer) => c.phone,
     region: (c: Customer) => regionLabel(c.region, lang),
@@ -56,6 +58,7 @@ export default function Customers() {
 
   const exportList = () => {
     exportCSV(`customers-${new Date().toISOString().slice(0, 10)}.csv`, list, [
+      { label: t('customers.col_code'), value: (c) => c.code || '' },
       { label: t('customers.col_name'), value: (c) => c.name },
       { label: t('customers.col_phone'), value: (c) => c.phone || '' },
       { label: t('customers.col_region'), value: (c) => regionLabel(c.region, lang) || '' },
@@ -107,6 +110,7 @@ export default function Customers() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
               <tr>
+                <SortTh k="code" sort={sort} onToggle={toggle} align="start">{t('customers.col_code')}</SortTh>
                 <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('customers.col_name')}</SortTh>
                 <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('customers.col_phone')}</SortTh>
                 <SortTh k="region" sort={sort} onToggle={toggle} align="start">{t('customers.col_region')}</SortTh>
@@ -118,14 +122,15 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
+              {loading && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
+              {!loading && sorted.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
               {sorted.map((c) => {
                 const bal = Number(c.balance)
                 const limit = Number(c.credit_limit || 0)
                 const overLimit = limit > 0 && bal > limit
                 return (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-3 py-2 font-mono text-xs text-slate-600">{c.code || '—'}</td>
                     <td className="px-3 py-2 font-medium">{c.name}</td>
                     <td className="px-3 py-2 text-slate-600 font-mono text-xs">{c.phone || '—'}</td>
                     <td className="px-3 py-2 text-slate-600">{regionLabel(c.region, lang) || '—'}</td>
@@ -312,6 +317,12 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3 max-h-[75vh] overflow-auto">
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.col_code')}</label>
+            <input value={f.code || ''} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })}
+              placeholder={f.id ? undefined : (t('customers.code_auto') as string)}
+              className="input mt-1 w-full font-mono" />
+          </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_name')} *</label>
             <input value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} className="input mt-1 w-full" />

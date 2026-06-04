@@ -13,6 +13,8 @@ import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
+import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay } from '../lib/formatDate'
+import DateInput from '../components/DateInput'
 
 type PnL = {
   date_from: string; date_to: string
@@ -22,7 +24,16 @@ type PnL = {
 }
 type CatRow = { category: string; qty: number; revenue: number; cost: number; profit: number }
 type BranchRow = { branch_id: number; name_en: string; name_ar: string; revenue: number; invoice_count: number; returns_value: number; net_revenue: number }
-type PayRow = { payment_method: string; sale_type: string; invoice_count: number; revenue: number }
+type PayRow = {
+  branch_id: number
+  branch_name_en: string
+  branch_name_ar: string
+  payment_method: string
+  sale_type: string
+  invoice_count: number
+  revenue: number
+  total_discount: number
+}
 type ProdRow = { id: number; name_en: string; name_ar: string; barcode: string | null; category: string; qty: number; revenue: number; cost: number; profit: number; margin_pct: number }
 type SalesByItemRow = {
   id: number
@@ -172,11 +183,13 @@ type DeliveryZonesReport = {
 }
 type CustomerRow = {
   customer_id: number
+  customer_code: string | null
   customer_name: string
   phone: string | null
   region: string | null
   invoice_count: number
   total_spent: number
+  total_discount: number
   avg_order_value: number
   first_invoice_at: string | null
   last_invoice_at: string | null
@@ -188,12 +201,14 @@ type CustomerRow = {
 }
 type CustomerItemRow = {
   customer_id: number
+  customer_code: string | null
   customer_name: string
   phone: string | null
   product_name: string
   barcode: string | null
   qty: number
   revenue: number
+  line_discount: number
   purchase_count: number
   last_purchased_at: string | null
 }
@@ -216,6 +231,7 @@ type SalesTypeRow = {
   payment_method: string
   invoice_count: number
   revenue: number
+  total_discount: number
   items_qty: number
 }
 type SalesSellerRow = {
@@ -271,12 +287,13 @@ type SalesLineItemRow = {
   barcode: string | null
   qty: number
   unit_price: number
+  line_discount: number
   line_total: number
 }
 type SalesReport = {
   date_from: string
   date_to: string
-  summary: { invoice_count: number; total_revenue: number; items_qty: number }
+  summary: { invoice_count: number; total_revenue: number; total_discount: number; items_qty: number }
   by_sale_type: SalesTypeRow[]
   by_seller: SalesSellerRow[]
   by_terminal: SalesTerminalRow[]
@@ -372,6 +389,10 @@ export default function Reports() {
   const [cats, setCats] = useState<CatRow[]>([])
   const [branches, setBranches] = useState<BranchRow[]>([])
   const [pays, setPays] = useState<PayRow[]>([])
+  const [payBranchFilter, setPayBranchFilter] = useState('')
+  const [paySaleTypeFilter, setPaySaleTypeFilter] = useState('')
+  const [payMethodFilter, setPayMethodFilter] = useState('')
+  const [reportBranches, setReportBranches] = useState<{ id: number; name_en: string; name_ar: string }[]>([])
   const [prods, setProds] = useState<ProdRow[]>([])
   const [salesByItem, setSalesByItem] = useState<SalesByItemRow[]>([])
   const [trend, setTrend] = useState<TrendRow[]>([])
@@ -399,6 +420,10 @@ export default function Reports() {
     }),
     [isAdmin, hasFeature],
   )
+
+  useEffect(() => {
+    api.get('/inventory/branches').then((r) => setReportBranches(r.data)).catch(() => setReportBranches([]))
+  }, [])
 
   const loadReport = async (id: ReportId) => {
     setLoading(true)
@@ -442,7 +467,14 @@ export default function Reports() {
           break
         }
         case 'payment': {
-          const { data } = await api.get('/reports/sales-by-payment', { params })
+          const { data } = await api.get('/reports/sales-by-payment', {
+            params: {
+              ...params,
+              branch_id: payBranchFilter ? Number(payBranchFilter) : undefined,
+              sale_type: paySaleTypeFilter || undefined,
+              payment_method: payMethodFilter || undefined,
+            },
+          })
           setPays(data)
           break
         }
@@ -493,7 +525,7 @@ export default function Reports() {
     if (!canSee || !activeReport) return
     void loadReport(activeReport)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeReport, from, to, digitalPlatformFilter, canSee])
+  }, [activeReport, from, to, digitalPlatformFilter, payBranchFilter, paySaleTypeFilter, payMethodFilter, canSee])
 
   const exportActiveReport = async () => {
     if (!activeReport) return
@@ -661,11 +693,11 @@ export default function Reports() {
               <>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
-                  <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="input text-sm" />
+                  <DateInput value={from} onChange={setFrom} />
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
-                  <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="input text-sm" />
+                  <DateInput value={to} onChange={setTo} max={today()} />
                 </div>
               </>
             )}
@@ -957,24 +989,63 @@ export default function Reports() {
         {/* Payment breakdown */}
         {!loading && activeReport === 'payment' && (
         <section>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
             <SectionHead icon={<CreditCard size={18} />} title={t('reports.by_payment')} inline />
-            <button onClick={() => exportCSV('sales-by-payment.csv', pays, [
+            <button onClick={() => exportCSV(`sales-by-payment-${from}_${to}.csv`, pays, [
+              { key: 'branch_name_en', label: 'Branch' },
               { key: 'sale_type', label: 'Sale Type' },
               { key: 'payment_method', label: 'Payment Method' },
               { key: 'invoice_count', label: 'Invoices' },
+              { key: 'total_discount', label: 'Discount' },
               { key: 'revenue', label: 'Revenue' },
             ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
               <Download size={13} /> CSV
             </button>
           </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm mb-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.branch')}</label>
+                <select value={payBranchFilter} onChange={(e) => setPayBranchFilter(e.target.value)} className="input text-sm min-w-[9rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {reportBranches.map((b) => (
+                    <option key={b.id} value={String(b.id)}>
+                      {i18n.language === 'ar' ? b.name_ar : b.name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.sale_type')}</label>
+                <select value={paySaleTypeFilter} onChange={(e) => setPaySaleTypeFilter(e.target.value)} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {['cash', 'delivery', 'digital', 'return'].map((v) => (
+                    <option key={v} value={v}>{v === 'return' ? t('reports.return_type') : saleTypeLabel(t, v)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.payment_method')}</label>
+                <select value={payMethodFilter} onChange={(e) => setPayMethodFilter(e.target.value)} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {['cash', 'visa', 'hybrid', 'account', 'instapay', 'vodafone_cash', 'return'].map((v) => (
+                    <option key={v} value={v}>{paymentLabel(t, v)}</option>
+                  ))}
+                </select>
+              </div>
+              <button type="button" onClick={() => { setPayBranchFilter(''); setPaySaleTypeFilter(''); setPayMethodFilter('') }}
+                className="text-xs text-slate-600 hover:text-pharma-700 px-2 py-2">{t('reports.reset_filters')}</button>
+            </div>
+          </div>
           <DataTable
             empty={t('reports.no_data')}
             cols={[
-              { key: 'sale_type', label: t('reports.sale_type'), render: (r) => <span className={`capitalize${r.sale_type === 'return' ? ' text-red-600' : ''}`}>{r.sale_type === 'return' ? t('reports.return_type') : r.sale_type}</span> },
-              { key: 'payment_method', label: t('reports.payment_method'), render: (r) => <span className="capitalize">{r.payment_method === 'return' ? t('reports.return_type') : r.payment_method === 'instapay' ? t('payment.instapay') : r.payment_method === 'vodafone_cash' ? t('payment.vodafone_cash') : r.payment_method}</span> },
-              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
-              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => <span className={r.revenue < 0 ? 'text-red-600 font-medium' : undefined}>{fmt(r.revenue)}</span> },
+              { key: 'branch', label: t('reports.branch'), render: (r: PayRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
+              { key: 'sale_type', label: t('reports.sale_type'), render: (r: PayRow) => <span className={`capitalize${r.sale_type === 'return' ? ' text-red-600' : ''}`}>{r.sale_type === 'return' ? t('reports.return_type') : r.sale_type}</span> },
+              { key: 'payment_method', label: t('reports.payment_method'), render: (r: PayRow) => <span className="capitalize">{r.payment_method === 'return' ? t('reports.return_type') : paymentLabel(t, r.payment_method)}</span> },
+              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r: PayRow) => fmtInt(r.invoice_count) },
+              { key: 'total_discount', label: t('sales.discount'), align: 'end', render: (r: PayRow) => r.total_discount > 0 ? fmt(r.total_discount) : '—' },
+              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r: PayRow) => <span className={r.revenue < 0 ? 'text-red-600 font-medium' : undefined}>{fmt(r.revenue)}</span> },
             ]}
             rows={pays}
           />
@@ -1223,8 +1294,8 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
   )
 }
 
-const fmtDate = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '—')
-const fmtTime = (iso: string | null | undefined) => (iso && iso.length >= 19 ? iso.slice(11, 19) : '—')
+const fmtDate = fmtDateDisplay
+const fmtTime = fmtTimeDisplay
 
 function saleTypeLabel(t: (k: string) => string, type: string) {
   const map: Record<string, string> = {
@@ -1432,13 +1503,13 @@ function SalesReportSection({
               <>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
-                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
-                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(v) => set({ dateFrom: v })} />
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
-                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
-                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(v) => set({ dateTo: v })} />
                 </div>
               </>
             )}
@@ -1506,10 +1577,11 @@ function SalesReportPanel({
     <section className="space-y-4">
       <SectionHead icon={<Receipt size={18} />} title={t('reports.sales_report')} subtitle={`${reportFrom} → ${reportTo}`} />
       <p className="text-xs text-slate-500">{t('reports.sales_report_hint')}</p>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Kpi tone="blue" label={t('reports.invoices')} value={fmtInt(report.summary.invoice_count)} />
         <Kpi tone="green" label={t('reports.revenue')} value={fmt(report.summary.total_revenue)} />
-        <Kpi tone="amber" label={t('reports.items_qty')} value={fmtInt(report.summary.items_qty)} />
+        <Kpi tone="amber" label={t('sales.discount')} value={fmt(report.summary.total_discount || 0)} />
+        <Kpi tone="blue" label={t('reports.items_qty')} value={fmtInt(report.summary.items_qty)} />
       </div>
 
       <SalesReportSection
@@ -1601,6 +1673,7 @@ function salesTypeCols(t: (k: string) => string) {
     { key: 'payment_method', label: t('reports.payment_method'), render: (r: SalesTypeRow) => paymentLabel(t, r.payment_method), sortValue: (r: SalesTypeRow) => r.payment_method },
     { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: SalesTypeRow) => fmtInt(r.invoice_count), sortValue: (r: SalesTypeRow) => r.invoice_count },
     { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: SalesTypeRow) => fmt(r.revenue), sortValue: (r: SalesTypeRow) => r.revenue },
+    { key: 'total_discount', label: t('sales.discount'), align: 'end' as const, render: (r: SalesTypeRow) => r.total_discount > 0 ? fmt(r.total_discount) : '—', sortValue: (r: SalesTypeRow) => r.total_discount },
     { key: 'items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: SalesTypeRow) => fmtInt(r.items_qty), sortValue: (r: SalesTypeRow) => r.items_qty },
   ]
 }
@@ -1636,6 +1709,8 @@ function salesInvoiceCols(t: (k: string) => string) {
     { key: 'time', label: t('reports.sale_time'), render: (r: SalesInvoiceRow) => fmtTime(r.created_at), sortValue: (r: SalesInvoiceRow) => r.created_at },
     { key: 'sale_type', label: t('reports.sale_type'), render: (r: SalesInvoiceRow) => saleTypeLabel(t, r.sale_type), sortValue: (r: SalesInvoiceRow) => r.sale_type },
     { key: 'payment_method', label: t('reports.payment_method'), render: (r: SalesInvoiceRow) => paymentLabel(t, r.payment_method), sortValue: (r: SalesInvoiceRow) => r.payment_method },
+    { key: 'subtotal', label: t('sales.subtotal'), align: 'end' as const, render: (r: SalesInvoiceRow) => fmt(r.subtotal), sortValue: (r: SalesInvoiceRow) => r.subtotal },
+    { key: 'discount', label: t('sales.discount'), align: 'end' as const, render: (r: SalesInvoiceRow) => r.discount > 0 ? <span className="text-amber-700">-{fmt(r.discount)}</span> : '—', sortValue: (r: SalesInvoiceRow) => r.discount },
     { key: 'net_total', label: t('reports.net_total'), align: 'end' as const, render: (r: SalesInvoiceRow) => <span className="font-semibold text-emerald-700">{fmt(r.net_total)}</span>, sortValue: (r: SalesInvoiceRow) => r.net_total },
     { key: 'seller', label: t('reports.seller'), render: (r: SalesInvoiceRow) => lang === 'ar' ? r.seller_name_ar || '—' : r.seller_name_en || '—', sortValue: (r: SalesInvoiceRow) => lang === 'ar' ? r.seller_name_ar || '' : r.seller_name_en || '' },
     { key: 'terminal', label: t('reports.terminal'), render: (r: SalesInvoiceRow) => lang === 'ar' ? r.branch_name_ar || '—' : r.branch_name_en || '—', sortValue: (r: SalesInvoiceRow) => lang === 'ar' ? r.branch_name_ar || '' : r.branch_name_en || '' },
@@ -1655,6 +1730,7 @@ function salesLineItemCols(t: (k: string) => string) {
     { key: 'barcode', label: t('reports.barcode'), render: (r: SalesLineItemRow) => r.barcode || '—' },
     { key: 'qty', label: t('reports.qty'), align: 'end' as const, render: (r: SalesLineItemRow) => fmtInt(r.qty), sortValue: (r: SalesLineItemRow) => r.qty },
     { key: 'unit_price', label: t('reports.unit_price'), align: 'end' as const, render: (r: SalesLineItemRow) => fmt(r.unit_price), sortValue: (r: SalesLineItemRow) => r.unit_price },
+    { key: 'line_discount', label: t('sales.discount'), align: 'end' as const, render: (r: SalesLineItemRow) => r.line_discount > 0 ? <span className="text-amber-700">-{fmt(r.line_discount)}</span> : '—', sortValue: (r: SalesLineItemRow) => r.line_discount },
     { key: 'line_total', label: t('reports.line_total'), align: 'end' as const, render: (r: SalesLineItemRow) => fmt(r.line_total), sortValue: (r: SalesLineItemRow) => r.line_total },
     { key: 'seller', label: t('reports.seller'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.seller_name_ar || '—' : r.seller_name_en || '—' },
     { key: 'terminal', label: t('reports.terminal'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.branch_name_ar || '—' : r.branch_name_en || '—' },
@@ -1975,13 +2051,13 @@ function DeliverySummarySection({
               <>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
-                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
-                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(v) => set({ dateFrom: v })} />
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
-                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
-                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(v) => set({ dateTo: v })} />
                 </div>
               </>
             )}
@@ -2252,13 +2328,13 @@ function CustomerAnalysisSection({
               <>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
-                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
-                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(v) => set({ dateFrom: v })} />
                 </div>
                 <div>
                   <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
-                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
-                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                  <DateInput value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(v) => set({ dateTo: v })} />
                 </div>
               </>
             )}
@@ -2417,12 +2493,14 @@ function BuyerTierBadge({ tier }: { tier: CustomerRow['buyer_tier'] }) {
 
 function customerCols(t: (k: string) => string) {
   return [
+    { key: 'customer_code', label: t('customers.col_code'), render: (r: CustomerRow) => r.customer_code || '—', sortValue: (r: CustomerRow) => r.customer_code || '' },
     { key: 'customer_name', label: t('reports.customer'), sortValue: (r: CustomerRow) => r.customer_name },
     { key: 'phone', label: t('reports.phone'), render: (r: CustomerRow) => r.phone || '—' },
     { key: 'region', label: t('reports.zone'), render: (r: CustomerRow) => r.region || '—' },
     { key: 'buyer_tier', label: t('reports.buyer_tier'), render: (r: CustomerRow) => <BuyerTierBadge tier={r.buyer_tier} />, sortValue: (r: CustomerRow) => r.buyer_tier },
     { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: CustomerRow) => fmtInt(r.invoice_count), sortValue: (r: CustomerRow) => r.invoice_count },
     { key: 'total_spent', label: t('reports.total_spent'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.total_spent), sortValue: (r: CustomerRow) => r.total_spent },
+    { key: 'total_discount', label: t('sales.discount'), align: 'end' as const, render: (r: CustomerRow) => r.total_discount > 0 ? fmt(r.total_discount) : '—', sortValue: (r: CustomerRow) => r.total_discount },
     { key: 'avg_order_value', label: t('reports.avg_order'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.avg_order_value), sortValue: (r: CustomerRow) => r.avg_order_value },
     { key: 'first_invoice_at', label: t('reports.first_invoice'), render: (r: CustomerRow) => fmtDate(r.first_invoice_at), sortValue: (r: CustomerRow) => r.first_invoice_at || '' },
     { key: 'last_invoice_at', label: t('reports.last_invoice'), render: (r: CustomerRow) => fmtDate(r.last_invoice_at), sortValue: (r: CustomerRow) => r.last_invoice_at || '' },
@@ -2435,11 +2513,13 @@ function customerCols(t: (k: string) => string) {
 
 function customerItemCols(t: (k: string) => string) {
   return [
+    { key: 'customer_code', label: t('customers.col_code'), render: (r: CustomerItemRow) => r.customer_code || '—' },
     { key: 'customer_name', label: t('reports.customer'), sortValue: (r: CustomerItemRow) => r.customer_name },
     { key: 'product_name', label: t('reports.product'), sortValue: (r: CustomerItemRow) => r.product_name },
     { key: 'barcode', label: t('reports.barcode'), render: (r: CustomerItemRow) => r.barcode || '—' },
     { key: 'qty', label: t('reports.qty'), align: 'end' as const, render: (r: CustomerItemRow) => fmtInt(r.qty), sortValue: (r: CustomerItemRow) => r.qty },
     { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: CustomerItemRow) => fmt(r.revenue), sortValue: (r: CustomerItemRow) => r.revenue },
+    { key: 'line_discount', label: t('sales.discount'), align: 'end' as const, render: (r: CustomerItemRow) => r.line_discount > 0 ? fmt(r.line_discount) : '—', sortValue: (r: CustomerItemRow) => r.line_discount },
     { key: 'purchase_count', label: t('reports.purchase_count'), align: 'end' as const, render: (r: CustomerItemRow) => fmtInt(r.purchase_count), sortValue: (r: CustomerItemRow) => r.purchase_count },
     { key: 'last_purchased_at', label: t('reports.last_purchased'), render: (r: CustomerItemRow) => fmtDate(r.last_purchased_at), sortValue: (r: CustomerItemRow) => r.last_purchased_at || '' },
   ]

@@ -38,6 +38,23 @@ def _date_range(date_from: Optional[str], date_to: Optional[str]) -> tuple[date,
     return df, dt
 
 
+def _fmt_display_date(iso_or_date) -> str:
+    """Format date as dd/mm/yy for exports."""
+    if not iso_or_date:
+        return ""
+    if isinstance(iso_or_date, date):
+        d = iso_or_date
+    elif hasattr(iso_or_date, "date"):
+        d = iso_or_date.date()
+    else:
+        s = str(iso_or_date)[:10]
+        try:
+            d = datetime.strptime(s, "%Y-%m-%d").date()
+        except ValueError:
+            return s
+    return f"{d.day:02d}/{d.month:02d}/{str(d.year)[-2:]}"
+
+
 @router.get("/pnl")
 def profit_and_loss(
     request: Request,
@@ -195,41 +212,88 @@ def sales_by_payment(
     request: Request,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    sale_type: Optional[str] = None,
+    payment_method: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
     _check_role(current_user)
     active_branch_id = _resolve_report_branch(request, current_user)
     df, dt = _date_range(date_from, date_to)
     bf, bp = _branch_filter(current_user, active_branch_id)
+    st = (sale_type or "").strip() or None
+    pm = (payment_method or "").strip() or None
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute(f"""
-            SELECT * FROM (
+        sales_where = []
+        sales_params: list = [df, dt] + bp
+        if branch_id is not None:
+            sales_where.append("i.branch_id = %s")
+            sales_params.append(branch_id)
+        if st and st != "return":
+            sales_where.append("i.type = %s")
+            sales_params.append(st)
+        if pm and pm != "return":
+            sales_where.append("COALESCE(i.payment_method, 'unknown') = %s")
+            sales_params.append(pm)
+        sales_extra = (" AND " + " AND ".join(sales_where)) if sales_where else ""
+
+        rows: list[dict] = []
+        if not st or st != "return":
+            cur.execute(f"""
                 SELECT
-                  COALESCE(payment_method, 'unknown') AS payment_method,
-                  COALESCE(type, 'unknown') AS sale_type,
+                  b.id AS branch_id,
+                  b.name_en AS branch_name_en,
+                  b.name_ar AS branch_name_ar,
+                  COALESCE(i.payment_method, 'unknown') AS payment_method,
+                  COALESCE(i.type, 'unknown') AS sale_type,
                   COUNT(*)::int AS invoice_count,
-                  SUM(net_total)::float AS revenue
+                  SUM(i.net_total)::float AS revenue,
+                  COALESCE(SUM(i.discount), 0)::float AS total_discount
                 FROM invoices i
-                WHERE status = 'completed'
-                  AND created_at >= %s::date AND created_at < (%s::date + INTERVAL '1 day')
+                JOIN branches b ON b.id = i.branch_id
+                WHERE i.status = 'completed'
+                  AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
                   {bf.replace('branch_id', 'i.branch_id')}
-                GROUP BY payment_method, type
-                UNION ALL
+                  {sales_extra}
+                GROUP BY b.id, b.name_en, b.name_ar, i.payment_method, i.type
+                ORDER BY b.name_en, revenue DESC
+            """, sales_params)
+            rows.extend(dict(r) for r in cur.fetchall())
+
+        if (not st or st == "return") and (not pm or pm == "return"):
+            ret_where = []
+            ret_params: list = [df, dt] + bp
+            if branch_id is not None:
+                ret_where.append("r.branch_id = %s")
+                ret_params.append(branch_id)
+            ret_extra = (" AND " + " AND ".join(ret_where)) if ret_where else ""
+            cur.execute(f"""
                 SELECT
+                  b.id AS branch_id,
+                  b.name_en AS branch_name_en,
+                  b.name_ar AS branch_name_ar,
                   'return' AS payment_method,
                   'return' AS sale_type,
                   COUNT(*)::int AS invoice_count,
-                  (-SUM(total_returned))::float AS revenue
+                  (-SUM(r.total_returned))::float AS revenue,
+                  0::float AS total_discount
                 FROM returns r
+                JOIN branches b ON b.id = r.branch_id
                 WHERE r.created_at >= %s::date AND r.created_at < (%s::date + INTERVAL '1 day')
                   {bf.replace('branch_id', 'r.branch_id')}
+                  {ret_extra}
+                GROUP BY b.id, b.name_en, b.name_ar
                 HAVING COUNT(*) > 0
-            ) combined
-            ORDER BY revenue DESC
-        """, [df, dt] + bp + [df, dt] + bp)
-        return [dict(r) for r in cur.fetchall()]
+                ORDER BY b.name_en
+            """, ret_params)
+            rows.extend(dict(r) for r in cur.fetchall())
+
+        for r in rows:
+            r["revenue"] = round(float(r.get("revenue") or 0), 2)
+            r["total_discount"] = round(float(r.get("total_discount") or 0), 2)
+        return rows
     finally:
         cur.close()
         conn.close()
@@ -1455,7 +1519,7 @@ def _customer_analysis_data(
         cur.execute(
             f"""
             WITH filtered AS (
-              SELECT i.id, i.customer_id, i.net_total, i.created_at
+              SELECT i.id, i.customer_id, i.net_total, i.discount, i.created_at
               FROM invoices i
               WHERE i.status = 'completed'
                 AND i.type != 'return'
@@ -1486,17 +1550,20 @@ def _customer_analysis_data(
               SELECT f.customer_id,
                      COUNT(*)::int AS invoice_count,
                      COALESCE(SUM(f.net_total), 0)::float AS total_spent,
+                     COALESCE(SUM(f.discount), 0)::float AS total_discount,
                      MIN(f.created_at) AS first_invoice_at,
                      MAX(f.created_at) AS last_invoice_at
               FROM filtered f
               GROUP BY f.customer_id
             )
             SELECT c.id AS customer_id,
+                   c.code AS customer_code,
                    c.name AS customer_name,
                    c.phone,
                    c.region,
                    ca.invoice_count,
                    ca.total_spent,
+                   ca.total_discount,
                    CASE WHEN ca.invoice_count > 0
                      THEN (ca.total_spent / ca.invoice_count)::float ELSE 0 END AS avg_order_value,
                    ca.first_invoice_at,
@@ -1526,6 +1593,7 @@ def _customer_analysis_data(
             fi = row.get("first_invoice_at")
             row["first_invoice_at"] = fi.isoformat() if fi and hasattr(fi, "isoformat") else (str(fi) if fi else None)
             row["total_spent"] = round(float(row["total_spent"] or 0), 2)
+            row["total_discount"] = round(float(row.get("total_discount") or 0), 2)
             row["avg_order_value"] = round(float(row["avg_order_value"] or 0), 2)
             ab = row.get("avg_days_between")
             row["avg_days_between_invoices"] = round(float(ab), 1) if ab is not None else None
@@ -1545,12 +1613,14 @@ def _customer_analysis_data(
         cur.execute(
             f"""
             SELECT c.id AS customer_id,
+                   c.code AS customer_code,
                    c.name AS customer_name,
                    c.phone,
                    COALESCE(ii.product_name_en, ii.product_name_ar, p.name_en, p.name_ar) AS product_name,
                    ii.barcode,
                    SUM(ii.quantity)::int AS qty,
                    SUM(ii.total)::float AS revenue,
+                   COALESCE(SUM(ii.discount), 0)::float AS line_discount,
                    MAX(i.created_at) AS last_purchased_at,
                    COUNT(DISTINCT i.id)::int AS purchase_count
             FROM invoices i
@@ -1562,7 +1632,7 @@ def _customer_analysis_data(
               AND i.customer_id IS NOT NULL
               AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
               {bf.replace('branch_id', 'i.branch_id')}
-            GROUP BY c.id, c.name, c.phone,
+            GROUP BY c.id, c.code, c.name, c.phone,
                      COALESCE(ii.product_name_en, ii.product_name_ar, p.name_en, p.name_ar),
                      ii.barcode
             ORDER BY c.name ASC, revenue DESC
@@ -1575,6 +1645,7 @@ def _customer_analysis_data(
             lp = row.get("last_purchased_at")
             row["last_purchased_at"] = lp.isoformat() if lp and hasattr(lp, "isoformat") else (str(lp) if lp else None)
             row["revenue"] = round(float(row["revenue"] or 0), 2)
+            row["line_discount"] = round(float(row.get("line_discount") or 0), 2)
             item_rows.append(row)
     finally:
         cur.close()
@@ -1586,23 +1657,23 @@ def _customer_row_export(r: dict) -> list:
     first = r.get("first_invoice_at") or ""
     last = r.get("last_invoice_at") or ""
     return [
-        r["customer_name"], r.get("phone"), r.get("region"), r.get("buyer_tier"),
-        r["invoice_count"], r["total_spent"], r["avg_order_value"],
-        first[:10] if len(first) >= 10 else first,
-        last[:10] if len(last) >= 10 else last,
+        r.get("customer_code"), r["customer_name"], r.get("phone"), r.get("region"), r.get("buyer_tier"),
+        r["invoice_count"], r["total_spent"], r.get("total_discount", 0), r["avg_order_value"],
+        _fmt_display_date(first[:10] if len(first) >= 10 else first),
+        _fmt_display_date(last[:10] if len(last) >= 10 else last),
         r.get("days_since_last_invoice"), r.get("avg_days_between_invoices"),
         r["total_items_qty"], r["distinct_products"],
     ]
 
 
 CUSTOMER_CUST_HEADERS = [
-    "Customer", "Phone", "Region", "Tier", "Invoices", "Total spent", "Avg order",
+    "Code", "Customer", "Phone", "Region", "Tier", "Invoices", "Total spent", "Total discount", "Avg order",
     "First invoice", "Last invoice", "Days since last", "Avg days between",
     "Items qty", "Distinct products",
 ]
 
 CUSTOMER_ITEM_HEADERS = [
-    "Customer", "Phone", "Product", "Barcode", "Qty", "Revenue",
+    "Code", "Customer", "Phone", "Product", "Barcode", "Qty", "Revenue", "Line discount",
     "Purchase count", "Last purchased",
 ]
 
@@ -1695,9 +1766,9 @@ def _customer_analysis_sheets(report: dict) -> list[tuple[str, list, list]]:
     low_data = [_customer_row_export(r) for r in report.get("low_buyers", [])]
     item_data = [
         [
-            r["customer_name"], r.get("phone"), r.get("product_name"), r.get("barcode"),
-            r["qty"], r["revenue"], r["purchase_count"],
-            (r.get("last_purchased_at") or "")[:10] if r.get("last_purchased_at") else "",
+            r.get("customer_code"), r["customer_name"], r.get("phone"), r.get("product_name"), r.get("barcode"),
+            r["qty"], r["revenue"], r.get("line_discount", 0), r["purchase_count"],
+            _fmt_display_date(r.get("last_purchased_at")),
         ]
         for r in report.get("items", [])
     ]
@@ -1784,6 +1855,7 @@ def _sales_report_data(
                    COALESCE(i.payment_method, 'unknown') AS payment_method,
                    COUNT(*)::int AS invoice_count,
                    COALESCE(SUM(i.net_total), 0)::float AS revenue,
+                   COALESCE(SUM(i.discount), 0)::float AS total_discount,
                    COALESCE(SUM(iq.items_qty), 0)::int AS items_qty
             FROM invoices i
             LEFT JOIN (
@@ -1801,6 +1873,7 @@ def _sales_report_data(
         by_sale_type = [dict(r) for r in cur.fetchall()]
         for r in by_sale_type:
             r["revenue"] = round(float(r["revenue"] or 0), 2)
+            r["total_discount"] = round(float(r.get("total_discount") or 0), 2)
 
         cur.execute(
             f"""
@@ -1919,6 +1992,7 @@ def _sales_report_data(
                    ii.barcode,
                    ii.quantity::int AS qty,
                    ii.unit_price::float AS unit_price,
+                   ii.discount::float AS line_discount,
                    ii.total::float AS line_total
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
@@ -1939,6 +2013,7 @@ def _sales_report_data(
             if created and hasattr(created, "isoformat"):
                 row["created_at"] = created.isoformat()
             row["unit_price"] = round(float(row.get("unit_price") or 0), 2)
+            row["line_discount"] = round(float(row.get("line_discount") or 0), 2)
             row["line_total"] = round(float(row.get("line_total") or 0), 2)
             line_items.append(row)
     finally:
@@ -1948,6 +2023,7 @@ def _sales_report_data(
     total_revenue = round(sum(r["revenue"] for r in by_sale_type), 2)
     total_invoices = sum(r["invoice_count"] for r in by_sale_type)
     total_items_qty = sum(r["items_qty"] for r in by_sale_type)
+    total_discount = round(sum(r.get("total_discount", 0) for r in by_sale_type), 2)
 
     report = {
         "date_from": str(df),
@@ -1955,6 +2031,7 @@ def _sales_report_data(
         "summary": {
             "invoice_count": total_invoices,
             "total_revenue": total_revenue,
+            "total_discount": total_discount,
             "items_qty": total_items_qty,
         },
         "by_sale_type": by_sale_type,
@@ -2070,9 +2147,9 @@ def _apply_sales_report_filters(
 
 
 def _sales_report_sheet_data(report: dict) -> list[tuple[str, list, list]]:
-    type_headers = ["Sale type", "Payment", "Invoices", "Revenue", "Items qty"]
+    type_headers = ["Sale type", "Payment", "Invoices", "Revenue", "Discount", "Items qty"]
     type_data = [
-        [r["sale_type"], r["payment_method"], r["invoice_count"], r["revenue"], r["items_qty"]]
+        [r["sale_type"], r["payment_method"], r["invoice_count"], r["revenue"], r.get("total_discount", 0), r["items_qty"]]
         for r in report.get("by_sale_type", [])
     ]
     seller_headers = [
@@ -2100,7 +2177,7 @@ def _sales_report_sheet_data(report: dict) -> list[tuple[str, list, list]]:
     inv_data = []
     for r in report.get("invoices", []):
         created = r.get("created_at") or ""
-        date_part = created[:10] if len(created) >= 10 else ""
+        date_part = _fmt_display_date(created)
         time_part = created[11:19] if len(created) >= 19 else ""
         inv_data.append([
             r["invoice_number"], date_part, time_part,
@@ -2112,19 +2189,19 @@ def _sales_report_sheet_data(report: dict) -> list[tuple[str, list, list]]:
         ])
     item_headers = [
         "Invoice #", "Date", "Time", "Sale type", "Payment",
-        "Seller EN", "Terminal EN", "Product", "Barcode", "Qty", "Unit price", "Line total",
+        "Seller EN", "Terminal EN", "Product", "Barcode", "Qty", "Unit price", "Line discount", "Line total",
     ]
     item_data = []
     for r in report.get("line_items", []):
         created = r.get("created_at") or ""
-        date_part = created[:10] if len(created) >= 10 else ""
+        date_part = _fmt_display_date(created)
         time_part = created[11:19] if len(created) >= 19 else ""
         item_data.append([
             r["invoice_number"], date_part, time_part,
             r["sale_type"], r["payment_method"],
             r.get("seller_name_en"), r.get("branch_name_en"),
             r.get("product_name"), r.get("barcode"),
-            r["qty"], r["unit_price"], r["line_total"],
+            r["qty"], r["unit_price"], r.get("line_discount", 0), r["line_total"],
         ])
     return [
         ("By sale type", type_headers, type_data),

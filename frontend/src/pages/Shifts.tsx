@@ -5,6 +5,7 @@ import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { formatDateTime } from '../lib/formatDate'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 type ShiftType = 'morning' | 'evening' | 'night'
@@ -35,7 +36,7 @@ const fmtSigned = (n: any) => {
   const abs = Math.abs(v).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return v > 0 ? `+${abs}` : v < 0 ? `−${abs}` : abs
 }
-const fmtDT = (s: string | null) => s ? new Date(s).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US') : '—'
+const fmtDT = (s: string | null) => s ? formatDateTime(s) : '—'
 
 // Pick the shift label whose configured start time is the most recent one that is <= now.
 function pickShiftType(now: Date, m: string, e: string, n: string): ShiftType {

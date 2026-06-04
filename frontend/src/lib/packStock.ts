@@ -95,3 +95,19 @@ export function packSizeOf(item: { pack_size?: number | null } | null | undefine
 export function subUnitsFromBoxInput(raw: string, packSize: number): number | null {
   return parsePackStockInput(raw, packSize)
 }
+
+/** Stock variance in major units (boxes) — e.g. counted 2 vs system 3.5 → -1.5 */
+export function stockVarianceMajorUnits(
+  countedSubUnits: number,
+  systemSubUnits: number,
+  packSize: number,
+): number {
+  if (packSize <= 1) return countedSubUnits - systemSubUnits
+  return countedSubUnits / packSize - systemSubUnits / packSize
+}
+
+export function formatVarianceMajorUnits(variance: number): string {
+  if (variance === 0) return '0'
+  const abs = trimDecimals(Math.abs(variance))
+  return variance > 0 ? `+${abs}` : `-${abs}`
+}
