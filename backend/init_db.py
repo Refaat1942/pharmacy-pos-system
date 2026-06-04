@@ -416,6 +416,12 @@ CREATE TABLE IF NOT EXISTS salary_slips (
 );
 
 ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS hours_worked NUMERIC(10,2);
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS absent_days INTEGER DEFAULT 0;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS leave_days INTEGER DEFAULT 0;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS penalties NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS prorated_base NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS standard_days INTEGER DEFAULT 26;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS standard_hours NUMERIC(10,2) DEFAULT 208;
 
 -- Migration: replace single-column UNIQUE(barcode) with composite UNIQUE(barcode, branch_id)
 DO $$

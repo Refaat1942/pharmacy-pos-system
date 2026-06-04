@@ -19,10 +19,49 @@ type Employee = {
   branch_name_en?: string; branch_name_ar?: string
 }
 type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null; allowed: boolean }
-type Slip = { id: number; employee_id: number; employee_name: string; employee_role: string; period_month: string; base_salary: number; bonus: number; deductions: number; days_worked: number; hours_worked: number | null; net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null }
+type Slip = {
+  id: number; employee_id: number; employee_name: string; employee_role: string
+  period_month: string; base_salary: number; bonus: number; penalties: number
+  deductions: number; prorated_base: number | null
+  days_worked: number; hours_worked: number | null
+  absent_days: number; leave_days: number
+  standard_days: number | null; standard_hours: number | null
+  net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null
+  employee_phone?: string | null; employee_national_id?: string | null
+  employee_hire_date?: string | null; branch_name_en?: string | null; branch_name_ar?: string | null
+}
+
+type PayslipDetail = {
+  slip_id: number; period_month: string; period_start: string; period_end: string
+  status: string; paid_at: string | null; notes: string | null
+  employee: {
+    id: number; name: string; role: string | null; phone: string | null
+    national_id: string | null; hire_date: string | null
+    branch_name_en: string | null; branch_name_ar: string | null
+  }
+  attendance: {
+    standard_days: number; standard_hours: number
+    days_worked: number; hours_worked: number
+    absent_days: number; leave_days: number
+  }
+  earnings: { base_salary: number; prorated_base: number; bonus: number }
+  deductions_detail: { penalties: number; other_deductions: number; total_deductions: number }
+  net_amount: number
+}
 type Branch = { id: number; name_en: string; name_ar: string }
 
+const STANDARD_MONTH_HOURS = 26 * 8
 const fmt = (n: any) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtPeriod = (pm: string) => {
+  const [y, m] = pm.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { month: 'long', year: 'numeric' })
+}
+const slipProrated = (s: Slip) => {
+  if (s.prorated_base != null && Number(s.prorated_base) > 0) return Number(s.prorated_base)
+  const hrs = s.hours_worked != null ? Number(s.hours_worked) : Number(s.days_worked || 0) * 8
+  return Math.round(Number(s.base_salary || 0) * hrs / STANDARD_MONTH_HOURS * 100) / 100
+}
+const slipNetPreview = (s: Slip) => slipProrated(s) + Number(s.bonus || 0) - Number(s.penalties || 0) - Number(s.deductions || 0)
 const today = () => new Date().toISOString().slice(0, 10)
 const ym = () => today().slice(0, 7)
 
@@ -420,13 +459,12 @@ function AttendanceTab() {
   )
 }
 
-const STANDARD_MONTH_HOURS = 26 * 8
-
 function PayrollTab() {
   const { t } = useTranslation()
   const [period, setPeriod] = useState(ym())
   const [rows, setRows] = useState<Slip[]>([])
   const [editing, setEditing] = useState<Slip | null>(null)
+  const [printing, setPrinting] = useState<number | null>(null)
   const [search, setSearch] = useState('')
   const [allMonths, setAllMonths] = useState(false)
 
@@ -440,9 +478,15 @@ function PayrollTab() {
   useEffect(() => { const id = setTimeout(load, 300); return () => clearTimeout(id) }, [period, allMonths, search])
 
   const exportSheet = () => {
-    const headers = [t('hr.period_month'), t('hr.employee'), t('hr.role'), t('hr.days_worked'), t('hr.hours'), t('hr.base_salary'), t('hr.bonus'), t('hr.deductions'), t('hr.net_amount'), t('hr.status')]
+    const headers = [t('hr.period_month'), t('hr.employee'), t('hr.role'), t('hr.days_worked'), t('hr.hours'), t('hr.absent_days'), t('hr.leave_days'), t('hr.base_salary'), t('hr.prorated_base'), t('hr.bonus'), t('hr.penalties'), t('hr.deductions'), t('hr.net_amount'), t('hr.status')]
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
-    const lines = rows.map((r) => [r.period_month, r.employee_name, r.employee_role || '', r.days_worked, r.hours_worked ?? '', Number(r.base_salary || 0).toFixed(2), Number(r.bonus || 0).toFixed(2), Number(r.deductions || 0).toFixed(2), Number(r.net_amount || 0).toFixed(2), t(`hr.slip_${r.status}`)].map(esc).join(','))
+    const lines = rows.map((r) => [
+      r.period_month, r.employee_name, r.employee_role || '', r.days_worked, r.hours_worked ?? '',
+      r.absent_days ?? 0, r.leave_days ?? 0,
+      Number(r.base_salary || 0).toFixed(2), slipProrated(r).toFixed(2),
+      Number(r.bonus || 0).toFixed(2), Number(r.penalties || 0).toFixed(2),
+      Number(r.deductions || 0).toFixed(2), Number(r.net_amount || 0).toFixed(2), t(`hr.slip_${r.status}`),
+    ].map(esc).join(','))
     const csv = '\uFEFF' + [headers.map(esc).join(','), ...lines].join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -463,7 +507,12 @@ function PayrollTab() {
   const saveEdit = async () => {
     if (!editing) return
     try {
-      await api.put(`/hr/payroll/${editing.id}`, { bonus: Number(editing.bonus) || 0, deductions: Number(editing.deductions) || 0, notes: editing.notes || null })
+      await api.put(`/hr/payroll/${editing.id}`, {
+        bonus: Number(editing.bonus) || 0,
+        penalties: Number(editing.penalties) || 0,
+        deductions: Number(editing.deductions) || 0,
+        notes: editing.notes || null,
+      })
       setEditing(null); await load()
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
@@ -493,6 +542,7 @@ function PayrollTab() {
     hours: (r: Slip) => r.hours_worked == null ? null : Number(r.hours_worked),
     base_salary: (r: Slip) => Number(r.base_salary || 0),
     bonus: (r: Slip) => Number(r.bonus || 0),
+    penalties: (r: Slip) => Number(r.penalties || 0),
     deductions: (r: Slip) => Number(r.deductions || 0),
     net_amount: (r: Slip) => Number(r.net_amount || 0),
     status: (r: Slip) => r.status,
@@ -548,6 +598,7 @@ function PayrollTab() {
               <SortTh k="hours" sort={sort} onToggle={toggle} align="end">{t('hr.hours')}</SortTh>
               <SortTh k="base_salary" sort={sort} onToggle={toggle} align="end">{t('hr.base_salary')}</SortTh>
               <SortTh k="bonus" sort={sort} onToggle={toggle} align="end">{t('hr.bonus')}</SortTh>
+              <SortTh k="penalties" sort={sort} onToggle={toggle} align="end">{t('hr.penalties')}</SortTh>
               <SortTh k="deductions" sort={sort} onToggle={toggle} align="end">{t('hr.deductions')}</SortTh>
               <SortTh k="net_amount" sort={sort} onToggle={toggle} align="end">{t('hr.net_amount')}</SortTh>
               <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('hr.status')}</SortTh>
@@ -555,7 +606,7 @@ function PayrollTab() {
             </tr>
           </thead>
           <tbody>
-            {sorted.length === 0 && <tr><td colSpan={11} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
+            {sorted.length === 0 && <tr><td colSpan={12} className="text-center py-8 text-slate-400">{t('hr.no_slips')}</td></tr>}
             {sorted.map((r) => (
               <tr key={r.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                 <td className="px-3 py-2.5 font-mono text-slate-500">{r.period_month}</td>
@@ -565,15 +616,17 @@ function PayrollTab() {
                 <td className="px-3 py-2.5 text-end font-mono">{r.hours_worked ?? '—'}</td>
                 <td className="px-3 py-2.5 text-end font-mono">{fmt(r.base_salary)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-emerald-700">{fmt(r.bonus)}</td>
+                <td className="px-3 py-2.5 text-end font-mono text-orange-600">{fmt(r.penalties ?? 0)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-red-600">{fmt(r.deductions)}</td>
                 <td className="px-3 py-2.5 text-end font-mono font-bold">{fmt(r.net_amount)}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{t(`hr.slip_${r.status}`)}</span>
                 </td>
                 <td className="px-3 py-2.5 text-center whitespace-nowrap">
+                  <button onClick={() => setPrinting(r.id)} className="text-slate-600 hover:text-pharma-700 mx-1" title={t('hr.print_payslip') as string}><Printer size={14} /></button>
                   {r.status === 'draft' && (
                     <>
-                      <button onClick={() => setEditing(r)} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
+                      <button onClick={() => setEditing({ ...r, penalties: r.penalties ?? 0 })} className="text-pharma-600 hover:text-pharma-800 mx-1"><Edit2 size={14} /></button>
                       <button onClick={() => markPaid(r.id)} className="text-emerald-600 hover:text-emerald-800 mx-1" title={t('hr.mark_paid')}><Check size={14} /></button>
                       <button onClick={() => remove(r.id)} className="text-red-500 hover:text-red-700 mx-1"><Trash2 size={14} /></button>
                     </>
@@ -587,29 +640,30 @@ function PayrollTab() {
 
       {editing && (
         <Modal onClose={() => setEditing(null)} title={`${t('hr.edit_slip')} — ${editing.employee_name}`}>
-          {(() => {
-            const hrs = editing.hours_worked != null ? Number(editing.hours_worked) : Number(editing.days_worked || 0) * 8
-            const proratedBase = Math.round(Number(editing.base_salary || 0) * hrs / STANDARD_MONTH_HOURS * 100) / 100
-            return (
           <div className="space-y-3">
-            <div className="text-xs text-slate-500 flex justify-between">
-              <span>{t('hr.base_salary')}: <span className="font-mono font-semibold">{fmt(editing.base_salary)}</span></span>
-              <span>{t('hr.hours')}: <span className="font-mono font-semibold">{editing.hours_worked ?? '—'}</span></span>
+            <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 bg-slate-50 rounded-lg p-3">
+              <div><span className="text-slate-500">{t('hr.period_month')}:</span> <span className="font-semibold">{fmtPeriod(editing.period_month)}</span></div>
+              <div><span className="text-slate-500">{t('hr.days_worked')}:</span> <span className="font-mono font-semibold">{editing.days_worked}</span></div>
+              <div><span className="text-slate-500">{t('hr.hours')}:</span> <span className="font-mono font-semibold">{editing.hours_worked ?? '—'}</span></div>
+              <div><span className="text-slate-500">{t('hr.absent_days')}:</span> <span className="font-mono font-semibold">{editing.absent_days ?? 0}</span></div>
+              <div><span className="text-slate-500">{t('hr.leave_days')}:</span> <span className="font-mono font-semibold">{editing.leave_days ?? 0}</span></div>
+              <div><span className="text-slate-500">{t('hr.base_salary')}:</span> <span className="font-mono font-semibold">{fmt(editing.base_salary)}</span></div>
             </div>
-            <div className="text-xs text-slate-500">{t('hr.prorated_base')}: <span className="font-mono font-semibold">{fmt(proratedBase)}</span></div>
-            <Field label={t('hr.bonus')}><input type="number" className="input w-full" value={editing.bonus} onChange={(e) => setEditing({ ...editing, bonus: Number(e.target.value) })} /></Field>
-            <Field label={t('hr.deductions')}><input type="number" className="input w-full" value={editing.deductions} onChange={(e) => setEditing({ ...editing, deductions: Number(e.target.value) })} /></Field>
+            <div className="text-xs text-slate-500">{t('hr.prorated_base')}: <span className="font-mono font-semibold">{fmt(slipProrated(editing))}</span></div>
+            <Field label={t('hr.bonus')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.bonus} onChange={(e) => setEditing({ ...editing, bonus: Number(e.target.value) })} /></Field>
+            <Field label={t('hr.penalties')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.penalties ?? 0} onChange={(e) => setEditing({ ...editing, penalties: Number(e.target.value) })} /></Field>
+            <Field label={t('hr.deductions')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.deductions} onChange={(e) => setEditing({ ...editing, deductions: Number(e.target.value) })} /></Field>
             <Field label={t('common.notes')}><textarea className="input w-full" rows={2} value={editing.notes || ''} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></Field>
             <div className="bg-slate-50 rounded-lg p-2 text-sm flex justify-between">
               <span>{t('hr.net_amount')}</span>
-              <span className="font-mono font-bold">{fmt(proratedBase + Number(editing.bonus || 0) - Number(editing.deductions || 0))}</span>
+              <span className="font-mono font-bold">{fmt(slipNetPreview(editing))}</span>
             </div>
             <button onClick={saveEdit} className="w-full bg-pharma-600 hover:bg-pharma-700 text-white font-medium py-2 rounded-lg">{t('common.save')}</button>
           </div>
-            )
-          })()}
         </Modal>
       )}
+
+      {printing != null && <PayslipPrintModal slipId={printing} onClose={() => setPrinting(null)} />}
     </div>
   )
 }
@@ -752,6 +806,144 @@ function PerfStat({ label, value }: { label: string; value: string }) {
     <div className="bg-slate-50 rounded-lg px-3 py-2 text-end">
       <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
       <div className="font-bold text-slate-800 text-base">{value}</div>
+    </div>
+  )
+}
+
+function PayslipPrintModal({ slipId, onClose }: { slipId: number; onClose: () => void }) {
+  const { t } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const [data, setData] = useState<PayslipDetail | null>(null)
+  const [profile, setProfile] = useState<{ name_en?: string; name_ar?: string } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [slipRes, profRes] = await Promise.all([
+          api.get(`/hr/payroll/${slipId}/payslip`),
+          api.get('/settings/profile').catch(() => ({ data: null })),
+        ])
+        setData(slipRes.data)
+        setProfile(profRes.data)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }, [slipId])
+
+  const pharmaName = (lang === 'ar' ? profile?.name_ar : profile?.name_en) || t('app_name')
+  const branchName = data?.employee
+    ? (lang === 'ar' ? data.employee.branch_name_ar : data.employee.branch_name_en) || '—'
+    : '—'
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .payslip-print, .payslip-print * { visibility: visible !important; }
+          .payslip-print {
+            position: absolute; left: 0; top: 0; width: 100%;
+            padding: 12mm; background: white;
+          }
+          .no-print-payslip { display: none !important; }
+        }
+      `}</style>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4">
+        <div className="no-print-payslip flex items-center justify-between px-5 py-3 border-b">
+          <h2 className="font-bold text-lg">{t('hr.payslip_title')}</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!data}
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm px-3 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              <Printer size={14} /> {t('hr.print_payslip')}
+            </button>
+            <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="p-5">
+          {loading && <div className="text-center py-10 text-slate-500">{t('common.loading')}</div>}
+          {!loading && data && (
+            <div className="payslip-print text-sm text-slate-800 space-y-4">
+              <div className="text-center border-b border-slate-200 pb-3">
+                <h1 className="text-xl font-bold text-pharma-800">{pharmaName}</h1>
+                <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">{t('hr.payslip_title')}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div><span className="text-slate-500">{t('hr.employee')}:</span> <span className="font-semibold">{data.employee.name}</span></div>
+                <div><span className="text-slate-500">{t('hr.role')}:</span> <span>{data.employee.role || '—'}</span></div>
+                <div><span className="text-slate-500">{t('hr.branch')}:</span> <span>{branchName}</span></div>
+                <div><span className="text-slate-500">{t('hr.national_id')}:</span> <span className="font-mono">{data.employee.national_id || '—'}</span></div>
+                <div><span className="text-slate-500">{t('hr.phone')}:</span> <span className="font-mono">{data.employee.phone || '—'}</span></div>
+                <div><span className="text-slate-500">{t('hr.hire_date')}:</span> <span>{data.employee.hire_date || '—'}</span></div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                <div className="font-semibold text-slate-700 mb-2">{t('hr.payslip_period')}</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-slate-500">{t('hr.period_month')}:</span> <span className="font-semibold">{fmtPeriod(data.period_month)}</span></div>
+                  <div><span className="text-slate-500">{t('hr.payslip_period_range')}:</span> <span className="font-mono">{data.period_start} → {data.period_end}</span></div>
+                  <div><span className="text-slate-500">{t('hr.status')}:</span> <span>{t(`hr.slip_${data.status}`)}</span></div>
+                  {data.paid_at && (
+                    <div><span className="text-slate-500">{t('hr.paid_at')}:</span> <span className="font-mono">{String(data.paid_at).slice(0, 16).replace('T', ' ')}</span></div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 mb-2">{t('hr.payslip_attendance')}</div>
+                <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-start">{t('hr.payslip_metric')}</th>
+                      <th className="px-3 py-2 text-end">{t('hr.payslip_value')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.standard_working_days')}</td><td className="px-3 py-2 text-end font-mono">{data.attendance.standard_days}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.standard_hours')}</td><td className="px-3 py-2 text-end font-mono">{data.attendance.standard_hours}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.days_worked')}</td><td className="px-3 py-2 text-end font-mono font-semibold">{data.attendance.days_worked}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.hours')}</td><td className="px-3 py-2 text-end font-mono font-semibold">{data.attendance.hours_worked}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.absent_days')}</td><td className="px-3 py-2 text-end font-mono text-red-600">{data.attendance.absent_days}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.leave_days')}</td><td className="px-3 py-2 text-end font-mono text-amber-700">{data.attendance.leave_days}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 mb-2">{t('hr.payslip_earnings_deductions')}</div>
+                <table className="w-full text-xs border border-slate-200 rounded-lg overflow-hidden">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-start">{t('hr.payslip_item')}</th>
+                      <th className="px-3 py-2 text-end">{t('hr.payslip_amount')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.base_salary')}</td><td className="px-3 py-2 text-end font-mono">{fmt(data.earnings.base_salary)}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2">{t('hr.prorated_base')}</td><td className="px-3 py-2 text-end font-mono font-semibold">{fmt(data.earnings.prorated_base)}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2 text-emerald-700">{t('hr.bonus')}</td><td className="px-3 py-2 text-end font-mono text-emerald-700">+ {fmt(data.earnings.bonus)}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2 text-orange-700">{t('hr.penalties')}</td><td className="px-3 py-2 text-end font-mono text-orange-700">− {fmt(data.deductions_detail.penalties)}</td></tr>
+                    <tr className="border-t"><td className="px-3 py-2 text-red-700">{t('hr.deductions')}</td><td className="px-3 py-2 text-end font-mono text-red-700">− {fmt(data.deductions_detail.other_deductions)}</td></tr>
+                    <tr className="border-t bg-pharma-50"><td className="px-3 py-2 font-bold">{t('hr.net_amount')}</td><td className="px-3 py-2 text-end font-mono font-bold text-pharma-800 text-base">{fmt(data.net_amount)}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {data.notes && (
+                <div className="text-xs border-t pt-2">
+                  <span className="text-slate-500">{t('common.notes')}:</span> {data.notes}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
