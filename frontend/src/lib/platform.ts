@@ -101,6 +101,9 @@ export const platformAPI = {
     features?: string[]
     subscription_start?: string | null
     subscription_end?: string | null
+    max_users?: number | null
+    max_branches?: number | null
+    price_le?: number | null
   }) => platformApi.post<Tenant>('/tenants', data),
   updateTenant: (id: number, data: Partial<Tenant>) =>
     platformApi.patch<Tenant>(`/tenants/${id}`, data),
