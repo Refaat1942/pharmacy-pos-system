@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
@@ -1143,40 +1143,7 @@ export default function Reports() {
 
         {/* Delivery zones */}
         {!loading && activeReport === 'delivery_zones' && deliveryZones && (
-        <section className="space-y-4">
-          <SectionHead icon={<MapPin size={18} />} title={t('reports.delivery_zones')} subtitle={`${from} → ${to}`} />
-          <p className="text-xs text-slate-500">{t('reports.delivery_zones_hint')}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(deliveryZones.totals.order_count)} />
-            <Kpi tone="green" label={t('reports.revenue')} value={fmt(deliveryZones.totals.revenue)} />
-            <Kpi tone="amber" label={t('reports.regions_with_sales')} value={String(deliveryZones.totals.regions_with_sales)} />
-            <Kpi tone="blue" label={t('reports.regions_total')} value={String(deliveryZones.totals.regions_total)} />
-          </div>
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.marketing_suggestions')}</h3>
-          <MarketingSuggestionsTable rows={deliveryZones.marketing_suggestions} />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.top_regions')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={zoneCols(t)}
-            rows={deliveryZones.top_regions}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.least_regions')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={zoneCols(t)}
-            rows={deliveryZones.bottom_regions}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.all_zones')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={zoneCols(t)}
-            rows={deliveryZones.zones}
-          />
-        </section>
+          <DeliveryZonesPanel report={deliveryZones} reportFrom={from} reportTo={to} dateParams={dateParams} />
         )}
 
         {/* Top profitable products */}
@@ -2476,6 +2443,218 @@ function customerItemCols(t: (k: string) => string) {
     { key: 'purchase_count', label: t('reports.purchase_count'), align: 'end' as const, render: (r: CustomerItemRow) => fmtInt(r.purchase_count), sortValue: (r: CustomerItemRow) => r.purchase_count },
     { key: 'last_purchased_at', label: t('reports.last_purchased'), render: (r: CustomerItemRow) => fmtDate(r.last_purchased_at), sortValue: (r: CustomerItemRow) => r.last_purchased_at || '' },
   ]
+}
+
+type ZoneSectionFilters = {
+  group: string
+  minOrders: string
+  withSalesOnly: boolean
+  priority: string
+}
+
+function defaultZoneFilters(): ZoneSectionFilters {
+  return { group: '', minOrders: '', withSalesOnly: false, priority: '' }
+}
+
+function filterZoneRows(rows: ZoneRow[], f: ZoneSectionFilters) {
+  let out = rows
+  if (f.group) out = out.filter((z) => z.group === f.group)
+  if (f.minOrders !== '') out = out.filter((z) => z.order_count >= Number(f.minOrders))
+  if (f.withSalesOnly) out = out.filter((z) => z.order_count > 0)
+  return out
+}
+
+function filterMarketingRows(rows: MarketingSuggestion[], f: ZoneSectionFilters) {
+  if (!f.priority) return rows
+  return rows.filter((r) => r.priority === f.priority)
+}
+
+function zoneExportParams(
+  dateParams: { date_from: string; date_to: string },
+  section: string,
+  filters: ZoneSectionFilters,
+) {
+  return {
+    ...dateParams,
+    section,
+    region_group: filters.group || undefined,
+    min_orders: filters.minOrders !== '' ? Number(filters.minOrders) : undefined,
+    with_sales_only: filters.withSalesOnly ? 1 : undefined,
+    priority: filters.priority || undefined,
+  }
+}
+
+function DeliveryZonesSection({
+  title,
+  filters,
+  onFiltersChange,
+  showZoneFilters,
+  showPriorityFilter,
+  onExport,
+  children,
+}: {
+  title: string
+  filters: ZoneSectionFilters
+  onFiltersChange: (f: ZoneSectionFilters) => void
+  showZoneFilters?: boolean
+  showPriorityFilter?: boolean
+  onExport: () => void
+  children: ReactNode
+}) {
+  const { t } = useTranslation()
+  const set = (patch: Partial<ZoneSectionFilters>) => onFiltersChange({ ...filters, ...patch })
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <button
+          type="button"
+          onClick={() => void onExport()}
+          className="flex items-center gap-1.5 text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg"
+        >
+          <FileSpreadsheet size={14} /> {t('reports.export_section')}
+        </button>
+      </div>
+      {(showZoneFilters || showPriorityFilter) && (
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            {showPriorityFilter && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.priority')}</label>
+                <select value={filters.priority} onChange={(e) => set({ priority: e.target.value })} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  <option value="high">{t('reports.priority_high')}</option>
+                  <option value="medium">{t('reports.priority_medium')}</option>
+                  <option value="low">{t('reports.priority_low')}</option>
+                </select>
+              </div>
+            )}
+            {showZoneFilters && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.zone_group')}</label>
+                  <select value={filters.group} onChange={(e) => set({ group: e.target.value })} className="input text-sm min-w-[7rem]">
+                    <option value="">{t('reports.filter_all')}</option>
+                    <option value="markaz">{t('reports.group_markaz')}</option>
+                    <option value="village">{t('reports.group_village')}</option>
+                    <option value="other">{t('reports.group_other')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.min_orders')}</label>
+                  <input type="number" min={0} value={filters.minOrders} onChange={(e) => set({ minOrders: e.target.value })}
+                    className="input text-sm w-20" placeholder="0" />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600 pb-2 cursor-pointer">
+                  <input type="checkbox" checked={filters.withSalesOnly} onChange={(e) => set({ withSalesOnly: e.target.checked })} />
+                  {t('reports.with_sales_only')}
+                </label>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onFiltersChange(defaultZoneFilters())}
+              className="text-xs text-slate-600 hover:text-pharma-700 px-2 py-2"
+            >
+              {t('reports.reset_filters')}
+            </button>
+          </div>
+        </div>
+      )}
+      {children}
+    </div>
+  )
+}
+
+function DeliveryZonesPanel({
+  report,
+  reportFrom,
+  reportTo,
+  dateParams,
+}: {
+  report: DeliveryZonesReport
+  reportFrom: string
+  reportTo: string
+  dateParams: { date_from: string; date_to: string }
+}) {
+  const { t } = useTranslation()
+  const suffix = `${reportFrom}_${reportTo}`
+
+  const [mktFilters, setMktFilters] = useState(defaultZoneFilters)
+  const [topFilters, setTopFilters] = useState(defaultZoneFilters)
+  const [bottomFilters, setBottomFilters] = useState(defaultZoneFilters)
+  const [allFilters, setAllFilters] = useState(defaultZoneFilters)
+
+  const mktRows = useMemo(
+    () => filterMarketingRows(report.marketing_suggestions, mktFilters),
+    [report.marketing_suggestions, mktFilters],
+  )
+  const topRows = useMemo(
+    () => filterZoneRows(report.top_regions, topFilters),
+    [report.top_regions, topFilters],
+  )
+  const bottomRows = useMemo(
+    () => filterZoneRows(report.bottom_regions, bottomFilters),
+    [report.bottom_regions, bottomFilters],
+  )
+  const allRows = useMemo(
+    () => filterZoneRows(report.zones, allFilters),
+    [report.zones, allFilters],
+  )
+
+  return (
+    <section className="space-y-4">
+      <SectionHead icon={<MapPin size={18} />} title={t('reports.delivery_zones')} subtitle={`${reportFrom} → ${reportTo}`} />
+      <p className="text-xs text-slate-500">{t('reports.delivery_zones_hint')}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(report.totals.order_count)} />
+        <Kpi tone="green" label={t('reports.revenue')} value={fmt(report.totals.revenue)} />
+        <Kpi tone="amber" label={t('reports.regions_with_sales')} value={String(report.totals.regions_with_sales)} />
+        <Kpi tone="blue" label={t('reports.regions_total')} value={String(report.totals.regions_total)} />
+      </div>
+
+      <DeliveryZonesSection
+        title={t('reports.marketing_suggestions')}
+        filters={mktFilters}
+        onFiltersChange={setMktFilters}
+        showPriorityFilter
+        onExport={() => downloadApiExcel('/reports/delivery-zones/export', `delivery_marketing_${suffix}.xlsx`, zoneExportParams(dateParams, 'marketing', mktFilters))}
+      >
+        <MarketingSuggestionsTable rows={mktRows} />
+      </DeliveryZonesSection>
+
+      <DeliveryZonesSection
+        title={t('reports.top_regions')}
+        filters={topFilters}
+        onFiltersChange={setTopFilters}
+        showZoneFilters
+        onExport={() => downloadApiExcel('/reports/delivery-zones/export', `delivery_top_regions_${suffix}.xlsx`, zoneExportParams(dateParams, 'top_regions', topFilters))}
+      >
+        <DataTable empty={t('reports.no_data')} cols={zoneCols(t)} rows={topRows} />
+      </DeliveryZonesSection>
+
+      <DeliveryZonesSection
+        title={t('reports.least_regions')}
+        filters={bottomFilters}
+        onFiltersChange={setBottomFilters}
+        showZoneFilters
+        onExport={() => downloadApiExcel('/reports/delivery-zones/export', `delivery_least_regions_${suffix}.xlsx`, zoneExportParams(dateParams, 'bottom_regions', bottomFilters))}
+      >
+        <DataTable empty={t('reports.no_data')} cols={zoneCols(t)} rows={bottomRows} />
+      </DeliveryZonesSection>
+
+      <DeliveryZonesSection
+        title={t('reports.all_zones')}
+        filters={allFilters}
+        onFiltersChange={setAllFilters}
+        showZoneFilters
+        onExport={() => downloadApiExcel('/reports/delivery-zones/export', `delivery_all_zones_${suffix}.xlsx`, zoneExportParams(dateParams, 'all_zones', allFilters))}
+      >
+        <DataTable empty={t('reports.no_data')} cols={zoneCols(t)} rows={allRows} />
+      </DeliveryZonesSection>
+    </section>
+  )
 }
 
 function zoneCols(t: (k: string) => string) {

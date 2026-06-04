@@ -1327,29 +1327,116 @@ def delivery_zones_report(
     }
 
 
+ZONE_HEADERS = [
+    "Rank", "Region EN", "Region AR", "Group", "Orders", "Revenue",
+    "Delivery", "Digital", "Avg order",
+]
+
+MARKETING_HEADERS = [
+    "Priority", "Region EN", "Region AR", "Suggestion EN", "Suggestion AR",
+]
+
+
+def _zone_export_row(z: dict) -> list:
+    return [
+        z.get("rank"), z.get("region_name_en"), z.get("region_name_ar"), z.get("group"),
+        z.get("order_count"), z.get("revenue"), z.get("delivery_count"), z.get("digital_count"),
+        z.get("avg_order_value"),
+    ]
+
+
+def _filter_zones(
+    zones: list,
+    region_group: Optional[str] = None,
+    min_orders: Optional[int] = None,
+    with_sales_only: bool = False,
+) -> list:
+    out = zones
+    grp = (region_group or "").strip() or None
+    if grp:
+        out = [z for z in out if z.get("group") == grp]
+    if min_orders is not None:
+        out = [z for z in out if int(z.get("order_count") or 0) >= min_orders]
+    if with_sales_only:
+        out = [z for z in out if int(z.get("order_count") or 0) > 0]
+    return out
+
+
+def _filter_marketing(rows: list, priority: Optional[str] = None) -> list:
+    p = (priority or "").strip() or None
+    if not p:
+        return rows
+    return [r for r in rows if r.get("priority") == p]
+
+
+def _delivery_zones_sheets(report: dict) -> list[tuple[str, list, list]]:
+    zone_data = [_zone_export_row(z) for z in report.get("zones", [])]
+    top_data = [_zone_export_row(z) for z in report.get("top_regions", [])]
+    bottom_data = [_zone_export_row(z) for z in report.get("bottom_regions", [])]
+    mkt_data = [
+        [
+            r.get("priority"), r.get("region_name_en"), r.get("region_name_ar"),
+            r.get("reason_en"), r.get("reason_ar"),
+        ]
+        for r in report.get("marketing_suggestions", [])
+    ]
+    return [
+        ("Marketing suggestions", MARKETING_HEADERS, mkt_data),
+        ("Top regions", ZONE_HEADERS, top_data),
+        ("Least regions", ZONE_HEADERS, bottom_data),
+        ("All zones", ZONE_HEADERS, zone_data),
+    ]
+
+
 @router.get("/delivery-zones/export")
 def export_delivery_zones(
     request: Request,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    section: Optional[str] = None,
+    region_group: Optional[str] = None,
+    min_orders: Optional[int] = Query(None, ge=0),
+    with_sales_only: bool = False,
+    priority: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    from excel_utils import xlsx_response
+    from excel_utils import xlsx_multi_sheet, xlsx_response
 
     report = delivery_zones_report(request, date_from, date_to, current_user)
-    headers = [
-        "Rank", "Region EN", "Region AR", "Group", "Orders", "Revenue",
-        "Delivery", "Digital", "Avg order",
-    ]
-    data = [
-        [
-            z["rank"], z["region_name_en"], z["region_name_ar"], z.get("group"),
-            z["order_count"], z["revenue"], z["delivery_count"], z["digital_count"],
-            z["avg_order_value"],
-        ]
-        for z in report["zones"]
-    ]
-    return xlsx_response(headers, data, "delivery_zones.xlsx")
+    valid_sections = {"marketing", "top_regions", "bottom_regions", "all_zones"}
+    sec = (section or "").strip() or None
+    if sec and sec not in valid_sections:
+        raise HTTPException(400, "Invalid section")
+
+    has_zone_filters = bool(region_group or min_orders is not None or with_sales_only)
+    if has_zone_filters or priority:
+        report = {
+            **report,
+            "zones": _filter_zones(
+                report["zones"], region_group, min_orders, with_sales_only,
+            ),
+            "top_regions": _filter_zones(
+                report["top_regions"], region_group, min_orders, with_sales_only,
+            ),
+            "bottom_regions": _filter_zones(
+                report["bottom_regions"], region_group, min_orders, with_sales_only,
+            ),
+            "marketing_suggestions": _filter_marketing(report["marketing_suggestions"], priority),
+        }
+
+    sheets = _delivery_zones_sheets(report)
+    if sec:
+        title_map = {
+            "marketing": "Marketing suggestions",
+            "top_regions": "Top regions",
+            "bottom_regions": "Least regions",
+            "all_zones": "All zones",
+        }
+        title = title_map[sec]
+        headers, data = next((s[1], s[2]) for s in sheets if s[0] == title)
+        return xlsx_response(headers, data, f"delivery_zones_{sec}.xlsx")
+
+    return xlsx_multi_sheet(sheets, "delivery_zones.xlsx")
 
 
 def _customer_analysis_data(

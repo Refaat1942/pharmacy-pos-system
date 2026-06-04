@@ -411,7 +411,12 @@
     "hour_from": "Hour from",
     "hour_to": "Hour to",
     "delivery_status": "Delivery status",
-    "delivery_summary_hint": "Delivery and shipment orders grouped by time of day, driver, and branch. Use filters per section and export to Excel."
+    "delivery_summary_hint": "Delivery and shipment orders grouped by time of day, driver, and branch. Use filters per section and export to Excel.",
+    "min_orders": "Min orders",
+    "with_sales_only": "Regions with sales only",
+    "group_markaz": "Markaz (centers)",
+    "group_village": "Villages",
+    "group_other": "Other"
   },
   "fraud": {
     "title": "Fraud Surveillance",
