@@ -1,4 +1,5 @@
 """HR & Payroll: employees, attendance, salary slips."""
+from calendar import monthrange
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
@@ -33,6 +34,45 @@ def _prorated_base_hours(base_salary, hours_worked) -> float:
     base = float(base_salary or 0)
     hours = float(hours_worked or 0)
     return round(base * hours / PAYROLL_STANDARD_MONTH_HOURS, 2)
+
+
+def _slip_net(prorated_base: float, bonus: float, penalties: float, deductions: float) -> float:
+    return round(float(prorated_base or 0) + float(bonus or 0) - float(penalties or 0) - float(deductions or 0), 2)
+
+
+def _period_bounds(period_month: str) -> tuple[str, str, str]:
+    year, month = map(int, period_month.split("-"))
+    last = monthrange(year, month)[1]
+    return period_month, f"{period_month}-01", f"{period_month}-{last:02d}"
+
+
+def _attendance_payroll_stats(cur, employee_id: int, period_month: str, hours_allowance: float) -> dict:
+    cur.execute("""
+        SELECT COUNT(DISTINCT work_date) FILTER (WHERE status = 'present')::int AS days,
+               COUNT(DISTINCT work_date) FILTER (WHERE status = 'absent')::int AS absent,
+               COUNT(DISTINCT work_date) FILTER (WHERE status = 'leave')::int AS leave_days,
+               COALESCE(SUM(
+                 CASE
+                   WHEN status <> 'present' THEN 0
+                   WHEN COALESCE(allowed, false)
+                     THEN GREATEST(COALESCE(hours, %(std)s), %(std)s)
+                   WHEN COALESCE(hours, %(std)s) < %(std)s
+                        AND COALESCE(hours, %(std)s) >= %(std)s - %(allow)s
+                     THEN %(std)s
+                   ELSE COALESCE(hours, %(std)s)
+                 END
+               ), 0) AS hours
+        FROM attendance
+        WHERE employee_id = %(eid)s AND TO_CHAR(work_date, 'YYYY-MM') = %(pm)s
+    """, {"std": STANDARD_HOURS_PER_DAY, "allow": float(hours_allowance or 0),
+          "eid": employee_id, "pm": period_month})
+    row = cur.fetchone() or {}
+    return {
+        "days_worked": int(row.get("days") or 0),
+        "absent_days": int(row.get("absent") or 0),
+        "leave_days": int(row.get("leave_days") or 0),
+        "hours_worked": float(row.get("hours") or 0),
+    }
 
 
 def _require_admin(user):
@@ -395,6 +435,7 @@ def delete_attendance(aid: int, current_user=Depends(get_current_user)):
 # ─── Salary slips / payroll ────────────────────────────────────────────────
 class SlipUpdateIn(BaseModel):
     bonus: float = Field(0, ge=0)
+    penalties: float = Field(0, ge=0)
     deductions: float = Field(0, ge=0)
     notes: Optional[str] = None
 
@@ -412,8 +453,13 @@ def list_payroll(period_month: Optional[str] = None, q: Optional[str] = None,
         if q and q.strip():
             where.append("e.name ILIKE %s"); params.append(f"%{q.strip()}%")
         cur.execute(f"""
-            SELECT s.*, e.name AS employee_name, e.role AS employee_role
-            FROM salary_slips s JOIN employees e ON e.id = s.employee_id
+            SELECT s.*, e.name AS employee_name, e.role AS employee_role,
+                   e.phone AS employee_phone, e.national_id AS employee_national_id,
+                   e.hire_date AS employee_hire_date,
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+            FROM salary_slips s
+            JOIN employees e ON e.id = s.employee_id
+            LEFT JOIN branches b ON b.id = e.branch_id
             WHERE {' AND '.join(where)}
             ORDER BY s.period_month DESC, e.name
         """, params)
@@ -437,33 +483,21 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
         emps = cur.fetchall()
         created = 0
         for e in emps:
+            stats = _attendance_payroll_stats(cur, e['id'], period_month, float(e['hours_allowance'] or 0))
+            days = stats['days_worked']
+            hours = stats['hours_worked']
+            prorated = _prorated_base_hours(e['base_salary'], hours)
+            net = _slip_net(prorated, 0, 0, 0)
             cur.execute("""
-                SELECT COUNT(DISTINCT work_date)::int AS days,
-                       COALESCE(SUM(
-                         CASE
-                           WHEN COALESCE(allowed, false)
-                             THEN GREATEST(COALESCE(hours, %(std)s), %(std)s)
-                           WHEN COALESCE(hours, %(std)s) < %(std)s
-                                AND COALESCE(hours, %(std)s) >= %(std)s - %(allow)s
-                             THEN %(std)s
-                           ELSE COALESCE(hours, %(std)s)
-                         END
-                       ), 0) AS hours
-                FROM attendance
-                WHERE employee_id=%(eid)s AND status='present'
-                  AND TO_CHAR(work_date, 'YYYY-MM') = %(pm)s
-            """, {"std": STANDARD_HOURS_PER_DAY, "allow": float(e['hours_allowance'] or 0),
-                  "eid": e['id'], "pm": period_month})
-            row = cur.fetchone()
-            days = row['days'] or 0
-            hours = float(row['hours'] or 0)
-            net = _prorated_base_hours(e['base_salary'], hours)
-            cur.execute("""
-                INSERT INTO salary_slips(employee_id, period_month, base_salary,
-                                         bonus, deductions, days_worked, hours_worked, net_amount, status)
-                VALUES (%s,%s,%s,0,0,%s,%s,%s,'draft')
+                INSERT INTO salary_slips(
+                    employee_id, period_month, base_salary, bonus, penalties, deductions,
+                    days_worked, hours_worked, absent_days, leave_days, prorated_base,
+                    standard_days, standard_hours, net_amount, status)
+                VALUES (%s,%s,%s,0,0,0,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
                 ON CONFLICT (employee_id, period_month) DO NOTHING
-            """, [e['id'], period_month, e['base_salary'], days, hours, net])
+            """, [e['id'], period_month, e['base_salary'], days, hours,
+                  stats['absent_days'], stats['leave_days'], prorated,
+                  PAYROLL_WORKING_DAYS, PAYROLL_STANDARD_MONTH_HOURS, net])
             if cur.rowcount > 0: created += 1
         conn.commit()
         return {"created": created, "total_employees": len(emps), "period_month": period_month}
@@ -485,14 +519,96 @@ def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_curre
         hrs = slip['hours_worked']
         if hrs is None:
             hrs = (slip['days_worked'] or 0) * STANDARD_HOURS_PER_DAY
-        prorated = _prorated_base_hours(slip['base_salary'], hrs)
-        net = prorated + body.bonus - body.deductions
+        prorated = float(slip.get('prorated_base') or 0)
+        if not prorated:
+            prorated = _prorated_base_hours(slip['base_salary'], hrs)
+        net = _slip_net(prorated, body.bonus, body.penalties, body.deductions)
         cur.execute("""
-            UPDATE salary_slips SET bonus=%s, deductions=%s, net_amount=%s,
+            UPDATE salary_slips SET bonus=%s, penalties=%s, deductions=%s,
+              prorated_base=%s, net_amount=%s,
               notes=COALESCE(NULLIF(%s,''), notes)
             WHERE id=%s RETURNING *
-        """, [body.bonus, body.deductions, net, body.notes, slip_id])
+        """, [body.bonus, body.penalties, body.deductions, prorated, net, body.notes, slip_id])
         conn.commit(); return dict(cur.fetchone())
+    finally:
+        cur.close(); conn.close()
+
+
+@router.get("/payroll/{slip_id}/payslip")
+def get_payslip(slip_id: int, current_user=Depends(get_current_user)):
+    """Full payslip detail for display/print."""
+    _require_hr_tab(current_user, "payroll")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT s.*, e.name AS employee_name, e.role AS employee_role,
+                   e.phone AS employee_phone, e.national_id AS employee_national_id,
+                   e.hire_date AS employee_hire_date, e.hours_allowance,
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+            FROM salary_slips s
+            JOIN employees e ON e.id = s.employee_id
+            LEFT JOIN branches b ON b.id = e.branch_id
+            WHERE s.id = %s
+        """, [slip_id])
+        slip = cur.fetchone()
+        if not slip:
+            raise HTTPException(404, "Slip not found")
+        slip = dict(slip)
+        pm, start, end = _period_bounds(slip["period_month"])
+        stats = _attendance_payroll_stats(
+            cur, slip["employee_id"], pm, float(slip.get("hours_allowance") or 0),
+        )
+        hrs = slip.get("hours_worked")
+        if hrs is None:
+            hrs = stats["hours_worked"]
+        prorated = float(slip.get("prorated_base") or 0)
+        if not prorated:
+            prorated = _prorated_base_hours(slip["base_salary"], hrs)
+        bonus = float(slip.get("bonus") or 0)
+        penalties = float(slip.get("penalties") or 0)
+        deductions = float(slip.get("deductions") or 0)
+        net = float(slip.get("net_amount") or _slip_net(prorated, bonus, penalties, deductions))
+        std_days = int(slip.get("standard_days") or PAYROLL_WORKING_DAYS)
+        std_hours = float(slip.get("standard_hours") or PAYROLL_STANDARD_MONTH_HOURS)
+        return {
+            "slip_id": slip["id"],
+            "period_month": pm,
+            "period_start": start,
+            "period_end": end,
+            "status": slip["status"],
+            "paid_at": slip.get("paid_at"),
+            "notes": slip.get("notes"),
+            "employee": {
+                "id": slip["employee_id"],
+                "name": slip["employee_name"],
+                "role": slip.get("employee_role"),
+                "phone": slip.get("employee_phone"),
+                "national_id": slip.get("employee_national_id"),
+                "hire_date": str(slip["employee_hire_date"]) if slip.get("employee_hire_date") else None,
+                "branch_name_en": slip.get("branch_name_en"),
+                "branch_name_ar": slip.get("branch_name_ar"),
+            },
+            "attendance": {
+                "standard_days": std_days,
+                "standard_hours": std_hours,
+                "days_worked": int(slip.get("days_worked") if slip.get("days_worked") is not None else stats["days_worked"]),
+                "hours_worked": float(hrs or 0),
+                "absent_days": int(slip.get("absent_days") if slip.get("absent_days") is not None else stats["absent_days"]),
+                "leave_days": int(slip.get("leave_days") if slip.get("leave_days") is not None else stats["leave_days"]),
+            },
+            "earnings": {
+                "base_salary": float(slip["base_salary"] or 0),
+                "prorated_base": prorated,
+                "bonus": bonus,
+            },
+            "deductions_detail": {
+                "penalties": penalties,
+                "other_deductions": deductions,
+                "total_deductions": round(penalties + deductions, 2),
+            },
+            "net_amount": net,
+        }
     finally:
         cur.close(); conn.close()
 
