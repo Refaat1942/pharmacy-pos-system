@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -52,6 +53,16 @@ export default function Sidebar() {
   const isAdmin = user?.role === 'admin'
   const isBranch = user?.role === 'branch'
   const userPerms = !isAdmin && Array.isArray(user?.permissions) ? new Set(user!.permissions as string[]) : null
+  const navRef = useRef<HTMLElement>(null)
+  const navScrollRef = useRef(0)
+
+  useLayoutEffect(() => {
+    if (navRef.current) navRef.current.scrollTop = navScrollRef.current
+  }, [location.pathname])
+
+  const rememberNavScroll = () => {
+    if (navRef.current) navScrollRef.current = navRef.current.scrollTop
+  }
 
   return (
     <aside className="w-56 flex-shrink-0 bg-slate-900 text-white flex flex-col h-screen shadow-2xl z-20">
@@ -67,7 +78,11 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav
+        ref={navRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-3 space-y-0.5 [overflow-anchor:none]"
+        onScroll={() => { if (navRef.current) navScrollRef.current = navRef.current.scrollTop }}
+      >
         {NAV.filter((n) => {
           if (n.clockScreen) return true
           if (n.adminOnly && !isAdmin) return false
@@ -93,6 +108,8 @@ export default function Sidebar() {
             <Link
               key={to}
               to={to}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={rememberNavScroll}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all group ${
                 active
                   ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30'
@@ -105,7 +122,7 @@ export default function Sidebar() {
                 className={active ? '' : 'group-hover:scale-110 transition-transform'}
               />
               <span className="truncate">{t(labelKey)}</span>
-              {active && <span className="ms-auto w-1.5 h-1.5 rounded-full bg-white/80" />}
+              <span className={`ms-auto w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-white/80' : 'bg-transparent'}`} />
             </Link>
           )
         })}
