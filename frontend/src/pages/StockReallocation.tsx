@@ -76,7 +76,7 @@ export default function StockReallocation() {
     (r) => r.from_branch_name_en,
     (r) => r.to_branch_name_en,
   ])
-  const { sorted, sort, toggle } = useSort(quick.filtered, accessors)
+  const { sorted, sort, toggle } = useSort(quick.filtered, accessors, { key: 'priority_score', dir: 'desc' })
 
   const exportExcel = async () => {
     setExporting(true)
