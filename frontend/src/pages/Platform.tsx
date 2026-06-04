@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Edit2, Trash2, Pause, Play, LogOut, ShieldCheck, KeyRound,
@@ -10,6 +10,10 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 
 function fmtLimit(n: number | null | undefined) {
   return n == null ? '∞' : String(n)
+}
+
+function planOptionLabel(p: PlanDef) {
+  return `${p.label} — ${fmtLimit(p.max_users)} users, ${fmtLimit(p.max_branches)} branches, ${p.price_le.toLocaleString()} LE`
 }
 
 function effectiveLimit(
@@ -33,6 +37,57 @@ function parseLimitInput(raw: string): number | null {
 
 function limitInputValue(v: number | null | undefined): string {
   return v == null ? '' : String(v)
+}
+
+function planLimitDisplay(v: number | null | undefined): string {
+  return v == null ? 'unlimited' : String(v)
+}
+
+function applyPlanSelection(planKey: string, plans: PlanDef[], catalog: FeatureDef[]) {
+  const preset = plans.find((p) => p.key === planKey)
+  if (!preset) {
+    return { features: [] as string[], maxUsers: '', maxBranches: '', priceLe: '' }
+  }
+  return {
+    features: (preset.features ?? []).filter((k) => catalog.some((c) => c.key === k)),
+    maxUsers: planLimitDisplay(preset.max_users),
+    maxBranches: planLimitDisplay(preset.max_branches),
+    priceLe: String(preset.price_le ?? 0),
+  }
+}
+
+function resolveTenantLimits(tenant: Tenant, plans: PlanDef[]) {
+  const plan = plans.find((p) => p.key === (tenant.plan || 'basic'))
+  return {
+    maxUsers: planLimitDisplay(tenant.max_users ?? plan?.max_users ?? null),
+    maxBranches: planLimitDisplay(tenant.max_branches ?? plan?.max_branches ?? null),
+    priceLe: String(tenant.price_le ?? plan?.price_le ?? 0),
+  }
+}
+
+function limitsForSubmit(
+  planKey: string,
+  plans: PlanDef[],
+  maxUsers: string,
+  maxBranches: string,
+  priceLe: string,
+) {
+  const plan = plans.find((p) => p.key === planKey)
+  const mu = parseLimitInput(maxUsers)
+  const mb = parseLimitInput(maxBranches)
+  const pl = priceLe.trim() ? parseInt(priceLe, 10) : null
+  if (!plan) {
+    return {
+      max_users: mu,
+      max_branches: mb,
+      price_le: Number.isFinite(pl as number) ? pl : null,
+    }
+  }
+  return {
+    max_users: mu === plan.max_users ? null : mu,
+    max_branches: mb === plan.max_branches ? null : mb,
+    price_le: pl === plan.price_le ? null : (Number.isFinite(pl as number) ? pl : null),
+  }
 }
 
 function daysLeft(end: string | null): number | null {
@@ -438,15 +493,15 @@ function LimitsFields({
   const phPrice = plan ? `Plan default: ${plan.price_le.toLocaleString()} LE` : 'Plan default'
   return (
     <div className="grid grid-cols-3 gap-3">
-      <Field label="Max users" hint="Empty = plan default. Type unlimited or leave blank for no cap.">
+      <Field label="Max users" hint="From plan when changed. Type unlimited for no cap.">
         <input className={inputCls} value={maxUsers} placeholder={phUsers}
           onChange={(e) => onMaxUsers(e.target.value)} />
       </Field>
-      <Field label="Max branches" hint="Empty = plan default. Type unlimited or leave blank for no cap.">
+      <Field label="Max branches" hint="From plan when changed. Type unlimited for no cap.">
         <input className={inputCls} value={maxBranches} placeholder={phBranches}
           onChange={(e) => onMaxBranches(e.target.value)} />
       </Field>
-      <Field label="Price (LE)" hint="Empty = plan default price">
+      <Field label="Price (LE)" hint="From plan when changed. You can override per customer.">
         <input className={inputCls} type="number" min={0} value={priceLe} placeholder={phPrice}
           onChange={(e) => onPriceLe(e.target.value)} />
       </Field>
@@ -587,16 +642,25 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
   const [priceLe, setPriceLe] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const planSynced = useRef(false)
+
+  useEffect(() => {
+    if (!plans.length || planSynced.current) return
+    planSynced.current = true
+    const applied = applyPlanSelection(form.plan, plans, catalog)
+    setFeatures(applied.features.length ? applied.features : defaults)
+    setMaxUsers(applied.maxUsers)
+    setMaxBranches(applied.maxBranches)
+    setPriceLe(applied.priceLe)
+  }, [plans, catalog, defaults, form.plan])
 
   const onPlanChange = (plan: string) => {
     setForm({ ...form, plan })
-    const preset = plans.find((p) => p.key === plan)
-    if (preset?.features?.length) {
-      setFeatures(preset.features.filter((k) => catalog.some((c) => c.key === k)))
-    }
-    setMaxUsers('')
-    setMaxBranches('')
-    setPriceLe('')
+    const applied = applyPlanSelection(plan, plans, catalog)
+    setFeatures(applied.features)
+    setMaxUsers(applied.maxUsers)
+    setMaxBranches(applied.maxBranches)
+    setPriceLe(applied.priceLe)
   }
 
   const submit = async (e: FormEvent) => {
@@ -616,9 +680,7 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
         features,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
-        max_users: maxUsers.trim() ? parseLimitInput(maxUsers) : null,
-        max_branches: maxBranches.trim() ? parseLimitInput(maxBranches) : null,
-        price_le: priceLe.trim() ? parseInt(priceLe, 10) : null,
+        ...limitsForSubmit(form.plan, plans, maxUsers, maxBranches, priceLe),
       })
       onDone()
       onClose()
@@ -645,10 +707,10 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
           <Field label="Pharmacy Name">
             <input className={inputCls} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Acme Pharmacy" />
           </Field>
-          <Field label="Plan" hint="Choosing a plan auto-selects its default features (you can still tweak)">
+          <Field label="Plan" hint="Choosing a plan applies its users, branches, price, and features">
             <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
               {plans.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
+                <option key={p.key} value={p.key}>{planOptionLabel(p)}</option>
               ))}
             </select>
           </Field>
@@ -739,24 +801,23 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
     subscription_start: tenant.subscription_start || '',
     subscription_end: tenant.subscription_end || '',
   })
+  const initialLimits = resolveTenantLimits(tenant, plans)
   const [features, setFeatures] = useState<string[]>(
     tenant.features ?? catalog.filter(c => c.default).map(c => c.key)
   )
-  const [maxUsers, setMaxUsers] = useState(limitInputValue(tenant.max_users))
-  const [maxBranches, setMaxBranches] = useState(limitInputValue(tenant.max_branches))
-  const [priceLe, setPriceLe] = useState(limitInputValue(tenant.price_le))
+  const [maxUsers, setMaxUsers] = useState(initialLimits.maxUsers)
+  const [maxBranches, setMaxBranches] = useState(initialLimits.maxBranches)
+  const [priceLe, setPriceLe] = useState(initialLimits.priceLe)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const onPlanChange = (plan: string) => {
     setForm({ ...form, plan })
-    const preset = plans.find((p) => p.key === plan)
-    if (preset?.features?.length) {
-      setFeatures(preset.features.filter((k) => catalog.some((c) => c.key === k)))
-    }
-    setMaxUsers('')
-    setMaxBranches('')
-    setPriceLe('')
+    const applied = applyPlanSelection(plan, plans, catalog)
+    setFeatures(applied.features)
+    setMaxUsers(applied.maxUsers)
+    setMaxBranches(applied.maxBranches)
+    setPriceLe(applied.priceLe)
   }
 
   const submit = async (e: FormEvent) => {
@@ -767,9 +828,7 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
         features,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
-        max_users: maxUsers.trim() ? parseLimitInput(maxUsers) : null,
-        max_branches: maxBranches.trim() ? parseLimitInput(maxBranches) : null,
-        price_le: priceLe.trim() ? parseInt(priceLe, 10) : null,
+        ...limitsForSubmit(form.plan, plans, maxUsers, maxBranches, priceLe),
       } as any)
       onDone(); onClose()
     } catch (e: any) {
@@ -783,10 +842,10 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
         {err && <div className="bg-red-50 border border-red-200 text-red-700 p-2 rounded text-sm">{err}</div>}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Name"><input className={inputCls} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-          <Field label="Plan" hint="Selecting a plan resets features to that plan's defaults">
+          <Field label="Plan" hint="Selecting a plan applies its users, branches, price, and features">
             <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
               {plans.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
+                <option key={p.key} value={p.key}>{planOptionLabel(p)}</option>
               ))}
             </select>
           </Field>
