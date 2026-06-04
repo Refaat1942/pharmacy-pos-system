@@ -87,7 +87,7 @@ export default function FraudSurveillance() {
     (r) => r.branch_name_en,
     (r) => r.seller_name_en,
   ])
-  const { sorted, sort, toggle } = useSort(quick.filtered, accessors)
+  const { sorted, sort, toggle } = useSort(quick.filtered, accessors, { key: 'occurred_at', dir: 'desc' })
 
   const exportExcel = async () => {
     setExporting(true)

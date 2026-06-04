@@ -312,7 +312,8 @@ def fraud_alerts(
         conn.close()
 
     severity_rank = {"high": 0, "medium": 1, "low": 2}
-    alerts.sort(key=lambda a: (severity_rank.get(a["severity"], 9), a.get("occurred_at", ""), -a["amount"]))
+    alerts.sort(key=lambda a: a.get("occurred_at") or "", reverse=True)
+    alerts.sort(key=lambda a: severity_rank.get(a["severity"], 9))
 
     if min_severity:
         cutoff = severity_rank[min_severity]
