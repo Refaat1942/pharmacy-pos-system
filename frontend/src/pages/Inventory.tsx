@@ -1987,11 +1987,25 @@ function StocktakeTab() {
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
+  const [report, setReport] = useState<StocktakeReport | null>(null)
+  const [pastRuns, setPastRuns] = useState<StocktakeRunSummary[]>([])
+
+  const loadPastRuns = async () => {
+    if (!branchId) { setPastRuns([]); return }
+    try {
+      const { data } = await api.get('/inventory/stocktake/runs', { params: { branch_id: branchId, limit: 15 } })
+      setPastRuns(data)
+    } catch {
+      setPastRuns([])
+    }
+  }
 
   useEffect(() => {
     api.get('/inventory/branches').then(r => setBranches(r.data)).catch(() => setBranches([]))
     api.get('/inventory/categories').then(r => setCategories(r.data)).catch(() => setCategories([]))
   }, [])
+
+  useEffect(() => { void loadPastRuns() }, [branchId])
 
   const load = async () => {
     if (!branchId) { setItems([]); return }
@@ -2072,11 +2086,16 @@ function StocktakeTab() {
         note: note.trim() || undefined,
       }
       const { data } = await api.post('/inventory/stocktake', payload)
-      alert((t('inventory.st_done') as string).replace('{n}', String(data.changed)))
+      if (data.report) {
+        setReport(data.report)
+      } else {
+        alert((t('inventory.st_done') as string).replace('{n}', String(data.changed)))
+      }
       setCounted({})
       setExpiries({})
       setCategoriesEdits({})
       await load()
+      await loadPastRuns()
     } catch (e: any) {
       alert(e?.response?.data?.detail || t('inventory.st_error'))
     } finally { setApplying(false) }
@@ -2251,6 +2270,239 @@ function StocktakeTab() {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {pastRuns.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800">{t('inventory.st_report_recent')}</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-start">{t('inventory.st_report_date')}</th>
+                  <th className="px-3 py-2 text-start">{t('inventory.st_report_note')}</th>
+                  <th className="px-3 py-2 text-end">{t('inventory.st_report_shortages')}</th>
+                  <th className="px-3 py-2 text-end">{t('inventory.st_report_increases')}</th>
+                  <th className="px-3 py-2 text-end">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pastRuns.map((run) => (
+                  <tr key={run.run_id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                    <td className="px-3 py-2 text-xs text-slate-600">{formatDateTime(run.created_at)}</td>
+                    <td className="px-3 py-2 text-xs text-slate-600">{run.note || '—'}</td>
+                    <td className="px-3 py-2 text-end text-xs font-mono text-red-600">{run.shortages_count || 0}</td>
+                    <td className="px-3 py-2 text-end text-xs font-mono text-emerald-600">{run.increases_count || 0}</td>
+                    <td className="px-3 py-2 text-end">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const { data } = await api.get(`/inventory/stocktake/runs/${run.run_id}`)
+                          setReport(data)
+                        }}
+                        className="text-xs text-pharma-600 hover:text-pharma-800 font-medium"
+                      >
+                        {t('inventory.st_report_view')}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {report && (
+        <StocktakeReportModal report={report} onClose={() => setReport(null)} />
+      )}
+    </div>
+  )
+}
+
+type StocktakeReportLine = {
+  product_id: number
+  name_en: string
+  name_ar: string
+  barcode: string | null
+  category: string | null
+  pack_size: number
+  unit: string
+  sub_unit: string | null
+  old_stock: number
+  new_stock: number
+  delta: number
+  variance_major: number
+  variance_sub_fraction: number
+  old_category?: string | null
+  new_category?: string | null
+  old_expiry?: string | null
+  new_expiry?: string | null
+}
+
+type StocktakeReport = {
+  run_id: number
+  branch_id: number
+  branch_name_en: string
+  branch_name_ar: string
+  note: string | null
+  created_at: string
+  user_name_en: string | null
+  user_name_ar: string | null
+  summary: {
+    total_lines: number
+    shortages_count: number
+    increases_count: number
+    other_count: number
+    shortage_units: number
+    increase_units: number
+  }
+  shortages: StocktakeReportLine[]
+  increases: StocktakeReportLine[]
+  other_changes: StocktakeReportLine[]
+}
+
+type StocktakeRunSummary = {
+  run_id: number
+  created_at: string
+  note: string | null
+  shortages_count: number
+  increases_count: number
+}
+
+function StocktakeReportModal({ report, onClose }: { report: StocktakeReport; onClose: () => void }) {
+  const { t, i18n } = useTranslation()
+  const isAr = i18n.language === 'ar'
+  const branchName = isAr ? report.branch_name_ar : report.branch_name_en
+  const userName = isAr ? report.user_name_ar : report.user_name_en
+
+  const renderSection = (
+    title: string,
+    rows: StocktakeReportLine[],
+    tone: 'red' | 'green' | 'slate',
+  ) => (
+    <div className="space-y-2">
+      <h4 className={`text-sm font-semibold ${tone === 'red' ? 'text-red-700' : tone === 'green' ? 'text-emerald-700' : 'text-slate-700'}`}>
+        {title} ({rows.length})
+      </h4>
+      {rows.length === 0 ? (
+        <p className="text-xs text-slate-400">{t('inventory.st_report_none')}</p>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase text-slate-500">
+              <tr>
+                <th className="px-2 py-2 text-start">{t('inventory.col_name')}</th>
+                <th className="px-2 py-2 text-start">{t('inventory.col_barcode')}</th>
+                <th className="px-2 py-2 text-end">{t('inventory.st_system')}</th>
+                <th className="px-2 py-2 text-end">{t('inventory.st_counted')}</th>
+                <th className="px-2 py-2 text-center">{t('inventory.st_variance_major')}</th>
+                <th className="px-2 py-2 text-center">{t('inventory.st_variance_sub')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((ln) => {
+                const pack = packSizeOf(ln)
+                const unitLabel = ln.unit || t('inventory.sub_unit_word')
+                const subLabel = ln.sub_unit || t('inventory.sub_unit_word')
+                return (
+                  <tr key={ln.product_id} className="border-t border-slate-100">
+                    <td className="px-2 py-2 font-medium text-slate-800">{isAr ? ln.name_ar : ln.name_en}</td>
+                    <td className="px-2 py-2 font-mono text-slate-500">{ln.barcode || '—'}</td>
+                    <td className="px-2 py-2 text-end font-mono">
+                      {pack > 1 ? formatPackStockLabel(ln.old_stock, pack, ln.unit, subLabel) : ln.old_stock}
+                    </td>
+                    <td className="px-2 py-2 text-end font-mono">
+                      {pack > 1 ? formatPackStockLabel(ln.new_stock, pack, ln.unit, subLabel) : ln.new_stock}
+                    </td>
+                    <td className={`px-2 py-2 text-center font-mono font-semibold ${tone === 'red' ? 'text-red-600' : tone === 'green' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                      {ln.delta === 0 ? '—' : (
+                        <>
+                          {formatVarianceMajorUnits(ln.variance_major)}
+                          {pack > 1 && ln.variance_major !== 0 && <span className="text-slate-400 font-normal ms-0.5">{unitLabel}</span>}
+                        </>
+                      )}
+                    </td>
+                    <td className={`px-2 py-2 text-center font-mono font-semibold ${tone === 'red' ? 'text-red-600' : tone === 'green' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                      {pack <= 1 || ln.delta === 0 ? '—' : (
+                        <>
+                          {formatVarianceSubFraction(ln.variance_sub_fraction)}
+                          {ln.variance_sub_fraction !== 0 && <span className="text-slate-400 font-normal ms-0.5">{subLabel}</span>}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">{t('inventory.st_report_title')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {branchName} · {formatDateTime(report.created_at)}
+              {userName ? ` · ${userName}` : ''}
+              {report.note ? ` · ${report.note}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5 overflow-y-auto flex-1 space-y-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
+              <p className="text-[10px] uppercase text-red-600 font-semibold">{t('inventory.st_report_shortages')}</p>
+              <p className="text-2xl font-bold text-red-700 tabular-nums">{report.summary.shortages_count}</p>
+              <p className="text-[10px] text-red-600/80">{t('inventory.st_report_deficit')}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+              <p className="text-[10px] uppercase text-emerald-600 font-semibold">{t('inventory.st_report_increases')}</p>
+              <p className="text-2xl font-bold text-emerald-700 tabular-nums">{report.summary.increases_count}</p>
+              <p className="text-[10px] text-emerald-600/80">{t('inventory.st_report_surplus')}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+              <p className="text-[10px] uppercase text-slate-500 font-semibold">{t('inventory.st_report_total')}</p>
+              <p className="text-2xl font-bold text-slate-800 tabular-nums">{report.summary.total_lines}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+              <p className="text-[10px] uppercase text-amber-700 font-semibold">{t('inventory.st_report_other')}</p>
+              <p className="text-2xl font-bold text-amber-800 tabular-nums">{report.summary.other_count}</p>
+              <p className="text-[10px] text-amber-700/80">{t('inventory.st_report_other_hint')}</p>
+            </div>
+          </div>
+          {renderSection(t('inventory.st_report_shortages'), report.shortages, 'red')}
+          {renderSection(t('inventory.st_report_increases'), report.increases, 'green')}
+          {report.other_changes.length > 0 && renderSection(t('inventory.st_report_other'), report.other_changes, 'slate')}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => void downloadApiExcel(
+              `/inventory/stocktake/runs/${report.run_id}/export`,
+              `stocktake_report_${report.run_id}.xlsx`,
+            )}
+            className="flex items-center gap-1.5 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <FileSpreadsheet size={15} /> {t('inventory.st_report_export')}
+          </button>
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-pharma-600 text-white rounded-lg text-sm font-medium hover:bg-pharma-700">
+            {t('common.close')}
+          </button>
         </div>
       </div>
     </div>

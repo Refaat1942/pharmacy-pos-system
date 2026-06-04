@@ -781,7 +781,21 @@
     "st_note_ph": "Note (optional) e.g. Monthly count",
     "st_confirm": "Apply stocktake? This will adjust stock for {n} item(s) to match your counted quantities. Each change is logged as an adjustment.",
     "st_done": "Stocktake applied — {n} item(s) updated.",
-    "st_error": "Could not apply stocktake."
+    "st_error": "Could not apply stocktake.",
+    "st_report_title": "Stocktake Report",
+    "st_report_recent": "Recent stocktakes",
+    "st_report_date": "Date",
+    "st_report_note": "Note",
+    "st_report_shortages": "Shortages",
+    "st_report_increases": "Increases",
+    "st_report_deficit": "Items below system",
+    "st_report_surplus": "Items above system",
+    "st_report_total": "Total changes",
+    "st_report_other": "Other",
+    "st_report_other_hint": "Category / expiry only",
+    "st_report_none": "None",
+    "st_report_view": "View report",
+    "st_report_export": "Export Excel"
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",

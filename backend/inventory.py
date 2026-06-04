@@ -3,8 +3,9 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 import io
+import math
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, requires_feature
@@ -85,6 +86,103 @@ def log_movement(cur, product_id: int, branch_id, movement_type: str,
         (product_id, branch_id, movement_type, quantity, balance_after,
          reference_type, reference_id, reason, user_id),
     )
+
+
+def _variance_split(delta_sub: int, pack_size: int) -> tuple[float, float]:
+    """Return (whole_boxes, fractional_box) for a sub-unit delta."""
+    if pack_size <= 1:
+        return float(delta_sub), 0.0
+    total_boxes = delta_sub / pack_size
+    if total_boxes == 0:
+        return 0.0, 0.0
+    sign = 1 if total_boxes > 0 else -1
+    abs_boxes = abs(total_boxes)
+    whole = math.trunc(abs_boxes) * sign
+    frac = total_boxes - whole
+    return whole, frac
+
+
+def _format_stocktake_line(row: dict) -> dict:
+    pack = row.get("pack_size") or 1
+    if pack <= 1:
+        pack = 1
+    delta = int(row["delta"])
+    major, sub_frac = _variance_split(delta, pack)
+    out = {
+        "product_id": row["product_id"],
+        "name_en": row.get("name_en"),
+        "name_ar": row.get("name_ar"),
+        "barcode": row.get("barcode"),
+        "category": row.get("new_category") or row.get("category"),
+        "pack_size": pack,
+        "unit": row.get("unit") or "box",
+        "sub_unit": row.get("sub_unit"),
+        "old_stock": int(row["old_stock"]),
+        "new_stock": int(row["new_stock"]),
+        "delta": delta,
+        "variance_major": major,
+        "variance_sub_fraction": sub_frac,
+        "old_category": row.get("old_category"),
+        "new_category": row.get("new_category"),
+        "old_expiry": row["old_expiry"].isoformat() if row.get("old_expiry") else None,
+        "new_expiry": row["new_expiry"].isoformat() if row.get("new_expiry") else None,
+    }
+    return out
+
+
+def _build_stocktake_report(cur, run_id: int) -> dict:
+    cur.execute(
+        """
+        SELECT r.id AS run_id, r.branch_id, r.note, r.created_at,
+               b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+               u.name_en AS user_name_en, u.name_ar AS user_name_ar
+        FROM stocktake_runs r
+        JOIN branches b ON b.id = r.branch_id
+        LEFT JOIN users u ON u.id = r.user_id
+        WHERE r.id = %s
+        """,
+        (run_id,),
+    )
+    run = cur.fetchone()
+    if not run:
+        raise HTTPException(status_code=404, detail="Stocktake run not found")
+    run = dict(run)
+    created = run.get("created_at")
+    if created and hasattr(created, "isoformat"):
+        run["created_at"] = created.isoformat()
+
+    cur.execute(
+        """
+        SELECT l.*,
+               p.name_en, p.name_ar, p.barcode, p.category,
+               p.pack_size, p.unit, p.sub_unit
+        FROM stocktake_lines l
+        JOIN products p ON p.id = l.product_id
+        WHERE l.run_id = %s
+        ORDER BY ABS(l.delta) DESC, p.name_en ASC, p.name_ar ASC
+        """,
+        (run_id,),
+    )
+    lines = [_format_stocktake_line(dict(r)) for r in cur.fetchall()]
+    shortages = [ln for ln in lines if ln["delta"] < 0]
+    increases = [ln for ln in lines if ln["delta"] > 0]
+    other = [ln for ln in lines if ln["delta"] == 0]
+
+    return {
+        **run,
+        "summary": {
+            "total_lines": len(lines),
+            "shortages_count": len(shortages),
+            "increases_count": len(increases),
+            "other_count": len(other),
+            "shortage_units": sum(ln["delta"] for ln in shortages),
+            "increase_units": sum(ln["delta"] for ln in increases),
+        },
+        "shortages": shortages,
+        "increases": increases,
+        "other_changes": other,
+        "lines": lines,
+    }
 
 
 # ─── PRODUCT CRUD (extends /api/products) ─────────────────────────────────
@@ -638,12 +736,31 @@ def apply_stocktake(req: StocktakeRequest,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # Resolve branch from first product
+        cur.execute(
+            "SELECT branch_id FROM products WHERE id=%s",
+            (req.items[0].product_id,),
+        )
+        first = cur.fetchone()
+        if not first or not first.get("branch_id"):
+            raise HTTPException(status_code=400, detail="Invalid product")
+        branch_id = first["branch_id"]
+        _assert_branch_access(current_user, branch_id)
+
+        cur.execute(
+            """INSERT INTO stocktake_runs (branch_id, note, user_id)
+               VALUES (%s,%s,%s) RETURNING id""",
+            (branch_id, note or None, current_user.get("user_id")),
+        )
+        run_id = cur.fetchone()["id"]
+
         changes = []
         for line in req.items:
             if line.counted < 0:
                 raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
             cur.execute(
-                "SELECT id, stock, branch_id, expiry_date, category FROM products WHERE id=%s FOR UPDATE",
+                """SELECT id, stock, branch_id, expiry_date, category, pack_size
+                   FROM products WHERE id=%s FOR UPDATE""",
                 (line.product_id,),
             )
             product = cur.fetchone()
@@ -651,17 +768,21 @@ def apply_stocktake(req: StocktakeRequest,
                 continue
             _assert_branch_access(current_user, product["branch_id"])
             old_stock = int(product["stock"])
+            old_category = product.get("category")
+            old_expiry = product.get("expiry_date")
             delta = line.counted - old_stock
-            expiry_change = line.expiry_date is not None and line.expiry_date != product["expiry_date"]
+            expiry_change = line.expiry_date is not None and line.expiry_date != old_expiry
             cat = (line.category or "").strip() if line.category is not None else None
-            category_change = cat is not None and cat != (product.get("category") or "")
+            category_change = cat is not None and cat != (old_category or "")
+            new_category = cat if category_change else old_category
+            new_expiry = line.expiry_date if expiry_change else old_expiry
             if delta == 0 and not expiry_change and not category_change:
                 continue
             if category_change:
                 cur.execute("UPDATE products SET category=%s WHERE id=%s", (cat, line.product_id))
             if delta != 0 or expiry_change:
                 cur.execute("DELETE FROM product_batches WHERE product_id=%s", (line.product_id,))
-                exp = line.expiry_date if expiry_change else product["expiry_date"]
+                exp = line.expiry_date if expiry_change else old_expiry
                 qty = line.counted if delta != 0 else int(product["stock"])
                 if qty > 0:
                     add_batch_stock(cur, line.product_id, product["branch_id"], qty, exp)
@@ -671,15 +792,34 @@ def apply_stocktake(req: StocktakeRequest,
                 log_movement(
                     cur, line.product_id, product["branch_id"], "adjustment",
                     delta, line.counted,
-                    reference_type="stocktake", reason=reason,
+                    reference_type="stocktake", reference_id=run_id,
+                    reason=reason,
                     user_id=current_user.get("user_id"),
                 )
-            changes.append({"product_id": line.product_id,
-                            "old_stock": old_stock,
-                            "new_stock": line.counted,
-                            "delta": delta})
+            cur.execute(
+                """INSERT INTO stocktake_lines
+                   (run_id, product_id, old_stock, new_stock, delta,
+                    old_category, new_category, old_expiry, new_expiry)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    run_id, line.product_id, old_stock, line.counted, delta,
+                    old_category, new_category, old_expiry, new_expiry,
+                ),
+            )
+            changes.append({
+                "product_id": line.product_id,
+                "old_stock": old_stock,
+                "new_stock": line.counted,
+                "delta": delta,
+            })
+        if not changes:
+            cur.execute("DELETE FROM stocktake_runs WHERE id=%s", (run_id,))
+            conn.commit()
+            return {"ok": True, "changed": 0, "run_id": None, "report": None}
+
         conn.commit()
-        return {"ok": True, "changed": len(changes), "changes": changes}
+        report = _build_stocktake_report(cur, run_id)
+        return {"ok": True, "changed": len(changes), "run_id": run_id, "report": report}
     except HTTPException:
         conn.rollback()
         raise
@@ -688,6 +828,130 @@ def apply_stocktake(req: StocktakeRequest,
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
+
+
+@router.get("/stocktake/runs")
+def list_stocktake_runs(
+    branch_id: Optional[int] = None,
+    limit: int = Query(30, ge=1, le=200),
+    current_user=Depends(get_current_user),
+):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    where = []
+    params: list = []
+    if branch_id is not None:
+        where.append("r.branch_id = %s")
+        params.append(branch_id)
+    elif current_user.get("role") != "admin":
+        ub = current_user.get("branch_id")
+        if ub is None:
+            raise HTTPException(status_code=403, detail="No branch assigned")
+        where.append("r.branch_id = %s")
+        params.append(ub)
+    sql = """
+        SELECT r.id AS run_id, r.branch_id, r.note, r.created_at,
+               b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+               u.name_en AS user_name_en, u.name_ar AS user_name_ar,
+               COUNT(l.id)::int AS line_count,
+               COUNT(l.id) FILTER (WHERE l.delta < 0)::int AS shortages_count,
+               COUNT(l.id) FILTER (WHERE l.delta > 0)::int AS increases_count,
+               COALESCE(SUM(l.delta) FILTER (WHERE l.delta < 0), 0)::int AS shortage_units,
+               COALESCE(SUM(l.delta) FILTER (WHERE l.delta > 0), 0)::int AS increase_units
+        FROM stocktake_runs r
+        JOIN branches b ON b.id = r.branch_id
+        LEFT JOIN users u ON u.id = r.user_id
+        LEFT JOIN stocktake_lines l ON l.run_id = r.id
+    """
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " GROUP BY r.id, b.name_en, b.name_ar, u.name_en, u.name_ar"
+    sql += " ORDER BY r.created_at DESC LIMIT %s"
+    params.append(limit)
+    cur.execute(sql, params)
+    rows = []
+    for r in cur.fetchall():
+        row = dict(r)
+        created = row.get("created_at")
+        if created and hasattr(created, "isoformat"):
+            row["created_at"] = created.isoformat()
+        rows.append(row)
+    conn.close()
+    return rows
+
+
+@router.get("/stocktake/runs/{run_id}")
+def get_stocktake_report(run_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT branch_id FROM stocktake_runs WHERE id=%s", (run_id,))
+        run = cur.fetchone()
+        if not run:
+            raise HTTPException(status_code=404, detail="Stocktake run not found")
+        _assert_branch_access(current_user, run["branch_id"])
+        return _build_stocktake_report(cur, run_id)
+    finally:
+        conn.close()
+
+
+def _stocktake_line_export_row(ln: dict) -> list:
+    pack = ln.get("pack_size") or 1
+    return [
+        ln.get("name_en"), ln.get("name_ar"), ln.get("barcode"), ln.get("category"),
+        ln.get("old_stock"), ln.get("new_stock"), ln.get("delta"),
+        ln.get("variance_major"), ln.get("variance_sub_fraction"),
+        ln.get("unit"), ln.get("sub_unit"),
+        ln.get("old_expiry"), ln.get("new_expiry"),
+        ln.get("old_category"), ln.get("new_category"),
+    ]
+
+
+STOCKTAKE_LINE_HEADERS = [
+    "Product EN", "Product AR", "Barcode", "Category",
+    "System qty", "Counted qty", "Delta (sub-units)",
+    "Var. boxes", "Var. strip fraction",
+    "Unit", "Sub-unit", "Old expiry", "New expiry",
+    "Old category", "New category",
+]
+
+
+@router.get("/stocktake/runs/{run_id}/export")
+def export_stocktake_report(run_id: int, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT branch_id FROM stocktake_runs WHERE id=%s", (run_id,))
+        run = cur.fetchone()
+        if not run:
+            raise HTTPException(status_code=404, detail="Stocktake run not found")
+        _assert_branch_access(current_user, run["branch_id"])
+        report = _build_stocktake_report(cur, run_id)
+    finally:
+        conn.close()
+
+    from openpyxl import Workbook
+    wb = Workbook()
+    wb.remove(wb.active)
+    sheets = [
+        ("Shortages", report.get("shortages", [])),
+        ("Increases", report.get("increases", [])),
+        ("Other changes", report.get("other_changes", [])),
+    ]
+    for title, rows in sheets:
+        ws = wb.create_sheet(title[:31])
+        ws.append(STOCKTAKE_LINE_HEADERS)
+        for ln in rows:
+            ws.append([_xlsx_safe(v) for v in _stocktake_line_export_row(ln)])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"stocktake_report_{run_id}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ─── CLEAR BRANCH HISTORY (admin, password-protected) ────────────────────

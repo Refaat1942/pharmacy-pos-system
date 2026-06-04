@@ -247,7 +247,21 @@
     "st_note_ph": "ملاحظة (اختياري) مثل: جرد شهري",
     "st_confirm": "تطبيق الجرد؟ سيتم تعديل مخزون {n} صنف ليطابق الكميات المعدودة. يُسجّل كل تغيير كتسوية.",
     "st_done": "تم تطبيق الجرد — تم تحديث {n} صنف.",
-    "st_error": "تعذّر تطبيق الجرد."
+    "st_error": "تعذّر تطبيق الجرد.",
+    "st_report_title": "تقرير الجرد",
+    "st_report_recent": "عمليات الجرد الأخيرة",
+    "st_report_date": "التاريخ",
+    "st_report_note": "ملاحظة",
+    "st_report_shortages": "النواقص",
+    "st_report_increases": "الزيادات",
+    "st_report_deficit": "أصناف أقل من النظام",
+    "st_report_surplus": "أصناف أكثر من النظام",
+    "st_report_total": "إجمالي التغييرات",
+    "st_report_other": "أخرى",
+    "st_report_other_hint": "فئة / صلاحية فقط",
+    "st_report_none": "لا يوجد",
+    "st_report_view": "عرض التقرير",
+    "st_report_export": "تصدير Excel"
   },
   "nav": {
     "pos": "نقطة البيع",
