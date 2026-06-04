@@ -1229,7 +1229,17 @@
     "untied_payment": "Untied (on account)",
     "invoice_required": "Please select an invoice to apply the payment to",
     "authorized_branches": "Branches Authorized for Account Sales",
-    "authorized_branches_hint": "Non-admin staff can only sell to this customer at these branches."
+    "authorized_branches_hint": "Non-admin staff can only sell to this customer at these branches.",
+    "bulk_upload": "Bulk Upload",
+    "excel_help_title": "Excel / CSV Bulk Upload",
+    "excel_help_cols": "First row must be column headers. Existing customers matched by phone (or ID if provided) are updated.",
+    "download_template": "Download blank template",
+    "download_failed": "Could not download template",
+    "upload": "Upload",
+    "imported": "imported",
+    "updated_count": "updated",
+    "errors": "errors",
+    "show_errors": "Show error details"
   },
   "dashboard": {
     "title": "Operational Dashboard",
