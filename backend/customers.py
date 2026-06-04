@@ -1,10 +1,15 @@
 """Customer accounts module — CRUD, payments, statements with running balance."""
-from fastapi import APIRouter, HTTPException, Depends
+import csv
+import io
+import re
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user
+from regions import resolve_region_key, REGIONS
 
 router = APIRouter(prefix="/api", tags=["customers"])
 
@@ -34,6 +39,256 @@ def lookup_platform_partner(cur, digital_type: str):
 def _admin_only(user):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admins only")
+
+
+def _row_get(r, *keys):
+    for k in keys:
+        if k in r and r[k] not in (None, ""):
+            return r[k]
+    return None
+
+
+def _norm_phone(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = re.sub(r"\D", "", str(phone).strip())
+    return digits or None
+
+
+def _parse_bool(v) -> bool:
+    if v in (None, ""):
+        return True
+    s = str(v).strip().lower()
+    if s in ("false", "no", "0", "n", "inactive"):
+        return False
+    return True
+
+
+def _parse_branch_ids(raw, branch_by_id: dict[int, dict], branch_by_name: dict[str, int]) -> list[int]:
+    if raw in (None, ""):
+        return []
+    ids: list[int] = []
+    for part in str(raw).split(","):
+        token = part.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            bid = int(token)
+            if bid in branch_by_id:
+                ids.append(bid)
+            continue
+        key = token.lower()
+        if key in branch_by_name:
+            ids.append(branch_by_name[key])
+    return list(dict.fromkeys(ids))
+
+
+CUSTOMER_TEMPLATE_HEADERS = [
+    "Name", "Phone", "Email", "Region", "Address Details",
+    "Tax #", "Credit Limit", "Notes", "Active", "Authorized Branches",
+]
+
+
+@router.get("/customers/bulk-template")
+def customers_bulk_template(current_user=Depends(get_current_user)):
+    """Download a blank Excel template for bulk customer upload."""
+    _admin_only(current_user)
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Customers"
+    ws.append(CUSTOMER_TEMPLATE_HEADERS)
+    ws.append([
+        "Ahmed Pharmacy Co.",
+        "01001234567",
+        "ahmed@example.com",
+        "Ismailia City",
+        "12 El Gomhoria St, Building 3, Apt 5",
+        "123-456-789",
+        5000,
+        "Wholesale account",
+        "yes",
+        "Main Branch, Branch 2",
+    ])
+    ws.append([
+        "Example Customer (minimal)",
+        "",
+        "",
+        "fayed",
+        "",
+        "",
+        0,
+        "",
+        "true",
+        "",
+    ])
+
+    regions_ws = wb.create_sheet("Regions (reference)")
+    regions_ws.append(["Region Key", "English", "Arabic"])
+    for r in REGIONS:
+        regions_ws.append([r["key"], r["en"], r["ar"]])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="customers_template.xlsx"'},
+    )
+
+
+@router.post("/customers/bulk-upload")
+async def customers_bulk_upload(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    """Bulk import customers from Excel/CSV. Matches by ID or phone to update."""
+    _admin_only(current_user)
+    from openpyxl import load_workbook
+
+    content = await file.read()
+    name = (file.filename or "").lower()
+
+    rows: list[dict] = []
+    if name.endswith(".csv"):
+        text = content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(text))
+        rows = list(reader)
+    else:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+        for r in ws.iter_rows(min_row=2, values_only=True):
+            if not any(r):
+                continue
+            row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
+            rows.append(row)
+
+    rows = [
+        {(str(k).strip().lower() if k is not None else ""): v for k, v in row.items()}
+        for row in rows
+    ]
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT id, name_en, name_ar FROM branches")
+    branches = [dict(b) for b in cur.fetchall()]
+    branch_by_id = {b["id"]: b for b in branches}
+    branch_by_name: dict[str, int] = {}
+    for b in branches:
+        for field in ("name_en", "name_ar"):
+            val = (b.get(field) or "").strip().lower()
+            if val:
+                branch_by_name[val] = b["id"]
+
+    inserted = updated = errors = 0
+    error_details: list[str] = []
+    user_id = current_user.get("user_id")
+
+    for idx, r in enumerate(rows, start=2):
+        cur.execute("SAVEPOINT row_sp")
+        try:
+            cust_id_raw = _row_get(r, "id", "customer id", "customer_id")
+            name_val = str(_row_get(r, "name", "customer name", "customer") or "").strip()
+            if not name_val:
+                raise ValueError("Name is required")
+
+            phone_raw = _row_get(r, "phone", "mobile", "tel", "telephone")
+            phone = str(phone_raw).strip() if phone_raw not in (None, "") else None
+            email_raw = _row_get(r, "email", "e-mail")
+            email = str(email_raw).strip() if email_raw not in (None, "") else None
+            region_raw = _row_get(r, "region", "area", "area / region")
+            region = resolve_region_key(customer_region=str(region_raw).strip() if region_raw else None)
+            if region == "unknown" and region_raw not in (None, ""):
+                region = str(region_raw).strip()
+            elif region == "unknown":
+                region = None
+
+            address = str(_row_get(r, "address details", "address_details", "address") or "").strip() or None
+            tax_number = str(_row_get(r, "tax #", "tax", "tax_number", "tax number") or "").strip() or None
+            credit_limit = float(_row_get(r, "credit limit", "credit_limit", "limit") or 0)
+            notes = str(_row_get(r, "notes", "note") or "").strip() or None
+            active = _parse_bool(_row_get(r, "active", "status"))
+            branch_ids = _parse_branch_ids(
+                _row_get(r, "authorized branches", "authorized_branches", "branches", "branch ids"),
+                branch_by_id,
+                branch_by_name,
+            )
+
+            existing = None
+            if cust_id_raw not in (None, ""):
+                try:
+                    cid = int(float(str(cust_id_raw).strip()))
+                except ValueError as exc:
+                    raise ValueError("Invalid customer ID") from exc
+                cur.execute("SELECT id FROM customers WHERE id=%s", (cid,))
+                existing = cur.fetchone()
+                if not existing:
+                    raise ValueError(f"Customer ID {cid} not found")
+
+            if not existing and phone:
+                norm = _norm_phone(phone)
+                if norm:
+                    cur.execute(
+                        "SELECT id FROM customers WHERE "
+                        "REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g') = %s "
+                        "ORDER BY id LIMIT 1",
+                        (norm,),
+                    )
+                    existing = cur.fetchone()
+
+            if existing:
+                cid = existing["id"]
+                cur.execute(
+                    """UPDATE customers SET name=%s, phone=%s, email=%s, region=%s,
+                       address_details=%s, tax_number=%s, credit_limit=%s, notes=%s, active=%s
+                       WHERE id=%s""",
+                    (name_val, phone, email, region, address, tax_number,
+                     credit_limit, notes, active, cid),
+                )
+                if branch_ids:
+                    cur.execute("DELETE FROM customer_branches WHERE customer_id=%s", (cid,))
+                    for bid in branch_ids:
+                        cur.execute(
+                            "INSERT INTO customer_branches (customer_id, branch_id, authorized_by) "
+                            "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                            (cid, bid, user_id),
+                        )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO customers
+                       (name, phone, email, region, address_details, tax_number,
+                        credit_limit, notes, active)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                    (name_val, phone, email, region, address, tax_number,
+                     credit_limit, notes, active),
+                )
+                cid = cur.fetchone()["id"]
+                for bid in branch_ids:
+                    cur.execute(
+                        "INSERT INTO customer_branches (customer_id, branch_id, authorized_by) "
+                        "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                        (cid, bid, user_id),
+                    )
+                inserted += 1
+
+            cur.execute("RELEASE SAVEPOINT row_sp")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT row_sp")
+            errors += 1
+            error_details.append(f"Row {idx}: {e}")
+
+    conn.commit()
+    conn.close()
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "error_details": error_details[:50],
+    }
 
 
 class CustomerIn(BaseModel):
