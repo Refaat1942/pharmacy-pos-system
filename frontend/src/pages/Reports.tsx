@@ -107,9 +107,36 @@ type DeliveryDriverRow = {
   revenue: number
   delivery_fees: number
 }
+type DeliveryTimeRow = {
+  hour_start: number
+  interval_hours: number
+  interval_label: string
+  order_count: number
+  pending_count: number
+  out_for_delivery_count: number
+  delivered_count: number
+  revenue: number
+  delivery_fees: number
+}
+type DeliveryOrderRow = {
+  invoice_id: number
+  invoice_number: string
+  created_at: string
+  hour: number
+  delivery_person_id: number
+  delivery_person_name: string
+  branch_id: number
+  branch_name_en: string
+  branch_name_ar: string
+  delivery_status: string
+  net_total: number
+  delivery_fee: number
+}
 type DeliveryReport = {
   date_from: string
   date_to: string
+  orders: DeliveryOrderRow[]
+  by_time_interval: DeliveryTimeRow[]
   by_driver: DeliveryDriverRow[]
   by_branch: Omit<DeliveryDriverRow, 'delivery_person_id' | 'delivery_person_name' | 'delivery_fees'>[]
   totals: { order_count: number; pending_count: number; delivered_count: number }
@@ -1101,40 +1128,7 @@ export default function Reports() {
 
         {/* Delivery summary */}
         {!loading && activeReport === 'delivery_summary' && deliveryReport && (
-        <section className="space-y-4">
-          <SectionHead icon={<Bike size={18} />} title={t('reports.delivery_summary')} subtitle={`${from} → ${to}`} />
-          <div className="grid grid-cols-3 gap-3">
-            <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(deliveryReport.totals.order_count)} />
-            <Kpi tone="amber" label={t('deliveries.pending')} value={fmtInt(deliveryReport.totals.pending_count)} />
-            <Kpi tone="green" label={t('deliveries.delivered')} value={fmtInt(deliveryReport.totals.delivered_count)} />
-          </div>
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_driver')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={[
-              { key: 'driver', label: t('deliveries.driver'), render: (r: DeliveryDriverRow) => r.delivery_person_name },
-              { key: 'branch', label: t('reports.branch'), render: (r: DeliveryDriverRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
-              { key: 'order_count', label: t('reports.delivery_orders'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.order_count) },
-              { key: 'pending_count', label: t('deliveries.pending'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.pending_count) },
-              { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.delivered_count) },
-              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r: DeliveryDriverRow) => fmt(r.revenue) },
-              { key: 'delivery_fees', label: t('deliveries.delivery_fee_col'), align: 'end', render: (r: DeliveryDriverRow) => fmt(r.delivery_fees) },
-            ]}
-            rows={deliveryReport.by_driver}
-          />
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_branch')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={[
-              { key: 'branch', label: t('reports.branch'), render: (r) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
-              { key: 'order_count', label: t('reports.delivery_orders'), align: 'end', render: (r) => fmtInt(r.order_count) },
-              { key: 'pending_count', label: t('deliveries.pending'), align: 'end', render: (r) => fmtInt(r.pending_count) },
-              { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end', render: (r) => fmtInt(r.delivered_count) },
-              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
-            ]}
-            rows={deliveryReport.by_branch}
-          />
-        </section>
+          <DeliverySummaryPanel report={deliveryReport} reportFrom={from} reportTo={to} dateParams={dateParams} />
         )}
 
         {/* Customer analysis */}
@@ -1698,6 +1692,444 @@ function salesLineItemCols(t: (k: string) => string) {
     { key: 'seller', label: t('reports.seller'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.seller_name_ar || '—' : r.seller_name_en || '—' },
     { key: 'terminal', label: t('reports.terminal'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.branch_name_ar || '—' : r.branch_name_en || '—' },
   ]
+}
+
+type DeliverySectionFilters = {
+  branchId: string
+  driverId: string
+  status: string
+  hourFrom: string
+  hourTo: string
+  dateFrom: string
+  dateTo: string
+  intervalHours: string
+}
+
+type DeliveryFilterFields = {
+  branch?: boolean
+  driver?: boolean
+  status?: boolean
+  hour?: boolean
+  date?: boolean
+  interval?: boolean
+}
+
+function defaultDeliveryFilters(from: string, to: string): DeliverySectionFilters {
+  return {
+    branchId: '', driverId: '', status: '', hourFrom: '', hourTo: '',
+    dateFrom: from, dateTo: to, intervalHours: '1',
+  }
+}
+
+function deliveryIntervalLabel(start: number, hours: number) {
+  const end = (start + hours) % 24
+  return `${String(start).padStart(2, '0')}:00–${String(end).padStart(2, '0')}:00`
+}
+
+function filterDeliveryOrders(orders: DeliveryOrderRow[], f: DeliverySectionFilters) {
+  let out = orders
+  if (f.branchId) out = out.filter((o) => String(o.branch_id) === f.branchId)
+  if (f.driverId) out = out.filter((o) => String(o.delivery_person_id) === f.driverId)
+  if (f.status) out = out.filter((o) => o.delivery_status === f.status)
+  if (f.hourFrom !== '') out = out.filter((o) => o.hour >= Number(f.hourFrom))
+  if (f.hourTo !== '') out = out.filter((o) => o.hour <= Number(f.hourTo))
+  if (f.dateFrom || f.dateTo) {
+    out = out.filter((o) => inSectionDateRange(o.created_at, f.dateFrom, f.dateTo))
+  }
+  return out
+}
+
+function aggregateDeliveryByTime(orders: DeliveryOrderRow[], intervalHours: number): DeliveryTimeRow[] {
+  const ih = Math.max(1, Math.min(4, intervalHours || 1))
+  const buckets = new Map<number, DeliveryTimeRow>()
+  for (const o of orders) {
+    const start = Math.floor(o.hour / ih) * ih
+    let b = buckets.get(start)
+    if (!b) {
+      b = {
+        hour_start: start,
+        interval_hours: ih,
+        interval_label: deliveryIntervalLabel(start, ih),
+        order_count: 0,
+        pending_count: 0,
+        out_for_delivery_count: 0,
+        delivered_count: 0,
+        revenue: 0,
+        delivery_fees: 0,
+      }
+      buckets.set(start, b)
+    }
+    b.order_count += 1
+    if (o.delivery_status === 'pending') b.pending_count += 1
+    else if (o.delivery_status === 'out_for_delivery') b.out_for_delivery_count += 1
+    else if (o.delivery_status === 'delivered') b.delivered_count += 1
+    b.revenue = Math.round((b.revenue + o.net_total) * 100) / 100
+    b.delivery_fees = Math.round((b.delivery_fees + o.delivery_fee) * 100) / 100
+  }
+  return [...buckets.values()].sort((a, b) => a.hour_start - b.hour_start)
+}
+
+function aggregateDeliveryByDriver(orders: DeliveryOrderRow[]): DeliveryDriverRow[] {
+  const buckets = new Map<string, DeliveryDriverRow>()
+  for (const o of orders) {
+    const key = `${o.delivery_person_id}|${o.branch_id}`
+    let b = buckets.get(key)
+    if (!b) {
+      b = {
+        delivery_person_id: o.delivery_person_id,
+        delivery_person_name: o.delivery_person_name,
+        branch_id: o.branch_id,
+        branch_name_en: o.branch_name_en,
+        branch_name_ar: o.branch_name_ar,
+        order_count: 0,
+        pending_count: 0,
+        out_for_delivery_count: 0,
+        delivered_count: 0,
+        revenue: 0,
+        delivery_fees: 0,
+      }
+      buckets.set(key, b)
+    }
+    b.order_count += 1
+    if (o.delivery_status === 'pending') b.pending_count += 1
+    else if (o.delivery_status === 'out_for_delivery') b.out_for_delivery_count += 1
+    else if (o.delivery_status === 'delivered') b.delivered_count += 1
+    b.revenue = Math.round((b.revenue + o.net_total) * 100) / 100
+    b.delivery_fees = Math.round((b.delivery_fees + o.delivery_fee) * 100) / 100
+  }
+  return [...buckets.values()].sort((a, b) => b.order_count - a.order_count)
+}
+
+function aggregateDeliveryByBranch(orders: DeliveryOrderRow[]) {
+  const buckets = new Map<number, DeliveryReport['by_branch'][0]>()
+  for (const o of orders) {
+    let b = buckets.get(o.branch_id)
+    if (!b) {
+      b = {
+        branch_id: o.branch_id,
+        branch_name_en: o.branch_name_en,
+        branch_name_ar: o.branch_name_ar,
+        order_count: 0,
+        pending_count: 0,
+        out_for_delivery_count: 0,
+        delivered_count: 0,
+        revenue: 0,
+      }
+      buckets.set(o.branch_id, b)
+    }
+    b.order_count += 1
+    if (o.delivery_status === 'pending') b.pending_count += 1
+    else if (o.delivery_status === 'out_for_delivery') b.out_for_delivery_count += 1
+    else if (o.delivery_status === 'delivered') b.delivered_count += 1
+    b.revenue = Math.round((b.revenue + o.net_total) * 100) / 100
+  }
+  return [...buckets.values()].sort((a, b) => b.order_count - a.order_count)
+}
+
+function deliveryExportParams(
+  dateParams: { date_from: string; date_to: string },
+  section: string,
+  filters: DeliverySectionFilters,
+) {
+  return {
+    ...dateParams,
+    section,
+    branch_id: filters.branchId ? Number(filters.branchId) : undefined,
+    delivery_person_id: filters.driverId ? Number(filters.driverId) : undefined,
+    delivery_status: filters.status || undefined,
+    hour_from: filters.hourFrom !== '' ? Number(filters.hourFrom) : undefined,
+    hour_to: filters.hourTo !== '' ? Number(filters.hourTo) : undefined,
+    section_date_from: filters.dateFrom || undefined,
+    section_date_to: filters.dateTo || undefined,
+    interval_hours: filters.intervalHours ? Number(filters.intervalHours) : 1,
+  }
+}
+
+function deliveryTimeCols(t: (k: string) => string) {
+  return [
+    { key: 'interval_label', label: t('reports.time_interval'), sortValue: (r: DeliveryTimeRow) => r.hour_start },
+    { key: 'order_count', label: t('reports.delivery_orders'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmtInt(r.order_count), sortValue: (r: DeliveryTimeRow) => r.order_count },
+    { key: 'pending_count', label: t('deliveries.pending'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmtInt(r.pending_count), sortValue: (r: DeliveryTimeRow) => r.pending_count },
+    { key: 'out_for_delivery_count', label: t('deliveries.out_for_delivery'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmtInt(r.out_for_delivery_count), sortValue: (r: DeliveryTimeRow) => r.out_for_delivery_count },
+    { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmtInt(r.delivered_count), sortValue: (r: DeliveryTimeRow) => r.delivered_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmt(r.revenue), sortValue: (r: DeliveryTimeRow) => r.revenue },
+    { key: 'delivery_fees', label: t('deliveries.delivery_fee_col'), align: 'end' as const, render: (r: DeliveryTimeRow) => fmt(r.delivery_fees), sortValue: (r: DeliveryTimeRow) => r.delivery_fees },
+  ]
+}
+
+function deliveryDriverCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'driver', label: t('deliveries.driver'), render: (r: DeliveryDriverRow) => r.delivery_person_name, sortValue: (r: DeliveryDriverRow) => r.delivery_person_name },
+    { key: 'branch', label: t('reports.branch'), render: (r: DeliveryDriverRow) => lang === 'ar' ? r.branch_name_ar : r.branch_name_en },
+    { key: 'order_count', label: t('reports.delivery_orders'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmtInt(r.order_count), sortValue: (r: DeliveryDriverRow) => r.order_count },
+    { key: 'pending_count', label: t('deliveries.pending'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmtInt(r.pending_count), sortValue: (r: DeliveryDriverRow) => r.pending_count },
+    { key: 'out_for_delivery_count', label: t('deliveries.out_for_delivery'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmtInt(r.out_for_delivery_count), sortValue: (r: DeliveryDriverRow) => r.out_for_delivery_count },
+    { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmtInt(r.delivered_count), sortValue: (r: DeliveryDriverRow) => r.delivered_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmt(r.revenue), sortValue: (r: DeliveryDriverRow) => r.revenue },
+    { key: 'delivery_fees', label: t('deliveries.delivery_fee_col'), align: 'end' as const, render: (r: DeliveryDriverRow) => fmt(r.delivery_fees), sortValue: (r: DeliveryDriverRow) => r.delivery_fees },
+  ]
+}
+
+function deliveryBranchCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'branch', label: t('reports.branch'), render: (r: DeliveryReport['by_branch'][0]) => lang === 'ar' ? r.branch_name_ar : r.branch_name_en },
+    { key: 'order_count', label: t('reports.delivery_orders'), align: 'end' as const, render: (r: DeliveryReport['by_branch'][0]) => fmtInt(r.order_count), sortValue: (r: DeliveryReport['by_branch'][0]) => r.order_count },
+    { key: 'pending_count', label: t('deliveries.pending'), align: 'end' as const, render: (r: DeliveryReport['by_branch'][0]) => fmtInt(r.pending_count), sortValue: (r: DeliveryReport['by_branch'][0]) => r.pending_count },
+    { key: 'out_for_delivery_count', label: t('deliveries.out_for_delivery'), align: 'end' as const, render: (r: DeliveryReport['by_branch'][0]) => fmtInt(r.out_for_delivery_count), sortValue: (r: DeliveryReport['by_branch'][0]) => r.out_for_delivery_count },
+    { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end' as const, render: (r: DeliveryReport['by_branch'][0]) => fmtInt(r.delivered_count), sortValue: (r: DeliveryReport['by_branch'][0]) => r.delivered_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: DeliveryReport['by_branch'][0]) => fmt(r.revenue), sortValue: (r: DeliveryReport['by_branch'][0]) => r.revenue },
+  ]
+}
+
+function DeliverySummarySection({
+  title,
+  filters,
+  onFiltersChange,
+  filterFields,
+  onExport,
+  cols,
+  rows,
+  empty,
+  dateBounds,
+  branches,
+  drivers,
+}: {
+  title: string
+  filters: DeliverySectionFilters
+  onFiltersChange: (f: DeliverySectionFilters) => void
+  filterFields: DeliveryFilterFields
+  onExport: () => void
+  cols: Parameters<typeof DataTable>[0]['cols']
+  rows: any[]
+  empty: string
+  dateBounds: { from: string; to: string }
+  branches: DeliveryReport['by_branch']
+  drivers: DeliveryDriverRow[]
+}) {
+  const { t } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const set = (patch: Partial<DeliverySectionFilters>) => onFiltersChange({ ...filters, ...patch })
+  const hasFilters = filterFields.branch || filterFields.driver || filterFields.status
+    || filterFields.hour || filterFields.date || filterFields.interval
+  const uniqueDrivers = useMemo(() => {
+    const seen = new Set<number>()
+    return drivers.filter((d) => {
+      if (seen.has(d.delivery_person_id)) return false
+      seen.add(d.delivery_person_id)
+      return true
+    })
+  }, [drivers])
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <button
+          type="button"
+          onClick={() => void onExport()}
+          className="flex items-center gap-1.5 text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg"
+        >
+          <FileSpreadsheet size={14} /> {t('reports.export_section')}
+        </button>
+      </div>
+      {hasFilters && (
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            {filterFields.interval && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.interval_hours')}</label>
+                <select value={filters.intervalHours} onChange={(e) => set({ intervalHours: e.target.value })} className="input text-sm min-w-[7rem]">
+                  <option value="1">{t('reports.interval_1h')}</option>
+                  <option value="2">{t('reports.interval_2h')}</option>
+                  <option value="4">{t('reports.interval_4h')}</option>
+                </select>
+              </div>
+            )}
+            {filterFields.branch && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.branch')}</label>
+                <select value={filters.branchId} onChange={(e) => set({ branchId: e.target.value })} className="input text-sm min-w-[9rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {branches.map((b) => (
+                    <option key={b.branch_id} value={String(b.branch_id)}>
+                      {lang === 'ar' ? b.branch_name_ar : b.branch_name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterFields.driver && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('deliveries.driver')}</label>
+                <select value={filters.driverId} onChange={(e) => set({ driverId: e.target.value })} className="input text-sm min-w-[9rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {uniqueDrivers.map((d) => (
+                    <option key={d.delivery_person_id} value={String(d.delivery_person_id)}>{d.delivery_person_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterFields.status && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.delivery_status')}</label>
+                <select value={filters.status} onChange={(e) => set({ status: e.target.value })} className="input text-sm min-w-[8rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  <option value="pending">{t('deliveries.pending')}</option>
+                  <option value="out_for_delivery">{t('deliveries.out_for_delivery')}</option>
+                  <option value="delivered">{t('deliveries.delivered')}</option>
+                </select>
+              </div>
+            )}
+            {filterFields.hour && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.hour_from')}</label>
+                  <select value={filters.hourFrom} onChange={(e) => set({ hourFrom: e.target.value })} className="input text-sm min-w-[5rem]">
+                    <option value="">{t('reports.filter_all')}</option>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.hour_to')}</label>
+                  <select value={filters.hourTo} onChange={(e) => set({ hourTo: e.target.value })} className="input text-sm min-w-[5rem]">
+                    <option value="">{t('reports.filter_all')}</option>
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={String(i)}>{String(i).padStart(2, '0')}:00</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+            {filterFields.date && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
+                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
+                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onFiltersChange(defaultDeliveryFilters(dateBounds.from, dateBounds.to))}
+              className="text-xs text-slate-600 hover:text-pharma-700 px-2 py-2"
+            >
+              {t('reports.reset_filters')}
+            </button>
+          </div>
+        </div>
+      )}
+      <DataTable empty={empty} cols={cols} rows={rows} />
+    </div>
+  )
+}
+
+function DeliverySummaryPanel({
+  report,
+  reportFrom,
+  reportTo,
+  dateParams,
+}: {
+  report: DeliveryReport
+  reportFrom: string
+  reportTo: string
+  dateParams: { date_from: string; date_to: string }
+}) {
+  const { t } = useTranslation()
+  const bounds = { from: reportFrom, to: reportTo }
+  const suffix = `${reportFrom}_${reportTo}`
+  const orders = report.orders || []
+
+  const [timeFilters, setTimeFilters] = useState(() => defaultDeliveryFilters(reportFrom, reportTo))
+  const [driverFilters, setDriverFilters] = useState(() => defaultDeliveryFilters(reportFrom, reportTo))
+  const [branchFilters, setBranchFilters] = useState(() => defaultDeliveryFilters(reportFrom, reportTo))
+
+  useEffect(() => {
+    const d = defaultDeliveryFilters(reportFrom, reportTo)
+    setTimeFilters(d)
+    setDriverFilters(d)
+    setBranchFilters(d)
+  }, [reportFrom, reportTo, report.date_from])
+
+  const timeRows = useMemo(() => {
+    const filtered = filterDeliveryOrders(orders, timeFilters)
+    return aggregateDeliveryByTime(filtered, Number(timeFilters.intervalHours) || 1)
+  }, [orders, timeFilters])
+
+  const driverRows = useMemo(() => aggregateDeliveryByDriver(filterDeliveryOrders(orders, driverFilters)), [orders, driverFilters])
+  const branchRows = useMemo(() => aggregateDeliveryByBranch(filterDeliveryOrders(orders, branchFilters)), [orders, branchFilters])
+
+  const filteredTotals = useMemo(() => {
+    const o = filterDeliveryOrders(orders, timeFilters)
+    return {
+      order_count: o.length,
+      pending_count: o.filter((x) => x.delivery_status === 'pending').length,
+      delivered_count: o.filter((x) => x.delivery_status === 'delivered').length,
+    }
+  }, [orders, timeFilters])
+
+  return (
+    <section className="space-y-4">
+      <SectionHead icon={<Bike size={18} />} title={t('reports.delivery_summary')} subtitle={`${reportFrom} → ${reportTo}`} />
+      <p className="text-xs text-slate-500">{t('reports.delivery_summary_hint')}</p>
+      <div className="grid grid-cols-3 gap-3">
+        <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(filteredTotals.order_count)} />
+        <Kpi tone="amber" label={t('deliveries.pending')} value={fmtInt(filteredTotals.pending_count)} />
+        <Kpi tone="green" label={t('deliveries.delivered')} value={fmtInt(filteredTotals.delivered_count)} />
+      </div>
+
+      <DeliverySummarySection
+        title={t('reports.by_time_interval')}
+        filters={timeFilters}
+        onFiltersChange={setTimeFilters}
+        filterFields={{ interval: true, branch: true, driver: true, status: true, hour: true, date: true }}
+        branches={report.by_branch}
+        drivers={report.by_driver}
+        dateBounds={bounds}
+        cols={deliveryTimeCols(t)}
+        rows={timeRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/delivery-summary/export', `delivery_by_time_${suffix}.xlsx`, deliveryExportParams(dateParams, 'by_time', timeFilters))}
+      />
+
+      <DeliverySummarySection
+        title={t('reports.by_driver')}
+        filters={driverFilters}
+        onFiltersChange={setDriverFilters}
+        filterFields={{ branch: true, driver: true, status: true, hour: true, date: true }}
+        branches={report.by_branch}
+        drivers={report.by_driver}
+        dateBounds={bounds}
+        cols={deliveryDriverCols(t)}
+        rows={driverRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/delivery-summary/export', `delivery_by_driver_${suffix}.xlsx`, deliveryExportParams(dateParams, 'by_driver', driverFilters))}
+      />
+
+      <DeliverySummarySection
+        title={t('reports.by_branch')}
+        filters={branchFilters}
+        onFiltersChange={setBranchFilters}
+        filterFields={{ branch: true, status: true, hour: true, date: true }}
+        branches={report.by_branch}
+        drivers={report.by_driver}
+        dateBounds={bounds}
+        cols={deliveryBranchCols(t)}
+        rows={branchRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/delivery-summary/export', `delivery_by_branch_${suffix}.xlsx`, deliveryExportParams(dateParams, 'by_branch', branchFilters))}
+      />
+    </section>
+  )
 }
 
 type CustomerSectionFilters = {

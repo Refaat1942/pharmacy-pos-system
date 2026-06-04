@@ -739,7 +739,193 @@ def delivery_summary(
     date_to: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Delivery order counts by driver and by branch."""
+    """Delivery order counts by time interval, driver, and branch."""
+    return _delivery_summary_report(request, date_from, date_to, current_user)
+
+
+def _fetch_delivery_orders(cur, df, dt, bf, bp) -> list:
+    cur.execute(
+        f"""
+        SELECT i.id AS invoice_id,
+               i.invoice_number,
+               i.created_at,
+               EXTRACT(HOUR FROM i.created_at)::int AS hour,
+               COALESCE(i.delivery_person_id, 0)::int AS delivery_person_id,
+               COALESCE(NULLIF(TRIM(i.delivery_person_name), ''), 'Unassigned') AS delivery_person_name,
+               i.branch_id,
+               b.name_en AS branch_name_en,
+               b.name_ar AS branch_name_ar,
+               COALESCE(i.delivery_status, 'pending') AS delivery_status,
+               i.net_total::float AS net_total,
+               COALESCE(i.delivery_fee, 0)::float AS delivery_fee
+        FROM invoices i
+        LEFT JOIN branches b ON b.id = i.branch_id
+        WHERE i.status = 'completed'
+          AND {SHIPMENT_SQL}
+          AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+          {bf.replace('branch_id', 'i.branch_id')}
+        ORDER BY i.created_at ASC
+        """,
+        [df, dt] + bp,
+    )
+    orders = []
+    for r in cur.fetchall():
+        row = dict(r)
+        created = row.get("created_at")
+        if created and hasattr(created, "isoformat"):
+            row["created_at"] = created.isoformat()
+        row["net_total"] = round(float(row.get("net_total") or 0), 2)
+        row["delivery_fee"] = round(float(row.get("delivery_fee") or 0), 2)
+        row["hour"] = int(row.get("hour") or 0)
+        orders.append(row)
+    return orders
+
+
+def _filter_delivery_orders(
+    orders: list,
+    branch_id: Optional[int] = None,
+    delivery_person_id: Optional[int] = None,
+    delivery_status: Optional[str] = None,
+    hour_from: Optional[int] = None,
+    hour_to: Optional[int] = None,
+    section_date_from: Optional[str] = None,
+    section_date_to: Optional[str] = None,
+) -> list:
+    out = orders
+    if branch_id is not None:
+        out = [o for o in out if o.get("branch_id") == branch_id]
+    if delivery_person_id is not None:
+        out = [o for o in out if o.get("delivery_person_id") == delivery_person_id]
+    if delivery_status:
+        out = [o for o in out if o.get("delivery_status") == delivery_status]
+    if hour_from is not None:
+        out = [o for o in out if int(o.get("hour") or 0) >= hour_from]
+    if hour_to is not None:
+        out = [o for o in out if int(o.get("hour") or 0) <= hour_to]
+    if section_date_from or section_date_to:
+        out = [o for o in out if _in_date_range(o.get("created_at"), section_date_from, section_date_to)]
+    return out
+
+
+def _interval_label(start_hour: int, interval_hours: int) -> str:
+    end = (start_hour + interval_hours) % 24
+    return f"{start_hour:02d}:00–{end:02d}:00"
+
+
+def _aggregate_delivery_by_time(orders: list, interval_hours: int = 1) -> list:
+    interval_hours = max(1, min(4, int(interval_hours or 1)))
+    buckets: dict = {}
+    for o in orders:
+        h = int(o.get("hour") or 0)
+        start = (h // interval_hours) * interval_hours
+        if start not in buckets:
+            buckets[start] = {
+                "hour_start": start,
+                "interval_hours": interval_hours,
+                "interval_label": _interval_label(start, interval_hours),
+                "order_count": 0,
+                "pending_count": 0,
+                "out_for_delivery_count": 0,
+                "delivered_count": 0,
+                "revenue": 0.0,
+                "delivery_fees": 0.0,
+            }
+        b = buckets[start]
+        b["order_count"] += 1
+        st = o.get("delivery_status") or "pending"
+        if st == "pending":
+            b["pending_count"] += 1
+        elif st == "out_for_delivery":
+            b["out_for_delivery_count"] += 1
+        elif st == "delivered":
+            b["delivered_count"] += 1
+        b["revenue"] = round(b["revenue"] + float(o.get("net_total") or 0), 2)
+        b["delivery_fees"] = round(b["delivery_fees"] + float(o.get("delivery_fee") or 0), 2)
+    return sorted(buckets.values(), key=lambda x: x["hour_start"])
+
+
+def _aggregate_delivery_by_driver(orders: list) -> list:
+    buckets: dict = {}
+    for o in orders:
+        key = (
+            o.get("delivery_person_id"),
+            o.get("delivery_person_name"),
+            o.get("branch_id"),
+            o.get("branch_name_en"),
+            o.get("branch_name_ar"),
+        )
+        if key not in buckets:
+            buckets[key] = {
+                "delivery_person_id": o.get("delivery_person_id"),
+                "delivery_person_name": o.get("delivery_person_name"),
+                "branch_id": o.get("branch_id"),
+                "branch_name_en": o.get("branch_name_en"),
+                "branch_name_ar": o.get("branch_name_ar"),
+                "order_count": 0,
+                "pending_count": 0,
+                "out_for_delivery_count": 0,
+                "delivered_count": 0,
+                "revenue": 0.0,
+                "delivery_fees": 0.0,
+            }
+        b = buckets[key]
+        b["order_count"] += 1
+        st = o.get("delivery_status") or "pending"
+        if st == "pending":
+            b["pending_count"] += 1
+        elif st == "out_for_delivery":
+            b["out_for_delivery_count"] += 1
+        elif st == "delivered":
+            b["delivered_count"] += 1
+        b["revenue"] = round(b["revenue"] + float(o.get("net_total") or 0), 2)
+        b["delivery_fees"] = round(b["delivery_fees"] + float(o.get("delivery_fee") or 0), 2)
+    return sorted(buckets.values(), key=lambda x: (-x["order_count"], x["delivery_person_name"] or ""))
+
+
+def _aggregate_delivery_by_branch(orders: list) -> list:
+    buckets: dict = {}
+    for o in orders:
+        key = (o.get("branch_id"), o.get("branch_name_en"), o.get("branch_name_ar"))
+        if key not in buckets:
+            buckets[key] = {
+                "branch_id": o.get("branch_id"),
+                "branch_name_en": o.get("branch_name_en"),
+                "branch_name_ar": o.get("branch_name_ar"),
+                "order_count": 0,
+                "pending_count": 0,
+                "out_for_delivery_count": 0,
+                "delivered_count": 0,
+                "revenue": 0.0,
+            }
+        b = buckets[key]
+        b["order_count"] += 1
+        st = o.get("delivery_status") or "pending"
+        if st == "pending":
+            b["pending_count"] += 1
+        elif st == "out_for_delivery":
+            b["out_for_delivery_count"] += 1
+        elif st == "delivered":
+            b["delivered_count"] += 1
+        b["revenue"] = round(b["revenue"] + float(o.get("net_total") or 0), 2)
+    return sorted(buckets.values(), key=lambda x: -x["order_count"])
+
+
+def _delivery_totals(orders: list) -> dict:
+    pending = sum(1 for o in orders if (o.get("delivery_status") or "pending") == "pending")
+    delivered = sum(1 for o in orders if o.get("delivery_status") == "delivered")
+    return {
+        "order_count": len(orders),
+        "pending_count": pending,
+        "delivered_count": delivered,
+    }
+
+
+def _delivery_summary_report(
+    request: Request,
+    date_from: Optional[str],
+    date_to: Optional[str],
+    current_user: dict,
+) -> dict:
     _check_role(current_user)
     active_branch_id = _resolve_report_branch(request, current_user)
     df, dt = _date_range(date_from, date_to)
@@ -747,70 +933,104 @@ def delivery_summary(
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute(
-            f"""
-            SELECT
-              COALESCE(i.delivery_person_id, 0)::int AS delivery_person_id,
-              COALESCE(NULLIF(TRIM(i.delivery_person_name), ''), 'Unassigned') AS delivery_person_name,
-              i.branch_id,
-              b.name_en AS branch_name_en,
-              b.name_ar AS branch_name_ar,
-              COUNT(*)::int AS order_count,
-              COUNT(*) FILTER (WHERE COALESCE(i.delivery_status, 'pending') = 'pending')::int AS pending_count,
-              COUNT(*) FILTER (WHERE i.delivery_status = 'out_for_delivery')::int AS out_for_delivery_count,
-              COUNT(*) FILTER (WHERE i.delivery_status = 'delivered')::int AS delivered_count,
-              COALESCE(SUM(i.net_total), 0)::float AS revenue,
-              COALESCE(SUM(i.delivery_fee), 0)::float AS delivery_fees
-            FROM invoices i
-            LEFT JOIN branches b ON b.id = i.branch_id
-            WHERE i.status = 'completed'
-              AND {SHIPMENT_SQL}
-              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
-              {bf.replace('branch_id', 'i.branch_id')}
-            GROUP BY i.delivery_person_id, i.delivery_person_name, i.branch_id, b.name_en, b.name_ar
-            ORDER BY order_count DESC, delivery_person_name ASC
-            """,
-            [df, dt] + bp,
-        )
-        by_driver = [dict(r) for r in cur.fetchall()]
-
-        cur.execute(
-            f"""
-            SELECT
-              i.branch_id,
-              b.name_en AS branch_name_en,
-              b.name_ar AS branch_name_ar,
-              COUNT(*)::int AS order_count,
-              COUNT(*) FILTER (WHERE COALESCE(i.delivery_status, 'pending') = 'pending')::int AS pending_count,
-              COUNT(*) FILTER (WHERE i.delivery_status = 'out_for_delivery')::int AS out_for_delivery_count,
-              COUNT(*) FILTER (WHERE i.delivery_status = 'delivered')::int AS delivered_count,
-              COALESCE(SUM(i.net_total), 0)::float AS revenue
-            FROM invoices i
-            LEFT JOIN branches b ON b.id = i.branch_id
-            WHERE i.status = 'completed'
-              AND {SHIPMENT_SQL}
-              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
-              {bf.replace('branch_id', 'i.branch_id')}
-            GROUP BY i.branch_id, b.name_en, b.name_ar
-            ORDER BY order_count DESC
-            """,
-            [df, dt] + bp,
-        )
-        by_branch = [dict(r) for r in cur.fetchall()]
-        return {
-            "date_from": str(df),
-            "date_to": str(dt),
-            "by_driver": by_driver,
-            "by_branch": by_branch,
-            "totals": {
-                "order_count": sum(r["order_count"] for r in by_driver),
-                "pending_count": sum(r["pending_count"] for r in by_driver),
-                "delivered_count": sum(r["delivered_count"] for r in by_driver),
-            },
-        }
+        orders = _fetch_delivery_orders(cur, df, dt, bf, bp)
     finally:
         cur.close()
         conn.close()
+    return {
+        "date_from": str(df),
+        "date_to": str(dt),
+        "orders": orders,
+        "by_time_interval": _aggregate_delivery_by_time(orders, 1),
+        "by_driver": _aggregate_delivery_by_driver(orders),
+        "by_branch": _aggregate_delivery_by_branch(orders),
+        "totals": _delivery_totals(orders),
+    }
+
+
+def _apply_delivery_summary_filters(
+    report: dict,
+    section: Optional[str],
+    branch_id: Optional[int],
+    delivery_person_id: Optional[int],
+    delivery_status: Optional[str],
+    hour_from: Optional[int],
+    hour_to: Optional[int],
+    section_date_from: Optional[str],
+    section_date_to: Optional[str],
+    interval_hours: int = 1,
+) -> dict:
+    status = (delivery_status or "").strip() or None
+    filtered = _filter_delivery_orders(
+        report["orders"],
+        branch_id=branch_id,
+        delivery_person_id=delivery_person_id,
+        delivery_status=status,
+        hour_from=hour_from,
+        hour_to=hour_to,
+        section_date_from=section_date_from,
+        section_date_to=section_date_to,
+    )
+    out = {
+        **report,
+        "by_time_interval": _aggregate_delivery_by_time(filtered, interval_hours),
+        "by_driver": _aggregate_delivery_by_driver(filtered),
+        "by_branch": _aggregate_delivery_by_branch(filtered),
+        "totals": _delivery_totals(filtered),
+    }
+    if section == "by_time":
+        return {"by_time_interval": out["by_time_interval"], "_section": section}
+    if section == "by_driver":
+        return {"by_driver": out["by_driver"], "_section": section}
+    if section == "by_branch":
+        return {"by_branch": out["by_branch"], "_section": section}
+    return out
+
+
+def _delivery_summary_sheets(report: dict) -> list[tuple[str, list, list]]:
+    time_headers = [
+        "Time interval", "Orders", "Pending", "Out for delivery",
+        "Delivered", "Revenue", "Delivery fees",
+    ]
+    time_data = [
+        [
+            r["interval_label"], r["order_count"], r["pending_count"],
+            r["out_for_delivery_count"], r["delivered_count"],
+            r["revenue"], r["delivery_fees"],
+        ]
+        for r in report.get("by_time_interval", [])
+    ]
+    driver_headers = [
+        "Driver", "Branch EN", "Orders", "Pending", "Out for delivery",
+        "Delivered", "Revenue", "Delivery fees",
+    ]
+    driver_data = [
+        [
+            r.get("delivery_person_name"), r.get("branch_name_en"),
+            r.get("order_count"), r.get("pending_count"),
+            r.get("out_for_delivery_count"), r.get("delivered_count"),
+            r.get("revenue"), r.get("delivery_fees"),
+        ]
+        for r in report.get("by_driver", [])
+    ]
+    branch_headers = [
+        "Branch EN", "Branch AR", "Orders", "Pending", "Out for delivery",
+        "Delivered", "Revenue",
+    ]
+    branch_data = [
+        [
+            r.get("branch_name_en"), r.get("branch_name_ar"),
+            r.get("order_count"), r.get("pending_count"),
+            r.get("out_for_delivery_count"), r.get("delivered_count"),
+            r.get("revenue"),
+        ]
+        for r in report.get("by_branch", [])
+    ]
+    return [
+        ("By time interval", time_headers, time_data),
+        ("By driver", driver_headers, driver_data),
+        ("By branch", branch_headers, branch_data),
+    ]
 
 
 @router.get("/delivery-summary/export")
@@ -818,25 +1038,49 @@ def export_delivery_summary(
     request: Request,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    section: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    delivery_person_id: Optional[int] = None,
+    delivery_status: Optional[str] = None,
+    hour_from: Optional[int] = Query(None, ge=0, le=23),
+    hour_to: Optional[int] = Query(None, ge=0, le=23),
+    section_date_from: Optional[str] = None,
+    section_date_to: Optional[str] = None,
+    interval_hours: int = Query(1, ge=1, le=4),
     current_user: dict = Depends(get_current_user),
 ):
-    from excel_utils import xlsx_response
+    from excel_utils import xlsx_multi_sheet, xlsx_response
 
-    report = delivery_summary(request, date_from, date_to, current_user)
-    headers = [
-        "Driver", "Branch EN", "Orders", "Pending", "Out for delivery",
-        "Delivered", "Revenue", "Delivery fees",
-    ]
-    data = [
-        [
-            r.get("delivery_person_name"), r.get("branch_name_en"),
-            r.get("order_count"), r.get("pending_count"),
-            r.get("out_for_delivery_count"), r.get("delivered_count"),
-            r.get("revenue"), r.get("delivery_fees"),
-        ]
-        for r in report["by_driver"]
-    ]
-    return xlsx_response(headers, data, "delivery_summary.xlsx")
+    report = _delivery_summary_report(request, date_from, date_to, current_user)
+    valid_sections = {"by_time", "by_driver", "by_branch"}
+    sec = (section or "").strip() or None
+    if sec and sec not in valid_sections:
+        raise HTTPException(400, "Invalid section")
+
+    has_filters = any([
+        branch_id is not None, delivery_person_id is not None, delivery_status,
+        hour_from is not None, hour_to is not None, section_date_from, section_date_to,
+    ])
+    if has_filters or (sec == "by_time" and interval_hours != 1):
+        report = _apply_delivery_summary_filters(
+            report, None, branch_id, delivery_person_id, delivery_status,
+            hour_from, hour_to, section_date_from, section_date_to, interval_hours,
+        )
+    elif sec == "by_time":
+        report = {**report, "by_time_interval": _aggregate_delivery_by_time(report["orders"], interval_hours)}
+
+    sheets = _delivery_summary_sheets(report)
+    if sec:
+        title_map = {
+            "by_time": "By time interval",
+            "by_driver": "By driver",
+            "by_branch": "By branch",
+        }
+        title = title_map[sec]
+        headers, data = next((s[1], s[2]) for s in sheets if s[0] == title)
+        return xlsx_response(headers, data, f"delivery_summary_{sec}.xlsx")
+
+    return xlsx_multi_sheet(sheets, "delivery_summary.xlsx")
 
 
 @router.get("/sales-by-clinic")

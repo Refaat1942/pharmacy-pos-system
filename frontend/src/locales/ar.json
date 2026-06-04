@@ -577,7 +577,17 @@
     "reset_filters": "إعادة تعيين الفلاتر",
     "export_section": "تصدير Excel",
     "first_invoice": "أول فاتورة",
-    "date_filter_on": "تصفية التاريخ حسب"
+    "date_filter_on": "تصفية التاريخ حسب",
+    "by_time_interval": "حسب الفترة الزمنية",
+    "time_interval": "الفترة الزمنية",
+    "interval_hours": "الفترة",
+    "interval_1h": "ساعة واحدة",
+    "interval_2h": "ساعتان",
+    "interval_4h": "4 ساعات",
+    "hour_from": "من الساعة",
+    "hour_to": "إلى الساعة",
+    "delivery_status": "حالة التوصيل",
+    "delivery_summary_hint": "طلبات التوصيل والشحن مجمّعة حسب وقت اليوم والمندوب والفرع. استخدم الفلاتر لكل قسم والتصدير إلى Excel."
   },
   "fraud": {
     "title": "مراقبة الاحتيال",

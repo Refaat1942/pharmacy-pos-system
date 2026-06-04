@@ -401,7 +401,17 @@
     "reset_filters": "Reset filters",
     "export_section": "Export Excel",
     "first_invoice": "First invoice",
-    "date_filter_on": "Date filter on"
+    "date_filter_on": "Date filter on",
+    "by_time_interval": "By time interval",
+    "time_interval": "Time interval",
+    "interval_hours": "Interval",
+    "interval_1h": "1 hour",
+    "interval_2h": "2 hours",
+    "interval_4h": "4 hours",
+    "hour_from": "Hour from",
+    "hour_to": "Hour to",
+    "delivery_status": "Delivery status",
+    "delivery_summary_hint": "Delivery and shipment orders grouped by time of day, driver, and branch. Use filters per section and export to Excel."
   },
   "fraud": {
     "title": "Fraud Surveillance",
