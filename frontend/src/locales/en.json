@@ -773,6 +773,8 @@
     "st_system": "System",
     "st_counted": "Counted",
     "st_variance": "Variance",
+    "st_variance_major": "Var. (box)",
+    "st_variance_sub": "Var. (strip)",
     "edit_stock_reason": "Stock updated via item edit",
     "st_apply": "Apply Stocktake",
     "st_hint": "Enter the real counted quantity for each item. Only items you fill in that differ from the system will be updated, and each change is logged as a stock adjustment.",

@@ -106,8 +106,32 @@ export function stockVarianceMajorUnits(
   return countedSubUnits / packSize - systemSubUnits / packSize
 }
 
+/** Split variance into whole boxes + fractional box remainder (shown as sub-units). */
+export function stockVarianceSplit(
+  countedSubUnits: number,
+  systemSubUnits: number,
+  packSize: number,
+): { major: number; subFraction: number } {
+  if (packSize <= 1) {
+    return { major: countedSubUnits - systemSubUnits, subFraction: 0 }
+  }
+  const totalBoxes = stockVarianceMajorUnits(countedSubUnits, systemSubUnits, packSize)
+  if (totalBoxes === 0) return { major: 0, subFraction: 0 }
+  const sign = totalBoxes > 0 ? 1 : -1
+  const abs = Math.abs(totalBoxes)
+  const whole = Math.floor(abs) * sign
+  const frac = (abs - Math.floor(abs)) * sign
+  return { major: whole, subFraction: frac }
+}
+
 export function formatVarianceMajorUnits(variance: number): string {
   if (variance === 0) return '0'
   const abs = trimDecimals(Math.abs(variance))
   return variance > 0 ? `+${abs}` : `-${abs}`
+}
+
+export function formatVarianceSubFraction(fraction: number): string {
+  if (fraction === 0) return '0'
+  const abs = trimDecimals(Math.abs(fraction))
+  return fraction > 0 ? `+${abs}` : `-${abs}`
 }

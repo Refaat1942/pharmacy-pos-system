@@ -16,9 +16,10 @@ import {
   formatPackStockInput,
   formatPackStockLabel,
   formatVarianceMajorUnits,
+  formatVarianceSubFraction,
   packSizeOf,
   parsePackStockInput,
-  stockVarianceMajorUnits,
+  stockVarianceSplit,
 } from '../lib/packStock'
 import { formatDate, formatDateTime } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
@@ -2150,24 +2151,37 @@ function StocktakeTab() {
                 <SortTh k="barcode" sort={stSort} onToggle={stToggle} align="start">{t('inventory.col_barcode')}</SortTh>
                 <SortTh k="stock" sort={stSort} onToggle={stToggle} align="center">{t('inventory.st_system')}</SortTh>
                 <th className="px-3 py-2.5 text-center">{t('inventory.st_counted')}</th>
-                <th className="px-3 py-2.5 text-center">{t('inventory.st_variance')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.st_variance_major')}</th>
+                <th className="px-3 py-2.5 text-center">{t('inventory.st_variance_sub')}</th>
                 <th className="px-3 py-2.5 text-center">{t('inventory.f_expiry')}</th>
               </tr>
             </thead>
             <tbody>
               {!branchId && (
-                <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('inventory.st_select_branch')}</td></tr>
               )}
-              {branchId && loading && <TableLoadingRow colSpan={7} />}
+              {branchId && loading && <TableLoadingRow colSpan={8} />}
               {branchId && !loading && sortedSt.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('inventory.no_items')}</td></tr>
               )}
               {branchId && sortedSt.map(it => {
                 const raw = counted[it.id]
                 const has = raw !== '' && raw !== undefined
                 const pack = packSizeOf(it)
                 const val = has ? parsePackStockInput(String(raw), pack) : null
-                const variance = val !== null ? stockVarianceMajorUnits(val, Number(it.stock), pack) : null
+                const split = val !== null ? stockVarianceSplit(val, Number(it.stock), pack) : null
+                const unitLabel = it.unit || t('inventory.sub_unit_word')
+                const subLabel = it.sub_unit || t('inventory.sub_unit_word')
+                const varianceCell = (n: number, zeroClass = 'text-slate-400') => {
+                  if (n === 0) return <span className={zeroClass}>0</span>
+                  if (n > 0) return <span className="text-emerald-600">{formatVarianceMajorUnits(n)}</span>
+                  return <span className="text-red-600">{formatVarianceMajorUnits(n)}</span>
+                }
+                const subVarianceCell = (n: number) => {
+                  if (n === 0) return <span className="text-slate-400">0</span>
+                  if (n > 0) return <span className="text-emerald-600">{formatVarianceSubFraction(n)}</span>
+                  return <span className="text-red-600">{formatVarianceSubFraction(n)}</span>
+                }
                 return (
                   <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50/50">
                     <td className="px-3 py-2.5">
@@ -2204,11 +2218,26 @@ function StocktakeTab() {
                         className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
                       />
                     </td>
-                    <td className="px-3 py-2.5 text-center font-mono font-semibold">
-                      {variance === null ? <span className="text-slate-300">—</span>
-                        : variance === 0 ? <span className="text-slate-400">0</span>
-                        : variance > 0 ? <span className="text-emerald-600">{formatVarianceMajorUnits(variance)}</span>
-                        : <span className="text-red-600">{formatVarianceMajorUnits(variance)}</span>}
+                    <td className="px-3 py-2.5 text-center font-mono text-xs">
+                      {split === null ? <span className="text-slate-300">—</span> : (
+                        <span className="font-semibold">
+                          {varianceCell(split.major)}
+                          {pack > 1 && split.major !== 0 && (
+                            <span className="text-slate-500 font-normal ms-0.5">{unitLabel}</span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-center font-mono text-xs">
+                      {split === null ? <span className="text-slate-300">—</span>
+                        : pack <= 1 ? <span className="text-slate-300">—</span> : (
+                          <span className="font-semibold">
+                            {subVarianceCell(split.subFraction)}
+                            {split.subFraction !== 0 && (
+                              <span className="text-slate-500 font-normal ms-0.5">{subLabel}</span>
+                            )}
+                          </span>
+                        )}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       <DateInput
