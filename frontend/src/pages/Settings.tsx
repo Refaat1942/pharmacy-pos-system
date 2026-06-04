@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -60,7 +60,7 @@ const roleClass: Record<string, string> = {
 export default function Settings() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy'>('users')
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'manual'>('users')
 
   if (user?.role !== 'admin') {
     return (
@@ -85,11 +85,13 @@ export default function Settings() {
           <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
           <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
           <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
+          <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
         </div>
 
         {tab === 'users' && <UsersTab />}
         {tab === 'branches' && <BranchesTab />}
         {tab === 'pharmacy' && <PharmacyTab />}
+        {tab === 'manual' && <ManualTab />}
       </div>
     </Layout>
   )
@@ -876,6 +878,79 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label className="text-xs font-medium text-slate-600 block mb-1">{label}</label>
       {children}
+    </div>
+  )
+}
+
+async function downloadUserManual(lang: 'en' | 'ar') {
+  const res = await api.get(`/settings/user-manual/${lang}`, { responseType: 'blob' })
+  const filename = lang === 'ar' ? 'PharmaPOS_User_Manual_AR.md' : 'PharmaPOS_User_Manual_EN.md'
+  const blob = new Blob([res.data], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
+function ManualTab() {
+  const { t } = useTranslation()
+  const [downloading, setDownloading] = useState<'en' | 'ar' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const run = async (lang: 'en' | 'ar') => {
+    setDownloading(lang)
+    setError(null)
+    try {
+      await downloadUserManual(lang)
+    } catch {
+      setError(t('settings.manual_download_failed'))
+    } finally {
+      setDownloading(null)
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 max-w-2xl">
+      <div className="flex items-start gap-4 mb-6">
+        <div className="bg-pharma-100 p-3 rounded-xl shrink-0">
+          <BookOpen size={28} className="text-pharma-700" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">{t('settings.manual_title')}</h2>
+          <p className="text-sm text-slate-500 mt-1 leading-relaxed">{t('settings.manual_hint')}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button
+          type="button"
+          onClick={() => run('en')}
+          disabled={downloading !== null}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-pharma-200 bg-pharma-50 hover:bg-pharma-100 text-pharma-800 font-medium text-sm disabled:opacity-50"
+        >
+          <Download size={16} />
+          {downloading === 'en' ? t('common.loading') : t('settings.manual_download_en')}
+        </button>
+        <button
+          type="button"
+          onClick={() => run('ar')}
+          disabled={downloading !== null}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-pharma-200 bg-pharma-50 hover:bg-pharma-100 text-pharma-800 font-medium text-sm disabled:opacity-50"
+        >
+          <Download size={16} />
+          {downloading === 'ar' ? t('common.loading') : t('settings.manual_download_ar')}
+        </button>
+      </div>
+
+      <p className="text-xs text-slate-500 mt-4 leading-relaxed">{t('settings.manual_pdf_tip')}</p>
+
+      {error && (
+        <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{error}</div>
+      )}
     </div>
   )
 }

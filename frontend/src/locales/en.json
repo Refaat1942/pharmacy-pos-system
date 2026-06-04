@@ -585,7 +585,14 @@
     "is_delivery_hint": "Shows this person in the delivery-person dropdown when completing delivery sales.",
     "login_cards": "Print login cards",
     "no_cards": "No active users with a card code",
-    "scan_to_unlock": "Scan to unlock terminal"
+    "scan_to_unlock": "Scan to unlock terminal",
+    "manual_tab": "User manual",
+    "manual_title": "User manual",
+    "manual_hint": "Download the full guide for staff training — login, POS, inventory, shifts, HR, and daily tips.",
+    "manual_download_en": "Download English (.md)",
+    "manual_download_ar": "Download Arabic (.md)",
+    "manual_pdf_tip": "Tip: open the downloaded file in any browser or Word, then Print → Save as PDF to print copies for the register.",
+    "manual_download_failed": "Could not download the manual. Try again or contact support."
   },
   "lock": {
     "title": "Terminal locked",

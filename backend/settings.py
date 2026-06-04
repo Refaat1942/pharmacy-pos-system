@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
+from pathlib import Path
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, check_tenant_quota
@@ -144,6 +146,31 @@ ALLOWED_ROLES = {"admin", "pharmacist", "assistant", "cashier", "branch", "deliv
 def _admin(user):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
+
+
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+USER_MANUAL_FILES = {
+    "en": ("USER_MANUAL_EN.md", "PharmaPOS_User_Manual_EN.md"),
+    "ar": ("USER_MANUAL_AR.md", "PharmaPOS_User_Manual_AR.md"),
+}
+
+
+@router.get("/user-manual/{lang}")
+def download_user_manual(lang: str, current_user: dict = Depends(get_current_user)):
+    """Download the user manual (English or Arabic markdown)."""
+    _admin(current_user)
+    key = lang.lower().strip()
+    if key not in USER_MANUAL_FILES:
+        raise HTTPException(404, "Manual not found — use en or ar")
+    src_name, download_name = USER_MANUAL_FILES[key]
+    path = DOCS_DIR / src_name
+    if not path.is_file():
+        raise HTTPException(404, "Manual file missing on server")
+    return FileResponse(
+        path,
+        media_type="text/markdown; charset=utf-8",
+        filename=download_name,
+    )
 
 
 # ---------------- Users ----------------
