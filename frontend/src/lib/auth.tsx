@@ -44,7 +44,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
 
-const IDLE_LOCK_MS = 10 * 60 * 1000
+const IDLE_LOCK_MS = 15 * 60 * 1000
 const LAST_ACTIVITY_KEY = 'pharma_last_activity'
 const POS_HEARTBEAT_KEY = 'pharma_pos_heartbeat'
 const ACTIVITY_WRITE_THROTTLE_MS = 3000
