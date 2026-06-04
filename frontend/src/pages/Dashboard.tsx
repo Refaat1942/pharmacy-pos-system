@@ -13,6 +13,7 @@ import type {
   DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts, PnlSummary,
 } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { formatDate } from '../lib/formatDate'
 import type { Branch } from '../lib/api'
 import { formatMoney, formatNumber } from '../lib/formatNumber'
 
@@ -125,10 +126,7 @@ export default function Dashboard() {
 
   const maxSales = Math.max(1, ...series.map((p) => p.sales))
 
-  const fmtDay = (d: string) =>
-    new Date(d).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', {
-      weekday: 'short', day: 'numeric',
-    })
+  const fmtDay = (d: string) => formatDate(d)
 
   const topProductAccessors = useMemo(() => ({
     name: (p: TopProduct) => (lang === 'ar' ? p.name_ar : p.name_en) || '',

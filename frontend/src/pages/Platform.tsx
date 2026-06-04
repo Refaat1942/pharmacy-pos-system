@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } from '../lib/platform'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import DateInput from '../components/DateInput'
+import { formatDateTime } from '../lib/formatDate'
 
 function fmtLimit(n: number | null | undefined) {
   return n == null ? '∞' : String(n)
@@ -112,8 +114,7 @@ function ExpiryBadge({ end }: { end: string | null }) {
   )
 }
 
-const fmtDate = (s: string | null) =>
-  s ? new Date(s).toLocaleString() : '—'
+const fmtDate = (s: string | null) => (s ? formatDateTime(s) : '—')
 
 export default function Platform() {
   const navigate = useNavigate()
@@ -739,14 +740,14 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start date">
-              <input type="date" className={inputCls}
+              <DateInput className={inputCls}
                 value={form.subscription_start}
-                onChange={(e) => setForm({ ...form, subscription_start: e.target.value })} />
+                onChange={(v) => setForm({ ...form, subscription_start: v })} />
             </Field>
             <Field label="End date" hint="Leave empty for unlimited. Login is blocked after this date.">
-              <input type="date" className={inputCls}
+              <DateInput className={inputCls}
                 value={form.subscription_end}
-                onChange={(e) => setForm({ ...form, subscription_end: e.target.value })} />
+                onChange={(v) => setForm({ ...form, subscription_end: v })} />
             </Field>
           </div>
           <div className="flex gap-2 mt-2 text-xs">
@@ -874,14 +875,14 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start date">
-              <input type="date" className={inputCls}
+              <DateInput className={inputCls}
                 value={form.subscription_start}
-                onChange={(e) => setForm({ ...form, subscription_start: e.target.value })} />
+                onChange={(v) => setForm({ ...form, subscription_start: v })} />
             </Field>
             <Field label="End date" hint="Empty = unlimited. Login is blocked after this date.">
-              <input type="date" className={inputCls}
+              <DateInput className={inputCls}
                 value={form.subscription_end}
-                onChange={(e) => setForm({ ...form, subscription_end: e.target.value })} />
+                onChange={(v) => setForm({ ...form, subscription_end: v })} />
             </Field>
           </div>
           <div className="flex gap-2 mt-2 text-xs flex-wrap">

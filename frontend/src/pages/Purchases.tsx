@@ -6,6 +6,8 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import api, { purchasesAPI, suppliersAPI, branchesAPI, PurchaseOrder, Supplier, Branch, POItem, ReplenishmentItem } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import DateInput from '../components/DateInput'
+import { formatDateTime } from '../lib/formatDate'
 import i18n from '../lib/i18n'
 import { formatMoney, formatInt, formatNumber } from '../lib/formatNumber'
 
@@ -180,7 +182,7 @@ export default function Purchases() {
                   <td className="px-3 py-2 text-xs text-slate-500">{po.supplier_invoice_number || '—'}</td>
                   <td className="px-3 py-2 text-end font-semibold">{formatMoney(po.total)}</td>
                   <td className="px-3 py-2">{statusBadge(po.status)}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{new Date(po.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{formatDateTime(po.created_at)}</td>
                   <td className="px-3 py-2 text-end">
                     <div className="flex justify-end gap-1">
                       <button onClick={() => purchasesAPI.get(po.id).then((r) => setViewing(r.data))} className="p-1.5 hover:bg-slate-100 rounded text-slate-600" title={t('common.view') as string}>
@@ -427,7 +429,7 @@ function CreatePOModal({
             </div>
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('purchases.invoice_date')}</label>
-              <input type="date" value={invDate} onChange={(e) => setInvDate(e.target.value)} className="input mt-1 w-full" />
+              <DateInput value={invDate} onChange={setInvDate} className="input mt-1 w-full" />
             </div>
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('purchases.discount')}</label>
@@ -541,9 +543,9 @@ function CreatePOModal({
                     <p className="text-[10px] text-amber-800/90">{t('purchases.expiry_lots_hint')}</p>
                     {it.expiry_lots.map((lot, li) => (
                       <div key={li} className="flex flex-wrap items-center gap-2">
-                        <input type="date" className="input text-xs flex-1 min-w-[8rem]"
+                        <DateInput className="input text-xs flex-1 min-w-[8rem]"
                           value={lot.expiry_date || ''}
-                          onChange={(e) => updateLot(i, li, { expiry_date: e.target.value })} />
+                          onChange={(v) => updateLot(i, li, { expiry_date: v })} />
                         <input type="number" min={1} className="input text-xs w-20 text-end"
                           value={lot.quantity}
                           onChange={(e) => updateLot(i, li, { quantity: Math.max(1, Number(e.target.value)) })} />
@@ -611,7 +613,7 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
             <div><span className="text-slate-500">{t('purchases.supplier')}: </span><b>{po.supplier_name}</b></div>
             <div><span className="text-slate-500">{t('purchases.branch')}: </span><b>{i18n.language === 'ar' ? po.branch_name_ar : po.branch_name_en}</b></div>
             <div><span className="text-slate-500">{t('purchases.col_status')}: </span><b>{t(`purchases.status_${po.status}`)}</b></div>
-            <div><span className="text-slate-500">{t('purchases.col_date')}: </span>{new Date(po.created_at).toLocaleString()}</div>
+            <div><span className="text-slate-500">{t('purchases.col_date')}: </span>{formatDateTime(po.created_at)}</div>
             {po.supplier_invoice_number && <div><span className="text-slate-500">{t('purchases.invoice_number')}: </span>{po.supplier_invoice_number}</div>}
             {po.supplier_invoice_date && <div><span className="text-slate-500">{t('purchases.invoice_date')}: </span>{po.supplier_invoice_date}</div>}
           </div>

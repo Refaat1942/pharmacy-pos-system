@@ -6,6 +6,8 @@ import { returnsAPI, salesAPI } from '../lib/api'
 import type { ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import DateInput from '../components/DateInput'
+import { formatDateTime } from '../lib/formatDate'
 
 export default function Returns() {
   const { t } = useTranslation()
@@ -102,13 +104,11 @@ export default function Returns() {
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_from')}</label>
-              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+              <DateInput value={dateFrom} onChange={setDateFrom} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
             </div>
             <div>
               <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.date_to')}</label>
-              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+              <DateInput value={dateTo} onChange={setDateTo} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
             </div>
             <button onClick={load}
               className="bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg px-4 py-1.5 text-sm font-semibold">
@@ -154,9 +154,7 @@ export default function Returns() {
                       <td className="px-4 py-3 font-mono text-xs font-bold text-gray-800">{r.return_invoice_number}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.invoice_number || '—'}</td>
                       <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
-                        {new Date(r.created_at).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US', {
-                          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                        })}
+                        {formatDateTime(r.created_at)}
                       </td>
                       <td className="px-4 py-3 text-xs">
                         <span className={`inline-flex px-2 py-0.5 rounded-full font-semibold ${

@@ -6,6 +6,7 @@ import { useSort, SortTh } from '../components/DataTable'
 import { employeesAPI, salesAPI } from '../lib/api'
 import type { Invoice } from '../lib/api'
 import i18n from '../lib/i18n'
+import { formatDateTime } from '../lib/formatDate'
 
 const STATUSES = ['pending', 'out_for_delivery', 'delivered'] as const
 
@@ -40,8 +41,7 @@ export default function Deliveries() {
 
   const fmt = (n: number | null | undefined) =>
     `${(Number(n) || 0).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  const fmtDT = (s: string) =>
-    new Date(s).toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-US', { dateStyle: 'short', timeStyle: 'short' })
+  const fmtDT = (s: string) => formatDateTime(s)
 
   const driverIdParam = driverFilter === '' ? undefined : Number(driverFilter)
 

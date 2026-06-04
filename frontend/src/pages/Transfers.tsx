@@ -6,6 +6,7 @@ import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../li
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import { formatDateTime } from '../lib/formatDate'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner, TableLoadingRow } from '../components/LoadingSpinner'
 
@@ -149,7 +150,7 @@ export default function Transfers() {
                   <td className="px-3 py-2">{i18n.language === 'ar' ? t2.from_name_ar : t2.from_name_en}</td>
                   <td className="px-3 py-2">{i18n.language === 'ar' ? t2.to_name_ar : t2.to_name_en}</td>
                   <td className="px-3 py-2">{statusBadge(t2.status)}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{new Date(t2.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2 text-xs text-slate-500">{formatDateTime(t2.created_at)}</td>
                   <td className="px-3 py-2 text-end">
                     <div className="flex justify-end gap-1">
                       <button
@@ -575,7 +576,7 @@ function TransferDetailModal({
             <div><span className="text-slate-500">{t('transfers.col_from')}: </span><b>{i18n.language === 'ar' ? transfer.from_name_ar : transfer.from_name_en}</b></div>
             <div><span className="text-slate-500">{t('transfers.col_to')}: </span><b>{i18n.language === 'ar' ? transfer.to_name_ar : transfer.to_name_en}</b></div>
             <div><span className="text-slate-500">{t('transfers.col_status')}: </span><b>{t(`transfers.status_${transfer.status}`)}</b></div>
-            <div><span className="text-slate-500">{t('transfers.col_date')}: </span>{new Date(transfer.created_at).toLocaleString()}</div>
+            <div><span className="text-slate-500">{t('transfers.col_date')}: </span>{formatDateTime(transfer.created_at)}</div>
             {transfer.notes && <div className="col-span-2"><span className="text-slate-500">{t('transfers.notes')}: </span>{transfer.notes}</div>}
           </div>
           <table className="w-full text-sm">
@@ -624,7 +625,7 @@ function TransferDetailModal({
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_from')}</span><b>{fromName}</b></div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_to')}</span><b>{toName}</b></div>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_status')}</span><span>{tr(`transfers.status_${transfer.status}`)}</span></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_date')}</span><span>{new Date(transfer.created_at).toLocaleString(isAr ? 'ar-EG' : 'en-US')}</span></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.col_date')}</span><span>{formatDateTime(transfer.created_at)}</span></div>
           {sentByName && (
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>{tr('transfers.sent_by')}</span><span>{sentByName}</span></div>
           )}

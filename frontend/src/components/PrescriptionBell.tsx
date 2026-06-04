@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Bell, X, ShoppingCart, Trash2, User, Stethoscope, RotateCcw, Clock } from 'lucide-react'
 import { prescriptionsAPI, Prescription } from '../lib/api'
 import { useTabLeader } from '../lib/tabLeader'
+import { formatDateTime } from '../lib/formatDate'
 
 interface Props {
   onLoad: (rx: Prescription) => Promise<string[]>
@@ -179,7 +180,7 @@ export default function PrescriptionBell({ onLoad }: Props) {
 
   const fmtTime = (s?: string | null) => {
     if (!s) return ''
-    try { return new Date(s).toLocaleString(isAr ? 'ar' : 'en', { dateStyle: 'short', timeStyle: 'short' }) }
+    try { return formatDateTime(s) }
     catch { return s }
   }
 

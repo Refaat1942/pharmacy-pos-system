@@ -5,6 +5,7 @@ import JsBarcode from 'jsbarcode'
 import type { SaleResponse } from '../lib/api'
 import api from '../lib/api'
 import i18n from '../lib/i18n'
+import { formatDate } from '../lib/formatDate'
 
 interface Props {
   sale: SaleResponse
@@ -85,8 +86,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
   const handlePrint = () => window.print()
 
   const localeId = lang === 'ar' ? 'ar-EG' : 'en-US'
-  const formatDateOnly = (s: string) =>
-    new Date(s).toLocaleDateString(localeId, { year: 'numeric', month: 'short', day: 'numeric' })
+  const formatDateOnly = (s: string) => formatDate(s)
   const formatTimeOnly = (s: string) =>
     new Date(s).toLocaleTimeString(localeId, { hour: '2-digit', minute: '2-digit' })
 

@@ -8,6 +8,7 @@ import api from '../lib/api'
 import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
+import DateInput from '../components/DateInput'
 
 type FraudAlert = {
   alert_type: string
@@ -136,11 +137,11 @@ export default function FraudSurveillance() {
         <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-end gap-3">
           <label className="text-sm">
             <span className="block text-xs text-slate-500 mb-1">{t('reports.from')}</span>
-            <input type="date" className="border rounded-lg px-3 py-2 text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DateInput className="border rounded-lg px-3 py-2 text-sm" value={from} onChange={setFrom} />
           </label>
           <label className="text-sm">
             <span className="block text-xs text-slate-500 mb-1">{t('reports.to')}</span>
-            <input type="date" className="border rounded-lg px-3 py-2 text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DateInput className="border rounded-lg px-3 py-2 text-sm" value={to} onChange={setTo} />
           </label>
           <label className="text-sm">
             <span className="block text-xs text-slate-500 mb-1">{t('fraud.min_severity')}</span>

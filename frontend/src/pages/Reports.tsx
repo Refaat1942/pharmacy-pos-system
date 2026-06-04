@@ -13,7 +13,7 @@ import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
-import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay } from '../lib/formatDate'
+import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay, formatDateTime } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
 
 type PnL = {
@@ -967,7 +967,7 @@ export default function Reports() {
                 empty={t('reports.digital_account_empty')}
                 cols={[
                   { key: 'invoice_number', label: t('reports.invoice_no') },
-                  { key: 'created_at', label: t('reports.sale_date'), render: (r: DigitalInvoiceRow) => r.created_at?.slice(0, 16).replace('T', ' ') },
+                  { key: 'created_at', label: t('reports.sale_date'), render: (r: DigitalInvoiceRow) => formatDateTime(r.created_at) },
                   {
                     key: 'platform_name',
                     label: t('reports.digital_platform'),

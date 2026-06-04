@@ -10,6 +10,7 @@ import HrUnauthorized from '../components/HrUnauthorized'
 import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
+import DateInput from '../components/DateInput'
 
 type Employee = {
   id: number; name: string; role: string | null; branch_id: number | null
@@ -284,7 +285,7 @@ function EmployeesTab() {
             </Field>
             <Field label={t('hr.base_salary')}><input type="number" className="input w-full" value={editing.base_salary ?? 0} onChange={(e) => setEditing({ ...editing, base_salary: Number(e.target.value) })} /></Field>
             <Field label={t('hr.hours_allowance')}><input type="number" step="0.25" min="0" className="input w-full" value={editing.hours_allowance ?? 0} onChange={(e) => setEditing({ ...editing, hours_allowance: Number(e.target.value) })} /><div className="text-[11px] text-slate-400 mt-1">{t('hr.hours_allowance_hint')}</div></Field>
-            <Field label={t('hr.hire_date')}><input type="date" className="input w-full" value={editing.hire_date || ''} onChange={(e) => setEditing({ ...editing, hire_date: e.target.value })} /></Field>
+            <Field label={t('hr.hire_date')}><DateInput className="input w-full" value={editing.hire_date || ''} onChange={(v) => setEditing({ ...editing, hire_date: v })} /></Field>
             <Field label={t('hr.phone')}><PhoneField className="input w-full" value={editing.phone || ''} onChange={(v) => setEditing({ ...editing, phone: v })} /></Field>
             <Field label={t('hr.national_id')}><input className="input w-full" value={editing.national_id || ''} onChange={(e) => setEditing({ ...editing, national_id: e.target.value })} /></Field>
             <Field label={t('hr.status')}>
@@ -364,7 +365,7 @@ function AttendanceTab() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.date')}</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="input text-sm" />
+          <DateInput value={date} onChange={setDate} className="input text-sm" />
         </div>
         {mayRecord ? (
           <button onClick={() => { setForm({ ...form, work_date: date }); setShowAdd(true) }} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">
@@ -433,7 +434,7 @@ function AttendanceTab() {
                 {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </Field>
-            <Field label={t('hr.date')}><input type="date" className="input w-full" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} /></Field>
+            <Field label={t('hr.date')}><DateInput className="input w-full" value={form.work_date} onChange={(v) => setForm({ ...form, work_date: v })} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label={t('hr.check_in')}><input type="time" className="input w-full" value={form.check_in} onChange={(e) => setForm({ ...form, check_in: e.target.value })} /></Field>
               <Field label={t('hr.check_out')}><input type="time" className="input w-full" value={form.check_out} onChange={(e) => setForm({ ...form, check_out: e.target.value })} /></Field>
@@ -719,10 +720,10 @@ function PerformanceTab() {
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow-sm p-4 flex flex-wrap gap-3 items-end">
         <Field label={t('hr.date_from')}>
-          <input type="date" className="input" value={from} onChange={e => setFrom(e.target.value)} />
+          <DateInput className="input" value={from} onChange={setFrom} />
         </Field>
         <Field label={t('hr.date_to')}>
-          <input type="date" className="input" value={to} onChange={e => setTo(e.target.value)} />
+          <DateInput className="input" value={to} onChange={setTo} />
         </Field>
         <div className="ms-auto grid grid-cols-3 gap-3">
           <PerfStat label={t('hr.perf_invoices')} value={totals.invoices.toLocaleString()} />

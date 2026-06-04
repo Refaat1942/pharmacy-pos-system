@@ -620,6 +620,7 @@ class StocktakeLine(BaseModel):
     product_id: int
     counted: int
     expiry_date: Optional[date] = None
+    category: Optional[str] = None
 
 
 class StocktakeRequest(BaseModel):
@@ -641,8 +642,10 @@ def apply_stocktake(req: StocktakeRequest,
         for line in req.items:
             if line.counted < 0:
                 raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
-            cur.execute("SELECT id, stock, branch_id, expiry_date FROM products WHERE id=%s FOR UPDATE",
-                        (line.product_id,))
+            cur.execute(
+                "SELECT id, stock, branch_id, expiry_date, category FROM products WHERE id=%s FOR UPDATE",
+                (line.product_id,),
+            )
             product = cur.fetchone()
             if not product:
                 continue
@@ -650,8 +653,12 @@ def apply_stocktake(req: StocktakeRequest,
             old_stock = int(product["stock"])
             delta = line.counted - old_stock
             expiry_change = line.expiry_date is not None and line.expiry_date != product["expiry_date"]
-            if delta == 0 and not expiry_change:
+            cat = (line.category or "").strip() if line.category is not None else None
+            category_change = cat is not None and cat != (product.get("category") or "")
+            if delta == 0 and not expiry_change and not category_change:
                 continue
+            if category_change:
+                cur.execute("UPDATE products SET category=%s WHERE id=%s", (cat, line.product_id))
             if delta != 0 or expiry_change:
                 cur.execute("DELETE FROM product_batches WHERE product_id=%s", (line.product_id,))
                 exp = line.expiry_date if expiry_change else product["expiry_date"]

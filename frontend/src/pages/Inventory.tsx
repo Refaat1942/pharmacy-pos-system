@@ -20,7 +20,8 @@ import {
   parsePackStockInput,
   stockVarianceMajorUnits,
 } from '../lib/packStock'
-import { formatDate } from '../lib/formatDate'
+import { formatDate, formatDateTime } from '../lib/formatDate'
+import DateInput from '../components/DateInput'
 import { TableLoadingRow } from '../components/LoadingSpinner'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
@@ -709,7 +710,7 @@ function ExpiryBatchesPanel({
       <div className="flex flex-wrap gap-2 items-end">
         <div>
           <label className="text-[10px] text-slate-600 block mb-0.5">{t('inventory.batches_expiry')}</label>
-          <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} className="input text-sm w-36" />
+          <DateInput value={expiry} onChange={setExpiry} className="input text-sm w-36" />
         </div>
         <div>
           <label className="text-[10px] text-slate-600 block mb-0.5">{t('inventory.batches_qty')}</label>
@@ -868,7 +869,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         </Field>
         {!item && (
           <Field label={t('inventory.f_expiry')}>
-            <input type="date" value={f.expiry_date} onChange={e => setF({ ...f, expiry_date: e.target.value })} className="input" />
+            <DateInput value={f.expiry_date} onChange={(v) => setF({ ...f, expiry_date: v })} className="input" />
           </Field>
         )}
         {item && (
@@ -1145,7 +1146,7 @@ function HistoryModal({ item, onClose }: { item: Product; onClose: () => void })
             <tbody>
               {moves.map(m => (
                 <tr key={m.id} className="border-t border-slate-100">
-                  <td className="px-3 py-1.5 text-xs">{new Date(m.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-1.5 text-xs">{formatDateTime(m.created_at)}</td>
                   <td className="px-3 py-1.5">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${typeColor(m.movement_type)}`}>
                       {t(`inventory.move_${m.movement_type}`, { defaultValue: m.movement_type })}
@@ -1234,8 +1235,8 @@ function MovementsTab() {
           <option value="transfer_in">{t('inventory.move_transfer_in')}</option>
           <option value="transfer_out">{t('inventory.move_transfer_out')}</option>
         </select>
-        <input type="date" value={start} onChange={e => setStart(e.target.value)} className="input max-w-40" placeholder={t('inventory.from') as string} />
-        <input type="date" value={end} onChange={e => setEnd(e.target.value)} className="input max-w-40" placeholder={t('inventory.to') as string} />
+        <DateInput value={start} onChange={setStart} className="input max-w-40" />
+        <DateInput value={end} onChange={setEnd} className="input max-w-40" />
         <TableFilter value={moveFilter.query} onChange={moveFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <ExcelExportButton
           onExport={() =>
@@ -1361,11 +1362,10 @@ function VelocityTab() {
           <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
             {t('inventory.from')}
           </label>
-          <input
-            type="date"
+          <DateInput
             value={dateFrom}
             max={dateTo || todayIso()}
-            onChange={e => setDateFrom(e.target.value)}
+            onChange={setDateFrom}
             className="input max-w-40"
           />
         </div>
@@ -1373,12 +1373,11 @@ function VelocityTab() {
           <label className="text-[10px] text-slate-500 uppercase tracking-wider block mb-1">
             {t('inventory.to')}
           </label>
-          <input
-            type="date"
+          <DateInput
             value={dateTo}
             min={dateFrom || undefined}
             max={todayIso()}
-            onChange={e => setDateTo(e.target.value)}
+            onChange={setDateTo}
             className="input max-w-40"
           />
         </div>
@@ -1983,6 +1982,7 @@ function StocktakeTab() {
   const [items, setItems] = useState<any[]>([])
   const [counted, setCounted] = useState<Record<number, string>>({})
   const [expiries, setExpiries] = useState<Record<number, string>>({})
+  const [categoriesEdits, setCategoriesEdits] = useState<Record<number, string>>({})
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -2009,6 +2009,14 @@ function StocktakeTab() {
 
   const origExpiry = (it: any) => (it.expiry_date ? String(it.expiry_date).slice(0, 10) : '')
   const curExpiry = (it: any) => (expiries[it.id] !== undefined ? expiries[it.id] : origExpiry(it))
+  const origCategory = (it: any) => it.category || ''
+  const curCategory = (it: any) => (categoriesEdits[it.id] !== undefined ? categoriesEdits[it.id] : origCategory(it))
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>([...STANDARD_CATEGORIES, ...categories])
+    items.forEach((it) => { if (it.category) set.add(it.category) })
+    return [...set].sort((a, b) => a.localeCompare(b))
+  }, [categories, items])
 
   const toApply = items
     .map(it => {
@@ -2019,9 +2027,19 @@ function StocktakeTab() {
       const countChanged = cnum !== null && cnum !== Number(it.stock)
       const curExp = curExpiry(it)
       const expChanged = curExp !== '' && curExp !== origExpiry(it)
-      return { it, counted: countChanged && cnum !== null ? cnum : Number(it.stock), curExp, countChanged, expChanged }
+      const curCat = curCategory(it)
+      const catChanged = curCat !== origCategory(it)
+      return {
+        it,
+        counted: countChanged && cnum !== null ? cnum : Number(it.stock),
+        curExp,
+        curCat,
+        countChanged,
+        expChanged,
+        catChanged,
+      }
     })
-    .filter(r => r.countChanged || r.expChanged)
+    .filter(r => r.countChanged || r.expChanged || r.catChanged)
 
   const stFilter = useQuickFilter(items, [
     (it: any) => it.name_en,
@@ -2048,6 +2066,7 @@ function StocktakeTab() {
           product_id: r.it.id,
           counted: r.counted,
           expiry_date: r.expChanged ? r.curExp : undefined,
+          category: r.catChanged ? r.curCat : undefined,
         })),
         note: note.trim() || undefined,
       }
@@ -2055,6 +2074,7 @@ function StocktakeTab() {
       alert((t('inventory.st_done') as string).replace('{n}', String(data.changed)))
       setCounted({})
       setExpiries({})
+      setCategoriesEdits({})
       await load()
     } catch (e: any) {
       alert(e?.response?.data?.detail || t('inventory.st_error'))
@@ -2066,7 +2086,7 @@ function StocktakeTab() {
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <select
           value={branchId}
-          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}) }}
+          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}) }}
           disabled={!isAdmin}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 disabled:bg-slate-50"
         >
@@ -2153,7 +2173,21 @@ function StocktakeTab() {
                     <td className="px-3 py-2.5">
                       <div className="font-medium text-slate-800">{isAr ? it.name_ar : it.name_en}</div>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">{it.category ? String(t(`inventory.cat_${it.category}`, it.category)) : '—'}</td>
+                    <td className="px-3 py-2.5">
+                      <select
+                        value={curCategory(it)}
+                        onChange={e => setCategoriesEdits(prev => ({ ...prev, [it.id]: e.target.value }))}
+                        className="w-full min-w-[7rem] border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-pharma-500"
+                      >
+                        <option value="">—</option>
+                        {categoryOptions.map(c => (
+                          <option key={c} value={c}>{String(t(`inventory.cat_${c}`, c))}</option>
+                        ))}
+                        {curCategory(it) && !categoryOptions.includes(curCategory(it)) && (
+                          <option value={curCategory(it)}>{curCategory(it)}</option>
+                        )}
+                      </select>
+                    </td>
                     <td className="px-3 py-2.5 font-mono text-[11px] text-slate-500">{it.barcode || '—'}</td>
                     <td className="px-3 py-2.5 text-center font-mono text-slate-700">
                       {pack > 1
@@ -2177,13 +2211,11 @@ function StocktakeTab() {
                         : <span className="text-red-600">{formatVarianceMajorUnits(variance)}</span>}
                     </td>
                     <td className="px-3 py-2.5 text-center">
-                      <input
-                        type="date"
+                      <DateInput
                         value={curExpiry(it)}
-                        onChange={e => setExpiries(prev => ({ ...prev, [it.id]: e.target.value }))}
-                        className="w-36 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                        onChange={(v) => setExpiries(prev => ({ ...prev, [it.id]: v }))}
+                        className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
                       />
-                      {curExpiry(it) ? <div className="text-[10px] text-slate-400 mt-0.5">{formatDate(curExpiry(it))}</div> : null}
                     </td>
                   </tr>
                 )

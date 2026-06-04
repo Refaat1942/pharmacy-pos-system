@@ -10,6 +10,7 @@ import { useAuth } from '../lib/auth'
 import { regionLabel } from '../lib/regions'
 import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
+import { formatDateTime } from '../lib/formatDate'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
 
@@ -430,7 +431,7 @@ function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
               {sortedTxns.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-slate-400">{t('customers.no_txns')}</td></tr>}
               {sortedTxns.map((tx: any, i: number) => (
                 <tr key={i} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-xs">{tx.at ? new Date(tx.at).toLocaleString() : '—'}</td>
+                  <td className="px-3 py-2 text-xs">{tx.at ? formatDateTime(tx.at) : '—'}</td>
                   <td className="px-3 py-2">{tx.kind === 'sale' ? t('customers.kind_sale') : t('customers.kind_payment')}</td>
                   <td className="px-3 py-2 font-mono text-xs">{tx.reference || '—'}</td>
                   <td className="px-3 py-2 text-end text-amber-700">{Number(tx.debit) > 0 ? Number(tx.debit).toFixed(2) : ''}</td>

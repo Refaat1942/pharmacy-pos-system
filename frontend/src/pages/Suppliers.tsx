@@ -6,6 +6,7 @@ import { suppliersAPI, Supplier } from '../lib/api'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
+import { formatDateTime } from '../lib/formatDate'
 import RegionSelect from '../components/RegionSelect'
 import { regionLabel } from '../lib/regions'
 import { exportCSV } from '../lib/csv'
@@ -329,7 +330,7 @@ function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
               {sortedTxns.length === 0 && <tr><td colSpan={6} className="text-center py-6 text-slate-400">{t('suppliers.no_txns')}</td></tr>}
               {sortedTxns.map((tx: any, i: number) => (
                 <tr key={i} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-xs">{tx.at ? new Date(tx.at).toLocaleString() : '—'}</td>
+                  <td className="px-3 py-2 text-xs">{tx.at ? formatDateTime(tx.at) : '—'}</td>
                   <td className="px-3 py-2">{tx.kind === 'po' ? t('suppliers.kind_po') : t('suppliers.kind_payment')}</td>
                   <td className="px-3 py-2 font-mono text-xs">{tx.reference || '—'}</td>
                   <td className="px-3 py-2 text-end text-red-700">{Number(tx.debit) > 0 ? Number(tx.debit).toFixed(2) : ''}</td>
