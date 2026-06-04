@@ -383,7 +383,20 @@
     "last_purchased": "Last purchased",
     "phone": "Phone",
     "customer": "Customer",
-    "barcode": "Barcode"
+    "barcode": "Barcode",
+    "sales_report": "Sales Report",
+    "sales_report_hint": "Invoice-level sales with breakdown by sale type, salesperson, and terminal (branch). Includes date, time, value, and line items.",
+    "by_sale_type": "By sale type",
+    "by_salesperson": "By salesperson",
+    "by_terminal": "By terminal (branch)",
+    "terminal": "Terminal",
+    "invoice_detail": "Invoices",
+    "line_items": "Line items",
+    "sale_type": "Sale type",
+    "sale_time": "Time",
+    "net_total": "Net total",
+    "unit_price": "Unit price",
+    "line_total": "Line total"
   },
   "fraud": {
     "title": "Fraud Surveillance",

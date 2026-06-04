@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, Users, type LucideIcon,
+  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
 import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
@@ -184,6 +184,78 @@ type CustomerAnalysisReport = {
   low_buyers: CustomerRow[]
   items: CustomerItemRow[]
 }
+type SalesTypeRow = {
+  sale_type: string
+  payment_method: string
+  invoice_count: number
+  revenue: number
+  items_qty: number
+}
+type SalesSellerRow = {
+  seller_id: number
+  username: string
+  seller_name_en: string
+  seller_name_ar: string
+  invoice_count: number
+  revenue: number
+  items_qty: number
+  cash_count: number
+  delivery_count: number
+  digital_count: number
+}
+type SalesTerminalRow = {
+  branch_id: number
+  branch_name_en: string
+  branch_name_ar: string
+  invoice_count: number
+  revenue: number
+  items_qty: number
+}
+type SalesInvoiceRow = {
+  invoice_id: number
+  invoice_number: string
+  created_at: string
+  sale_type: string
+  payment_method: string
+  digital_type: string | null
+  subtotal: number
+  discount: number
+  net_total: number
+  seller_id: number | null
+  seller_username: string | null
+  seller_name_en: string | null
+  seller_name_ar: string | null
+  branch_id: number | null
+  branch_name_en: string | null
+  branch_name_ar: string | null
+  customer_name: string | null
+  items_qty: number
+}
+type SalesLineItemRow = {
+  invoice_number: string
+  created_at: string
+  sale_type: string
+  payment_method: string
+  seller_name_en: string | null
+  seller_name_ar: string | null
+  branch_name_en: string | null
+  branch_name_ar: string | null
+  product_name: string
+  barcode: string | null
+  qty: number
+  unit_price: number
+  line_total: number
+}
+type SalesReport = {
+  date_from: string
+  date_to: string
+  summary: { invoice_count: number; total_revenue: number; items_qty: number }
+  by_sale_type: SalesTypeRow[]
+  by_seller: SalesSellerRow[]
+  by_terminal: SalesTerminalRow[]
+  invoices: SalesInvoiceRow[]
+  line_items: SalesLineItemRow[]
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -233,6 +305,7 @@ type ReportId =
   | 'delivery_summary'
   | 'delivery_zones'
   | 'customer_analysis'
+  | 'sales_report'
 
 type ReportDef = {
   id: ReportId
@@ -256,6 +329,7 @@ const REPORT_DEFS: ReportDef[] = [
   { id: 'delivery_summary', labelKey: 'reports.delivery_summary', Icon: Bike, xlsxExport: true },
   { id: 'delivery_zones', labelKey: 'reports.delivery_zones', Icon: MapPin, xlsxExport: true },
   { id: 'customer_analysis', labelKey: 'reports.customer_analysis', Icon: Users, xlsxExport: true },
+  { id: 'sales_report', labelKey: 'reports.sales_report', Icon: Receipt, xlsxExport: true },
   { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
   { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
 ]
@@ -280,6 +354,7 @@ export default function Reports() {
   const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null)
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZonesReport | null>(null)
   const [customerAnalysis, setCustomerAnalysis] = useState<CustomerAnalysisReport | null>(null)
+  const [salesReport, setSalesReport] = useState<SalesReport | null>(null)
   const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -374,6 +449,11 @@ export default function Reports() {
           setCustomerAnalysis(data)
           break
         }
+        case 'sales_report': {
+          const { data } = await api.get('/reports/sales-report', { params })
+          setSalesReport(data)
+          break
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load report')
@@ -411,6 +491,10 @@ export default function Reports() {
       }
       if (activeReport === 'customer_analysis') {
         await downloadApiExcel('/reports/customer-analysis/export', `customer_analysis_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'sales_report') {
+        await downloadApiExcel('/reports/sales-report/export', `sales_report_${suffix}.xlsx`, dateParams)
         return
       }
     }
@@ -1095,6 +1179,54 @@ export default function Reports() {
         </section>
         )}
 
+        {/* Sales report */}
+        {!loading && activeReport === 'sales_report' && salesReport && (
+        <section className="space-y-4">
+          <SectionHead icon={<Receipt size={18} />} title={t('reports.sales_report')} subtitle={`${from} → ${to}`} />
+          <p className="text-xs text-slate-500">{t('reports.sales_report_hint')}</p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Kpi tone="blue" label={t('reports.invoices')} value={fmtInt(salesReport.summary.invoice_count)} />
+            <Kpi tone="green" label={t('reports.revenue')} value={fmt(salesReport.summary.total_revenue)} />
+            <Kpi tone="amber" label={t('reports.items_qty')} value={fmtInt(salesReport.summary.items_qty)} />
+          </div>
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_sale_type')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={salesTypeCols(t)}
+            rows={salesReport.by_sale_type}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_salesperson')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={salesSellerCols(t)}
+            rows={salesReport.by_seller}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_terminal')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={salesTerminalCols(t)}
+            rows={salesReport.by_terminal}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.invoice_detail')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={salesInvoiceCols(t)}
+            rows={salesReport.invoices}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.line_items')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={salesLineItemCols(t)}
+            rows={salesReport.line_items}
+          />
+        </section>
+        )}
+
         {/* Delivery zones */}
         {!loading && activeReport === 'delivery_zones' && deliveryZones && (
         <section className="space-y-4">
@@ -1211,6 +1343,94 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
 }
 
 const fmtDate = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '—')
+const fmtTime = (iso: string | null | undefined) => (iso && iso.length >= 19 ? iso.slice(11, 19) : '—')
+
+function saleTypeLabel(t: (k: string) => string, type: string) {
+  const map: Record<string, string> = {
+    cash: t('sales.cash'),
+    delivery: t('sales.delivery'),
+    digital: t('sales.digital'),
+    return: t('sales.return_type'),
+  }
+  return map[type] || type
+}
+
+function paymentLabel(t: (k: string) => string, method: string) {
+  const map: Record<string, string> = {
+    cash: t('sales.cash'),
+    visa: t('sales.visa'),
+    hybrid: t('sales.hybrid'),
+    account: t('pos.account'),
+    return: t('sales.return_type'),
+  }
+  return map[method] || method
+}
+
+function salesTypeCols(t: (k: string) => string) {
+  return [
+    { key: 'sale_type', label: t('reports.sale_type'), render: (r: SalesTypeRow) => saleTypeLabel(t, r.sale_type), sortValue: (r: SalesTypeRow) => r.sale_type },
+    { key: 'payment_method', label: t('reports.payment_method'), render: (r: SalesTypeRow) => paymentLabel(t, r.payment_method), sortValue: (r: SalesTypeRow) => r.payment_method },
+    { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: SalesTypeRow) => fmtInt(r.invoice_count), sortValue: (r: SalesTypeRow) => r.invoice_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: SalesTypeRow) => fmt(r.revenue), sortValue: (r: SalesTypeRow) => r.revenue },
+    { key: 'items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: SalesTypeRow) => fmtInt(r.items_qty), sortValue: (r: SalesTypeRow) => r.items_qty },
+  ]
+}
+
+function salesSellerCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'seller', label: t('reports.seller'), render: (r: SalesSellerRow) => lang === 'ar' ? r.seller_name_ar : r.seller_name_en, sortValue: (r: SalesSellerRow) => lang === 'ar' ? r.seller_name_ar : r.seller_name_en },
+    { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: SalesSellerRow) => fmtInt(r.invoice_count), sortValue: (r: SalesSellerRow) => r.invoice_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: SalesSellerRow) => fmt(r.revenue), sortValue: (r: SalesSellerRow) => r.revenue },
+    { key: 'items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: SalesSellerRow) => fmtInt(r.items_qty), sortValue: (r: SalesSellerRow) => r.items_qty },
+    { key: 'cash_count', label: t('sales.cash'), align: 'end' as const, render: (r: SalesSellerRow) => fmtInt(r.cash_count), sortValue: (r: SalesSellerRow) => r.cash_count },
+    { key: 'delivery_count', label: t('sales.delivery'), align: 'end' as const, render: (r: SalesSellerRow) => fmtInt(r.delivery_count), sortValue: (r: SalesSellerRow) => r.delivery_count },
+    { key: 'digital_count', label: t('sales.digital'), align: 'end' as const, render: (r: SalesSellerRow) => fmtInt(r.digital_count), sortValue: (r: SalesSellerRow) => r.digital_count },
+  ]
+}
+
+function salesTerminalCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'terminal', label: t('reports.terminal'), render: (r: SalesTerminalRow) => lang === 'ar' ? r.branch_name_ar : r.branch_name_en, sortValue: (r: SalesTerminalRow) => lang === 'ar' ? r.branch_name_ar : r.branch_name_en },
+    { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: SalesTerminalRow) => fmtInt(r.invoice_count), sortValue: (r: SalesTerminalRow) => r.invoice_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: SalesTerminalRow) => fmt(r.revenue), sortValue: (r: SalesTerminalRow) => r.revenue },
+    { key: 'items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: SalesTerminalRow) => fmtInt(r.items_qty), sortValue: (r: SalesTerminalRow) => r.items_qty },
+  ]
+}
+
+function salesInvoiceCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'invoice_number', label: t('reports.invoice_no'), sortValue: (r: SalesInvoiceRow) => r.invoice_number },
+    { key: 'date', label: t('reports.sale_date'), render: (r: SalesInvoiceRow) => fmtDate(r.created_at), sortValue: (r: SalesInvoiceRow) => r.created_at },
+    { key: 'time', label: t('reports.sale_time'), render: (r: SalesInvoiceRow) => fmtTime(r.created_at), sortValue: (r: SalesInvoiceRow) => r.created_at },
+    { key: 'sale_type', label: t('reports.sale_type'), render: (r: SalesInvoiceRow) => saleTypeLabel(t, r.sale_type), sortValue: (r: SalesInvoiceRow) => r.sale_type },
+    { key: 'payment_method', label: t('reports.payment_method'), render: (r: SalesInvoiceRow) => paymentLabel(t, r.payment_method), sortValue: (r: SalesInvoiceRow) => r.payment_method },
+    { key: 'net_total', label: t('reports.net_total'), align: 'end' as const, render: (r: SalesInvoiceRow) => <span className="font-semibold text-emerald-700">{fmt(r.net_total)}</span>, sortValue: (r: SalesInvoiceRow) => r.net_total },
+    { key: 'seller', label: t('reports.seller'), render: (r: SalesInvoiceRow) => lang === 'ar' ? r.seller_name_ar || '—' : r.seller_name_en || '—', sortValue: (r: SalesInvoiceRow) => lang === 'ar' ? r.seller_name_ar || '' : r.seller_name_en || '' },
+    { key: 'terminal', label: t('reports.terminal'), render: (r: SalesInvoiceRow) => lang === 'ar' ? r.branch_name_ar || '—' : r.branch_name_en || '—', sortValue: (r: SalesInvoiceRow) => lang === 'ar' ? r.branch_name_ar || '' : r.branch_name_en || '' },
+    { key: 'customer_name', label: t('reports.customer'), render: (r: SalesInvoiceRow) => r.customer_name || '—' },
+    { key: 'items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: SalesInvoiceRow) => fmtInt(r.items_qty), sortValue: (r: SalesInvoiceRow) => r.items_qty },
+  ]
+}
+
+function salesLineItemCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'invoice_number', label: t('reports.invoice_no'), sortValue: (r: SalesLineItemRow) => r.invoice_number },
+    { key: 'date', label: t('reports.sale_date'), render: (r: SalesLineItemRow) => fmtDate(r.created_at), sortValue: (r: SalesLineItemRow) => r.created_at },
+    { key: 'time', label: t('reports.sale_time'), render: (r: SalesLineItemRow) => fmtTime(r.created_at), sortValue: (r: SalesLineItemRow) => r.created_at },
+    { key: 'sale_type', label: t('reports.sale_type'), render: (r: SalesLineItemRow) => saleTypeLabel(t, r.sale_type), sortValue: (r: SalesLineItemRow) => r.sale_type },
+    { key: 'product_name', label: t('reports.product'), sortValue: (r: SalesLineItemRow) => r.product_name },
+    { key: 'barcode', label: t('reports.barcode'), render: (r: SalesLineItemRow) => r.barcode || '—' },
+    { key: 'qty', label: t('reports.qty'), align: 'end' as const, render: (r: SalesLineItemRow) => fmtInt(r.qty), sortValue: (r: SalesLineItemRow) => r.qty },
+    { key: 'unit_price', label: t('reports.unit_price'), align: 'end' as const, render: (r: SalesLineItemRow) => fmt(r.unit_price), sortValue: (r: SalesLineItemRow) => r.unit_price },
+    { key: 'line_total', label: t('reports.line_total'), align: 'end' as const, render: (r: SalesLineItemRow) => fmt(r.line_total), sortValue: (r: SalesLineItemRow) => r.line_total },
+    { key: 'seller', label: t('reports.seller'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.seller_name_ar || '—' : r.seller_name_en || '—' },
+    { key: 'terminal', label: t('reports.terminal'), render: (r: SalesLineItemRow) => lang === 'ar' ? r.branch_name_ar || '—' : r.branch_name_en || '—' },
+  ]
+}
 
 function BuyerTierBadge({ tier }: { tier: CustomerRow['buyer_tier'] }) {
   const { t } = useTranslation()

@@ -1323,3 +1323,294 @@ def export_customer_analysis(
         ],
         "customer_analysis.xlsx",
     )
+
+
+def _sales_report_data(
+    request: Request,
+    date_from: Optional[str],
+    date_to: Optional[str],
+    current_user: dict,
+) -> tuple[dict, date, date]:
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    bf_i = bf.replace("branch_id", "i.branch_id")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT COALESCE(i.type, 'unknown') AS sale_type,
+                   COALESCE(i.payment_method, 'unknown') AS payment_method,
+                   COUNT(*)::int AS invoice_count,
+                   COALESCE(SUM(i.net_total), 0)::float AS revenue,
+                   COALESCE(SUM(iq.items_qty), 0)::int AS items_qty
+            FROM invoices i
+            LEFT JOIN (
+              SELECT invoice_id, SUM(quantity)::int AS items_qty
+              FROM invoice_items GROUP BY invoice_id
+            ) iq ON iq.invoice_id = i.id
+            WHERE i.status = 'completed'
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+            GROUP BY i.type, i.payment_method
+            ORDER BY revenue DESC, invoice_count DESC
+            """,
+            [df, dt] + bp,
+        )
+        by_sale_type = [dict(r) for r in cur.fetchall()]
+        for r in by_sale_type:
+            r["revenue"] = round(float(r["revenue"] or 0), 2)
+
+        cur.execute(
+            f"""
+            SELECT u.id AS seller_id,
+                   u.username,
+                   u.name_en AS seller_name_en,
+                   u.name_ar AS seller_name_ar,
+                   COUNT(*)::int AS invoice_count,
+                   COALESCE(SUM(i.net_total), 0)::float AS revenue,
+                   COALESCE(SUM(iq.items_qty), 0)::int AS items_qty,
+                   COUNT(*) FILTER (WHERE i.type = 'cash')::int AS cash_count,
+                   COUNT(*) FILTER (WHERE i.type = 'delivery')::int AS delivery_count,
+                   COUNT(*) FILTER (WHERE i.type = 'digital')::int AS digital_count
+            FROM invoices i
+            JOIN users u ON u.id = i.seller_id
+            LEFT JOIN (
+              SELECT invoice_id, SUM(quantity)::int AS items_qty
+              FROM invoice_items GROUP BY invoice_id
+            ) iq ON iq.invoice_id = i.id
+            WHERE i.status = 'completed'
+              AND i.seller_id IS NOT NULL
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+            GROUP BY u.id, u.username, u.name_en, u.name_ar
+            ORDER BY revenue DESC, invoice_count DESC
+            """,
+            [df, dt] + bp,
+        )
+        by_seller = [dict(r) for r in cur.fetchall()]
+        for r in by_seller:
+            r["revenue"] = round(float(r["revenue"] or 0), 2)
+
+        cur.execute(
+            f"""
+            SELECT b.id AS branch_id,
+                   b.name_en AS branch_name_en,
+                   b.name_ar AS branch_name_ar,
+                   COUNT(*)::int AS invoice_count,
+                   COALESCE(SUM(i.net_total), 0)::float AS revenue,
+                   COALESCE(SUM(iq.items_qty), 0)::int AS items_qty
+            FROM invoices i
+            JOIN branches b ON b.id = i.branch_id
+            LEFT JOIN (
+              SELECT invoice_id, SUM(quantity)::int AS items_qty
+              FROM invoice_items GROUP BY invoice_id
+            ) iq ON iq.invoice_id = i.id
+            WHERE i.status = 'completed'
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+            GROUP BY b.id, b.name_en, b.name_ar
+            ORDER BY revenue DESC, invoice_count DESC
+            """,
+            [df, dt] + bp,
+        )
+        by_terminal = [dict(r) for r in cur.fetchall()]
+        for r in by_terminal:
+            r["revenue"] = round(float(r["revenue"] or 0), 2)
+
+        cur.execute(
+            f"""
+            SELECT i.id AS invoice_id,
+                   i.invoice_number,
+                   i.created_at,
+                   i.type AS sale_type,
+                   i.payment_method,
+                   i.digital_type,
+                   i.subtotal::float AS subtotal,
+                   i.discount::float AS discount,
+                   i.net_total::float AS net_total,
+                   u.id AS seller_id,
+                   u.username AS seller_username,
+                   u.name_en AS seller_name_en,
+                   u.name_ar AS seller_name_ar,
+                   b.id AS branch_id,
+                   b.name_en AS branch_name_en,
+                   b.name_ar AS branch_name_ar,
+                   c.name AS customer_name,
+                   COALESCE(iq.items_qty, 0)::int AS items_qty
+            FROM invoices i
+            LEFT JOIN users u ON u.id = i.seller_id
+            LEFT JOIN branches b ON b.id = i.branch_id
+            LEFT JOIN customers c ON c.id = i.customer_id
+            LEFT JOIN (
+              SELECT invoice_id, SUM(quantity)::int AS items_qty
+              FROM invoice_items GROUP BY invoice_id
+            ) iq ON iq.invoice_id = i.id
+            WHERE i.status = 'completed'
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+            ORDER BY i.created_at DESC, i.id DESC
+            """,
+            [df, dt] + bp,
+        )
+        invoices = []
+        for r in cur.fetchall():
+            row = dict(r)
+            created = row.get("created_at")
+            if created and hasattr(created, "isoformat"):
+                row["created_at"] = created.isoformat()
+            row["subtotal"] = round(float(row.get("subtotal") or 0), 2)
+            row["discount"] = round(float(row.get("discount") or 0), 2)
+            row["net_total"] = round(float(row.get("net_total") or 0), 2)
+            invoices.append(row)
+
+        cur.execute(
+            f"""
+            SELECT i.invoice_number,
+                   i.created_at,
+                   i.type AS sale_type,
+                   i.payment_method,
+                   u.name_en AS seller_name_en,
+                   u.name_ar AS seller_name_ar,
+                   b.name_en AS branch_name_en,
+                   b.name_ar AS branch_name_ar,
+                   COALESCE(ii.product_name_en, ii.product_name_ar, p.name_en, p.name_ar) AS product_name,
+                   ii.barcode,
+                   ii.quantity::int AS qty,
+                   ii.unit_price::float AS unit_price,
+                   ii.total::float AS line_total
+            FROM invoice_items ii
+            JOIN invoices i ON i.id = ii.invoice_id
+            LEFT JOIN users u ON u.id = i.seller_id
+            LEFT JOIN branches b ON b.id = i.branch_id
+            LEFT JOIN products p ON p.id = ii.product_id
+            WHERE i.status = 'completed'
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf_i}
+            ORDER BY i.created_at DESC, i.id DESC, ii.id ASC
+            """,
+            [df, dt] + bp,
+        )
+        line_items = []
+        for r in cur.fetchall():
+            row = dict(r)
+            created = row.get("created_at")
+            if created and hasattr(created, "isoformat"):
+                row["created_at"] = created.isoformat()
+            row["unit_price"] = round(float(row.get("unit_price") or 0), 2)
+            row["line_total"] = round(float(row.get("line_total") or 0), 2)
+            line_items.append(row)
+    finally:
+        cur.close()
+        conn.close()
+
+    total_revenue = round(sum(r["revenue"] for r in by_sale_type), 2)
+    total_invoices = sum(r["invoice_count"] for r in by_sale_type)
+    total_items_qty = sum(r["items_qty"] for r in by_sale_type)
+
+    report = {
+        "date_from": str(df),
+        "date_to": str(dt),
+        "summary": {
+            "invoice_count": total_invoices,
+            "total_revenue": total_revenue,
+            "items_qty": total_items_qty,
+        },
+        "by_sale_type": by_sale_type,
+        "by_seller": by_seller,
+        "by_terminal": by_terminal,
+        "invoices": invoices,
+        "line_items": line_items,
+    }
+    return report, df, dt
+
+
+@router.get("/sales-report")
+def sales_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
+    return report
+
+
+@router.get("/sales-report/export")
+def export_sales_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_multi_sheet
+
+    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
+    type_headers = ["Sale type", "Payment", "Invoices", "Revenue", "Items qty"]
+    type_data = [
+        [r["sale_type"], r["payment_method"], r["invoice_count"], r["revenue"], r["items_qty"]]
+        for r in report["by_sale_type"]
+    ]
+    seller_headers = [
+        "Seller EN", "Seller AR", "Username", "Invoices", "Revenue", "Items qty",
+        "Cash", "Delivery", "Digital",
+    ]
+    seller_data = [
+        [
+            r["seller_name_en"], r["seller_name_ar"], r.get("username"),
+            r["invoice_count"], r["revenue"], r["items_qty"],
+            r["cash_count"], r["delivery_count"], r["digital_count"],
+        ]
+        for r in report["by_seller"]
+    ]
+    term_headers = ["Terminal (branch) EN", "Terminal (branch) AR", "Invoices", "Revenue", "Items qty"]
+    term_data = [
+        [r["branch_name_en"], r["branch_name_ar"], r["invoice_count"], r["revenue"], r["items_qty"]]
+        for r in report["by_terminal"]
+    ]
+    inv_headers = [
+        "Invoice #", "Date", "Time", "Sale type", "Payment", "Digital platform",
+        "Subtotal", "Discount", "Net total", "Seller EN", "Seller AR",
+        "Terminal EN", "Terminal AR", "Customer", "Items qty",
+    ]
+    inv_data = []
+    for r in report["invoices"]:
+        created = r.get("created_at") or ""
+        date_part = created[:10] if len(created) >= 10 else ""
+        time_part = created[11:19] if len(created) >= 19 else ""
+        inv_data.append([
+            r["invoice_number"], date_part, time_part,
+            r["sale_type"], r["payment_method"], r.get("digital_type"),
+            r["subtotal"], r["discount"], r["net_total"],
+            r.get("seller_name_en"), r.get("seller_name_ar"),
+            r.get("branch_name_en"), r.get("branch_name_ar"),
+            r.get("customer_name"), r["items_qty"],
+        ])
+    item_headers = [
+        "Invoice #", "Date", "Time", "Sale type", "Payment",
+        "Seller EN", "Terminal EN", "Product", "Barcode", "Qty", "Unit price", "Line total",
+    ]
+    item_data = []
+    for r in report["line_items"]:
+        created = r.get("created_at") or ""
+        date_part = created[:10] if len(created) >= 10 else ""
+        time_part = created[11:19] if len(created) >= 19 else ""
+        item_data.append([
+            r["invoice_number"], date_part, time_part,
+            r["sale_type"], r["payment_method"],
+            r.get("seller_name_en"), r.get("branch_name_en"),
+            r.get("product_name"), r.get("barcode"),
+            r["qty"], r["unit_price"], r["line_total"],
+        ])
+    return xlsx_multi_sheet(
+        [
+            ("By sale type", type_headers, type_data),
+            ("By salesperson", seller_headers, seller_data),
+            ("By terminal", term_headers, term_data),
+            ("Invoices", inv_headers, inv_data),
+            ("Line items", item_headers, item_data),
+        ],
+        "sales_report.xlsx",
+    )
