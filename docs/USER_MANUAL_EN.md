@@ -26,7 +26,9 @@ Welcome. This guide walks you through every part of the pharmacy system, from lo
 
 ### Locking & unlocking the terminal
 
-To protect the register when you step away, the screen **locks itself automatically after 10 minutes** of no activity. It shows your name so everyone knows whose session is open, and your work stays exactly where you left it.
+To protect the register when you step away, the screen **locks itself automatically after 15 minutes** of no activity. It shows your name so everyone knows whose session is open, and your work stays exactly where you left it.
+
+While **any POS window is open**, the terminal stays unlocked so you can serve multiple customers at once without the lock interrupting a sale. Other screens still follow the 15-minute idle rule.
 
 To unlock and carry on, do **either**:
 - Type your **password**, or
@@ -71,7 +73,16 @@ The POS screen is the home screen for cashiers and pharmacists.
 3. Click **Return**, tick the items being returned, choose the quantity, write the reason.
 4. Confirm. The stock is added back and the refund is recorded.
 
----
+### Multiple POS windows (two customers at once)
+
+If two customers need to pay at the same time:
+
+1. On the POS screen, click **New POS window** (top of the page).
+2. A **second browser tab or window** opens with its **own empty cart**.
+3. Serve each customer in their own window. Carts do not mix.
+4. Unlock the terminal **once** — all tabs share the same login session.
+
+> Tip: Each window remembers its own cart until you finish or clear it. Closing a POS tab does not affect the other window.
 
 ## 3. Inventory — managing products and stock
 
@@ -177,36 +188,48 @@ This permanently deletes all invoices, stock movements, returns, and customer pa
 
 When a customer has an account, you can sell to them on credit (**Account** payment method in POS). The balance updates automatically.
 
+### Bulk upload (admin only)
+
+To add or update many customers from Excel:
+
+1. Go to **Customers**.
+2. Click **Bulk Upload** (next to Export — visible to admins only).
+3. Click **Download template**, fill in the columns (name, phone, address, opening balance, credit limit, etc.), then upload the file.
+4. Review the result message — the system reports how many rows were created or updated.
+
 ---
 
 ## 7. Reports & Dashboard
 
 - **Dashboard** — today's sales, top sellers, low-stock alerts at a glance.
 - **Reports** — date-range filtered reports: sales by product, by salesperson, by branch, by payment method; profit margins; expired stock; etc. Export any report to Excel.
+- **Fraud Surveillance** (admin, pinned at bottom of menu) — flags unusual discounts, large sales, same-day returns, and similar patterns for review. Filter by date and severity; export to Excel.
+- **Smart Stock Reallocation** (admin / pharmacist, pinned at bottom of menu) — suggests moving stock from branches with surplus to branches running low, based on recent sales. Use **Transfers** to execute a suggestion manually.
 
 ---
 
 ## 8. Shifts (cashier cash drawer)
 
-> **One open shift per person.** Each user can have only one open shift at a time. Close your current shift before starting a new one.
+> **One open shift per person.** Each logged-in user opens and closes **their own** cash drawer — not one shared drawer for the whole branch. If you open two POS windows, they still belong to **your** shift and your sales count together.
 
 At the start of the day:
-1. **Shifts → Start Shift** → enter opening cash (the money in the drawer).
+1. **Shifts → Start Shift** → enter opening cash (the money in **your** drawer).
 
-During the day all your cash sales accumulate automatically.
+During the day all **your** cash sales accumulate automatically (from every POS window you use).
 
 At the end of the day / shift:
 1. **Shifts → Close Shift** → count the cash in the drawer, enter the actual amount.
 2. The system shows expected vs actual and the difference (over / short).
 3. Confirm. The shift report is saved.
 
----
+> Multiple staff can each have an open shift on the same branch at the same time — each person manages their own drawer.
 
 ## 9. HR — employees and attendance (optional module)
 
 - **HR** menu → add employee records, salaries, allowances.
 - **Clock** screen → employees check in / out with their PIN. Hours are tallied for payroll.
 - **Employee Cards** → printable ID cards for staff.
+- **Payroll** → create salary slips per month. Use the **printer icon** on a slip to open a **detailed printable payslip** with salary period, working days/hours, absent and leave days, penalties, bonuses, and all deductions. Print or save as PDF from the browser.
 
 ---
 
