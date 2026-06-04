@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, type LucideIcon,
+  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, type LucideIcon,
 } from 'lucide-react'
 import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
@@ -114,6 +114,35 @@ type DeliveryReport = {
   by_branch: Omit<DeliveryDriverRow, 'delivery_person_id' | 'delivery_person_name' | 'delivery_fees'>[]
   totals: { order_count: number; pending_count: number; delivered_count: number }
 }
+type ZoneRow = {
+  region_key: string
+  region_name_en: string
+  region_name_ar: string
+  group?: string
+  order_count: number
+  revenue: number
+  delivery_count: number
+  digital_count: number
+  rank: number
+  avg_order_value: number
+}
+type MarketingSuggestion = {
+  region_key: string
+  region_name_en: string
+  region_name_ar: string
+  priority: 'high' | 'medium' | 'low'
+  reason_en: string
+  reason_ar: string
+}
+type DeliveryZonesReport = {
+  date_from: string
+  date_to: string
+  totals: { order_count: number; revenue: number; regions_with_sales: number; regions_total: number }
+  zones: ZoneRow[]
+  top_regions: ZoneRow[]
+  bottom_regions: ZoneRow[]
+  marketing_suggestions: MarketingSuggestion[]
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -161,6 +190,7 @@ type ReportId =
   | 'top_products'
   | 'sales_by_seller'
   | 'delivery_summary'
+  | 'delivery_zones'
 
 type ReportDef = {
   id: ReportId
@@ -177,11 +207,12 @@ const REPORT_DEFS: ReportDef[] = [
   { id: 'trend', labelKey: 'reports.monthly_trend', Icon: TrendingUp, fixedPeriod: true },
   { id: 'category', labelKey: 'reports.by_category', Icon: PieChart },
   { id: 'branch', labelKey: 'reports.by_branch', Icon: Building2, adminOnly: true },
-  { id: 'clinic', labelKey: 'reports.by_clinic', Icon: Stethoscope, needsClinics: true },
+  { id: 'clinic', labelKey: 'reports.by_clinic', Icon: Stethoscope, needsClinics: true, xlsxExport: true },
   { id: 'digital', labelKey: 'reports.digital_account_title', Icon: Smartphone },
   { id: 'payment', labelKey: 'reports.by_payment', Icon: CreditCard },
   { id: 'sales_by_seller', labelKey: 'reports.sales_by_seller', Icon: UserRound, xlsxExport: true },
   { id: 'delivery_summary', labelKey: 'reports.delivery_summary', Icon: Bike, xlsxExport: true },
+  { id: 'delivery_zones', labelKey: 'reports.delivery_zones', Icon: MapPin, xlsxExport: true },
   { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
   { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
 ]
@@ -204,6 +235,7 @@ export default function Reports() {
   const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
   const [sellers, setSellers] = useState<SellerRow[]>([])
   const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null)
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZonesReport | null>(null)
   const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -249,7 +281,7 @@ export default function Reports() {
           break
         }
         case 'clinic': {
-          const { data } = await api.get('/sales/by-clinic', { params })
+          const { data } = await api.get('/reports/sales-by-clinic', { params })
           setClinicRows(data)
           break
         }
@@ -288,6 +320,11 @@ export default function Reports() {
           setDeliveryReport(data)
           break
         }
+        case 'delivery_zones': {
+          const { data } = await api.get('/reports/delivery-zones', { params })
+          setDeliveryZones(data)
+          break
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load report')
@@ -313,6 +350,14 @@ export default function Reports() {
       }
       if (activeReport === 'delivery_summary') {
         await downloadApiExcel('/reports/delivery-summary/export', `delivery_summary_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'delivery_zones') {
+        await downloadApiExcel('/reports/delivery-zones/export', `delivery_zones_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'clinic') {
+        await downloadApiExcel('/reports/sales-by-clinic/export', `sales_by_clinic_${suffix}.xlsx`, dateParams)
         return
       }
     }
@@ -603,26 +648,15 @@ export default function Reports() {
         {/* Sales by clinic */}
         {!loading && activeReport === 'clinic' && hasFeature('clinics') && (
         <section>
-          <div className="flex items-center justify-between mb-2">
-            <SectionHead icon={<Stethoscope size={18} />} title={t('reports.by_clinic')} inline />
-            <button onClick={() => exportCSV('sales-by-clinic.csv', clinicRows, [
-              { key: 'clinic_name', label: 'Clinic' },
-              { key: 'invoice_count', label: 'Invoices' },
-              { key: 'gross', label: 'Gross' },
-              { key: 'discount', label: 'Discount' },
-              { key: 'net', label: 'Net' },
-            ])} className="text-xs flex items-center gap-1 text-slate-600 hover:text-pharma-700">
-              <Download size={13} /> CSV
-            </button>
-          </div>
+          <SectionHead icon={<Stethoscope size={18} />} title={t('reports.by_clinic')} subtitle={`${from} → ${to}`} />
           <DataTable
             empty={t('reports.no_clinic_sales')}
             cols={[
-              { key: 'clinic_name', label: t('reports.clinic') },
-              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r) => fmtInt(r.invoice_count) },
-              { key: 'gross', label: t('reports.gross_revenue'), align: 'end', render: (r) => fmt(r.gross) },
-              { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r) => fmt(r.discount) },
-              { key: 'net', label: t('reports.net_revenue'), align: 'end', render: (r) => <span className="font-semibold text-slate-800">{fmt(r.net)}</span> },
+              { key: 'clinic_name', label: t('reports.clinic'), sortValue: (r: ClinicRow) => r.clinic_name },
+              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r: ClinicRow) => fmtInt(r.invoice_count), sortValue: (r: ClinicRow) => r.invoice_count },
+              { key: 'gross', label: t('reports.gross_revenue'), align: 'end', render: (r: ClinicRow) => fmt(r.gross), sortValue: (r: ClinicRow) => r.gross },
+              { key: 'discount', label: t('reports.total_discount'), align: 'end', render: (r: ClinicRow) => fmt(r.discount), sortValue: (r: ClinicRow) => r.discount },
+              { key: 'net', label: t('reports.net_revenue'), align: 'end', render: (r: ClinicRow) => <span className="font-semibold text-slate-800">{fmt(r.net)}</span>, sortValue: (r: ClinicRow) => r.net },
             ]}
             rows={clinicRows}
           />
@@ -966,6 +1000,44 @@ export default function Reports() {
         </section>
         )}
 
+        {/* Delivery zones */}
+        {!loading && activeReport === 'delivery_zones' && deliveryZones && (
+        <section className="space-y-4">
+          <SectionHead icon={<MapPin size={18} />} title={t('reports.delivery_zones')} subtitle={`${from} → ${to}`} />
+          <p className="text-xs text-slate-500">{t('reports.delivery_zones_hint')}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(deliveryZones.totals.order_count)} />
+            <Kpi tone="green" label={t('reports.revenue')} value={fmt(deliveryZones.totals.revenue)} />
+            <Kpi tone="amber" label={t('reports.regions_with_sales')} value={String(deliveryZones.totals.regions_with_sales)} />
+            <Kpi tone="blue" label={t('reports.regions_total')} value={String(deliveryZones.totals.regions_total)} />
+          </div>
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.marketing_suggestions')}</h3>
+          <MarketingSuggestionsTable rows={deliveryZones.marketing_suggestions} />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.top_regions')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={zoneCols(t)}
+            rows={deliveryZones.top_regions}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.least_regions')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={zoneCols(t)}
+            rows={deliveryZones.bottom_regions}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.all_zones')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={zoneCols(t)}
+            rows={deliveryZones.zones}
+          />
+        </section>
+        )}
+
         {/* Top profitable products */}
         {!loading && activeReport === 'top_products' && (
         <section>
@@ -1039,6 +1111,81 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
     <div className={`rounded-xl border p-3 flex items-center justify-between ${accent ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-200 text-slate-700'}`}>
       <span className="text-sm font-medium">{label}</span>
       <span className="text-lg font-bold tabular-nums">{value}</span>
+    </div>
+  )
+}
+
+function zoneCols(t: (k: string) => string) {
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  return [
+    { key: 'rank', label: '#', align: 'end' as const, sortValue: (r: ZoneRow) => r.rank },
+    {
+      key: 'region',
+      label: t('reports.zone'),
+      render: (r: ZoneRow) => lang === 'ar' ? r.region_name_ar : r.region_name_en,
+      sortValue: (r: ZoneRow) => lang === 'ar' ? r.region_name_ar : r.region_name_en,
+    },
+    { key: 'group', label: t('reports.zone_group'), render: (r: ZoneRow) => r.group || '—' },
+    { key: 'order_count', label: t('reports.delivery_orders'), align: 'end' as const, render: (r: ZoneRow) => fmtInt(r.order_count), sortValue: (r: ZoneRow) => r.order_count },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: ZoneRow) => fmt(r.revenue), sortValue: (r: ZoneRow) => r.revenue },
+    { key: 'delivery_count', label: t('reports.qty_delivery'), align: 'end' as const, render: (r: ZoneRow) => fmtInt(r.delivery_count), sortValue: (r: ZoneRow) => r.delivery_count },
+    { key: 'digital_count', label: t('reports.qty_digital'), align: 'end' as const, render: (r: ZoneRow) => fmtInt(r.digital_count), sortValue: (r: ZoneRow) => r.digital_count },
+    { key: 'avg_order_value', label: t('reports.avg_order'), align: 'end' as const, render: (r: ZoneRow) => fmt(r.avg_order_value), sortValue: (r: ZoneRow) => r.avg_order_value },
+  ]
+}
+
+function MarketingSuggestionsTable({ rows }: { rows: MarketingSuggestion[] }) {
+  const { t } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const accessors = useMemo(() => ({
+    priority: (r: MarketingSuggestion) => r.priority,
+    region: (r: MarketingSuggestion) => lang === 'ar' ? r.region_name_ar : r.region_name_en,
+    reason: (r: MarketingSuggestion) => lang === 'ar' ? r.reason_ar : r.reason_en,
+  }), [lang])
+  const quick = useQuickFilter(rows, [
+    (r) => r.region_name_en,
+    (r) => r.region_name_ar,
+    (r) => r.reason_en,
+    (r) => r.reason_ar,
+  ])
+  const { sorted, sort, toggle } = useSort(quick.filtered, accessors)
+  const PRI_CLS: Record<string, string> = {
+    high: 'bg-red-100 text-red-800',
+    medium: 'bg-amber-100 text-amber-800',
+    low: 'bg-slate-100 text-slate-600',
+  }
+  if (!rows.length) {
+    return <div className="bg-white border border-slate-200 rounded-2xl p-6 text-center text-sm text-slate-400">{t('reports.no_marketing_suggestions')}</div>
+  }
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="p-3 border-b border-slate-100">
+        <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} className="max-w-xs" />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <SortTh k="priority" sort={sort} onToggle={toggle}>{t('reports.priority')}</SortTh>
+              <SortTh k="region" sort={sort} onToggle={toggle}>{t('reports.zone')}</SortTh>
+              <SortTh k="reason" sort={sort} onToggle={toggle}>{t('reports.suggestion')}</SortTh>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={i} className="border-t border-slate-100 hover:bg-slate-50/50">
+                <td className="px-4 py-2.5">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${PRI_CLS[r.priority] || PRI_CLS.low}`}>
+                    {t(`reports.priority_${r.priority}`, r.priority)}
+                  </span>
+                </td>
+                <td className="px-4 py-2.5 font-medium">{lang === 'ar' ? r.region_name_ar : r.region_name_en}</td>
+                <td className="px-4 py-2.5 text-slate-600 text-xs">{lang === 'ar' ? r.reason_ar : r.reason_en}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

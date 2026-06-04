@@ -837,3 +837,272 @@ def export_delivery_summary(
         for r in report["by_driver"]
     ]
     return xlsx_response(headers, data, "delivery_summary.xlsx")
+
+
+@router.get("/sales-by-clinic")
+def sales_by_clinic_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Per-clinic sales totals (reports module — consistent branch/date scoping)."""
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT cl.id AS clinic_id,
+                   cl.name AS clinic_name,
+                   COUNT(*)::int AS invoice_count,
+                   COALESCE(SUM(i.subtotal), 0)::float AS gross,
+                   COALESCE(SUM(i.discount), 0)::float AS discount,
+                   COALESCE(SUM(i.net_total), 0)::float AS net
+            FROM invoices i
+            JOIN clinics cl ON i.clinic_id = cl.id
+            WHERE i.status = 'completed'
+              AND i.type != 'return'
+              AND i.clinic_id IS NOT NULL
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            GROUP BY cl.id, cl.name
+            ORDER BY net DESC, cl.name ASC
+            """,
+            [df, dt] + bp,
+        )
+        return [
+            {
+                "clinic_id": r["clinic_id"],
+                "clinic_name": r["clinic_name"],
+                "invoice_count": int(r["invoice_count"]),
+                "gross": round(float(r["gross"]), 2),
+                "discount": round(float(r["discount"]), 2),
+                "net": round(float(r["net"]), 2),
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.get("/sales-by-clinic/export")
+def export_sales_by_clinic(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_response
+
+    rows = sales_by_clinic_report(request, date_from, date_to, current_user)
+    headers = ["Clinic", "Invoices", "Gross", "Discount", "Net"]
+    data = [
+        [r["clinic_name"], r["invoice_count"], r["gross"], r["discount"], r["net"]]
+        for r in rows
+    ]
+    return xlsx_response(headers, data, "sales_by_clinic.xlsx")
+
+
+@router.get("/delivery-zones")
+def delivery_zones_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Delivery sales aggregated by Ismailia region/zone with marketing suggestions."""
+    from regions import REGIONS, REGION_BY_KEY, resolve_region_key, region_display
+
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT i.id, i.net_total, i.type, i.delivery_address,
+                   c.region AS customer_region
+            FROM invoices i
+            LEFT JOIN customers c ON c.id = i.customer_id
+            WHERE i.status = 'completed'
+              AND {SHIPMENT_SQL}
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            """,
+            [df, dt] + bp,
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    stats: dict[str, dict] = {}
+    for r in REGIONS:
+        stats[r["key"]] = {
+            "region_key": r["key"],
+            "region_name_en": r["en"],
+            "region_name_ar": r["ar"],
+            "group": r["group"],
+            "order_count": 0,
+            "revenue": 0.0,
+            "delivery_count": 0,
+            "digital_count": 0,
+        }
+    stats["unknown"] = {
+        "region_key": "unknown",
+        "region_name_en": region_display("unknown", "en"),
+        "region_name_ar": region_display("unknown", "ar"),
+        "group": "other",
+        "order_count": 0,
+        "revenue": 0.0,
+        "delivery_count": 0,
+        "digital_count": 0,
+    }
+
+    for row in rows:
+        key = resolve_region_key(
+            row.get("delivery_address"),
+            customer_region=row.get("customer_region"),
+        )
+        if key not in stats:
+            key = "unknown"
+        s = stats[key]
+        net = float(row["net_total"] or 0)
+        s["order_count"] += 1
+        s["revenue"] = round(s["revenue"] + net, 2)
+        if row.get("type") == "delivery":
+            s["delivery_count"] += 1
+        elif row.get("type") == "digital":
+            s["digital_count"] += 1
+
+    zones = sorted(stats.values(), key=lambda z: (-z["revenue"], -z["order_count"], z["region_name_en"]))
+    for i, z in enumerate(zones, start=1):
+        z["rank"] = i
+        z["avg_order_value"] = round(z["revenue"] / z["order_count"], 2) if z["order_count"] else 0.0
+
+    with_sales = [z for z in zones if z["order_count"] > 0 and z["region_key"] != "unknown"]
+    markaz = [z for z in REGIONS if z["group"] == "markaz"]
+    markaz_keys = {m["key"] for m in markaz}
+
+    total_orders = sum(z["order_count"] for z in zones)
+    total_revenue = sum(z["revenue"] for z in zones)
+    avg_orders_per_region = (
+        total_orders / len(with_sales) if with_sales else 0
+    )
+
+    top_regions = [z for z in zones if z["order_count"] > 0][:5]
+    bottom_with_sales = sorted(with_sales, key=lambda z: (z["order_count"], z["revenue"]))[:5]
+
+    zero_regions = [
+        stats[r["key"]] for r in REGIONS if stats[r["key"]]["order_count"] == 0
+    ]
+
+    marketing_suggestions: list[dict] = []
+
+    for z in zero_regions:
+        marketing_suggestions.append({
+            "region_key": z["region_key"],
+            "region_name_en": z["region_name_en"],
+            "region_name_ar": z["region_name_ar"],
+            "priority": "high",
+            "reason_en": f"No delivery orders yet in {z['region_name_en']} — strong candidate to start marketing and delivery coverage.",
+            "reason_ar": f"لا توجد طلبات توصيل بعد في {z['region_name_ar']} — مرشح قوي لبدء التسويق وتغطية التوصيل.",
+        })
+
+    for z in bottom_with_sales:
+        if z["region_key"] in {s["region_key"] for s in marketing_suggestions}:
+            continue
+        if z["order_count"] <= max(1, avg_orders_per_region * 0.3):
+            marketing_suggestions.append({
+                "region_key": z["region_key"],
+                "region_name_en": z["region_name_en"],
+                "region_name_ar": z["region_name_ar"],
+                "priority": "medium",
+                "reason_en": (
+                    f"Low activity in {z['region_name_en']} ({z['order_count']} orders, "
+                    f"{z['revenue']:.0f} LE) — consider flyers, clinic partnerships, or targeted ads."
+                ),
+                "reason_ar": (
+                    f"نشاط منخفض في {z['region_name_ar']} ({z['order_count']} طلبات، "
+                    f"{z['revenue']:.0f} جنيه) — فكّر في منشورات أو شراكات عيادات أو إعلانات مستهدفة."
+                ),
+            })
+
+    if stats["unknown"]["order_count"] > 0:
+        marketing_suggestions.append({
+            "region_key": "unknown",
+            "region_name_en": stats["unknown"]["region_name_en"],
+            "region_name_ar": stats["unknown"]["region_name_ar"],
+            "priority": "low",
+            "reason_en": (
+                f"{stats['unknown']['order_count']} orders have unclear addresses — "
+                "use structured region selection at checkout to improve zone analytics."
+            ),
+            "reason_ar": (
+                f"{stats['unknown']['order_count']} طلبات بعناوين غير واضحة — "
+                "استخدم اختيار المنطقة المنظم عند الدفع لتحسين التحليل."
+            ),
+        })
+
+    markaz_with_sales = sum(1 for k in markaz_keys if stats[k]["order_count"] > 0)
+    if markaz_with_sales < len(markaz_keys):
+        missing_markaz = [REGION_BY_KEY[k]["en"] for k in markaz_keys if stats[k]["order_count"] == 0]
+        if missing_markaz:
+            marketing_suggestions.insert(0, {
+                "region_key": "_markaz_gap",
+                "region_name_en": "Markaz coverage gap",
+                "region_name_ar": "فجوة تغطية المراكز",
+                "priority": "high",
+                "reason_en": f"Expand delivery/marketing to markaz with zero orders: {', '.join(missing_markaz[:5])}.",
+                "reason_ar": f"وسّع التوصيل والتسويق للمراكز بدون طلبات: {', '.join(missing_markaz[:5])}.",
+            })
+
+    priority_rank = {"high": 0, "medium": 1, "low": 2}
+    marketing_suggestions.sort(key=lambda s: priority_rank.get(s["priority"], 9))
+
+    return {
+        "date_from": str(df),
+        "date_to": str(dt),
+        "totals": {
+            "order_count": total_orders,
+            "revenue": round(total_revenue, 2),
+            "regions_with_sales": len(with_sales),
+            "regions_total": len(REGIONS) + 1,
+        },
+        "zones": zones,
+        "top_regions": top_regions,
+        "bottom_regions": bottom_with_sales + zero_regions[:5],
+        "marketing_suggestions": marketing_suggestions[:15],
+    }
+
+
+@router.get("/delivery-zones/export")
+def export_delivery_zones(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_response
+
+    report = delivery_zones_report(request, date_from, date_to, current_user)
+    headers = [
+        "Rank", "Region EN", "Region AR", "Group", "Orders", "Revenue",
+        "Delivery", "Digital", "Avg order",
+    ]
+    data = [
+        [
+            z["rank"], z["region_name_en"], z["region_name_ar"], z.get("group"),
+            z["order_count"], z["revenue"], z["delivery_count"], z["digital_count"],
+            z["avg_order_value"],
+        ]
+        for z in report["zones"]
+    ]
+    return xlsx_response(headers, data, "delivery_zones.xlsx")
