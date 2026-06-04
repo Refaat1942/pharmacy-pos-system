@@ -1106,3 +1106,220 @@ def export_delivery_zones(
         for z in report["zones"]
     ]
     return xlsx_response(headers, data, "delivery_zones.xlsx")
+
+
+def _customer_analysis_data(
+    request: Request,
+    date_from: Optional[str],
+    date_to: Optional[str],
+    current_user: dict,
+) -> tuple[list, list, date, date]:
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            WITH filtered AS (
+              SELECT i.id, i.customer_id, i.net_total, i.created_at
+              FROM invoices i
+              WHERE i.status = 'completed'
+                AND i.type != 'return'
+                AND i.customer_id IS NOT NULL
+                AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+                {bf.replace('branch_id', 'i.branch_id')}
+            ),
+            gaps AS (
+              SELECT customer_id,
+                     AVG(EXTRACT(EPOCH FROM (created_at - prev_at)) / 86400)::float AS avg_days_between
+              FROM (
+                SELECT customer_id, created_at,
+                       LAG(created_at) OVER (PARTITION BY customer_id ORDER BY created_at) AS prev_at
+                FROM filtered
+              ) x
+              WHERE prev_at IS NOT NULL
+              GROUP BY customer_id
+            ),
+            item_stats AS (
+              SELECT f.customer_id,
+                     COALESCE(SUM(ii.quantity), 0)::int AS total_items_qty,
+                     COUNT(DISTINCT ii.product_id)::int AS distinct_products
+              FROM filtered f
+              JOIN invoice_items ii ON ii.invoice_id = f.id
+              GROUP BY f.customer_id
+            ),
+            cust_agg AS (
+              SELECT f.customer_id,
+                     COUNT(*)::int AS invoice_count,
+                     COALESCE(SUM(f.net_total), 0)::float AS total_spent,
+                     MIN(f.created_at) AS first_invoice_at,
+                     MAX(f.created_at) AS last_invoice_at
+              FROM filtered f
+              GROUP BY f.customer_id
+            )
+            SELECT c.id AS customer_id,
+                   c.name AS customer_name,
+                   c.phone,
+                   c.region,
+                   ca.invoice_count,
+                   ca.total_spent,
+                   CASE WHEN ca.invoice_count > 0
+                     THEN (ca.total_spent / ca.invoice_count)::float ELSE 0 END AS avg_order_value,
+                   ca.first_invoice_at,
+                   ca.last_invoice_at,
+                   g.avg_days_between,
+                   COALESCE(it.total_items_qty, 0)::int AS total_items_qty,
+                   COALESCE(it.distinct_products, 0)::int AS distinct_products
+            FROM cust_agg ca
+            JOIN customers c ON c.id = ca.customer_id
+            LEFT JOIN gaps g ON g.customer_id = ca.customer_id
+            LEFT JOIN item_stats it ON it.customer_id = ca.customer_id
+            ORDER BY ca.total_spent DESC, ca.invoice_count DESC, c.name ASC
+            """,
+            [df, dt] + bp,
+        )
+        summary_rows = []
+        for r in cur.fetchall():
+            row = dict(r)
+            last_at = row.get("last_invoice_at")
+            if last_at:
+                last_d = last_at.date() if hasattr(last_at, "date") else last_at
+                row["days_since_last_invoice"] = (dt - last_d).days
+                row["last_invoice_at"] = last_at.isoformat() if hasattr(last_at, "isoformat") else str(last_at)
+            else:
+                row["days_since_last_invoice"] = None
+                row["last_invoice_at"] = None
+            fi = row.get("first_invoice_at")
+            row["first_invoice_at"] = fi.isoformat() if fi and hasattr(fi, "isoformat") else (str(fi) if fi else None)
+            row["total_spent"] = round(float(row["total_spent"] or 0), 2)
+            row["avg_order_value"] = round(float(row["avg_order_value"] or 0), 2)
+            ab = row.get("avg_days_between")
+            row["avg_days_between_invoices"] = round(float(ab), 1) if ab is not None else None
+            summary_rows.append(row)
+
+        n = len(summary_rows)
+        for i, row in enumerate(summary_rows):
+            if n <= 1:
+                row["buyer_tier"] = "high"
+            elif i / n < 0.34:
+                row["buyer_tier"] = "high"
+            elif i / n < 0.67:
+                row["buyer_tier"] = "medium"
+            else:
+                row["buyer_tier"] = "low"
+
+        cur.execute(
+            f"""
+            SELECT c.id AS customer_id,
+                   c.name AS customer_name,
+                   c.phone,
+                   COALESCE(ii.product_name_en, ii.product_name_ar, p.name_en, p.name_ar) AS product_name,
+                   ii.barcode,
+                   SUM(ii.quantity)::int AS qty,
+                   SUM(ii.total)::float AS revenue,
+                   MAX(i.created_at) AS last_purchased_at,
+                   COUNT(DISTINCT i.id)::int AS purchase_count
+            FROM invoices i
+            JOIN customers c ON c.id = i.customer_id
+            JOIN invoice_items ii ON ii.invoice_id = i.id
+            LEFT JOIN products p ON p.id = ii.product_id
+            WHERE i.status = 'completed'
+              AND i.type != 'return'
+              AND i.customer_id IS NOT NULL
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            GROUP BY c.id, c.name, c.phone,
+                     COALESCE(ii.product_name_en, ii.product_name_ar, p.name_en, p.name_ar),
+                     ii.barcode
+            ORDER BY c.name ASC, revenue DESC
+            """,
+            [df, dt] + bp,
+        )
+        item_rows = []
+        for r in cur.fetchall():
+            row = dict(r)
+            lp = row.get("last_purchased_at")
+            row["last_purchased_at"] = lp.isoformat() if lp and hasattr(lp, "isoformat") else (str(lp) if lp else None)
+            row["revenue"] = round(float(row["revenue"] or 0), 2)
+            item_rows.append(row)
+    finally:
+        cur.close()
+        conn.close()
+    return summary_rows, item_rows, df, dt
+
+
+@router.get("/customer-analysis")
+def customer_analysis(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    summary, items, df, dt = _customer_analysis_data(request, date_from, date_to, current_user)
+    top_buyers = [r for r in summary if r["buyer_tier"] == "high"][:10]
+    low_buyers = sorted(
+        [r for r in summary if r["buyer_tier"] == "low"],
+        key=lambda x: (x["total_spent"], x["invoice_count"]),
+    )[:10]
+    return {
+        "date_from": str(df),
+        "date_to": str(dt),
+        "summary": {
+            "customer_count": len(summary),
+            "total_revenue": round(sum(r["total_spent"] for r in summary), 2),
+            "high_buyers": len([r for r in summary if r["buyer_tier"] == "high"]),
+            "low_buyers": len([r for r in summary if r["buyer_tier"] == "low"]),
+        },
+        "customers": summary,
+        "top_buyers": top_buyers,
+        "low_buyers": low_buyers,
+        "items": items,
+    }
+
+
+@router.get("/customer-analysis/export")
+def export_customer_analysis(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_multi_sheet
+
+    summary, items, df, dt = _customer_analysis_data(request, date_from, date_to, current_user)
+    cust_headers = [
+        "Customer", "Phone", "Region", "Tier", "Invoices", "Total spent", "Avg order",
+        "First invoice", "Last invoice", "Days since last", "Avg days between",
+        "Items qty", "Distinct products",
+    ]
+    cust_data = [
+        [
+            r["customer_name"], r.get("phone"), r.get("region"), r.get("buyer_tier"),
+            r["invoice_count"], r["total_spent"], r["avg_order_value"],
+            r.get("first_invoice_at"), r.get("last_invoice_at"),
+            r.get("days_since_last_invoice"), r.get("avg_days_between_invoices"),
+            r["total_items_qty"], r["distinct_products"],
+        ]
+        for r in summary
+    ]
+    item_headers = [
+        "Customer", "Phone", "Product", "Barcode", "Qty", "Revenue",
+        "Purchase count", "Last purchased",
+    ]
+    item_data = [
+        [
+            r["customer_name"], r.get("phone"), r.get("product_name"), r.get("barcode"),
+            r["qty"], r["revenue"], r["purchase_count"], r.get("last_purchased_at"),
+        ]
+        for r in items
+    ]
+    return xlsx_multi_sheet(
+        [
+            ("Customers", cust_headers, cust_data),
+            ("Items purchased", item_headers, item_data),
+        ],
+        "customer_analysis.xlsx",
+    )

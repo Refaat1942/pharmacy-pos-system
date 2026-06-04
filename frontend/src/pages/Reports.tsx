@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, type LucideIcon,
+  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, Users, type LucideIcon,
 } from 'lucide-react'
 import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
@@ -143,6 +143,47 @@ type DeliveryZonesReport = {
   bottom_regions: ZoneRow[]
   marketing_suggestions: MarketingSuggestion[]
 }
+type CustomerRow = {
+  customer_id: number
+  customer_name: string
+  phone: string | null
+  region: string | null
+  invoice_count: number
+  total_spent: number
+  avg_order_value: number
+  first_invoice_at: string | null
+  last_invoice_at: string | null
+  days_since_last_invoice: number | null
+  avg_days_between_invoices: number | null
+  total_items_qty: number
+  distinct_products: number
+  buyer_tier: 'high' | 'medium' | 'low'
+}
+type CustomerItemRow = {
+  customer_id: number
+  customer_name: string
+  phone: string | null
+  product_name: string
+  barcode: string | null
+  qty: number
+  revenue: number
+  purchase_count: number
+  last_purchased_at: string | null
+}
+type CustomerAnalysisReport = {
+  date_from: string
+  date_to: string
+  summary: {
+    customer_count: number
+    total_revenue: number
+    high_buyers: number
+    low_buyers: number
+  }
+  customers: CustomerRow[]
+  top_buyers: CustomerRow[]
+  low_buyers: CustomerRow[]
+  items: CustomerItemRow[]
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -191,6 +232,7 @@ type ReportId =
   | 'sales_by_seller'
   | 'delivery_summary'
   | 'delivery_zones'
+  | 'customer_analysis'
 
 type ReportDef = {
   id: ReportId
@@ -213,6 +255,7 @@ const REPORT_DEFS: ReportDef[] = [
   { id: 'sales_by_seller', labelKey: 'reports.sales_by_seller', Icon: UserRound, xlsxExport: true },
   { id: 'delivery_summary', labelKey: 'reports.delivery_summary', Icon: Bike, xlsxExport: true },
   { id: 'delivery_zones', labelKey: 'reports.delivery_zones', Icon: MapPin, xlsxExport: true },
+  { id: 'customer_analysis', labelKey: 'reports.customer_analysis', Icon: Users, xlsxExport: true },
   { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
   { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
 ]
@@ -236,6 +279,7 @@ export default function Reports() {
   const [sellers, setSellers] = useState<SellerRow[]>([])
   const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null)
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZonesReport | null>(null)
+  const [customerAnalysis, setCustomerAnalysis] = useState<CustomerAnalysisReport | null>(null)
   const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -325,6 +369,11 @@ export default function Reports() {
           setDeliveryZones(data)
           break
         }
+        case 'customer_analysis': {
+          const { data } = await api.get('/reports/customer-analysis', { params })
+          setCustomerAnalysis(data)
+          break
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load report')
@@ -358,6 +407,10 @@ export default function Reports() {
       }
       if (activeReport === 'clinic') {
         await downloadApiExcel('/reports/sales-by-clinic/export', `sales_by_clinic_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'customer_analysis') {
+        await downloadApiExcel('/reports/customer-analysis/export', `customer_analysis_${suffix}.xlsx`, dateParams)
         return
       }
     }
@@ -1000,6 +1053,48 @@ export default function Reports() {
         </section>
         )}
 
+        {/* Customer analysis */}
+        {!loading && activeReport === 'customer_analysis' && customerAnalysis && (
+        <section className="space-y-4">
+          <SectionHead icon={<Users size={18} />} title={t('reports.customer_analysis')} subtitle={`${from} → ${to}`} />
+          <p className="text-xs text-slate-500">{t('reports.customer_analysis_hint')}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Kpi tone="blue" label={t('reports.customer_count')} value={fmtInt(customerAnalysis.summary.customer_count)} />
+            <Kpi tone="green" label={t('reports.total_customer_revenue')} value={fmt(customerAnalysis.summary.total_revenue)} />
+            <Kpi tone="green" label={t('reports.high_buyers')} value={fmtInt(customerAnalysis.summary.high_buyers)} sub={t('reports.buyer_tier_high')} />
+            <Kpi tone="amber" label={t('reports.low_buyers')} value={fmtInt(customerAnalysis.summary.low_buyers)} sub={t('reports.buyer_tier_low')} />
+          </div>
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.top_buyers')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={customerCols(t)}
+            rows={customerAnalysis.top_buyers}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.low_buyers')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={customerCols(t)}
+            rows={customerAnalysis.low_buyers}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.all_customers')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={customerCols(t)}
+            rows={customerAnalysis.customers}
+          />
+
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.items_purchased')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={customerItemCols(t)}
+            rows={customerAnalysis.items}
+          />
+        </section>
+        )}
+
         {/* Delivery zones */}
         {!loading && activeReport === 'delivery_zones' && deliveryZones && (
         <section className="space-y-4">
@@ -1113,6 +1208,51 @@ function PnlRow({ label, value, accent }: { label: string; value: string; accent
       <span className="text-lg font-bold tabular-nums">{value}</span>
     </div>
   )
+}
+
+const fmtDate = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : '—')
+
+function BuyerTierBadge({ tier }: { tier: CustomerRow['buyer_tier'] }) {
+  const { t } = useTranslation()
+  const cls: Record<CustomerRow['buyer_tier'], string> = {
+    high: 'bg-emerald-100 text-emerald-800',
+    medium: 'bg-blue-100 text-blue-800',
+    low: 'bg-amber-100 text-amber-800',
+  }
+  return (
+    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${cls[tier]}`}>
+      {t(`reports.buyer_tier_${tier}`, tier)}
+    </span>
+  )
+}
+
+function customerCols(t: (k: string) => string) {
+  return [
+    { key: 'customer_name', label: t('reports.customer'), sortValue: (r: CustomerRow) => r.customer_name },
+    { key: 'phone', label: t('reports.phone'), render: (r: CustomerRow) => r.phone || '—' },
+    { key: 'region', label: t('reports.zone'), render: (r: CustomerRow) => r.region || '—' },
+    { key: 'buyer_tier', label: t('reports.buyer_tier'), render: (r: CustomerRow) => <BuyerTierBadge tier={r.buyer_tier} />, sortValue: (r: CustomerRow) => r.buyer_tier },
+    { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: CustomerRow) => fmtInt(r.invoice_count), sortValue: (r: CustomerRow) => r.invoice_count },
+    { key: 'total_spent', label: t('reports.total_spent'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.total_spent), sortValue: (r: CustomerRow) => r.total_spent },
+    { key: 'avg_order_value', label: t('reports.avg_order'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.avg_order_value), sortValue: (r: CustomerRow) => r.avg_order_value },
+    { key: 'last_invoice_at', label: t('reports.last_invoice'), render: (r: CustomerRow) => fmtDate(r.last_invoice_at), sortValue: (r: CustomerRow) => r.last_invoice_at || '' },
+    { key: 'days_since_last_invoice', label: t('reports.days_since_last'), align: 'end' as const, render: (r: CustomerRow) => r.days_since_last_invoice != null ? fmtInt(r.days_since_last_invoice) : '—', sortValue: (r: CustomerRow) => r.days_since_last_invoice ?? -1 },
+    { key: 'avg_days_between_invoices', label: t('reports.avg_days_between'), align: 'end' as const, render: (r: CustomerRow) => r.avg_days_between_invoices != null ? fmt(r.avg_days_between_invoices) : '—', sortValue: (r: CustomerRow) => r.avg_days_between_invoices ?? -1 },
+    { key: 'total_items_qty', label: t('reports.items_qty'), align: 'end' as const, render: (r: CustomerRow) => fmtInt(r.total_items_qty), sortValue: (r: CustomerRow) => r.total_items_qty },
+    { key: 'distinct_products', label: t('reports.distinct_products'), align: 'end' as const, render: (r: CustomerRow) => fmtInt(r.distinct_products), sortValue: (r: CustomerRow) => r.distinct_products },
+  ]
+}
+
+function customerItemCols(t: (k: string) => string) {
+  return [
+    { key: 'customer_name', label: t('reports.customer'), sortValue: (r: CustomerItemRow) => r.customer_name },
+    { key: 'product_name', label: t('reports.product'), sortValue: (r: CustomerItemRow) => r.product_name },
+    { key: 'barcode', label: t('reports.barcode'), render: (r: CustomerItemRow) => r.barcode || '—' },
+    { key: 'qty', label: t('reports.qty'), align: 'end' as const, render: (r: CustomerItemRow) => fmtInt(r.qty), sortValue: (r: CustomerItemRow) => r.qty },
+    { key: 'revenue', label: t('reports.revenue'), align: 'end' as const, render: (r: CustomerItemRow) => fmt(r.revenue), sortValue: (r: CustomerItemRow) => r.revenue },
+    { key: 'purchase_count', label: t('reports.purchase_count'), align: 'end' as const, render: (r: CustomerItemRow) => fmtInt(r.purchase_count), sortValue: (r: CustomerItemRow) => r.purchase_count },
+    { key: 'last_purchased_at', label: t('reports.last_purchased'), render: (r: CustomerItemRow) => fmtDate(r.last_purchased_at), sortValue: (r: CustomerItemRow) => r.last_purchased_at || '' },
+  ]
 }
 
 function zoneCols(t: (k: string) => string) {
