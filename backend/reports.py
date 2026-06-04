@@ -1527,31 +1527,114 @@ def _sales_report_data(
     return report, df, dt
 
 
-@router.get("/sales-report")
-def sales_report(
-    request: Request,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
-):
-    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
-    return report
+def _row_date_part(created_at) -> str:
+    if not created_at:
+        return ""
+    if hasattr(created_at, "isoformat"):
+        return created_at.date().isoformat()
+    return str(created_at)[:10]
 
 
-@router.get("/sales-report/export")
-def export_sales_report(
-    request: Request,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
-):
-    from excel_utils import xlsx_multi_sheet
+def _in_date_range(created_at, date_from: Optional[str], date_to: Optional[str]) -> bool:
+    if not date_from and not date_to:
+        return True
+    d = _row_date_part(created_at)
+    if not d:
+        return False
+    if date_from and d < date_from:
+        return False
+    if date_to and d > date_to:
+        return False
+    return True
 
-    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
+
+def _apply_sales_report_filters(
+    report: dict,
+    section: Optional[str],
+    sale_type: Optional[str],
+    payment_method: Optional[str],
+    seller_id: Optional[int],
+    branch_id: Optional[int],
+    section_date_from: Optional[str],
+    section_date_to: Optional[str],
+) -> dict:
+    """Return a copy of report sections with optional filters applied."""
+    out = {**report}
+    st = (sale_type or "").strip() or None
+    pm = (payment_method or "").strip() or None
+    sid = seller_id
+    bid = branch_id
+    sdf = (section_date_from or "").strip() or None
+    sdt = (section_date_to or "").strip() or None
+
+    by_type = report["by_sale_type"]
+    if st:
+        by_type = [r for r in by_type if r.get("sale_type") == st]
+    if pm:
+        by_type = [r for r in by_type if r.get("payment_method") == pm]
+    out["by_sale_type"] = by_type
+
+    by_seller = report["by_seller"]
+    if sid is not None:
+        by_seller = [r for r in by_seller if r.get("seller_id") == sid]
+    if st:
+        by_seller = [r for r in by_seller if (
+            (st == "cash" and r.get("cash_count", 0) > 0)
+            or (st == "delivery" and r.get("delivery_count", 0) > 0)
+            or (st == "digital" and r.get("digital_count", 0) > 0)
+        )]
+    out["by_seller"] = by_seller
+
+    by_terminal = report["by_terminal"]
+    if bid is not None:
+        by_terminal = [r for r in by_terminal if r.get("branch_id") == bid]
+    out["by_terminal"] = by_terminal
+
+    invoices = report["invoices"]
+    if st:
+        invoices = [r for r in invoices if r.get("sale_type") == st]
+    if pm:
+        invoices = [r for r in invoices if r.get("payment_method") == pm]
+    if sid is not None:
+        invoices = [r for r in invoices if r.get("seller_id") == sid]
+    if bid is not None:
+        invoices = [r for r in invoices if r.get("branch_id") == bid]
+    if sdf or sdt:
+        invoices = [r for r in invoices if _in_date_range(r.get("created_at"), sdf, sdt)]
+    out["invoices"] = invoices
+
+    allowed_invoices = {r["invoice_number"] for r in invoices}
+    invoice_level_filter = bool(st or pm or sid is not None or bid is not None or sdf or sdt)
+
+    line_items = report["line_items"]
+    if st:
+        line_items = [r for r in line_items if r.get("sale_type") == st]
+    if pm:
+        line_items = [r for r in line_items if r.get("payment_method") == pm]
+    if sdf or sdt:
+        line_items = [r for r in line_items if _in_date_range(r.get("created_at"), sdf, sdt)]
+    if invoice_level_filter:
+        line_items = [r for r in line_items if r.get("invoice_number") in allowed_invoices]
+    out["line_items"] = line_items
+
+    if section == "by_sale_type":
+        return {k: out[k] for k in ("by_sale_type",) if k in out} | {"_section": section}
+    if section == "by_seller":
+        return {k: out[k] for k in ("by_seller",) if k in out} | {"_section": section}
+    if section == "by_terminal":
+        return {k: out[k] for k in ("by_terminal",) if k in out} | {"_section": section}
+    if section == "invoices":
+        return {k: out[k] for k in ("invoices",) if k in out} | {"_section": section}
+    if section == "line_items":
+        return {k: out[k] for k in ("line_items",) if k in out} | {"_section": section}
+    return out
+
+
+def _sales_report_sheet_data(report: dict) -> list[tuple[str, list, list]]:
     type_headers = ["Sale type", "Payment", "Invoices", "Revenue", "Items qty"]
     type_data = [
         [r["sale_type"], r["payment_method"], r["invoice_count"], r["revenue"], r["items_qty"]]
-        for r in report["by_sale_type"]
+        for r in report.get("by_sale_type", [])
     ]
     seller_headers = [
         "Seller EN", "Seller AR", "Username", "Invoices", "Revenue", "Items qty",
@@ -1563,12 +1646,12 @@ def export_sales_report(
             r["invoice_count"], r["revenue"], r["items_qty"],
             r["cash_count"], r["delivery_count"], r["digital_count"],
         ]
-        for r in report["by_seller"]
+        for r in report.get("by_seller", [])
     ]
     term_headers = ["Terminal (branch) EN", "Terminal (branch) AR", "Invoices", "Revenue", "Items qty"]
     term_data = [
         [r["branch_name_en"], r["branch_name_ar"], r["invoice_count"], r["revenue"], r["items_qty"]]
-        for r in report["by_terminal"]
+        for r in report.get("by_terminal", [])
     ]
     inv_headers = [
         "Invoice #", "Date", "Time", "Sale type", "Payment", "Digital platform",
@@ -1576,7 +1659,7 @@ def export_sales_report(
         "Terminal EN", "Terminal AR", "Customer", "Items qty",
     ]
     inv_data = []
-    for r in report["invoices"]:
+    for r in report.get("invoices", []):
         created = r.get("created_at") or ""
         date_part = created[:10] if len(created) >= 10 else ""
         time_part = created[11:19] if len(created) >= 19 else ""
@@ -1593,7 +1676,7 @@ def export_sales_report(
         "Seller EN", "Terminal EN", "Product", "Barcode", "Qty", "Unit price", "Line total",
     ]
     item_data = []
-    for r in report["line_items"]:
+    for r in report.get("line_items", []):
         created = r.get("created_at") or ""
         date_part = created[:10] if len(created) >= 10 else ""
         time_part = created[11:19] if len(created) >= 19 else ""
@@ -1604,13 +1687,61 @@ def export_sales_report(
             r.get("product_name"), r.get("barcode"),
             r["qty"], r["unit_price"], r["line_total"],
         ])
-    return xlsx_multi_sheet(
-        [
-            ("By sale type", type_headers, type_data),
-            ("By salesperson", seller_headers, seller_data),
-            ("By terminal", term_headers, term_data),
-            ("Invoices", inv_headers, inv_data),
-            ("Line items", item_headers, item_data),
-        ],
-        "sales_report.xlsx",
+    return [
+        ("By sale type", type_headers, type_data),
+        ("By salesperson", seller_headers, seller_data),
+        ("By terminal", term_headers, term_data),
+        ("Invoices", inv_headers, inv_data),
+        ("Line items", item_headers, item_data),
+    ]
+
+
+@router.get("/sales-report")
+def sales_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
+    return report
+
+
+@router.get("/sales-report/export")
+def export_sales_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    section: Optional[str] = None,
+    sale_type: Optional[str] = None,
+    payment_method: Optional[str] = None,
+    seller_id: Optional[int] = None,
+    branch_id: Optional[int] = None,
+    section_date_from: Optional[str] = None,
+    section_date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_multi_sheet, xlsx_response
+
+    report, _, _ = _sales_report_data(request, date_from, date_to, current_user)
+    valid_sections = {"by_sale_type", "by_seller", "by_terminal", "invoices", "line_items"}
+    sec = (section or "").strip() or None
+    if sec and sec not in valid_sections:
+        raise HTTPException(400, "Invalid section")
+
+    filtered = _apply_sales_report_filters(
+        report, sec, sale_type, payment_method, seller_id, branch_id,
+        section_date_from, section_date_to,
     )
+    sheets = _sales_report_sheet_data(filtered)
+    if sec:
+        title, headers, data = next(s for s in sheets if {
+            "by_sale_type": "By sale type",
+            "by_seller": "By salesperson",
+            "by_terminal": "By terminal",
+            "invoices": "Invoices",
+            "line_items": "Line items",
+        }[sec] == s[0])
+        fname = f"sales_report_{sec}.xlsx"
+        return xlsx_response(headers, data, fname)
+    return xlsx_multi_sheet(sheets, "sales_report.xlsx")

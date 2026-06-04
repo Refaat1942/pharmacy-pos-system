@@ -1181,50 +1181,7 @@ export default function Reports() {
 
         {/* Sales report */}
         {!loading && activeReport === 'sales_report' && salesReport && (
-        <section className="space-y-4">
-          <SectionHead icon={<Receipt size={18} />} title={t('reports.sales_report')} subtitle={`${from} → ${to}`} />
-          <p className="text-xs text-slate-500">{t('reports.sales_report_hint')}</p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <Kpi tone="blue" label={t('reports.invoices')} value={fmtInt(salesReport.summary.invoice_count)} />
-            <Kpi tone="green" label={t('reports.revenue')} value={fmt(salesReport.summary.total_revenue)} />
-            <Kpi tone="amber" label={t('reports.items_qty')} value={fmtInt(salesReport.summary.items_qty)} />
-          </div>
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_sale_type')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={salesTypeCols(t)}
-            rows={salesReport.by_sale_type}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_salesperson')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={salesSellerCols(t)}
-            rows={salesReport.by_seller}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_terminal')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={salesTerminalCols(t)}
-            rows={salesReport.by_terminal}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.invoice_detail')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={salesInvoiceCols(t)}
-            rows={salesReport.invoices}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.line_items')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={salesLineItemCols(t)}
-            rows={salesReport.line_items}
-          />
-        </section>
+          <SalesReportPanel report={salesReport} reportFrom={from} reportTo={to} dateParams={dateParams} />
         )}
 
         {/* Delivery zones */}
@@ -1364,6 +1321,354 @@ function paymentLabel(t: (k: string) => string, method: string) {
     return: t('sales.return_type'),
   }
   return map[method] || method
+}
+
+type SalesSectionFilters = {
+  saleType: string
+  paymentMethod: string
+  sellerId: string
+  branchId: string
+  dateFrom: string
+  dateTo: string
+}
+
+type SalesFilterFields = {
+  saleType?: boolean
+  payment?: boolean
+  seller?: boolean
+  terminal?: boolean
+  date?: boolean
+}
+
+function defaultSalesFilters(from: string, to: string): SalesSectionFilters {
+  return { saleType: '', paymentMethod: '', sellerId: '', branchId: '', dateFrom: from, dateTo: to }
+}
+
+function inSectionDateRange(iso: string, from: string, to: string) {
+  const d = iso.slice(0, 10)
+  return d >= from && d <= to
+}
+
+function filterSalesReportClient(report: SalesReport, filters: SalesSectionFilters) {
+  let invoices = report.invoices
+  if (filters.saleType) invoices = invoices.filter((r) => r.sale_type === filters.saleType)
+  if (filters.paymentMethod) invoices = invoices.filter((r) => r.payment_method === filters.paymentMethod)
+  if (filters.sellerId) invoices = invoices.filter((r) => String(r.seller_id) === filters.sellerId)
+  if (filters.branchId) invoices = invoices.filter((r) => String(r.branch_id) === filters.branchId)
+  if (filters.dateFrom || filters.dateTo) {
+    invoices = invoices.filter((r) => inSectionDateRange(r.created_at, filters.dateFrom, filters.dateTo))
+  }
+  const allowed = new Set(invoices.map((r) => r.invoice_number))
+  const invoiceFiltered = Boolean(
+    filters.saleType || filters.paymentMethod || filters.sellerId || filters.branchId
+    || filters.dateFrom !== report.date_from || filters.dateTo !== report.date_to,
+  )
+
+  let bySaleType = report.by_sale_type
+  if (filters.saleType) bySaleType = bySaleType.filter((r) => r.sale_type === filters.saleType)
+  if (filters.paymentMethod) bySaleType = bySaleType.filter((r) => r.payment_method === filters.paymentMethod)
+
+  let bySeller = report.by_seller
+  if (filters.sellerId) bySeller = bySeller.filter((r) => String(r.seller_id) === filters.sellerId)
+  if (filters.saleType) {
+    bySeller = bySeller.filter((r) => {
+      if (filters.saleType === 'cash') return r.cash_count > 0
+      if (filters.saleType === 'delivery') return r.delivery_count > 0
+      if (filters.saleType === 'digital') return r.digital_count > 0
+      return true
+    })
+  }
+
+  let byTerminal = report.by_terminal
+  if (filters.branchId) byTerminal = byTerminal.filter((r) => String(r.branch_id) === filters.branchId)
+
+  let lineItems = report.line_items
+  if (filters.saleType) lineItems = lineItems.filter((r) => r.sale_type === filters.saleType)
+  if (filters.paymentMethod) lineItems = lineItems.filter((r) => r.payment_method === filters.paymentMethod)
+  if (filters.dateFrom || filters.dateTo) {
+    lineItems = lineItems.filter((r) => inSectionDateRange(r.created_at, filters.dateFrom, filters.dateTo))
+  }
+  if (invoiceFiltered) lineItems = lineItems.filter((r) => allowed.has(r.invoice_number))
+
+  return { bySaleType, bySeller, byTerminal, invoices, lineItems }
+}
+
+function salesExportParams(
+  dateParams: { date_from: string; date_to: string },
+  section: string,
+  filters: SalesSectionFilters,
+) {
+  return {
+    ...dateParams,
+    section,
+    sale_type: filters.saleType || undefined,
+    payment_method: filters.paymentMethod || undefined,
+    seller_id: filters.sellerId ? Number(filters.sellerId) : undefined,
+    branch_id: filters.branchId ? Number(filters.branchId) : undefined,
+    section_date_from: filters.dateFrom || undefined,
+    section_date_to: filters.dateTo || undefined,
+  }
+}
+
+function SalesReportSection({
+  title,
+  filters,
+  onFiltersChange,
+  filterFields,
+  onExport,
+  cols,
+  rows,
+  empty,
+  dateBounds,
+  saleTypes,
+  paymentMethods,
+  sellers,
+  terminals,
+}: {
+  title: string
+  filters: SalesSectionFilters
+  onFiltersChange: (f: SalesSectionFilters) => void
+  filterFields: SalesFilterFields
+  onExport: () => void
+  cols: Parameters<typeof DataTable>[0]['cols']
+  rows: any[]
+  empty: string
+  dateBounds: { from: string; to: string }
+  saleTypes: string[]
+  paymentMethods: string[]
+  sellers: SalesSellerRow[]
+  terminals: SalesTerminalRow[]
+}) {
+  const { t } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const set = (patch: Partial<SalesSectionFilters>) => onFiltersChange({ ...filters, ...patch })
+  const hasFilters = filterFields.saleType || filterFields.payment || filterFields.seller
+    || filterFields.terminal || filterFields.date
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <button
+          type="button"
+          onClick={() => void onExport()}
+          className="flex items-center gap-1.5 text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg"
+        >
+          <FileSpreadsheet size={14} /> {t('reports.export_section')}
+        </button>
+      </div>
+      {hasFilters && (
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            {filterFields.saleType && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.sale_type')}</label>
+                <select value={filters.saleType} onChange={(e) => set({ saleType: e.target.value })} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {saleTypes.map((v) => <option key={v} value={v}>{saleTypeLabel(t, v)}</option>)}
+                </select>
+              </div>
+            )}
+            {filterFields.payment && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.payment_method')}</label>
+                <select value={filters.paymentMethod} onChange={(e) => set({ paymentMethod: e.target.value })} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {paymentMethods.map((v) => <option key={v} value={v}>{paymentLabel(t, v)}</option>)}
+                </select>
+              </div>
+            )}
+            {filterFields.seller && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.seller')}</label>
+                <select value={filters.sellerId} onChange={(e) => set({ sellerId: e.target.value })} className="input text-sm min-w-[9rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {sellers.map((s) => (
+                    <option key={s.seller_id} value={String(s.seller_id)}>
+                      {lang === 'ar' ? s.seller_name_ar : s.seller_name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterFields.terminal && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.terminal')}</label>
+                <select value={filters.branchId} onChange={(e) => set({ branchId: e.target.value })} className="input text-sm min-w-[9rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {terminals.map((b) => (
+                    <option key={b.branch_id} value={String(b.branch_id)}>
+                      {lang === 'ar' ? b.branch_name_ar : b.branch_name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterFields.date && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
+                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
+                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onFiltersChange(defaultSalesFilters(dateBounds.from, dateBounds.to))}
+              className="text-xs text-slate-600 hover:text-pharma-700 px-2 py-2"
+            >
+              {t('reports.reset_filters')}
+            </button>
+          </div>
+        </div>
+      )}
+      <DataTable empty={empty} cols={cols} rows={rows} />
+    </div>
+  )
+}
+
+function SalesReportPanel({
+  report,
+  reportFrom,
+  reportTo,
+  dateParams,
+}: {
+  report: SalesReport
+  reportFrom: string
+  reportTo: string
+  dateParams: { date_from: string; date_to: string }
+}) {
+  const { t } = useTranslation()
+  const bounds = { from: reportFrom, to: reportTo }
+  const suffix = `${reportFrom}_${reportTo}`
+
+  const [typeFilters, setTypeFilters] = useState(() => defaultSalesFilters(reportFrom, reportTo))
+  const [sellerFilters, setSellerFilters] = useState(() => defaultSalesFilters(reportFrom, reportTo))
+  const [terminalFilters, setTerminalFilters] = useState(() => defaultSalesFilters(reportFrom, reportTo))
+  const [invoiceFilters, setInvoiceFilters] = useState(() => defaultSalesFilters(reportFrom, reportTo))
+  const [lineFilters, setLineFilters] = useState(() => defaultSalesFilters(reportFrom, reportTo))
+
+  useEffect(() => {
+    const d = defaultSalesFilters(reportFrom, reportTo)
+    setTypeFilters(d)
+    setSellerFilters(d)
+    setTerminalFilters(d)
+    setInvoiceFilters(d)
+    setLineFilters(d)
+  }, [reportFrom, reportTo, report.date_from])
+
+  const saleTypes = useMemo(
+    () => [...new Set(report.by_sale_type.map((r) => r.sale_type))].sort(),
+    [report.by_sale_type],
+  )
+  const paymentMethods = useMemo(
+    () => [...new Set(report.by_sale_type.map((r) => r.payment_method))].sort(),
+    [report.by_sale_type],
+  )
+
+  const typeRows = useMemo(() => filterSalesReportClient(report, typeFilters).bySaleType, [report, typeFilters])
+  const sellerRows = useMemo(() => filterSalesReportClient(report, sellerFilters).bySeller, [report, sellerFilters])
+  const terminalRows = useMemo(() => filterSalesReportClient(report, terminalFilters).byTerminal, [report, terminalFilters])
+  const invoiceRows = useMemo(() => filterSalesReportClient(report, invoiceFilters).invoices, [report, invoiceFilters])
+  const lineRows = useMemo(() => filterSalesReportClient(report, lineFilters).lineItems, [report, lineFilters])
+
+  return (
+    <section className="space-y-4">
+      <SectionHead icon={<Receipt size={18} />} title={t('reports.sales_report')} subtitle={`${reportFrom} → ${reportTo}`} />
+      <p className="text-xs text-slate-500">{t('reports.sales_report_hint')}</p>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <Kpi tone="blue" label={t('reports.invoices')} value={fmtInt(report.summary.invoice_count)} />
+        <Kpi tone="green" label={t('reports.revenue')} value={fmt(report.summary.total_revenue)} />
+        <Kpi tone="amber" label={t('reports.items_qty')} value={fmtInt(report.summary.items_qty)} />
+      </div>
+
+      <SalesReportSection
+        title={t('reports.by_sale_type')}
+        filters={typeFilters}
+        onFiltersChange={setTypeFilters}
+        filterFields={{ saleType: true, payment: true }}
+        saleTypes={saleTypes}
+        paymentMethods={paymentMethods}
+        sellers={report.by_seller}
+        terminals={report.by_terminal}
+        dateBounds={bounds}
+        cols={salesTypeCols(t)}
+        rows={typeRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/sales-report/export', `sales_by_type_${suffix}.xlsx`, salesExportParams(dateParams, 'by_sale_type', typeFilters))}
+      />
+
+      <SalesReportSection
+        title={t('reports.by_salesperson')}
+        filters={sellerFilters}
+        onFiltersChange={setSellerFilters}
+        filterFields={{ seller: true, saleType: true }}
+        saleTypes={saleTypes}
+        paymentMethods={paymentMethods}
+        sellers={report.by_seller}
+        terminals={report.by_terminal}
+        dateBounds={bounds}
+        cols={salesSellerCols(t)}
+        rows={sellerRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/sales-report/export', `sales_by_seller_${suffix}.xlsx`, salesExportParams(dateParams, 'by_seller', sellerFilters))}
+      />
+
+      <SalesReportSection
+        title={t('reports.by_terminal')}
+        filters={terminalFilters}
+        onFiltersChange={setTerminalFilters}
+        filterFields={{ terminal: true }}
+        saleTypes={saleTypes}
+        paymentMethods={paymentMethods}
+        sellers={report.by_seller}
+        terminals={report.by_terminal}
+        dateBounds={bounds}
+        cols={salesTerminalCols(t)}
+        rows={terminalRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/sales-report/export', `sales_by_terminal_${suffix}.xlsx`, salesExportParams(dateParams, 'by_terminal', terminalFilters))}
+      />
+
+      <SalesReportSection
+        title={t('reports.invoice_detail')}
+        filters={invoiceFilters}
+        onFiltersChange={setInvoiceFilters}
+        filterFields={{ saleType: true, payment: true, seller: true, terminal: true, date: true }}
+        saleTypes={saleTypes}
+        paymentMethods={paymentMethods}
+        sellers={report.by_seller}
+        terminals={report.by_terminal}
+        dateBounds={bounds}
+        cols={salesInvoiceCols(t)}
+        rows={invoiceRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/sales-report/export', `sales_invoices_${suffix}.xlsx`, salesExportParams(dateParams, 'invoices', invoiceFilters))}
+      />
+
+      <SalesReportSection
+        title={t('reports.line_items')}
+        filters={lineFilters}
+        onFiltersChange={setLineFilters}
+        filterFields={{ saleType: true, payment: true, seller: true, terminal: true, date: true }}
+        saleTypes={saleTypes}
+        paymentMethods={paymentMethods}
+        sellers={report.by_seller}
+        terminals={report.by_terminal}
+        dateBounds={bounds}
+        cols={salesLineItemCols(t)}
+        rows={lineRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/sales-report/export', `sales_line_items_${suffix}.xlsx`, salesExportParams(dateParams, 'line_items', lineFilters))}
+      />
+    </section>
+  )
 }
 
 function salesTypeCols(t: (k: string) => string) {

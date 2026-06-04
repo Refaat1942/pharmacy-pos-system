@@ -396,7 +396,10 @@
     "sale_time": "Time",
     "net_total": "Net total",
     "unit_price": "Unit price",
-    "line_total": "Line total"
+    "line_total": "Line total",
+    "filter_all": "All",
+    "reset_filters": "Reset filters",
+    "export_section": "Export Excel"
   },
   "fraud": {
     "title": "Fraud Surveillance",

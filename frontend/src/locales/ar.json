@@ -572,7 +572,10 @@
     "sale_time": "الوقت",
     "net_total": "صافي الإجمالي",
     "unit_price": "سعر الوحدة",
-    "line_total": "إجمالي السطر"
+    "line_total": "إجمالي السطر",
+    "filter_all": "الكل",
+    "reset_filters": "إعادة تعيين الفلاتر",
+    "export_section": "تصدير Excel"
   },
   "fraud": {
     "title": "مراقبة الاحتيال",
