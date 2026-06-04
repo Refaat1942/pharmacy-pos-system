@@ -84,6 +84,9 @@ class TenantCreateIn(BaseModel):
     features: Optional[list[str]] = None
     subscription_start: Optional[str] = None  # ISO date 'YYYY-MM-DD'
     subscription_end: Optional[str] = None
+    max_users: Optional[int] = None
+    max_branches: Optional[int] = None
+    price_le: Optional[int] = None
 
 
 @router.post("/tenants")
@@ -102,6 +105,9 @@ def create_tenant(body: TenantCreateIn, admin=Depends(get_super_admin)):
             features=body.features,
             subscription_start=body.subscription_start,
             subscription_end=body.subscription_end,
+            max_users=body.max_users,
+            max_branches=body.max_branches,
+            price_le=body.price_le,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -120,11 +126,14 @@ class TenantUpdateIn(BaseModel):
     features: Optional[list[str]] = None
     subscription_start: Optional[str] = None
     subscription_end: Optional[str] = None
+    max_users: Optional[int] = None
+    max_branches: Optional[int] = None
+    price_le: Optional[int] = None
 
 
 @router.patch("/tenants/{tid}")
 def update_tenant(tid: int, body: TenantUpdateIn, admin=Depends(get_super_admin)):
-    fields = body.model_dump(exclude_none=True)
+    fields = body.model_dump(exclude_unset=True)
     if not fields:
         raise HTTPException(400, "No fields provided")
     try:
@@ -171,6 +180,32 @@ def features_catalog(admin=Depends(get_super_admin)):
         "features": platform_db.FEATURES_CATALOG,
         "defaults": platform_db.DEFAULT_FEATURES,
     }
+
+
+@router.get("/plans")
+def list_plans(admin=Depends(get_super_admin)):
+    return platform_db.list_plans()
+
+
+class PlanUpdateIn(BaseModel):
+    label: Optional[str] = None
+    max_users: Optional[int] = None
+    max_branches: Optional[int] = None
+    price_le: Optional[int] = None
+    notes: Optional[str] = None
+    features: Optional[list[str]] = None
+    sort_order: Optional[int] = None
+
+
+@router.patch("/plans/{plan_key}")
+def update_plan(plan_key: str, body: PlanUpdateIn, admin=Depends(get_super_admin)):
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(400, "No fields provided")
+    try:
+        return platform_db.update_plan(plan_key, fields)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/migrate-all")

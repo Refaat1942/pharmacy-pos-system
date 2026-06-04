@@ -42,6 +42,20 @@ export interface Tenant {
   features: string[] | null
   subscription_start: string | null
   subscription_end: string | null
+  max_users: number | null
+  max_branches: number | null
+  price_le: number | null
+}
+
+export interface PlanDef {
+  key: string
+  label: string
+  max_users: number | null
+  max_branches: number | null
+  price_le: number
+  notes: string | null
+  features: string[]
+  sort_order: number
 }
 
 export interface FeatureDef {
@@ -94,6 +108,9 @@ export const platformAPI = {
     platformApi.delete(`/tenants/${id}`, { params: { confirm_slug } }),
   migrateAll: () => platformApi.post<{ ok: number; failed: { slug: string; error: string }[] }>('/migrate-all'),
   featuresCatalog: () => platformApi.get<{ features: FeatureDef[]; defaults: string[] }>('/features-catalog'),
+  listPlans: () => platformApi.get<PlanDef[]>('/plans'),
+  updatePlan: (key: string, data: Partial<PlanDef>) =>
+    platformApi.patch<PlanDef>(`/plans/${key}`, data),
 }
 
 export default platformApi

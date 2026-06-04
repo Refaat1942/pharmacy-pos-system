@@ -40,6 +40,77 @@ FEATURES_CATALOG = [
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
+
+# Default feature bundles per plan (used when seeding platform.plans).
+_PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
+    "test": list(ALL_FEATURE_KEYS),
+    "basic": [
+        "dashboard", "pos", "sales", "returns", "inventory", "customers", "shifts", "settings",
+    ],
+    "pro": [
+        "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
+        "purchases", "suppliers", "customers", "shifts", "settings",
+    ],
+    "enterprise": [
+        "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
+        "purchases", "suppliers", "customers", "reports", "shifts", "hr", "settings",
+    ],
+    "pilot": list(ALL_FEATURE_KEYS),
+}
+
+# Seed defaults for platform.plans (editable via Control Platform).
+DEFAULT_PLANS = [
+    {
+        "key": "test",
+        "label": "Test",
+        "max_users": None,
+        "max_branches": None,
+        "price_le": 0,
+        "notes": "For me to test before deploy to customers",
+        "features": _PLAN_FEATURE_PRESETS["test"],
+        "sort_order": 0,
+    },
+    {
+        "key": "basic",
+        "label": "Basic",
+        "max_users": 3,
+        "max_branches": 1,
+        "price_le": 1000,
+        "notes": "",
+        "features": _PLAN_FEATURE_PRESETS["basic"],
+        "sort_order": 1,
+    },
+    {
+        "key": "pro",
+        "label": "Pro",
+        "max_users": 60,
+        "max_branches": 5,
+        "price_le": 2000,
+        "notes": "",
+        "features": _PLAN_FEATURE_PRESETS["pro"],
+        "sort_order": 2,
+    },
+    {
+        "key": "enterprise",
+        "label": "Enterprise",
+        "max_users": 100,
+        "max_branches": 10,
+        "price_le": 4500,
+        "notes": "",
+        "features": _PLAN_FEATURE_PRESETS["enterprise"],
+        "sort_order": 3,
+    },
+    {
+        "key": "pilot",
+        "label": "Pilot",
+        "max_users": None,
+        "max_branches": None,
+        "price_le": 90000,
+        "notes": "",
+        "features": _PLAN_FEATURE_PRESETS["pilot"],
+        "sort_order": 4,
+    },
+]
 _PENDING_FEATURE_BACKFILL = {"clinics"}
 _FEATURE_ROLLOUT_LOCK = 778001
 _FEATURE_ROLLOUT_SENTINEL = "__seeded__"
@@ -100,6 +171,20 @@ CREATE TABLE IF NOT EXISTS platform.tenants (
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS features          JSONB;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS subscription_start DATE;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS subscription_end   DATE;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_users         INT;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_branches      INT;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS price_le          INT;
+
+CREATE TABLE IF NOT EXISTS platform.plans (
+    key           VARCHAR(50) PRIMARY KEY,
+    label         VARCHAR(100) NOT NULL,
+    max_users     INT,
+    max_branches  INT,
+    price_le      INT NOT NULL DEFAULT 0,
+    notes         TEXT,
+    features      JSONB,
+    sort_order    INT NOT NULL DEFAULT 0
+);
 
 CREATE TABLE IF NOT EXISTS platform.super_admins (
     id            SERIAL PRIMARY KEY,
@@ -193,8 +278,130 @@ def bootstrap_platform() -> None:
                 )
         finally:
             cur.execute("SELECT pg_advisory_unlock(%s)", [_FEATURE_ROLLOUT_LOCK])
+
+        _seed_plans(cur)
     finally:
         conn.close()
+
+
+def _seed_plans(cur) -> None:
+    """Insert default plans; update label/price/notes on existing rows but preserve edited limits."""
+    import json as _json
+    for p in DEFAULT_PLANS:
+        cur.execute(
+            """INSERT INTO platform.plans(key, label, max_users, max_branches, price_le, notes, features, sort_order)
+               VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s)
+               ON CONFLICT (key) DO UPDATE SET
+                 label = EXCLUDED.label,
+                 price_le = EXCLUDED.price_le,
+                 notes = EXCLUDED.notes,
+                 sort_order = EXCLUDED.sort_order""",
+            [
+                p["key"], p["label"], p["max_users"], p["max_branches"],
+                p["price_le"], p["notes"] or None,
+                _json.dumps(normalize_features(p["features"])),
+                p["sort_order"],
+            ],
+        )
+
+
+# ─── Plans ──────────────────────────────────────────────────────────────────
+
+def list_plans() -> list:
+    conn = get_platform_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM plans ORDER BY sort_order, key")
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            d["features"] = normalize_features(d.get("features"))
+            rows.append(d)
+        return rows
+    finally:
+        conn.close()
+
+
+def get_plan(key: str) -> Optional[dict]:
+    if not key:
+        return None
+    conn = get_platform_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM plans WHERE key = %s", [key])
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["features"] = normalize_features(d.get("features"))
+        return d
+    finally:
+        conn.close()
+
+
+def update_plan(key: str, fields: dict) -> dict:
+    import json as _json
+    allowed = {"label", "max_users", "max_branches", "price_le", "notes", "sort_order"}
+    sets = []
+    params = []
+    for k, v in fields.items():
+        if k in allowed:
+            sets.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
+            params.append(v if v != "" else None)
+    if "features" in fields:
+        sets.append(sql.SQL("features = %s::jsonb"))
+        params.append(_json.dumps(normalize_features(fields["features"])))
+    if not sets:
+        raise ValueError("No fields to update")
+    params.append(key)
+    conn = get_platform_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            sql.SQL("UPDATE plans SET {} WHERE key = %s RETURNING *").format(
+                sql.SQL(", ").join(sets)
+            ),
+            params,
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("Plan not found")
+        conn.commit()
+        d = dict(row)
+        d["features"] = normalize_features(d.get("features"))
+        return d
+    finally:
+        conn.close()
+
+
+def get_tenant_limits(tenant: dict) -> dict:
+    """Resolve effective max_users, max_branches, price_le for a tenant."""
+    plan = get_plan(tenant.get("plan") or "basic") or {}
+
+    def _pick(tenant_key: str, plan_key: str):
+        if tenant.get(tenant_key) is not None:
+            return tenant[tenant_key]
+        return plan.get(plan_key)
+
+    return {
+        "max_users": _pick("max_users", "max_users"),
+        "max_branches": _pick("max_branches", "max_branches"),
+        "price_le": _pick("price_le", "price_le") or 0,
+    }
+
+
+def tenant_limits_payload(tenant: dict, usage: Optional[dict] = None) -> dict:
+    """Limits + optional usage counts for API responses."""
+    limits = get_tenant_limits(tenant)
+    out = {
+        "max_users": limits["max_users"],
+        "max_branches": limits["max_branches"],
+        "price_le": limits["price_le"],
+    }
+    if usage:
+        out["users"] = usage.get("users", 0)
+        out["branches"] = usage.get("branches", 0)
+    return out
 
 
 # ─── Tenant lookups ─────────────────────────────────────────────────────────
@@ -274,6 +481,9 @@ def create_tenant(
     features: Optional[list] = None,
     subscription_start: Optional[str] = None,
     subscription_end: Optional[str] = None,
+    max_users: Optional[int] = None,
+    max_branches: Optional[int] = None,
+    price_le: Optional[int] = None,
 ) -> dict:
     """Race-safe atomic tenant provisioning.
 
@@ -319,15 +529,17 @@ def create_tenant(
             pcur.execute(
                 """INSERT INTO tenants(slug, name, schema_name, status, plan,
                                         contact_name, contact_email, contact_phone, notes,
-                                        features, subscription_start, subscription_end)
+                                        features, subscription_start, subscription_end,
+                                        max_users, max_branches, price_le)
                    VALUES (%s, %s, %s, 'provisioning', %s, %s, %s, %s, %s,
-                           %s::jsonb, %s, %s)
+                           %s::jsonb, %s, %s, %s, %s, %s)
                    RETURNING *""",
                 [slug, name, schema_name, plan,
                  contact_name, contact_email, contact_phone, notes,
                  _json.dumps(features_norm),
                  subscription_start or None,
-                 subscription_end or None],
+                 subscription_end or None,
+                 max_users, max_branches, price_le],
             )
         except psycopg2.errors.UniqueViolation:
             pconn.rollback()
@@ -433,13 +645,17 @@ def create_tenant(
 def update_tenant(tid: int, fields: dict) -> dict:
     import json as _json
     allowed = {"name", "status", "plan", "contact_name", "contact_email",
-               "contact_phone", "notes", "subscription_start", "subscription_end"}
+               "contact_phone", "notes", "subscription_start", "subscription_end",
+               "max_users", "max_branches", "price_le"}
     sets = []
     params = []
     for k, v in fields.items():
         if k in allowed:
             sets.append(sql.SQL("{} = %s").format(sql.Identifier(k)))
-            params.append(v if v != "" else None)
+            if k in ("max_users", "max_branches", "price_le"):
+                params.append(v)
+            else:
+                params.append(v if v != "" else None)
     if "features" in fields:
         sets.append(sql.SQL("features = %s::jsonb"))
         params.append(_json.dumps(normalize_features(fields["features"])))

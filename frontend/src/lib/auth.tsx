@@ -17,6 +17,13 @@ export interface TenantInfo {
   features: string[]
   subscription_start: string | null
   subscription_end: string | null
+  limits?: {
+    max_users: number | null
+    max_branches: number | null
+    price_le: number
+    users?: number
+    branches?: number
+  }
 }
 
 interface AuthContextType {

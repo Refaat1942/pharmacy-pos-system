@@ -45,6 +45,25 @@ def requires_feature(key: str):
     return _dep
 
 
+def check_tenant_quota(slug: str, resource: str, current_count: int) -> None:
+    """Raise 403 if tenant is at or over quota. resource is 'users' or 'branches'."""
+    from platform_db import get_tenant_by_slug, get_tenant_limits
+    tenant = get_tenant_by_slug(slug)
+    if not tenant:
+        raise HTTPException(status_code=401, detail="Tenant not found")
+    limits = get_tenant_limits(tenant)
+    cap = limits.get("max_users" if resource == "users" else "max_branches")
+    if cap is None:
+        return
+    if current_count >= cap:
+        label = "users" if resource == "users" else "branches"
+        plan = tenant.get("plan") or "basic"
+        raise HTTPException(
+            status_code=403,
+            detail=f"{label.capitalize()} limit reached ({current_count}/{cap} on {plan} plan). Contact support to upgrade.",
+        )
+
+
 def get_super_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     payload = verify_token(token)

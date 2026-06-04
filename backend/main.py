@@ -190,7 +190,10 @@ def login(req: LoginRequest, request: Request):
     if not tenant:
         _login_throttle_record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
-    from platform_db import is_tenant_live, normalize_features
+    from platform_db import (
+        is_tenant_live, normalize_features,
+        get_tenant_stats, tenant_limits_payload,
+    )
     live, reason = is_tenant_live(tenant)
     if not live:
         raise HTTPException(status_code=403, detail=reason)
@@ -235,6 +238,7 @@ def login(req: LoginRequest, request: Request):
             "features": normalize_features(tenant.get("features")),
             "subscription_start": tenant.get("subscription_start").isoformat() if tenant.get("subscription_start") else None,
             "subscription_end": tenant.get("subscription_end").isoformat() if tenant.get("subscription_end") else None,
+            "limits": tenant_limits_payload(tenant, get_tenant_stats(tenant)),
         },
     }
 
@@ -243,7 +247,7 @@ def login(req: LoginRequest, request: Request):
 def get_me(current_user=Depends(get_current_user)):
     # Return fresh tenant info too, so the frontend can react to feature/plan
     # changes made in the super-admin without forcing a logout.
-    from platform_db import get_tenant_by_slug, normalize_features, is_tenant_live
+    from platform_db import get_tenant_by_slug, normalize_features, is_tenant_live, get_tenant_stats, tenant_limits_payload
     slug = current_user.get("tenant_slug")
     tenant_payload = None
     if slug:
@@ -259,6 +263,7 @@ def get_me(current_user=Depends(get_current_user)):
                 "subscription_end": t["subscription_end"].isoformat() if t.get("subscription_end") else None,
                 "active": live,
                 "inactive_reason": None if live else reason,
+                "limits": tenant_limits_payload(t, get_tenant_stats(t)),
             }
     user_payload = None
     uid = current_user.get("user_id")

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, check_tenant_quota
 from auth import hash_password
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -278,6 +278,11 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
         cur.execute("SELECT 1 FROM users WHERE username = %s", (body.username,))
         if cur.fetchone():
             raise HTTPException(400, "Username already exists")
+        cur.execute("SELECT COUNT(*) AS n FROM users WHERE status = 'active'")
+        active_count = cur.fetchone()["n"]
+        slug = current_user.get("tenant_slug")
+        if slug:
+            check_tenant_quota(slug, "users", active_count)
         perms = _clean_permissions(body.permissions) if body.permissions is not None else None
         cur.execute("""
             INSERT INTO users (username, password_hash, name_ar, name_en, role, branch_id, salary, status, permissions)
@@ -450,6 +455,11 @@ def create_branch(body: BranchIn, current_user: dict = Depends(get_current_user)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        cur.execute("SELECT COUNT(*) AS n FROM branches")
+        branch_count = cur.fetchone()["n"]
+        slug = current_user.get("tenant_slug")
+        if slug:
+            check_tenant_quota(slug, "branches", branch_count)
         cur.execute("""
             INSERT INTO branches (name_ar, name_en, address, phone)
             VALUES (%s,%s,%s,%s) RETURNING id

@@ -5,15 +5,34 @@ import {
   X, ExternalLink, Building2, RefreshCw, AlertTriangle,
   CalendarClock, Sparkles,
 } from 'lucide-react'
-import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef } from '../lib/platform'
+import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } from '../lib/platform'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
-const PLAN_PRESETS: Record<string, string[]> = {
-  basic:      ['dashboard','pos','sales','returns','inventory','customers','shifts','settings'],
-  pro:        ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','shifts','settings'],
-  enterprise: ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
-  trial:      ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
-  pilot:      ['dashboard','pos','sales','returns','inventory','transfers','expiry','purchases','suppliers','customers','reports','shifts','hr','settings'],
+function fmtLimit(n: number | null | undefined) {
+  return n == null ? '∞' : String(n)
+}
+
+function effectiveLimit(
+  tenant: Tenant,
+  plans: PlanDef[],
+  field: 'max_users' | 'max_branches' | 'price_le',
+): number | null {
+  const override = tenant[field]
+  if (override != null) return override
+  const plan = plans.find((p) => p.key === (tenant.plan || 'basic'))
+  if (!plan) return null
+  return plan[field] ?? null
+}
+
+function parseLimitInput(raw: string): number | null {
+  const t = raw.trim()
+  if (!t || t.toLowerCase() === 'unlimited') return null
+  const n = parseInt(t, 10)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
+function limitInputValue(v: number | null | undefined): string {
+  return v == null ? '' : String(v)
 }
 
 function daysLeft(end: string | null): number | null {
@@ -48,6 +67,7 @@ export default function Platform() {
   const [stats, setStats] = useState<Record<number, TenantStats>>({})
   const [featuresCatalog, setFeaturesCatalog] = useState<FeatureDef[]>([])
   const [featureDefaults, setFeatureDefaults] = useState<string[]>([])
+  const [plans, setPlans] = useState<PlanDef[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
@@ -61,13 +81,15 @@ export default function Platform() {
     try {
       const meRes = await platformAPI.me()
       setAdmin(meRes.data)
-      const [r, fc] = await Promise.all([
+      const [r, fc, pl] = await Promise.all([
         platformAPI.listTenants(),
         platformAPI.featuresCatalog(),
+        platformAPI.listPlans(),
       ])
       setTenants(r.data)
       setFeaturesCatalog(fc.data.features)
       setFeatureDefaults(fc.data.defaults)
+      setPlans(pl.data)
       // Fetch stats in parallel
       const statResults = await Promise.allSettled(
         r.data.map((t) => platformAPI.tenantStats(t.id).then((res) => [t.id, res.data] as const))
@@ -102,6 +124,7 @@ export default function Platform() {
     features: (tn: Tenant) => (tn.features?.length ?? featureDefaults.length),
     contact: (tn: Tenant) => tn.contact_name,
     users: (tn: Tenant) => stats[tn.id]?.users,
+    branches: (tn: Tenant) => stats[tn.id]?.branches,
     products: (tn: Tenant) => stats[tn.id]?.products,
     invoices: (tn: Tenant) => stats[tn.id]?.invoices,
     status: (tn: Tenant) => tn.status,
@@ -175,6 +198,9 @@ export default function Platform() {
           <StatCard label="Total Invoices" value={Object.values(stats).reduce((s, x) => s + x.invoices, 0)} color="blue" />
         </div>
 
+        {/* Plans catalog */}
+        <PlansPanel plans={plans} onUpdated={load} />
+
         {/* Actions bar */}
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-xl font-bold text-slate-800">Pharmacy Customers</h2>
@@ -208,6 +234,7 @@ export default function Platform() {
                   <SortTh k="features" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Features</SortTh>
                   <SortTh k="contact" sort={sort} onToggle={toggle} align="start" className="px-4 py-3">Contact</SortTh>
                   <SortTh k="users" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Users</SortTh>
+                  <SortTh k="branches" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Branches</SortTh>
                   <SortTh k="products" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Products</SortTh>
                   <SortTh k="invoices" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Invoices</SortTh>
                   <SortTh k="status" sort={sort} onToggle={toggle} align="center" className="px-4 py-3">Status</SortTh>
@@ -216,7 +243,7 @@ export default function Platform() {
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={11} className="text-center py-10 text-slate-400">No pharmacies yet. Click "New Pharmacy" to add your first customer.</td></tr>
+                  <tr><td colSpan={12} className="text-center py-10 text-slate-400">No pharmacies yet. Click "New Pharmacy" to add your first customer.</td></tr>
                 )}
                 {sorted.map((t) => {
                   const s = stats[t.id]
@@ -252,7 +279,12 @@ export default function Platform() {
                           </div>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-center font-mono">{s?.users ?? '—'}</td>
+                      <td className="px-4 py-3 text-center font-mono text-xs">
+                        {s ? `${s.users} / ${fmtLimit(effectiveLimit(t, plans, 'max_users'))}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center font-mono text-xs">
+                        {s ? `${s.branches} / ${fmtLimit(effectiveLimit(t, plans, 'max_branches'))}` : '—'}
+                      </td>
                       <td className="px-4 py-3 text-center font-mono">{s?.products ?? '—'}</td>
                       <td className="px-4 py-3 text-center font-mono">{s?.invoices ?? '—'}</td>
                       <td className="px-4 py-3 text-center">
@@ -295,8 +327,8 @@ export default function Platform() {
         </div>
       </div>
 
-      {showCreate && <CreateModal catalog={featuresCatalog} defaults={featureDefaults} onClose={() => setShowCreate(false)} onDone={load} />}
-      {editing && <EditModal tenant={editing} catalog={featuresCatalog} onClose={() => setEditing(null)} onDone={load} />}
+      {showCreate && <CreateModal catalog={featuresCatalog} defaults={featureDefaults} plans={plans} onClose={() => setShowCreate(false)} onDone={load} />}
+      {editing && <EditModal tenant={editing} catalog={featuresCatalog} plans={plans} onClose={() => setEditing(null)} onDone={load} />}
       {deleting && <DeleteModal tenant={deleting} onClose={() => setDeleting(null)} onDone={load} />}
       {showPwd && <ChangePwdModal onClose={() => setShowPwd(false)} />}
     </div>
@@ -381,8 +413,166 @@ function FeaturesPicker({ catalog, value, onChange }: {
   )
 }
 
-function CreateModal({ catalog, defaults, onClose, onDone }: {
-  catalog: FeatureDef[]; defaults: string[]; onClose: () => void; onDone: () => void
+function LimitsFields({
+  planKey,
+  plans,
+  maxUsers,
+  maxBranches,
+  priceLe,
+  onMaxUsers,
+  onMaxBranches,
+  onPriceLe,
+}: {
+  planKey: string
+  plans: PlanDef[]
+  maxUsers: string
+  maxBranches: string
+  priceLe: string
+  onMaxUsers: (v: string) => void
+  onMaxBranches: (v: string) => void
+  onPriceLe: (v: string) => void
+}) {
+  const plan = plans.find((p) => p.key === planKey)
+  const phUsers = plan ? `Plan default: ${fmtLimit(plan.max_users)}` : 'Plan default'
+  const phBranches = plan ? `Plan default: ${fmtLimit(plan.max_branches)}` : 'Plan default'
+  const phPrice = plan ? `Plan default: ${plan.price_le.toLocaleString()} LE` : 'Plan default'
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <Field label="Max users" hint="Empty = plan default. Type unlimited or leave blank for no cap.">
+        <input className={inputCls} value={maxUsers} placeholder={phUsers}
+          onChange={(e) => onMaxUsers(e.target.value)} />
+      </Field>
+      <Field label="Max branches" hint="Empty = plan default. Type unlimited or leave blank for no cap.">
+        <input className={inputCls} value={maxBranches} placeholder={phBranches}
+          onChange={(e) => onMaxBranches(e.target.value)} />
+      </Field>
+      <Field label="Price (LE)" hint="Empty = plan default price">
+        <input className={inputCls} type="number" min={0} value={priceLe} placeholder={phPrice}
+          onChange={(e) => onPriceLe(e.target.value)} />
+      </Field>
+    </div>
+  )
+}
+
+function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => void }) {
+  const [editing, setEditing] = useState<Record<string, {
+    label: string
+    max_users: string
+    max_branches: string
+    price_le: string
+    notes: string
+  }>>({})
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+
+  const getRow = (p: PlanDef) => editing[p.key] ?? {
+    label: p.label,
+    max_users: limitInputValue(p.max_users),
+    max_branches: limitInputValue(p.max_branches),
+    price_le: String(p.price_le),
+    notes: p.notes || '',
+  }
+
+  const setRow = (key: string, patch: Partial<ReturnType<typeof getRow>>) => {
+    const p = plans.find((x) => x.key === key)!
+    setEditing((prev) => ({ ...prev, [key]: { ...getRow(p), ...patch } }))
+  }
+
+  const save = async (p: PlanDef) => {
+    setBusyKey(p.key); setErr('')
+    const row = getRow(p)
+    try {
+      await platformAPI.updatePlan(p.key, {
+        label: row.label,
+        max_users: parseLimitInput(row.max_users),
+        max_branches: parseLimitInput(row.max_branches),
+        price_le: row.price_le.trim() ? parseInt(row.price_le, 10) : 0,
+        notes: row.notes || null,
+      })
+      setEditing((prev) => {
+        const next = { ...prev }
+        delete next[p.key]
+        return next
+      })
+      onUpdated()
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Failed to save plan')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  if (!plans.length) return null
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800">Subscription Plans</h2>
+          <p className="text-xs text-slate-500">Edit plan defaults for users, branches, and pricing. Per-customer overrides are set when editing a pharmacy.</p>
+        </div>
+      </div>
+      {err && <div className="mx-5 mt-3 bg-red-50 border border-red-200 text-red-700 p-2 rounded text-sm">{err}</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+            <tr>
+              <th className="px-4 py-2.5 text-start">Plan</th>
+              <th className="px-4 py-2.5 text-center">Max users</th>
+              <th className="px-4 py-2.5 text-center">Max branches</th>
+              <th className="px-4 py-2.5 text-center">Price (LE)</th>
+              <th className="px-4 py-2.5 text-start">Notes</th>
+              <th className="px-4 py-2.5 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plans.map((p) => {
+              const row = getRow(p)
+              const dirty = editing[p.key] != null
+              return (
+                <tr key={p.key} className="border-t border-slate-100">
+                  <td className="px-4 py-2">
+                    <input className={inputCls + ' font-medium capitalize'} value={row.label}
+                      onChange={(e) => setRow(p.key, { label: e.target.value })} />
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{p.key}</div>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className={inputCls + ' text-center font-mono'} value={row.max_users}
+                      placeholder="unlimited"
+                      onChange={(e) => setRow(p.key, { max_users: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className={inputCls + ' text-center font-mono'} value={row.max_branches}
+                      placeholder="unlimited"
+                      onChange={(e) => setRow(p.key, { max_branches: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className={inputCls + ' text-center font-mono'} type="number" min={0} value={row.price_le}
+                      onChange={(e) => setRow(p.key, { price_le: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className={inputCls} value={row.notes}
+                      onChange={(e) => setRow(p.key, { notes: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button type="button" disabled={!dirty || busyKey === p.key}
+                      onClick={() => save(p)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700">
+                      {busyKey === p.key ? 'Saving…' : 'Save'}
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
+  catalog: FeatureDef[]; defaults: string[]; plans: PlanDef[]; onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     slug: '', name: '', plan: 'basic',
@@ -392,15 +582,21 @@ function CreateModal({ catalog, defaults, onClose, onDone }: {
     subscription_end: todayPlus(12),
   })
   const [features, setFeatures] = useState<string[]>(defaults)
+  const [maxUsers, setMaxUsers] = useState('')
+  const [maxBranches, setMaxBranches] = useState('')
+  const [priceLe, setPriceLe] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const onPlanChange = (plan: string) => {
     setForm({ ...form, plan })
-    if (PLAN_PRESETS[plan]) {
-      // Only override features if user hasn't customized them; simplest = always set on plan change.
-      setFeatures(PLAN_PRESETS[plan].filter(k => catalog.some(c => c.key === k)))
+    const preset = plans.find((p) => p.key === plan)
+    if (preset?.features?.length) {
+      setFeatures(preset.features.filter((k) => catalog.some((c) => c.key === k)))
     }
+    setMaxUsers('')
+    setMaxBranches('')
+    setPriceLe('')
   }
 
   const submit = async (e: FormEvent) => {
@@ -420,6 +616,9 @@ function CreateModal({ catalog, defaults, onClose, onDone }: {
         features,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
+        max_users: maxUsers.trim() ? parseLimitInput(maxUsers) : null,
+        max_branches: maxBranches.trim() ? parseLimitInput(maxBranches) : null,
+        price_le: priceLe.trim() ? parseInt(priceLe, 10) : null,
       })
       onDone()
       onClose()
@@ -448,15 +647,28 @@ function CreateModal({ catalog, defaults, onClose, onDone }: {
           </Field>
           <Field label="Plan" hint="Choosing a plan auto-selects its default features (you can still tweak)">
             <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
-              <option value="basic">Basic</option>
-              <option value="pro">Pro</option>
-              <option value="enterprise">Enterprise</option>
-              <option value="trial">Trial</option>
+              {plans.map((p) => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
             </select>
           </Field>
           <Field label="Contact Name"><input className={inputCls} value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} /></Field>
           <Field label="Contact Email"><input type="email" className={inputCls} value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
           <Field label="Contact Phone"><input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></Field>
+        </div>
+
+        <div className="border-t border-slate-100 pt-3">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700">Limits &amp; pricing</h3>
+          <LimitsFields
+            planKey={form.plan}
+            plans={plans}
+            maxUsers={maxUsers}
+            maxBranches={maxBranches}
+            priceLe={priceLe}
+            onMaxUsers={setMaxUsers}
+            onMaxBranches={setMaxBranches}
+            onPriceLe={setPriceLe}
+          />
         </div>
 
         <div className="border-t border-slate-100 pt-4">
@@ -514,8 +726,8 @@ function CreateModal({ catalog, defaults, onClose, onDone }: {
   )
 }
 
-function EditModal({ tenant, catalog, onClose, onDone }: {
-  tenant: Tenant; catalog: FeatureDef[]; onClose: () => void; onDone: () => void
+function EditModal({ tenant, catalog, plans, onClose, onDone }: {
+  tenant: Tenant; catalog: FeatureDef[]; plans: PlanDef[]; onClose: () => void; onDone: () => void
 }) {
   const [form, setForm] = useState({
     name: tenant.name,
@@ -530,14 +742,21 @@ function EditModal({ tenant, catalog, onClose, onDone }: {
   const [features, setFeatures] = useState<string[]>(
     tenant.features ?? catalog.filter(c => c.default).map(c => c.key)
   )
+  const [maxUsers, setMaxUsers] = useState(limitInputValue(tenant.max_users))
+  const [maxBranches, setMaxBranches] = useState(limitInputValue(tenant.max_branches))
+  const [priceLe, setPriceLe] = useState(limitInputValue(tenant.price_le))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
   const onPlanChange = (plan: string) => {
     setForm({ ...form, plan })
-    if (PLAN_PRESETS[plan]) {
-      setFeatures(PLAN_PRESETS[plan].filter(k => catalog.some(c => c.key === k)))
+    const preset = plans.find((p) => p.key === plan)
+    if (preset?.features?.length) {
+      setFeatures(preset.features.filter((k) => catalog.some((c) => c.key === k)))
     }
+    setMaxUsers('')
+    setMaxBranches('')
+    setPriceLe('')
   }
 
   const submit = async (e: FormEvent) => {
@@ -548,6 +767,9 @@ function EditModal({ tenant, catalog, onClose, onDone }: {
         features,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
+        max_users: maxUsers.trim() ? parseLimitInput(maxUsers) : null,
+        max_branches: maxBranches.trim() ? parseLimitInput(maxBranches) : null,
+        price_le: priceLe.trim() ? parseInt(priceLe, 10) : null,
       } as any)
       onDone(); onClose()
     } catch (e: any) {
@@ -563,14 +785,28 @@ function EditModal({ tenant, catalog, onClose, onDone }: {
           <Field label="Name"><input className={inputCls} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
           <Field label="Plan" hint="Selecting a plan resets features to that plan's defaults">
             <select className={inputCls} value={form.plan} onChange={(e) => onPlanChange(e.target.value)}>
-              <option value="basic">Basic</option><option value="pro">Pro</option>
-              <option value="enterprise">Enterprise</option><option value="trial">Trial</option>
-              <option value="pilot">Pilot</option>
+              {plans.map((p) => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
             </select>
           </Field>
           <Field label="Contact Name"><input className={inputCls} value={form.contact_name} onChange={(e) => setForm({ ...form, contact_name: e.target.value })} /></Field>
           <Field label="Contact Email"><input type="email" className={inputCls} value={form.contact_email} onChange={(e) => setForm({ ...form, contact_email: e.target.value })} /></Field>
           <Field label="Contact Phone"><input className={inputCls} value={form.contact_phone} onChange={(e) => setForm({ ...form, contact_phone: e.target.value })} /></Field>
+        </div>
+
+        <div className="border-t border-slate-100 pt-3">
+          <h3 className="text-sm font-semibold mb-2 text-slate-700">Limits &amp; pricing</h3>
+          <LimitsFields
+            planKey={form.plan}
+            plans={plans}
+            maxUsers={maxUsers}
+            maxBranches={maxBranches}
+            priceLe={priceLe}
+            onMaxUsers={setMaxUsers}
+            onMaxBranches={setMaxBranches}
+            onPriceLe={setPriceLe}
+          />
         </div>
 
         <div className="border-t border-slate-100 pt-3">

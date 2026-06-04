@@ -113,7 +113,7 @@ function TabButton({ active, onClick, icon, label }: { active: boolean; onClick:
 
 function UsersTab() {
   const { t } = useTranslation()
-  const { user: me } = useAuth()
+  const { user: me, tenant } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
   const [branches, setBranches] = useState<BranchRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -148,10 +148,21 @@ function UsersTab() {
   }), [])
   const { sorted: sortedUsers, sort: userSort, toggle: userToggle } = useSort(users, userAccessors)
 
+  const activeUsers = users.filter((u) => u.status === 'active').length
+  const maxUsers = tenant?.limits?.max_users
+  const atUserCap = maxUsers != null && activeUsers >= maxUsers
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-        <h2 className="text-sm font-semibold text-slate-700">{t('settings.user_list')} ({users.length})</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700">{t('settings.user_list')} ({activeUsers}{maxUsers != null ? ` / ${maxUsers}` : ''})</h2>
+          {maxUsers != null && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {atUserCap ? t('settings.user_limit_reached', 'User limit reached for your plan.') : t('settings.user_limit_hint', 'Plan allows up to {{max}} users.', { max: maxUsers })}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => window.open('/settings/login-cards', '_blank')}
@@ -161,7 +172,9 @@ function UsersTab() {
           </button>
           <button
             onClick={() => setCreating(true)}
-            className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
+            disabled={atUserCap}
+            title={atUserCap ? t('settings.user_limit_reached', 'User limit reached for your plan.') as string : undefined}
+            className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
           >
             <Plus size={15} /> {t('settings.add_user')}
           </button>
@@ -566,6 +579,7 @@ function PasswordModal({ user, onClose, onSaved }: { user: UserRow; onClose: () 
 
 function BranchesTab() {
   const { t } = useTranslation()
+  const { tenant } = useAuth()
   const [branches, setBranches] = useState<BranchRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<BranchRow | null>(null)
@@ -584,13 +598,25 @@ function BranchesTab() {
   }
   useEffect(() => { load() }, [])
 
+  const maxBranches = tenant?.limits?.max_branches
+  const atBranchCap = maxBranches != null && branches.length >= maxBranches
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-        <h2 className="text-sm font-semibold text-slate-700">{t('settings.branch_list')} ({branches.length})</h2>
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700">{t('settings.branch_list')} ({branches.length}{maxBranches != null ? ` / ${maxBranches}` : ''})</h2>
+          {maxBranches != null && (
+            <p className="text-xs text-slate-500 mt-0.5">
+              {atBranchCap ? t('settings.branch_limit_reached', 'Branch limit reached for your plan.') : t('settings.branch_limit_hint', 'Plan allows up to {{max}} branches.', { max: maxBranches })}
+            </p>
+          )}
+        </div>
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
+          disabled={atBranchCap}
+          title={atBranchCap ? t('settings.branch_limit_reached', 'Branch limit reached for your plan.') as string : undefined}
+          className="flex items-center gap-1.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm"
         >
           <Plus size={15} /> {t('settings.add_branch')}
         </button>
