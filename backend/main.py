@@ -147,6 +147,8 @@ from settings import router as settings_router
 app.include_router(settings_router, dependencies=[Depends(requires_feature("settings"))])
 from reports import router as reports_router
 app.include_router(reports_router, dependencies=[Depends(requires_feature("reports"))])
+from fraud import router as fraud_router
+app.include_router(fraud_router, dependencies=[Depends(requires_feature("fraud_surveillance"))])
 from shifts import router as shifts_router
 app.include_router(shifts_router, dependencies=[Depends(requires_feature("shifts"))])
 from hr import router as hr_router

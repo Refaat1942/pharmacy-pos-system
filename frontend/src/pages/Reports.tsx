@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone, ArrowLeft, FileSpreadsheet, type LucideIcon,
+  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, type LucideIcon,
 } from 'lucide-react'
 import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import api from '../lib/api'
+import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
@@ -73,6 +74,46 @@ type DigitalAccountReport = {
   by_platform: DigitalPlatformRow[]
   invoices: DigitalInvoiceRow[]
 }
+type SellerRow = {
+  seller_id: number
+  username: string
+  seller_name_en: string
+  seller_name_ar: string
+  seller_role: string
+  branch_name_en: string
+  branch_name_ar: string
+  invoice_count: number
+  revenue: number
+  total_discount: number
+  cash_count: number
+  delivery_count: number
+  digital_count: number
+  delivery_revenue: number
+  return_count: number
+  return_value: number
+  return_pct: number
+  net_revenue: number
+}
+type DeliveryDriverRow = {
+  delivery_person_id: number
+  delivery_person_name: string
+  branch_id: number
+  branch_name_en: string
+  branch_name_ar: string
+  order_count: number
+  pending_count: number
+  out_for_delivery_count: number
+  delivered_count: number
+  revenue: number
+  delivery_fees: number
+}
+type DeliveryReport = {
+  date_from: string
+  date_to: string
+  by_driver: DeliveryDriverRow[]
+  by_branch: Omit<DeliveryDriverRow, 'delivery_person_id' | 'delivery_person_name' | 'delivery_fees'>[]
+  totals: { order_count: number; pending_count: number; delivered_count: number }
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 const firstOfMonth = () => {
@@ -118,6 +159,8 @@ type ReportId =
   | 'payment'
   | 'sales_by_item'
   | 'top_products'
+  | 'sales_by_seller'
+  | 'delivery_summary'
 
 type ReportDef = {
   id: ReportId
@@ -126,6 +169,7 @@ type ReportDef = {
   adminOnly?: boolean
   needsClinics?: boolean
   fixedPeriod?: boolean
+  xlsxExport?: boolean
 }
 
 const REPORT_DEFS: ReportDef[] = [
@@ -136,6 +180,8 @@ const REPORT_DEFS: ReportDef[] = [
   { id: 'clinic', labelKey: 'reports.by_clinic', Icon: Stethoscope, needsClinics: true },
   { id: 'digital', labelKey: 'reports.digital_account_title', Icon: Smartphone },
   { id: 'payment', labelKey: 'reports.by_payment', Icon: CreditCard },
+  { id: 'sales_by_seller', labelKey: 'reports.sales_by_seller', Icon: UserRound, xlsxExport: true },
+  { id: 'delivery_summary', labelKey: 'reports.delivery_summary', Icon: Bike, xlsxExport: true },
   { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
   { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
 ]
@@ -156,6 +202,8 @@ export default function Reports() {
   const [trend, setTrend] = useState<TrendRow[]>([])
   const [clinicRows, setClinicRows] = useState<ClinicRow[]>([])
   const [digitalAccount, setDigitalAccount] = useState<DigitalAccountReport | null>(null)
+  const [sellers, setSellers] = useState<SellerRow[]>([])
+  const [deliveryReport, setDeliveryReport] = useState<DeliveryReport | null>(null)
   const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -230,6 +278,16 @@ export default function Reports() {
           setProds(data)
           break
         }
+        case 'sales_by_seller': {
+          const { data } = await api.get('/reports/sales-by-seller', { params })
+          setSellers(data)
+          break
+        }
+        case 'delivery_summary': {
+          const { data } = await api.get('/reports/delivery-summary', { params })
+          setDeliveryReport(data)
+          break
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load report')
@@ -244,9 +302,20 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, from, to, digitalPlatformFilter, canSee])
 
-  const exportActiveReport = () => {
+  const exportActiveReport = async () => {
     if (!activeReport) return
     const suffix = `${from}_${to}`
+    const def = REPORT_DEFS.find((r) => r.id === activeReport)
+    if (def?.xlsxExport) {
+      if (activeReport === 'sales_by_seller') {
+        await downloadApiExcel('/reports/sales-by-seller/export', `sales_by_seller_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'delivery_summary') {
+        await downloadApiExcel('/reports/delivery-summary/export', `delivery_summary_${suffix}.xlsx`, dateParams)
+        return
+      }
+    }
     switch (activeReport) {
       case 'pnl':
         if (pnl) exportCSV(`profit-and-loss-${suffix}.csv`, [pnl], [
@@ -404,7 +473,7 @@ export default function Reports() {
             </button>
             <button
               type="button"
-              onClick={exportActiveReport}
+              onClick={() => void exportActiveReport()}
               disabled={loading}
               className="flex items-center gap-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-medium px-4 py-2 rounded-lg disabled:opacity-50"
             >
@@ -834,6 +903,65 @@ export default function Reports() {
               },
             ]}
             rows={salesByItem}
+          />
+        </section>
+        )}
+
+        {/* Sales by seller */}
+        {!loading && activeReport === 'sales_by_seller' && (
+        <section>
+          <SectionHead icon={<UserRound size={18} />} title={t('reports.sales_by_seller')} subtitle={`${from} → ${to}`} />
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={[
+              { key: 'seller', label: t('reports.seller'), render: (r: SellerRow) => i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en, sortValue: (r: SellerRow) => i18n.language === 'ar' ? r.seller_name_ar : r.seller_name_en },
+              { key: 'branch', label: t('reports.branch'), render: (r: SellerRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
+              { key: 'invoice_count', label: t('reports.invoices'), align: 'end', render: (r: SellerRow) => fmtInt(r.invoice_count) },
+              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r: SellerRow) => fmt(r.revenue) },
+              { key: 'delivery_count', label: t('reports.delivery_orders'), align: 'end', render: (r: SellerRow) => fmtInt(r.delivery_count) },
+              { key: 'return_count', label: t('reports.returns'), align: 'end', render: (r: SellerRow) => fmtInt(r.return_count) },
+              { key: 'return_pct', label: t('reports.return_pct'), align: 'end', render: (r: SellerRow) => `${fmt(r.return_pct)}%` },
+              { key: 'net_revenue', label: t('reports.net_revenue'), align: 'end', render: (r: SellerRow) => <span className="font-semibold text-emerald-700">{fmt(r.net_revenue)}</span> },
+            ]}
+            rows={sellers}
+          />
+        </section>
+        )}
+
+        {/* Delivery summary */}
+        {!loading && activeReport === 'delivery_summary' && deliveryReport && (
+        <section className="space-y-4">
+          <SectionHead icon={<Bike size={18} />} title={t('reports.delivery_summary')} subtitle={`${from} → ${to}`} />
+          <div className="grid grid-cols-3 gap-3">
+            <Kpi tone="blue" label={t('reports.delivery_orders')} value={fmtInt(deliveryReport.totals.order_count)} />
+            <Kpi tone="amber" label={t('deliveries.pending')} value={fmtInt(deliveryReport.totals.pending_count)} />
+            <Kpi tone="green" label={t('deliveries.delivered')} value={fmtInt(deliveryReport.totals.delivered_count)} />
+          </div>
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_driver')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={[
+              { key: 'driver', label: t('deliveries.driver'), render: (r: DeliveryDriverRow) => r.delivery_person_name },
+              { key: 'branch', label: t('reports.branch'), render: (r: DeliveryDriverRow) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
+              { key: 'order_count', label: t('reports.delivery_orders'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.order_count) },
+              { key: 'pending_count', label: t('deliveries.pending'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.pending_count) },
+              { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end', render: (r: DeliveryDriverRow) => fmtInt(r.delivered_count) },
+              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r: DeliveryDriverRow) => fmt(r.revenue) },
+              { key: 'delivery_fees', label: t('deliveries.delivery_fee_col'), align: 'end', render: (r: DeliveryDriverRow) => fmt(r.delivery_fees) },
+            ]}
+            rows={deliveryReport.by_driver}
+          />
+          <h3 className="text-sm font-semibold text-slate-700">{t('reports.by_branch')}</h3>
+          <DataTable
+            empty={t('reports.no_data')}
+            cols={[
+              { key: 'branch', label: t('reports.branch'), render: (r) => i18n.language === 'ar' ? r.branch_name_ar : r.branch_name_en },
+              { key: 'order_count', label: t('reports.delivery_orders'), align: 'end', render: (r) => fmtInt(r.order_count) },
+              { key: 'pending_count', label: t('deliveries.pending'), align: 'end', render: (r) => fmtInt(r.pending_count) },
+              { key: 'delivered_count', label: t('deliveries.delivered'), align: 'end', render: (r) => fmtInt(r.delivered_count) },
+              { key: 'revenue', label: t('reports.revenue'), align: 'end', render: (r) => fmt(r.revenue) },
+            ]}
+            rows={deliveryReport.by_branch}
           />
         </section>
         )}

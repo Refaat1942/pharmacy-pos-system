@@ -4,6 +4,7 @@ import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
+  ShieldAlert, Sparkles,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
@@ -34,6 +35,8 @@ const NAV: NavItem[] = [
   { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  feature: 'clinics', adminOnly: true },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
+  { to: '/fraud',     labelKey: 'nav.fraud',      Icon: ShieldAlert,  feature: 'fraud_surveillance', adminOnly: true },
+  { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
   { to: '/clock',     labelKey: 'nav.clock',      Icon: Clock,        clockScreen: true },
   { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       roles: ['admin', 'branch'] },

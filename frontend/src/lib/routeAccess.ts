@@ -20,6 +20,8 @@ export const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
   { path: '/customers', feature: 'customers' },
   { path: '/suppliers', feature: 'suppliers' },
   { path: '/reports', feature: 'reports' },
+  { path: '/fraud', feature: 'fraud_surveillance' },
+  { path: '/stock-reallocation', feature: 'stock_reallocation' },
   { path: '/shifts', feature: 'shifts' },
   { path: '/hr', feature: 'hr' },
 ]

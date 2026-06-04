@@ -615,3 +615,225 @@ def monthly_trend(
     finally:
         cur.close()
         conn.close()
+
+
+SHIPMENT_SQL = (
+    "(i.type = 'delivery' OR "
+    "(i.type = 'digital' AND NULLIF(TRIM(COALESCE(i.delivery_address, '')), '') IS NOT NULL))"
+)
+
+
+@router.get("/sales-by-seller")
+def sales_by_seller(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Sales performance by salesperson (seller) including returns."""
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            WITH sales AS (
+              SELECT i.seller_id,
+                     COUNT(*)::int AS invoice_count,
+                     COALESCE(SUM(i.net_total), 0)::float AS revenue,
+                     COALESCE(SUM(i.discount), 0)::float AS total_discount,
+                     COUNT(*) FILTER (WHERE i.type = 'cash')::int AS cash_count,
+                     COUNT(*) FILTER (WHERE i.type = 'delivery')::int AS delivery_count,
+                     COUNT(*) FILTER (WHERE i.type = 'digital')::int AS digital_count,
+                     COALESCE(SUM(i.net_total) FILTER (WHERE {SHIPMENT_SQL}), 0)::float AS delivery_revenue
+              FROM invoices i
+              WHERE i.status = 'completed'
+                AND i.seller_id IS NOT NULL
+                AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+                {bf.replace('branch_id', 'i.branch_id')}
+              GROUP BY i.seller_id
+            ),
+            rets AS (
+              SELECT r.seller_id,
+                     COUNT(*)::int AS return_count,
+                     COALESCE(SUM(r.total_returned), 0)::float AS return_value
+              FROM returns r
+              WHERE r.created_at >= %s::date AND r.created_at < (%s::date + INTERVAL '1 day')
+                {bf.replace('branch_id', 'r.branch_id')}
+              GROUP BY r.seller_id
+            )
+            SELECT u.id AS seller_id,
+                   u.username,
+                   u.name_en AS seller_name_en,
+                   u.name_ar AS seller_name_ar,
+                   u.role AS seller_role,
+                   b.name_en AS branch_name_en,
+                   b.name_ar AS branch_name_ar,
+                   COALESCE(s.invoice_count, 0)::int AS invoice_count,
+                   COALESCE(s.revenue, 0)::float AS revenue,
+                   COALESCE(s.total_discount, 0)::float AS total_discount,
+                   COALESCE(s.cash_count, 0)::int AS cash_count,
+                   COALESCE(s.delivery_count, 0)::int AS delivery_count,
+                   COALESCE(s.digital_count, 0)::int AS digital_count,
+                   COALESCE(s.delivery_revenue, 0)::float AS delivery_revenue,
+                   COALESCE(r.return_count, 0)::int AS return_count,
+                   COALESCE(r.return_value, 0)::float AS return_value,
+                   (COALESCE(s.revenue, 0) - COALESCE(r.return_value, 0))::float AS net_revenue
+            FROM users u
+            LEFT JOIN sales s ON s.seller_id = u.id
+            LEFT JOIN rets r ON r.seller_id = u.id
+            LEFT JOIN branches b ON b.id = u.branch_id
+            WHERE (s.seller_id IS NOT NULL OR r.seller_id IS NOT NULL)
+            ORDER BY net_revenue DESC, revenue DESC, u.id ASC
+            """,
+            [df, dt] + bp + [df, dt] + bp,
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            rev = float(r.get("revenue") or 0)
+            ret = float(r.get("return_value") or 0)
+            r["return_pct"] = round(ret / rev * 100, 1) if rev > 0 else 0.0
+        return rows
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.get("/sales-by-seller/export")
+def export_sales_by_seller(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_response
+
+    rows = sales_by_seller(request, date_from, date_to, current_user)
+    headers = [
+        "Seller EN", "Seller AR", "Username", "Role", "Branch EN",
+        "Invoices", "Revenue", "Discount", "Cash", "Delivery orders",
+        "Digital", "Delivery revenue", "Returns count", "Returns value",
+        "Return %", "Net revenue",
+    ]
+    data = [
+        [
+            r.get("seller_name_en"), r.get("seller_name_ar"), r.get("username"),
+            r.get("seller_role"), r.get("branch_name_en"),
+            r.get("invoice_count"), r.get("revenue"), r.get("total_discount"),
+            r.get("cash_count"), r.get("delivery_count"), r.get("digital_count"),
+            r.get("delivery_revenue"), r.get("return_count"), r.get("return_value"),
+            r.get("return_pct"), r.get("net_revenue"),
+        ]
+        for r in rows
+    ]
+    return xlsx_response(headers, data, "sales_by_seller.xlsx")
+
+
+@router.get("/delivery-summary")
+def delivery_summary(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Delivery order counts by driver and by branch."""
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT
+              COALESCE(i.delivery_person_id, 0)::int AS delivery_person_id,
+              COALESCE(NULLIF(TRIM(i.delivery_person_name), ''), 'Unassigned') AS delivery_person_name,
+              i.branch_id,
+              b.name_en AS branch_name_en,
+              b.name_ar AS branch_name_ar,
+              COUNT(*)::int AS order_count,
+              COUNT(*) FILTER (WHERE COALESCE(i.delivery_status, 'pending') = 'pending')::int AS pending_count,
+              COUNT(*) FILTER (WHERE i.delivery_status = 'out_for_delivery')::int AS out_for_delivery_count,
+              COUNT(*) FILTER (WHERE i.delivery_status = 'delivered')::int AS delivered_count,
+              COALESCE(SUM(i.net_total), 0)::float AS revenue,
+              COALESCE(SUM(i.delivery_fee), 0)::float AS delivery_fees
+            FROM invoices i
+            LEFT JOIN branches b ON b.id = i.branch_id
+            WHERE i.status = 'completed'
+              AND {SHIPMENT_SQL}
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            GROUP BY i.delivery_person_id, i.delivery_person_name, i.branch_id, b.name_en, b.name_ar
+            ORDER BY order_count DESC, delivery_person_name ASC
+            """,
+            [df, dt] + bp,
+        )
+        by_driver = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            f"""
+            SELECT
+              i.branch_id,
+              b.name_en AS branch_name_en,
+              b.name_ar AS branch_name_ar,
+              COUNT(*)::int AS order_count,
+              COUNT(*) FILTER (WHERE COALESCE(i.delivery_status, 'pending') = 'pending')::int AS pending_count,
+              COUNT(*) FILTER (WHERE i.delivery_status = 'out_for_delivery')::int AS out_for_delivery_count,
+              COUNT(*) FILTER (WHERE i.delivery_status = 'delivered')::int AS delivered_count,
+              COALESCE(SUM(i.net_total), 0)::float AS revenue
+            FROM invoices i
+            LEFT JOIN branches b ON b.id = i.branch_id
+            WHERE i.status = 'completed'
+              AND {SHIPMENT_SQL}
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            GROUP BY i.branch_id, b.name_en, b.name_ar
+            ORDER BY order_count DESC
+            """,
+            [df, dt] + bp,
+        )
+        by_branch = [dict(r) for r in cur.fetchall()]
+        return {
+            "date_from": str(df),
+            "date_to": str(dt),
+            "by_driver": by_driver,
+            "by_branch": by_branch,
+            "totals": {
+                "order_count": sum(r["order_count"] for r in by_driver),
+                "pending_count": sum(r["pending_count"] for r in by_driver),
+                "delivered_count": sum(r["delivered_count"] for r in by_driver),
+            },
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+@router.get("/delivery-summary/export")
+def export_delivery_summary(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_response
+
+    report = delivery_summary(request, date_from, date_to, current_user)
+    headers = [
+        "Driver", "Branch EN", "Orders", "Pending", "Out for delivery",
+        "Delivered", "Revenue", "Delivery fees",
+    ]
+    data = [
+        [
+            r.get("delivery_person_name"), r.get("branch_name_en"),
+            r.get("order_count"), r.get("pending_count"),
+            r.get("out_for_delivery_count"), r.get("delivered_count"),
+            r.get("revenue"), r.get("delivery_fees"),
+        ]
+        for r in report["by_driver"]
+    ]
+    return xlsx_response(headers, data, "delivery_summary.xlsx")

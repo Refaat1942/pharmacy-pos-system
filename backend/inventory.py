@@ -1,5 +1,5 @@
 """Inventory & Stock module — items, manual adjustments, movement ledger."""
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -7,7 +7,7 @@ from datetime import date
 import io
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id
+from deps import get_current_user, get_active_branch_id, requires_feature
 from stock_batches import (
     add_batch_stock,
     deduct_stock_fefo,
@@ -1177,6 +1177,168 @@ def export_consumption_alerts(
         for r in rows
     ]
     return _xlsx_response(headers, data, "inventory_alerts.xlsx")
+
+
+# ─── SMART STOCK REALLOCATION ───────────────────────────────────────────────
+
+@router.get("/reallocation-suggestions", dependencies=[Depends(requires_feature("stock_reallocation"))])
+def reallocation_suggestions(
+    days: int = Query(30, ge=7, le=365),
+    coverage_days: int = Query(7, ge=1, le=60),
+    surplus_factor: float = Query(2.0, ge=1.2, le=5.0),
+    current_user=Depends(get_current_user),
+):
+    """
+    Suggest inter-branch transfers based on consumption vs stock.
+    Matches products by barcode across branches.
+    """
+    if current_user.get("role") not in ("admin", "pharmacist"):
+        raise HTTPException(403, "Admin or pharmacist required")
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            WITH branch_sales AS (
+              SELECT p.barcode,
+                     p.branch_id,
+                     p.id AS product_id,
+                     p.name_en,
+                     p.name_ar,
+                     COALESCE(p.stock, 0)::float AS stock,
+                     COALESCE(SUM(ii.quantity), 0)::float AS sold_qty
+              FROM products p
+              LEFT JOIN invoice_items ii ON ii.product_id = p.id
+              LEFT JOIN invoices i ON i.id = ii.invoice_id
+                AND i.status = 'completed'
+                AND i.created_at >= NOW() - (%s * INTERVAL '1 day')
+              WHERE p.active = true
+                AND p.barcode IS NOT NULL
+                AND TRIM(p.barcode) <> ''
+              GROUP BY p.id, p.barcode, p.branch_id, p.name_en, p.name_ar, p.stock
+            ),
+            metrics AS (
+              SELECT bs.*,
+                     b.name_en AS branch_name_en,
+                     b.name_ar AS branch_name_ar,
+                     ROUND((bs.sold_qty / %s)::numeric, 2)::float AS avg_daily,
+                     CASE WHEN bs.sold_qty > 0
+                       THEN ROUND((bs.stock / (bs.sold_qty / %s))::numeric, 1)
+                       ELSE NULL END AS days_cover
+              FROM branch_sales bs
+              JOIN branches b ON b.id = bs.branch_id
+            )
+            SELECT * FROM metrics
+            ORDER BY barcode, branch_id
+            """,
+            [days, days, days],
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+    by_barcode: dict[str, list] = {}
+    for r in rows:
+        bc = (r.get("barcode") or "").strip()
+        if not bc:
+            continue
+        by_barcode.setdefault(bc, []).append(r)
+
+    suggestions: list[dict] = []
+    target_stock = coverage_days  # multiplier applied via avg_daily
+
+    for barcode, branches in by_barcode.items():
+        if len(branches) < 2:
+            continue
+        needs = []
+        surpluses = []
+        for b in branches:
+            avg = float(b.get("avg_daily") or 0)
+            stock = float(b.get("stock") or 0)
+            if avg <= 0:
+                continue
+            need_qty = max(0, round(avg * target_stock - stock))
+            surplus_qty = max(0, round(stock - avg * target_stock * surplus_factor))
+            if need_qty >= 1:
+                needs.append({**b, "need_qty": int(need_qty)})
+            if surplus_qty >= 1:
+                surpluses.append({**b, "surplus_qty": int(surplus_qty)})
+
+        needs.sort(key=lambda x: -x["need_qty"])
+        surpluses.sort(key=lambda x: -x["surplus_qty"])
+
+        for need in needs:
+            remaining = need["need_qty"]
+            for surplus in surpluses:
+                if surplus["branch_id"] == need["branch_id"]:
+                    continue
+                if surplus["surplus_qty"] <= 0:
+                    continue
+                qty = min(remaining, surplus["surplus_qty"])
+                if qty < 1:
+                    continue
+                suggestions.append({
+                    "barcode": barcode,
+                    "name_en": need.get("name_en") or surplus.get("name_en"),
+                    "name_ar": need.get("name_ar") or surplus.get("name_ar"),
+                    "from_branch_id": surplus["branch_id"],
+                    "from_branch_name_en": surplus["branch_name_en"],
+                    "from_branch_name_ar": surplus["branch_name_ar"],
+                    "from_product_id": surplus["product_id"],
+                    "from_stock": surplus["stock"],
+                    "to_branch_id": need["branch_id"],
+                    "to_branch_name_en": need["branch_name_en"],
+                    "to_branch_name_ar": need["branch_name_ar"],
+                    "to_product_id": need["product_id"],
+                    "to_stock": need["stock"],
+                    "suggested_qty": int(qty),
+                    "need_branch_avg_daily": need.get("avg_daily"),
+                    "from_branch_avg_daily": surplus.get("avg_daily"),
+                    "priority_score": round(need["need_qty"] * float(need.get("avg_daily") or 1), 2),
+                })
+                surplus["surplus_qty"] -= qty
+                remaining -= qty
+                if remaining <= 0:
+                    break
+
+    suggestions.sort(key=lambda x: -x["priority_score"])
+    return {
+        "days": days,
+        "coverage_days": coverage_days,
+        "surplus_factor": surplus_factor,
+        "count": len(suggestions),
+        "suggestions": suggestions,
+    }
+
+
+@router.get("/reallocation-suggestions/export", dependencies=[Depends(requires_feature("stock_reallocation"))])
+def export_reallocation_suggestions(
+    days: int = 30,
+    coverage_days: int = 7,
+    surplus_factor: float = 2.0,
+    current_user=Depends(get_current_user),
+):
+    report = reallocation_suggestions(
+        days=days, coverage_days=coverage_days, surplus_factor=surplus_factor,
+        current_user=current_user,
+    )
+    headers = [
+        "Barcode", "Name EN", "From branch", "From stock", "To branch", "To stock",
+        "Suggested qty", "Need avg/day", "From avg/day", "Priority",
+    ]
+    data = [
+        [
+            s["barcode"], s.get("name_en"),
+            s.get("from_branch_name_en"), s.get("from_stock"),
+            s.get("to_branch_name_en"), s.get("to_stock"),
+            s.get("suggested_qty"), s.get("need_branch_avg_daily"),
+            s.get("from_branch_avg_daily"), s.get("priority_score"),
+        ]
+        for s in report["suggestions"]
+    ]
+    return _xlsx_response(headers, data, "stock_reallocation.xlsx")
 
 
 # ─── STOCK TRANSFERS ────────────────────────────────────────────────────────

@@ -34,6 +34,8 @@ FEATURES_CATALOG = [
     {"key": "customers",  "label": "Customers / Accounts", "default": True},
     {"key": "clinics",    "label": "Clinics & Prescriptions", "default": True},
     {"key": "reports",    "label": "Reports & Analytics",  "default": False},
+    {"key": "fraud_surveillance", "label": "Fraud Surveillance", "default": False},
+    {"key": "stock_reallocation", "label": "Smart Stock Reallocation", "default": False},
     {"key": "shifts",     "label": "Cash Shifts",          "default": True},
     {"key": "hr",         "label": "HR & Payroll",         "default": False},
     {"key": "settings",   "label": "Settings",             "default": True},
@@ -53,7 +55,8 @@ _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     ],
     "enterprise": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "reports", "shifts", "hr", "settings",
+        "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
+        "stock_reallocation", "shifts", "hr", "settings",
     ],
     "pilot": list(ALL_FEATURE_KEYS),
 }
