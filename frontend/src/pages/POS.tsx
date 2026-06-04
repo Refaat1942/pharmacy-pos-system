@@ -15,6 +15,7 @@ import {
   RotateCcw,
   Pause,
   ClipboardList,
+  ExternalLink,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ComponentType } from 'react'
@@ -117,12 +118,28 @@ function loadJSON<T>(key: string, fallback: T): T {
   }
 }
 
+const POS_HEARTBEAT_KEY = 'pharma_pos_heartbeat'
+
+function getPosWindowId(): string {
+  try {
+    let id = sessionStorage.getItem('pos_window_id')
+    if (!id) {
+      id = `w${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      sessionStorage.setItem('pos_window_id', id)
+    }
+    return id
+  } catch {
+    return 'w0'
+  }
+}
+
 export default function POS() {
   const { t } = useTranslation()
   const lang = i18n.language
   const { user, tenant, hasFeature } = useAuth()
 
-  const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}`
+  const posWindowId = useMemo(() => getPosWindowId(), [])
+  const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}_${posWindowId}`
   const CART_KEY = `pos_cart_${scope}`
   const DISCOUNT_KEY = `pos_discount_${scope}`
   const DISCMODE_KEY = `pos_discmode_${scope}`
@@ -175,6 +192,16 @@ export default function POS() {
   }, [])
 
   useEffect(() => { refreshShift() }, [refreshShift])
+
+  // Keep terminal unlocked while this POS window is open (shared across tabs via localStorage).
+  useEffect(() => {
+    const beat = () => {
+      try { localStorage.setItem(POS_HEARTBEAT_KEY, String(Date.now())) } catch { /* ignore */ }
+    }
+    beat()
+    const id = setInterval(beat, 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     api.get<{ name_en?: string | null; name_ar?: string | null }>('/settings/profile')
@@ -503,6 +530,15 @@ export default function POS() {
               </div>
               <div className="flex items-center gap-2">
                 {hasFeature('clinics') && <PrescriptionBell onLoad={loadPrescription} />}
+                <button
+                  type="button"
+                  onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 transition-colors"
+                  title={t('pos.new_window_hint') as string}
+                >
+                  <ExternalLink size={14} />
+                  {t('pos.new_window')}
+                </button>
                 <Link
                   to="/sales?refund=1"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"

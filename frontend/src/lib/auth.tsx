@@ -46,6 +46,7 @@ const API_BASE = (import.meta as any).env?.VITE_API_URL || ''
 
 const IDLE_LOCK_MS = 10 * 60 * 1000
 const LAST_ACTIVITY_KEY = 'pharma_last_activity'
+const POS_HEARTBEAT_KEY = 'pharma_pos_heartbeat'
 const ACTIVITY_WRITE_THROTTLE_MS = 3000
 const TENANT_REFRESH_KEY = 'pharma_tenant_refresh_ts'
 const TENANT_REFRESH_MIN_MS = 25_000
@@ -206,7 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const checkIdle = () => {
       const last = parseInt(localStorage.getItem(LAST_ACTIVITY_KEY) || '0', 10)
-      if (last > 0 && Date.now() - last >= IDLE_LOCK_MS) lock()
+      const posBeat = parseInt(localStorage.getItem(POS_HEARTBEAT_KEY) || '0', 10)
+      const recent = Math.max(last, posBeat)
+      if (recent > 0 && Date.now() - recent >= IDLE_LOCK_MS) lock()
     }
 
     if (!localStorage.getItem(LAST_ACTIVITY_KEY)) touch()
@@ -217,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     events.forEach((e) => window.addEventListener(e, touch, { passive: true }))
     const interval = setInterval(checkIdle, 15_000)
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LAST_ACTIVITY_KEY) checkIdle()
+      if (e.key === LAST_ACTIVITY_KEY || e.key === POS_HEARTBEAT_KEY) checkIdle()
     }
     window.addEventListener('storage', onStorage)
 

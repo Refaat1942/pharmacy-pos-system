@@ -784,6 +784,8 @@
     "clear_seller": "Clear seller",
     "select_customer": "Select customer...",
     "header_hint": "Scan a barcode or search a product to start a sale",
+    "new_window": "New POS window",
+    "new_window_hint": "Open another sale in a separate window (own cart). Terminal stays unlocked while any POS window is open.",
     "refund_receipt": "Refund Receipt",
     "refund_receipt_hint": "Find a past invoice and refund it",
     "in_stock": "in stock",
