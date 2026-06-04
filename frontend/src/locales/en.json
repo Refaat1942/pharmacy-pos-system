@@ -399,7 +399,9 @@
     "line_total": "Line total",
     "filter_all": "All",
     "reset_filters": "Reset filters",
-    "export_section": "Export Excel"
+    "export_section": "Export Excel",
+    "first_invoice": "First invoice",
+    "date_filter_on": "Date filter on"
   },
   "fraud": {
     "title": "Fraud Surveillance",

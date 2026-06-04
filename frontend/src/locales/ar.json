@@ -575,7 +575,9 @@
     "line_total": "إجمالي السطر",
     "filter_all": "الكل",
     "reset_filters": "إعادة تعيين الفلاتر",
-    "export_section": "تصدير Excel"
+    "export_section": "تصدير Excel",
+    "first_invoice": "أول فاتورة",
+    "date_filter_on": "تصفية التاريخ حسب"
   },
   "fraud": {
     "title": "مراقبة الاحتيال",

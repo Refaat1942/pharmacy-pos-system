@@ -1251,14 +1251,32 @@ def _customer_analysis_data(
     return summary_rows, item_rows, df, dt
 
 
-@router.get("/customer-analysis")
-def customer_analysis(
-    request: Request,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
-):
-    summary, items, df, dt = _customer_analysis_data(request, date_from, date_to, current_user)
+def _customer_row_export(r: dict) -> list:
+    first = r.get("first_invoice_at") or ""
+    last = r.get("last_invoice_at") or ""
+    return [
+        r["customer_name"], r.get("phone"), r.get("region"), r.get("buyer_tier"),
+        r["invoice_count"], r["total_spent"], r["avg_order_value"],
+        first[:10] if len(first) >= 10 else first,
+        last[:10] if len(last) >= 10 else last,
+        r.get("days_since_last_invoice"), r.get("avg_days_between_invoices"),
+        r["total_items_qty"], r["distinct_products"],
+    ]
+
+
+CUSTOMER_CUST_HEADERS = [
+    "Customer", "Phone", "Region", "Tier", "Invoices", "Total spent", "Avg order",
+    "First invoice", "Last invoice", "Days since last", "Avg days between",
+    "Items qty", "Distinct products",
+]
+
+CUSTOMER_ITEM_HEADERS = [
+    "Customer", "Phone", "Product", "Barcode", "Qty", "Revenue",
+    "Purchase count", "Last purchased",
+]
+
+
+def _build_customer_analysis_report(summary: list, items: list, df: date, dt: date) -> dict:
     top_buyers = [r for r in summary if r["buyer_tier"] == "high"][:10]
     low_buyers = sorted(
         [r for r in summary if r["buyer_tier"] == "low"],
@@ -1280,47 +1298,137 @@ def customer_analysis(
     }
 
 
-@router.get("/customer-analysis/export")
-def export_customer_analysis(
+def _apply_customer_analysis_filters(
+    report: dict,
+    section: Optional[str],
+    buyer_tier: Optional[str],
+    region: Optional[str],
+    customer_id: Optional[int],
+    section_date_from: Optional[str],
+    section_date_to: Optional[str],
+    invoice_date_on: Optional[str] = "last",
+) -> dict:
+    bt = (buyer_tier or "").strip() or None
+    reg = (region or "").strip() or None
+    cid = customer_id
+    sdf = (section_date_from or "").strip() or None
+    sdt = (section_date_to or "").strip() or None
+    date_field = "first_invoice_at" if (invoice_date_on or "last") == "first" else "last_invoice_at"
+
+    customers = report["customers"]
+    if bt:
+        customers = [r for r in customers if r.get("buyer_tier") == bt]
+    if reg:
+        customers = [r for r in customers if (r.get("region") or "").lower() == reg.lower()]
+    if cid is not None:
+        customers = [r for r in customers if r.get("customer_id") == cid]
+    if sdf or sdt:
+        customers = [r for r in customers if _in_date_range(r.get(date_field), sdf, sdt)]
+
+    top_buyers = [r for r in customers if r["buyer_tier"] == "high"][:10]
+    low_buyers = sorted(
+        [r for r in customers if r["buyer_tier"] == "low"],
+        key=lambda x: (x["total_spent"], x["invoice_count"]),
+    )[:10]
+
+    items = report["items"]
+    if cid is not None:
+        items = [r for r in items if r.get("customer_id") == cid]
+    if reg:
+        allowed = {r["customer_id"] for r in customers}
+        items = [r for r in items if r.get("customer_id") in allowed]
+    if sdf or sdt:
+        items = [r for r in items if _in_date_range(r.get("last_purchased_at"), sdf, sdt)]
+
+    out = {
+        **report,
+        "customers": customers,
+        "top_buyers": top_buyers,
+        "low_buyers": low_buyers,
+        "items": items,
+    }
+    if section == "top_buyers":
+        return {"top_buyers": top_buyers, "_section": section}
+    if section == "low_buyers":
+        return {"low_buyers": low_buyers, "_section": section}
+    if section == "all_customers":
+        return {"customers": customers, "_section": section}
+    if section == "items":
+        return {"items": items, "_section": section}
+    return out
+
+
+def _customer_analysis_sheets(report: dict) -> list[tuple[str, list, list]]:
+    cust_data = [_customer_row_export(r) for r in report.get("customers", [])]
+    top_data = [_customer_row_export(r) for r in report.get("top_buyers", [])]
+    low_data = [_customer_row_export(r) for r in report.get("low_buyers", [])]
+    item_data = [
+        [
+            r["customer_name"], r.get("phone"), r.get("product_name"), r.get("barcode"),
+            r["qty"], r["revenue"], r["purchase_count"],
+            (r.get("last_purchased_at") or "")[:10] if r.get("last_purchased_at") else "",
+        ]
+        for r in report.get("items", [])
+    ]
+    return [
+        ("Top buyers", CUSTOMER_CUST_HEADERS, top_data),
+        ("Low buyers", CUSTOMER_CUST_HEADERS, low_data),
+        ("All customers", CUSTOMER_CUST_HEADERS, cust_data),
+        ("Items purchased", CUSTOMER_ITEM_HEADERS, item_data),
+    ]
+
+
+@router.get("/customer-analysis")
+def customer_analysis(
     request: Request,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     current_user: dict = Depends(get_current_user),
 ):
-    from excel_utils import xlsx_multi_sheet
+    summary, items, df, dt = _customer_analysis_data(request, date_from, date_to, current_user)
+    return _build_customer_analysis_report(summary, items, df, dt)
+
+
+@router.get("/customer-analysis/export")
+def export_customer_analysis(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    section: Optional[str] = None,
+    buyer_tier: Optional[str] = None,
+    region: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    section_date_from: Optional[str] = None,
+    section_date_to: Optional[str] = None,
+    invoice_date_on: Optional[str] = Query("last"),
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_multi_sheet, xlsx_response
 
     summary, items, df, dt = _customer_analysis_data(request, date_from, date_to, current_user)
-    cust_headers = [
-        "Customer", "Phone", "Region", "Tier", "Invoices", "Total spent", "Avg order",
-        "First invoice", "Last invoice", "Days since last", "Avg days between",
-        "Items qty", "Distinct products",
-    ]
-    cust_data = [
-        [
-            r["customer_name"], r.get("phone"), r.get("region"), r.get("buyer_tier"),
-            r["invoice_count"], r["total_spent"], r["avg_order_value"],
-            r.get("first_invoice_at"), r.get("last_invoice_at"),
-            r.get("days_since_last_invoice"), r.get("avg_days_between_invoices"),
-            r["total_items_qty"], r["distinct_products"],
-        ]
-        for r in summary
-    ]
-    item_headers = [
-        "Customer", "Phone", "Product", "Barcode", "Qty", "Revenue",
-        "Purchase count", "Last purchased",
-    ]
-    item_data = [
-        [
-            r["customer_name"], r.get("phone"), r.get("product_name"), r.get("barcode"),
-            r["qty"], r["revenue"], r["purchase_count"], r.get("last_purchased_at"),
-        ]
-        for r in items
-    ]
+    report = _build_customer_analysis_report(summary, items, df, dt)
+    valid_sections = {"top_buyers", "low_buyers", "all_customers", "items"}
+    sec = (section or "").strip() or None
+    if sec and sec not in valid_sections:
+        raise HTTPException(400, "Invalid section")
+
+    filtered = _apply_customer_analysis_filters(
+        report, sec, buyer_tier, region, customer_id,
+        section_date_from, section_date_to, invoice_date_on,
+    )
+    sheets = _customer_analysis_sheets(filtered if sec else report)
+    if sec:
+        title_map = {
+            "top_buyers": "Top buyers",
+            "low_buyers": "Low buyers",
+            "all_customers": "All customers",
+            "items": "Items purchased",
+        }
+        title = title_map[sec]
+        headers, data = next((s[1], s[2]) for s in sheets if s[0] == title)
+        return xlsx_response(headers, data, f"customer_analysis_{sec}.xlsx")
     return xlsx_multi_sheet(
-        [
-            ("Customers", cust_headers, cust_data),
-            ("Items purchased", item_headers, item_data),
-        ],
+        [(s[0], s[1], s[2]) for s in sheets],
         "customer_analysis.xlsx",
     )
 

@@ -1139,44 +1139,7 @@ export default function Reports() {
 
         {/* Customer analysis */}
         {!loading && activeReport === 'customer_analysis' && customerAnalysis && (
-        <section className="space-y-4">
-          <SectionHead icon={<Users size={18} />} title={t('reports.customer_analysis')} subtitle={`${from} → ${to}`} />
-          <p className="text-xs text-slate-500">{t('reports.customer_analysis_hint')}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Kpi tone="blue" label={t('reports.customer_count')} value={fmtInt(customerAnalysis.summary.customer_count)} />
-            <Kpi tone="green" label={t('reports.total_customer_revenue')} value={fmt(customerAnalysis.summary.total_revenue)} />
-            <Kpi tone="green" label={t('reports.high_buyers')} value={fmtInt(customerAnalysis.summary.high_buyers)} sub={t('reports.buyer_tier_high')} />
-            <Kpi tone="amber" label={t('reports.low_buyers')} value={fmtInt(customerAnalysis.summary.low_buyers)} sub={t('reports.buyer_tier_low')} />
-          </div>
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.top_buyers')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={customerCols(t)}
-            rows={customerAnalysis.top_buyers}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.low_buyers')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={customerCols(t)}
-            rows={customerAnalysis.low_buyers}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.all_customers')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={customerCols(t)}
-            rows={customerAnalysis.customers}
-          />
-
-          <h3 className="text-sm font-semibold text-slate-700">{t('reports.items_purchased')}</h3>
-          <DataTable
-            empty={t('reports.no_data')}
-            cols={customerItemCols(t)}
-            rows={customerAnalysis.items}
-          />
-        </section>
+          <CustomerAnalysisPanel report={customerAnalysis} reportFrom={from} reportTo={to} dateParams={dateParams} />
         )}
 
         {/* Sales report */}
@@ -1737,6 +1700,308 @@ function salesLineItemCols(t: (k: string) => string) {
   ]
 }
 
+type CustomerSectionFilters = {
+  buyerTier: string
+  region: string
+  customerId: string
+  dateFrom: string
+  dateTo: string
+  invoiceDateOn: 'last' | 'first'
+}
+
+type CustomerFilterFields = {
+  tier?: boolean
+  region?: boolean
+  customer?: boolean
+  date?: boolean
+  invoiceDateOn?: boolean
+}
+
+function defaultCustomerFilters(from: string, to: string): CustomerSectionFilters {
+  return { buyerTier: '', region: '', customerId: '', dateFrom: from, dateTo: to, invoiceDateOn: 'last' }
+}
+
+function filterCustomerRows(
+  rows: CustomerRow[],
+  filters: CustomerSectionFilters,
+  tierLock?: CustomerRow['buyer_tier'],
+) {
+  let out = rows
+  if (tierLock) out = out.filter((r) => r.buyer_tier === tierLock)
+  else if (filters.buyerTier) out = out.filter((r) => r.buyer_tier === filters.buyerTier)
+  if (filters.region) out = out.filter((r) => (r.region || '').toLowerCase() === filters.region.toLowerCase())
+  if (filters.customerId) out = out.filter((r) => String(r.customer_id) === filters.customerId)
+  const dateField = filters.invoiceDateOn === 'first' ? 'first_invoice_at' : 'last_invoice_at'
+  if (filters.dateFrom || filters.dateTo) {
+    out = out.filter((r) => inSectionDateRange(r[dateField] || '', filters.dateFrom, filters.dateTo))
+  }
+  return out
+}
+
+function filterCustomerItems(rows: CustomerItemRow[], filters: CustomerSectionFilters) {
+  let out = rows
+  if (filters.customerId) out = out.filter((r) => String(r.customer_id) === filters.customerId)
+  if (filters.dateFrom || filters.dateTo) {
+    out = out.filter((r) => inSectionDateRange(r.last_purchased_at || '', filters.dateFrom, filters.dateTo))
+  }
+  return out
+}
+
+function customerExportParams(
+  dateParams: { date_from: string; date_to: string },
+  section: string,
+  filters: CustomerSectionFilters,
+) {
+  return {
+    ...dateParams,
+    section,
+    buyer_tier: filters.buyerTier || undefined,
+    region: filters.region || undefined,
+    customer_id: filters.customerId ? Number(filters.customerId) : undefined,
+    section_date_from: filters.dateFrom || undefined,
+    section_date_to: filters.dateTo || undefined,
+    invoice_date_on: filters.invoiceDateOn,
+  }
+}
+
+function CustomerAnalysisSection({
+  title,
+  filters,
+  onFiltersChange,
+  filterFields,
+  onExport,
+  cols,
+  rows,
+  empty,
+  dateBounds,
+  regions,
+  customers,
+}: {
+  title: string
+  filters: CustomerSectionFilters
+  onFiltersChange: (f: CustomerSectionFilters) => void
+  filterFields: CustomerFilterFields
+  onExport: () => void
+  cols: Parameters<typeof DataTable>[0]['cols']
+  rows: any[]
+  empty: string
+  dateBounds: { from: string; to: string }
+  regions: string[]
+  customers: CustomerRow[]
+}) {
+  const { t } = useTranslation()
+  const set = (patch: Partial<CustomerSectionFilters>) => onFiltersChange({ ...filters, ...patch })
+  const hasFilters = filterFields.tier || filterFields.region || filterFields.customer
+    || filterFields.date || filterFields.invoiceDateOn
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
+        <button
+          type="button"
+          onClick={() => void onExport()}
+          className="flex items-center gap-1.5 text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg"
+        >
+          <FileSpreadsheet size={14} /> {t('reports.export_section')}
+        </button>
+      </div>
+      {hasFilters && (
+        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div className="flex flex-wrap items-end gap-3">
+            {filterFields.tier && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.buyer_tier')}</label>
+                <select value={filters.buyerTier} onChange={(e) => set({ buyerTier: e.target.value })} className="input text-sm min-w-[7rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  <option value="high">{t('reports.buyer_tier_high')}</option>
+                  <option value="medium">{t('reports.buyer_tier_medium')}</option>
+                  <option value="low">{t('reports.buyer_tier_low')}</option>
+                </select>
+              </div>
+            )}
+            {filterFields.region && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.zone')}</label>
+                <select value={filters.region} onChange={(e) => set({ region: e.target.value })} className="input text-sm min-w-[8rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {regions.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            )}
+            {filterFields.customer && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.customer')}</label>
+                <select value={filters.customerId} onChange={(e) => set({ customerId: e.target.value })} className="input text-sm min-w-[10rem]">
+                  <option value="">{t('reports.filter_all')}</option>
+                  {customers.map((c) => (
+                    <option key={c.customer_id} value={String(c.customer_id)}>{c.customer_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {filterFields.invoiceDateOn && (
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.date_filter_on')}</label>
+                <select value={filters.invoiceDateOn} onChange={(e) => set({ invoiceDateOn: e.target.value as 'last' | 'first' })} className="input text-sm min-w-[8rem]">
+                  <option value="last">{t('reports.last_invoice')}</option>
+                  <option value="first">{t('reports.first_invoice')}</option>
+                </select>
+              </div>
+            )}
+            {filterFields.date && (
+              <>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.from')}</label>
+                  <input type="date" value={filters.dateFrom} min={dateBounds.from} max={filters.dateTo || dateBounds.to}
+                    onChange={(e) => set({ dateFrom: e.target.value })} className="input text-sm" />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 uppercase tracking-wider block">{t('reports.to')}</label>
+                  <input type="date" value={filters.dateTo} min={filters.dateFrom || dateBounds.from} max={dateBounds.to}
+                    onChange={(e) => set({ dateTo: e.target.value })} className="input text-sm" />
+                </div>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onFiltersChange(defaultCustomerFilters(dateBounds.from, dateBounds.to))}
+              className="text-xs text-slate-600 hover:text-pharma-700 px-2 py-2"
+            >
+              {t('reports.reset_filters')}
+            </button>
+          </div>
+        </div>
+      )}
+      <DataTable empty={empty} cols={cols} rows={rows} />
+    </div>
+  )
+}
+
+function CustomerAnalysisPanel({
+  report,
+  reportFrom,
+  reportTo,
+  dateParams,
+}: {
+  report: CustomerAnalysisReport
+  reportFrom: string
+  reportTo: string
+  dateParams: { date_from: string; date_to: string }
+}) {
+  const { t } = useTranslation()
+  const bounds = { from: reportFrom, to: reportTo }
+  const suffix = `${reportFrom}_${reportTo}`
+
+  const [topFilters, setTopFilters] = useState(() => defaultCustomerFilters(reportFrom, reportTo))
+  const [lowFilters, setLowFilters] = useState(() => defaultCustomerFilters(reportFrom, reportTo))
+  const [allFilters, setAllFilters] = useState(() => defaultCustomerFilters(reportFrom, reportTo))
+  const [itemFilters, setItemFilters] = useState(() => defaultCustomerFilters(reportFrom, reportTo))
+
+  useEffect(() => {
+    const d = defaultCustomerFilters(reportFrom, reportTo)
+    setTopFilters(d)
+    setLowFilters(d)
+    setAllFilters(d)
+    setItemFilters(d)
+  }, [reportFrom, reportTo, report.date_from])
+
+  const regions = useMemo(
+    () => [...new Set(report.customers.map((c) => c.region).filter(Boolean) as string[])].sort(),
+    [report.customers],
+  )
+  const customersSorted = useMemo(
+    () => [...report.customers].sort((a, b) => a.customer_name.localeCompare(b.customer_name)),
+    [report.customers],
+  )
+
+  const topRows = useMemo(
+    () => filterCustomerRows(report.top_buyers, topFilters, 'high'),
+    [report.top_buyers, topFilters],
+  )
+  const lowRows = useMemo(
+    () => filterCustomerRows(report.low_buyers, lowFilters, 'low'),
+    [report.low_buyers, lowFilters],
+  )
+  const allRows = useMemo(
+    () => filterCustomerRows(report.customers, allFilters),
+    [report.customers, allFilters],
+  )
+  const itemRows = useMemo(
+    () => filterCustomerItems(report.items, itemFilters),
+    [report.items, itemFilters],
+  )
+
+  return (
+    <section className="space-y-4">
+      <SectionHead icon={<Users size={18} />} title={t('reports.customer_analysis')} subtitle={`${reportFrom} → ${reportTo}`} />
+      <p className="text-xs text-slate-500">{t('reports.customer_analysis_hint')}</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Kpi tone="blue" label={t('reports.customer_count')} value={fmtInt(report.summary.customer_count)} />
+        <Kpi tone="green" label={t('reports.total_customer_revenue')} value={fmt(report.summary.total_revenue)} />
+        <Kpi tone="green" label={t('reports.high_buyers')} value={fmtInt(report.summary.high_buyers)} sub={t('reports.buyer_tier_high')} />
+        <Kpi tone="amber" label={t('reports.low_buyers')} value={fmtInt(report.summary.low_buyers)} sub={t('reports.buyer_tier_low')} />
+      </div>
+
+      <CustomerAnalysisSection
+        title={t('reports.top_buyers')}
+        filters={topFilters}
+        onFiltersChange={setTopFilters}
+        filterFields={{ region: true, customer: true, date: true, invoiceDateOn: true }}
+        regions={regions}
+        customers={customersSorted}
+        dateBounds={bounds}
+        cols={customerCols(t)}
+        rows={topRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/customer-analysis/export', `customer_top_buyers_${suffix}.xlsx`, customerExportParams(dateParams, 'top_buyers', topFilters))}
+      />
+
+      <CustomerAnalysisSection
+        title={t('reports.low_buyers')}
+        filters={lowFilters}
+        onFiltersChange={setLowFilters}
+        filterFields={{ region: true, customer: true, date: true, invoiceDateOn: true }}
+        regions={regions}
+        customers={customersSorted}
+        dateBounds={bounds}
+        cols={customerCols(t)}
+        rows={lowRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/customer-analysis/export', `customer_low_buyers_${suffix}.xlsx`, customerExportParams(dateParams, 'low_buyers', lowFilters))}
+      />
+
+      <CustomerAnalysisSection
+        title={t('reports.all_customers')}
+        filters={allFilters}
+        onFiltersChange={setAllFilters}
+        filterFields={{ tier: true, region: true, customer: true, date: true, invoiceDateOn: true }}
+        regions={regions}
+        customers={customersSorted}
+        dateBounds={bounds}
+        cols={customerCols(t)}
+        rows={allRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/customer-analysis/export', `customer_all_${suffix}.xlsx`, customerExportParams(dateParams, 'all_customers', allFilters))}
+      />
+
+      <CustomerAnalysisSection
+        title={t('reports.items_purchased')}
+        filters={itemFilters}
+        onFiltersChange={setItemFilters}
+        filterFields={{ customer: true, date: true }}
+        regions={regions}
+        customers={customersSorted}
+        dateBounds={bounds}
+        cols={customerItemCols(t)}
+        rows={itemRows}
+        empty={t('reports.no_data')}
+        onExport={() => downloadApiExcel('/reports/customer-analysis/export', `customer_items_${suffix}.xlsx`, customerExportParams(dateParams, 'items', itemFilters))}
+      />
+    </section>
+  )
+}
+
 function BuyerTierBadge({ tier }: { tier: CustomerRow['buyer_tier'] }) {
   const { t } = useTranslation()
   const cls: Record<CustomerRow['buyer_tier'], string> = {
@@ -1760,6 +2025,7 @@ function customerCols(t: (k: string) => string) {
     { key: 'invoice_count', label: t('reports.invoices'), align: 'end' as const, render: (r: CustomerRow) => fmtInt(r.invoice_count), sortValue: (r: CustomerRow) => r.invoice_count },
     { key: 'total_spent', label: t('reports.total_spent'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.total_spent), sortValue: (r: CustomerRow) => r.total_spent },
     { key: 'avg_order_value', label: t('reports.avg_order'), align: 'end' as const, render: (r: CustomerRow) => fmt(r.avg_order_value), sortValue: (r: CustomerRow) => r.avg_order_value },
+    { key: 'first_invoice_at', label: t('reports.first_invoice'), render: (r: CustomerRow) => fmtDate(r.first_invoice_at), sortValue: (r: CustomerRow) => r.first_invoice_at || '' },
     { key: 'last_invoice_at', label: t('reports.last_invoice'), render: (r: CustomerRow) => fmtDate(r.last_invoice_at), sortValue: (r: CustomerRow) => r.last_invoice_at || '' },
     { key: 'days_since_last_invoice', label: t('reports.days_since_last'), align: 'end' as const, render: (r: CustomerRow) => r.days_since_last_invoice != null ? fmtInt(r.days_since_last_invoice) : '—', sortValue: (r: CustomerRow) => r.days_since_last_invoice ?? -1 },
     { key: 'avg_days_between_invoices', label: t('reports.avg_days_between'), align: 'end' as const, render: (r: CustomerRow) => r.avg_days_between_invoices != null ? fmt(r.avg_days_between_invoices) : '—', sortValue: (r: CustomerRow) => r.avg_days_between_invoices ?? -1 },
