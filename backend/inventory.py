@@ -964,8 +964,8 @@ class ClearHistoryRequest(BaseModel):
 @router.post("/clear-branch-history")
 def clear_branch_history(req: ClearHistoryRequest,
                           current_user=Depends(get_current_user)):
-    """Wipe a branch's sales history and stock movements; reset product stock
-    to zero. Admin only; requires the caller's password as a final guard."""
+    """Wipe a branch's sales history, stock transfers, and movements; reset
+    product stock to zero. Admin only; requires the caller's password as guard."""
     if current_user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     from auth import verify_password
@@ -985,6 +985,12 @@ def clear_branch_history(req: ClearHistoryRequest,
 
         cur.execute("DELETE FROM stock_movements WHERE branch_id=%s", (req.branch_id,))
         moves = cur.rowcount
+        cur.execute(
+            """DELETE FROM stock_transfers
+               WHERE from_branch_id=%s OR to_branch_id=%s""",
+            (req.branch_id, req.branch_id),
+        )
+        transfers = cur.rowcount
         cur.execute("DELETE FROM returns WHERE branch_id=%s", (req.branch_id,))
         rets = cur.rowcount
         cur.execute(
@@ -999,8 +1005,8 @@ def clear_branch_history(req: ClearHistoryRequest,
         prods = cur.rowcount
         conn.commit()
         return {"ok": True, "branch_id": req.branch_id,
-                "deleted_movements": moves, "deleted_returns": rets,
-                "deleted_payments": pays,
+                "deleted_movements": moves, "deleted_transfers": transfers,
+                "deleted_returns": rets, "deleted_payments": pays,
                 "deleted_invoices": invs, "reset_products": prods}
     except HTTPException:
         conn.rollback()

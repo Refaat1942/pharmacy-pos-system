@@ -782,6 +782,7 @@ function ResetBranchModal({ branch, onClose, onDone }: { branch: BranchRow; onCl
                   <li>{t('settings.reset_branch_li_invoices')}</li>
                   <li>{t('settings.reset_branch_li_movements')}</li>
                   <li>{t('settings.reset_branch_li_returns')}</li>
+                  <li>{t('settings.reset_branch_li_transfers')}</li>
                   <li>{t('settings.reset_branch_li_stock')}</li>
                 </ul>
                 <p className="text-xs text-amber-900 font-semibold mt-1">{t('settings.reset_branch_warn3')}</p>
@@ -797,7 +798,7 @@ function ResetBranchModal({ branch, onClose, onDone }: { branch: BranchRow; onCl
           ) : (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 space-y-1">
               <p className="font-semibold">{t('settings.reset_branch_done')}</p>
-              <p className="text-xs">{t('settings.reset_branch_summary', { i: result.deleted_invoices, m: result.deleted_movements, p: result.reset_products })}</p>
+              <p className="text-xs">{t('settings.reset_branch_summary', { i: result.deleted_invoices, m: result.deleted_movements, t: result.deleted_transfers ?? 0, p: result.reset_products })}</p>
             </div>
           )}
         </div>

@@ -515,6 +515,11 @@ def delete_branch(branch_id: int, current_user: dict = Depends(get_current_user)
         cur.execute("SELECT COUNT(*) AS n FROM products WHERE branch_id=%s", (branch_id,))
         if cur.fetchone()["n"] > 0:
             raise HTTPException(400, "Branch still has products / stock. Transfer or remove them first.")
+        cur.execute(
+            """DELETE FROM stock_transfers
+               WHERE from_branch_id=%s OR to_branch_id=%s""",
+            (branch_id, branch_id),
+        )
         try:
             cur.execute("DELETE FROM branches WHERE id=%s", (branch_id,))
             conn.commit()
