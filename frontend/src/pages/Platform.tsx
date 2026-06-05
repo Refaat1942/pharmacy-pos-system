@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, Edit2, Trash2, Pause, Play, LogOut, ShieldCheck, KeyRound,
   X, ExternalLink, Building2, RefreshCw, AlertTriangle,
-  CalendarClock, Sparkles,
+  CalendarClock, Sparkles, Download,
 } from 'lucide-react'
 import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } from '../lib/platform'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
@@ -519,6 +519,7 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
     notes: string
   }>>({})
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [downloading, setDownloading] = useState(false)
   const [err, setErr] = useState('')
 
   const getRow = (p: PlanDef) => editing[p.key] ?? {
@@ -532,6 +533,17 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
   const setRow = (key: string, patch: Partial<ReturnType<typeof getRow>>) => {
     const p = plans.find((x) => x.key === key)!
     setEditing((prev) => ({ ...prev, [key]: { ...getRow(p), ...patch } }))
+  }
+
+  const downloadPlans = async () => {
+    setDownloading(true); setErr('')
+    try {
+      await platformAPI.downloadPlansExport()
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Failed to download plans file')
+    } finally {
+      setDownloading(false)
+    }
   }
 
   const save = async (p: PlanDef) => {
@@ -562,11 +574,16 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-800">Subscription Plans</h2>
           <p className="text-xs text-slate-500">Edit plan defaults for users, branches, and pricing. Per-customer overrides are set when editing a pharmacy.</p>
         </div>
+        <button type="button" onClick={downloadPlans} disabled={downloading}
+          className="shrink-0 inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          <Download size={16} />
+          {downloading ? 'Downloading…' : 'Download plans'}
+        </button>
       </div>
       {err && <div className="mx-5 mt-3 bg-red-50 border border-red-200 text-red-700 p-2 rounded text-sm">{err}</div>}
       <div className="overflow-x-auto">

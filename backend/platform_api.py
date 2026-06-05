@@ -187,6 +187,16 @@ def list_plans(admin=Depends(get_super_admin)):
     return platform_db.list_plans()
 
 
+@router.get("/plans/export")
+def export_plans(admin=Depends(get_super_admin)):
+    """Download current subscription plans, pricing, and feature matrix as Excel."""
+    from datetime import date
+    from excel_utils import xlsx_multi_sheet
+
+    filename = f"fratelanza_plans_{date.today().isoformat()}.xlsx"
+    return xlsx_multi_sheet(platform_db.plans_export_sheets(), filename)
+
+
 class PlanUpdateIn(BaseModel):
     label: Optional[str] = None
     max_users: Optional[int] = None

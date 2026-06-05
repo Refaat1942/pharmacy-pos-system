@@ -114,6 +114,23 @@ export const platformAPI = {
   listPlans: () => platformApi.get<PlanDef[]>('/plans'),
   updatePlan: (key: string, data: Partial<PlanDef>) =>
     platformApi.patch<PlanDef>(`/plans/${key}`, data),
+  downloadPlansExport: async () => {
+    const res = await platformApi.get('/plans/export', { responseType: 'blob' })
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const cd = res.headers['content-disposition'] as string | undefined
+    const match = cd?.match(/filename="?([^";]+)"?/)
+    const filename = match?.[1] || 'fratelanza_plans.xlsx'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
 }
 
 export default platformApi

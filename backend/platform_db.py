@@ -377,6 +377,43 @@ def update_plan(key: str, fields: dict) -> dict:
         conn.close()
 
 
+def _fmt_plan_limit(n: Optional[int]) -> str:
+    return "Unlimited" if n is None else str(n)
+
+
+def plans_export_sheets() -> list[tuple[str, list, list]]:
+    """Build (sheet_name, headers, rows) tuples for the plans/pricing workbook."""
+    plans = list_plans()
+    pricing_headers = [
+        "Plan", "Key", "Max users", "Max branches", "Price (LE)", "Notes",
+    ]
+    pricing_rows = [
+        [
+            p["label"],
+            p["key"],
+            _fmt_plan_limit(p.get("max_users")),
+            _fmt_plan_limit(p.get("max_branches")),
+            p.get("price_le") or 0,
+            p.get("notes") or "",
+        ]
+        for p in plans
+    ]
+
+    feature_headers = ["Feature"] + [p["label"] for p in plans]
+    feature_rows = []
+    for feat in FEATURES_CATALOG:
+        row = [feat["label"]]
+        for p in plans:
+            feats = set(p.get("features") or [])
+            row.append("Yes" if feat["key"] in feats else "—")
+        feature_rows.append(row)
+
+    return [
+        ("Plans & Pricing", pricing_headers, pricing_rows),
+        ("Features by Plan", feature_headers, feature_rows),
+    ]
+
+
 def get_tenant_limits(tenant: dict) -> dict:
     """Resolve effective max_users, max_branches, price_le for a tenant."""
     plan = get_plan(tenant.get("plan") or "basic") or {}
