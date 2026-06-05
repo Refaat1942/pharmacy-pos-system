@@ -149,21 +149,6 @@ CREATE TABLE IF NOT EXISTS return_items (
     total DECIMAL(10,2) NOT NULL
 );
 
-ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS pack_size INTEGER;
-UPDATE invoice_items ii
-SET pack_size = CASE
-        WHEN COALESCE(p.pack_size, 1) > 1 AND ii.unit_label IS DISTINCT FROM p.sub_unit
-            THEN COALESCE(p.pack_size, 1)
-        ELSE 1 END
-FROM products p
-WHERE ii.product_id = p.id AND ii.pack_size IS NULL;
-
-ALTER TABLE return_items ADD COLUMN IF NOT EXISTS sub_quantity INTEGER;
-UPDATE return_items ri
-SET sub_quantity = ri.quantity * COALESCE(ii.pack_size, 1)
-FROM invoice_items ii
-WHERE ri.invoice_item_id = ii.id AND ri.sub_quantity IS NULL;
-
 UPDATE products
 SET branch_id = COALESCE(
         (SELECT id FROM branches WHERE name_en = 'Seventh District Branch' ORDER BY id LIMIT 1),
@@ -473,6 +458,22 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100)
 
 -- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
+
+-- Backfill per-line pack_size on invoice/return items (requires products.pack_size + unit_label).
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS pack_size INTEGER;
+UPDATE invoice_items ii
+SET pack_size = CASE
+        WHEN COALESCE(p.pack_size, 1) > 1 AND ii.unit_label IS DISTINCT FROM p.sub_unit
+            THEN COALESCE(p.pack_size, 1)
+        ELSE 1 END
+FROM products p
+WHERE ii.product_id = p.id AND ii.pack_size IS NULL;
+
+ALTER TABLE return_items ADD COLUMN IF NOT EXISTS sub_quantity INTEGER;
+UPDATE return_items ri
+SET sub_quantity = ri.quantity * COALESCE(ii.pack_size, 1)
+FROM invoice_items ii
+WHERE ri.invoice_item_id = ii.id AND ri.sub_quantity IS NULL;
 
 -- Snapshot unit on transfer items (so detail view stays correct even if product unit changes).
 ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
