@@ -189,6 +189,18 @@ def sales_blueprint(admin=Depends(get_super_admin)):
     return platform_blueprint.get_blueprint()
 
 
+@router.get("/blueprint/tenant/{tid}")
+def sales_blueprint_for_tenant(tid: int, admin=Depends(get_super_admin)):
+    """Blueprint filtered to a pharmacy customer's actual enabled modules."""
+    import platform_blueprint
+    t = platform_db.get_tenant_by_id(tid)
+    if not t:
+        raise HTTPException(404, "Tenant not found")
+    if t.get("schema_name") == "public":
+        raise HTTPException(400, "Cannot build blueprint for the platform default tenant")
+    return platform_blueprint.get_blueprint_for_tenant(t)
+
+
 @router.get("/blueprint/video-script/download")
 def download_pos_video_script(admin=Depends(get_super_admin)):
     """Download bilingual POS video script as Markdown."""

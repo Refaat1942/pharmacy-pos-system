@@ -374,6 +374,15 @@ export default function Platform() {
                           <ExternalLink size={14} />
                         </a>
                         {t.schema_name !== 'public' && (
+                          <Link
+                            to={`/platform/blueprint?tenant=${t.id}`}
+                            className="text-slate-500 hover:text-indigo-700 mx-1 inline-block"
+                            title="Sales blueprint"
+                          >
+                            <FileText size={14} />
+                          </Link>
+                        )}
+                        {t.schema_name !== 'public' && (
                           <button onClick={() => setDeleting(t)} className="text-red-500 hover:text-red-700 mx-1" title="Delete">
                             <Trash2 size={14} />
                           </button>

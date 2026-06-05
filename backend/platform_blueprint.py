@@ -420,8 +420,8 @@ POS_VIDEO_SCRIPT = [
 ]
 
 
-def sections_for_plan(plan_features: list[str] | None) -> list[dict]:
-    feats = set(plan_features or [])
+def sections_for_features(feature_keys: list[str] | None) -> list[dict]:
+    feats = set(feature_keys or [])
     out = []
     for sec in BLUEPRINT_SECTIONS:
         if sec.get("always_show"):
@@ -431,6 +431,39 @@ def sections_for_plan(plan_features: list[str] | None) -> list[dict]:
         if any(k in feats for k in keys):
             out.append(sec)
     return out
+
+
+def resolve_tenant_features(tenant: dict) -> list[str]:
+    """Use the tenant's enabled modules; fall back to plan preset if unset."""
+    feats = platform_db.normalize_features(tenant.get("features"))
+    if feats:
+        return feats
+    plan = platform_db.get_plan(tenant.get("plan") or "basic") or {}
+    return platform_db.normalize_features(plan.get("features"))
+
+
+def get_blueprint_for_tenant(tenant: dict) -> dict:
+    feats = resolve_tenant_features(tenant)
+    plan = platform_db.get_plan(tenant.get("plan") or "basic") or {}
+    limits = platform_db.get_tenant_limits(tenant)
+    base = get_blueprint()
+    return {
+        **base,
+        "sections": sections_for_features(feats),
+        "tenant": {
+            "id": tenant["id"],
+            "slug": tenant["slug"],
+            "name": tenant["name"],
+            "plan_key": tenant.get("plan"),
+            "plan_label": plan.get("label") or (tenant.get("plan") or "basic"),
+            "contact_name": tenant.get("contact_name"),
+            "contact_email": tenant.get("contact_email"),
+            "contact_phone": tenant.get("contact_phone"),
+            "features": feats,
+            "max_users": limits.get("max_users"),
+            "max_branches": limits.get("max_branches"),
+        },
+    }
 
 
 def video_script_markdown() -> str:

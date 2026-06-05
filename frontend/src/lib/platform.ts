@@ -115,6 +115,7 @@ export const platformAPI = {
   updatePlan: (key: string, data: Partial<PlanDef>) =>
     platformApi.patch<PlanDef>(`/plans/${key}`, data),
   getBlueprint: () => platformApi.get('/blueprint'),
+  getBlueprintForTenant: (tenantId: number) => platformApi.get(`/blueprint/tenant/${tenantId}`),
   downloadPosVideoScript: async () => {
     const res = await platformApi.get('/blueprint/video-script/download', { responseType: 'blob' })
     const blob = new Blob([res.data], { type: 'text/markdown;charset=utf-8' })
