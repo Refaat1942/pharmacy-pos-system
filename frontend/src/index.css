@@ -89,6 +89,13 @@ body {
     width: 80mm;
     font-family: 'Cairo', sans-serif;
   }
+  .blueprint-print, .blueprint-print * { visibility: visible !important; }
+  .blueprint-print {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%;
+    font-family: 'Inter', 'Cairo', sans-serif;
+  }
   .print-only { display: block !important; }
   .no-print { display: none !important; }
 }

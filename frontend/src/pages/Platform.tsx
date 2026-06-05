@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   Plus, Edit2, Trash2, Pause, Play, LogOut, ShieldCheck, KeyRound,
   X, ExternalLink, Building2, RefreshCw, AlertTriangle,
-  CalendarClock, Sparkles, Download,
+  CalendarClock, Sparkles, Download, FileText,
 } from 'lucide-react'
 import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } from '../lib/platform'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
@@ -228,6 +228,10 @@ export default function Platform() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Link to="/platform/blueprint"
+              className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
+              <FileText size={14} /> Sales Blueprint
+            </Link>
             <div className="text-end text-sm">
               <div>{admin?.name || admin?.username}</div>
               <div className="text-xs text-white/50">{admin?.username}</div>

@@ -114,6 +114,7 @@ export const platformAPI = {
   listPlans: () => platformApi.get<PlanDef[]>('/plans'),
   updatePlan: (key: string, data: Partial<PlanDef>) =>
     platformApi.patch<PlanDef>(`/plans/${key}`, data),
+  getBlueprint: () => platformApi.get('/blueprint'),
   downloadPlansExport: async () => {
     const res = await platformApi.get('/plans/export', { responseType: 'blob' })
     const blob = new Blob([res.data], {

@@ -182,6 +182,13 @@ def features_catalog(admin=Depends(get_super_admin)):
     }
 
 
+@router.get("/blueprint")
+def sales_blueprint(admin=Depends(get_super_admin)):
+    """Product blueprint for customer sign-off and sales demo videos."""
+    import platform_blueprint
+    return platform_blueprint.get_blueprint()
+
+
 @router.get("/plans")
 def list_plans(admin=Depends(get_super_admin)):
     return platform_db.list_plans()

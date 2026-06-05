@@ -28,6 +28,7 @@ import EmployeeCards from './pages/EmployeeCards'
 import UserCards from './pages/UserCards'
 import PlatformLogin from './pages/PlatformLogin'
 import Platform from './pages/Platform'
+import PlatformBlueprint from './pages/PlatformBlueprint'
 import LockScreen from './components/LockScreen'
 import { canAccessFeature, getDefaultHomePath } from './lib/routeAccess'
 
@@ -86,6 +87,7 @@ function AppRoutes() {
       <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
+      <Route path="/platform/blueprint" element={<PlatformProtectedRoute><PlatformBlueprint /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>
