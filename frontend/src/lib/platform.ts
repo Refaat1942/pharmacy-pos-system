@@ -115,6 +115,21 @@ export const platformAPI = {
   updatePlan: (key: string, data: Partial<PlanDef>) =>
     platformApi.patch<PlanDef>(`/plans/${key}`, data),
   getBlueprint: () => platformApi.get('/blueprint'),
+  downloadPosVideoScript: async () => {
+    const res = await platformApi.get('/blueprint/video-script/download', { responseType: 'blob' })
+    const blob = new Blob([res.data], { type: 'text/markdown;charset=utf-8' })
+    const cd = res.headers['content-disposition'] as string | undefined
+    const match = cd?.match(/filename="?([^";]+)"?/)
+    const filename = match?.[1] || 'fratelanza_pos_video_script.md'
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
   downloadPlansExport: async () => {
     const res = await platformApi.get('/plans/export', { responseType: 'blob' })
     const blob = new Blob([res.data], {

@@ -3,187 +3,469 @@ from __future__ import annotations
 
 import platform_db
 
+FEATURE_LABELS_AR = {
+    "dashboard": "لوحة التحكم",
+    "pos": "نقطة البيع",
+    "sales": "سجل المبيعات",
+    "returns": "المرتجعات",
+    "inventory": "المخزون",
+    "transfers": "تحويلات الفروع",
+    "branches_stock": "مخزون الفروع",
+    "expiry": "تواريخ الصلاحية",
+    "purchases": "أوامر الشراء",
+    "suppliers": "الموردون",
+    "customers": "العملاء / الآجل",
+    "clinics": "العيادات والروشتات",
+    "reports": "التقارير والتحليلات",
+    "fraud_surveillance": "مراقبة الاحتيال",
+    "stock_reallocation": "إعادة توزيع المخزون",
+    "shifts": "درج النقدية / الورديات",
+    "hr": "الموارد البشرية والمرتبات",
+    "settings": "الإعدادات",
+}
 
 BLUEPRINT_META = {
-    "title": "Fratelanza Pharmacy ERP",
-    "subtitle": "Product Blueprint & Feature Overview",
-    "tagline": "Bilingual cloud POS and ERP built for Egyptian pharmacies.",
+    "title_en": "Fratelanza Pharmacy ERP",
+    "title_ar": "نظام فراتيلانزا لإدارة الصيدليات",
+    "subtitle_en": "Product Blueprint & Feature Overview",
+    "subtitle_ar": "مخطط المنتج وعرض المميزات",
+    "tagline_en": "Bilingual cloud POS and ERP built for Egyptian pharmacies.",
+    "tagline_ar": "نظام نقطة بيع وإدارة موارد سحابي ثنائي اللغة مصمم للصيدليات المصرية.",
     "version": "2026",
 }
 
 BLUEPRINT_SECTIONS = [
     {
         "id": "overview",
-        "title": "1. What you get",
-        "summary": "A complete pharmacy management system — hosted securely in the cloud with your own private database.",
-        "bullets": [
+        "always_show": True,
+        "title_en": "1. What you get",
+        "title_ar": "١. ما الذي تحصل عليه",
+        "summary_en": "A complete pharmacy management system — hosted securely in the cloud with your own private database.",
+        "summary_ar": "نظام إدارة صيدلية متكامل — مستضاف بأمان على السحابة مع قاعدة بيانات خاصة بصيدليتك فقط.",
+        "bullets_en": [
             "English & Arabic interface with RTL support",
-            "Works on PC, tablet, and phone browser — no extra POS hardware required",
-            "Each pharmacy gets an isolated database (your data never mixes with others)",
-            "Role-based access: admin, cashier, inventory, HR, and more",
-            "Receipt printing (58mm / 80mm / A4) with your logo and branding",
+            "Works on PC, tablet, and phone browser",
+            "Each pharmacy gets an isolated database",
+            "Role-based access: admin, cashier, inventory, HR",
+            "Receipt printing (58mm / 80mm / A4) with your logo",
         ],
-        "video_hook": "Open with the problem: scattered Excel sheets, lost stock, no visibility — then show one login to everything.",
+        "bullets_ar": [
+            "واجهة عربية وإنجليزية مع دعم الكتابة من اليمين لليسار",
+            "يعمل على الكمبيوتر والتابلت والموبايل",
+            "كل صيدلية لها قاعدة بيانات معزولة",
+            "صلاحيات حسب الدور: مدير، كاشير، مخزون، موارد بشرية",
+            "طباعة إيصالات (58مم / 80مم / A4) مع شعار الصيدلية",
+        ],
     },
     {
         "id": "pos",
-        "title": "2. Point of Sale (POS)",
-        "summary": "Fast checkout designed for busy pharmacy counters.",
-        "bullets": [
-            "Barcode scan or search by name / international barcode",
-            "Sell by box or sub-unit (strip, tablet) with correct stock deduction",
-            "Cash, Visa, mixed payment, on-account, and digital platform sales (Talabat, etc.)",
-            "Line and invoice discounts; delivery orders with driver assignment",
-            "Load clinic prescriptions straight into the cart",
-            "Customizable receipts: logo, tax ID, seller name, barcode for reprint lookup",
-        ],
         "feature_keys": ["pos"],
-        "video_hook": "Demo a 30-second sale: scan → discount → pay → print receipt.",
+        "title_en": "2. Point of Sale (POS)",
+        "title_ar": "٢. نقطة البيع (POS)",
+        "summary_en": "Fast checkout designed for busy pharmacy counters.",
+        "summary_ar": "بيع سريع مصمم لكاونتر الصيدلية المزدحم.",
+        "bullets_en": [
+            "Barcode scan or search by name / international barcode",
+            "Sell by box or sub-unit (strip, tablet)",
+            "Cash, Visa, mixed, on-account, and digital platform sales",
+            "Line and invoice discounts; delivery orders",
+            "Load clinic prescriptions into the cart",
+            "Customizable receipts with logo and tax ID",
+        ],
+        "bullets_ar": [
+            "مسح الباركود أو البحث بالاسم / الباركود الدولي",
+            "البيع بالعلبة أو الوحدة الفرعية (شريط، قرص)",
+            "نقدي، فيزا، مختلط، آجل، ومبيعات المنصات الرقمية",
+            "خصومات على السطر والفاتورة؛ طلبات التوصيل",
+            "تحميل روشتات العيادات إلى السلة",
+            "إيصالات قابلة للتخصيص مع الشعار والرقم الضريبي",
+        ],
     },
     {
         "id": "sales",
-        "title": "3. Sales history & returns",
-        "summary": "Full audit trail of every transaction.",
-        "bullets": [
-            "Search and filter sales by date, branch, seller, payment type",
-            "Reprint any receipt; view invoice detail",
-            "Returns linked to original invoice — correct refund and restock every time",
-            "Delivery queue: pending → out for delivery → delivered",
-        ],
         "feature_keys": ["sales", "returns"],
-        "video_hook": "Show finding yesterday's invoice and processing a partial return.",
+        "title_en": "3. Sales history & returns",
+        "title_ar": "٣. سجل المبيعات والمرتجعات",
+        "summary_en": "Full audit trail of every transaction.",
+        "summary_ar": "سجل كامل لكل عملية بيع ومرتجع.",
+        "bullets_en": [
+            "Search sales by date, branch, seller, payment type",
+            "Reprint any receipt",
+            "Returns linked to original invoice",
+            "Delivery queue management",
+        ],
+        "bullets_ar": [
+            "بحث المبيعات بالتاريخ والفرع والبائع وطريقة الدفع",
+            "إعادة طباعة أي إيصال",
+            "مرتجعات مربوطة بالفاتورة الأصلية",
+            "إدارة طابور التوصيل",
+        ],
     },
     {
         "id": "inventory",
-        "title": "4. Inventory & stock control",
-        "summary": "Know what you have, where it is, and when it expires.",
-        "bullets": [
-            "Product catalog with cost, price, min stock alerts",
-            "Bulk Excel upload for fast setup and price updates",
-            "Stock take with variance report (shortages / increases)",
-            "Multiple expiry batches per product",
-            "Barcode designer & bulk barcode label printing",
-            "Stock movement audit log for every in/out",
-        ],
         "feature_keys": ["inventory", "expiry"],
-        "video_hook": "Upload 100 products from Excel, then run a stock take.",
+        "title_en": "4. Inventory & stock control",
+        "title_ar": "٤. المخزون ومراقبة الأصناف",
+        "summary_en": "Know what you have, where it is, and when it expires.",
+        "summary_ar": "اعرف ما لديك، أين هو، ومتى ينتهي.",
+        "bullets_en": [
+            "Product catalog with cost, price, min stock alerts",
+            "Bulk Excel upload",
+            "Stock take with variance report",
+            "Multiple expiry batches per product",
+            "Barcode designer & label printing",
+        ],
+        "bullets_ar": [
+            "كتالوج أصناف مع التكلفة والسعر وتنبيه الحد الأدنى",
+            "رفع جماعي من Excel",
+            "جرد مخزون مع تقرير الفروقات",
+            "دفعات صلاحية متعددة لكل صنف",
+            "مصمم باركود وطباعة ملصقات",
+        ],
     },
     {
         "id": "purchases",
-        "title": "5. Purchases & suppliers",
-        "summary": "Record incoming goods and track supplier balances.",
-        "bullets": [
-            "Supplier directory with opening balances",
-            "Purchase orders with discounts, VAT, and public price",
-            "Receive stock into branch inventory on approval",
+        "feature_keys": ["purchases", "suppliers"],
+        "title_en": "5. Purchases & suppliers",
+        "title_ar": "٥. المشتريات والموردون",
+        "summary_en": "Record incoming goods and track supplier balances.",
+        "summary_ar": "تسجيل البضاعة الواردة ومتابعة أرصدة الموردين.",
+        "bullets_en": [
+            "Supplier directory with balances",
+            "Purchase orders with discounts and VAT",
+            "Receive stock into branch inventory",
             "Supplier payment history",
         ],
-        "feature_keys": ["purchases", "suppliers"],
-        "video_hook": "Create a PO, receive goods, show stock increased automatically.",
+        "bullets_ar": [
+            "دليل الموردين مع الأرصدة",
+            "أوامر شراء مع خصومات وضريبة",
+            "استلام البضاعة إلى مخزون الفرع",
+            "سجل مدفوعات الموردين",
+        ],
     },
     {
         "id": "customers",
-        "title": "6. Customers & on-account",
-        "summary": "Manage credit customers and corporate accounts.",
-        "bullets": [
-            "Customer profiles with credit limits and branch authorization",
-            "On-account sales with running balance and statement",
-            "Payment recording against outstanding invoices",
+        "feature_keys": ["customers"],
+        "title_en": "6. Customers & on-account",
+        "title_ar": "٦. العملاء والبيع الآجل",
+        "summary_en": "Manage credit customers and corporate accounts.",
+        "summary_ar": "إدارة عملاء الآجل والحسابات الجملة.",
+        "bullets_en": [
+            "Customer profiles with credit limits",
+            "On-account sales with statement",
+            "Payment recording",
             "Bulk customer upload",
         ],
-        "feature_keys": ["customers"],
-        "video_hook": "Sell on account, then show the customer statement and payment.",
+        "bullets_ar": [
+            "ملفات عملاء مع حدود ائتمان",
+            "بيع آجل مع كشف حساب",
+            "تسجيل المدفوعات",
+            "رفع عملاء جماعي",
+        ],
     },
     {
         "id": "branches",
-        "title": "7. Multi-branch operations",
-        "summary": "For pharmacy chains with more than one location.",
-        "bullets": [
-            "Separate stock per branch; central overview of all branches",
-            "Stock transfers: send → in transit → receive with print slip",
-            "Per-branch users and permissions",
-            "Compare stock levels across branches",
-        ],
         "feature_keys": ["transfers", "branches_stock"],
-        "video_hook": "Transfer stock from main branch to satellite — show both sides.",
+        "title_en": "7. Multi-branch operations",
+        "title_ar": "٧. إدارة الفروع المتعددة",
+        "summary_en": "For pharmacy chains with more than one location.",
+        "summary_ar": "لسلاسل الصيدليات ذات أكثر من فرع.",
+        "bullets_en": [
+            "Separate stock per branch",
+            "Stock transfers with print slip",
+            "Central branch stock overview",
+            "Per-branch users and permissions",
+        ],
+        "bullets_ar": [
+            "مخزون منفصل لكل فرع",
+            "تحويلات مخزون مع إذن طباعة",
+            "نظرة شاملة على مخزون الفروع",
+            "مستخدمون وصلاحيات لكل فرع",
+        ],
     },
     {
         "id": "shifts",
-        "title": "8. Cash drawer & shifts",
-        "summary": "End-of-day control for cashiers.",
-        "bullets": [
-            "Open / close shift with opening float",
-            "Morning / evening / night shift types",
-            "X report while open; Z report on close",
-            "Cash & Visa counted totals with variance",
-            "Block close if delivery orders still pending",
-        ],
         "feature_keys": ["shifts"],
-        "video_hook": "Close a shift — show expected vs counted cash and visa.",
+        "title_en": "8. Cash drawer & shifts",
+        "title_ar": "٨. درج النقدية والورديات",
+        "summary_en": "End-of-day control for cashiers.",
+        "summary_ar": "رقابة نهاية اليوم للكاشير.",
+        "bullets_en": [
+            "Open / close shift with opening float",
+            "Morning / evening / night shifts",
+            "X and Z reports; cash & Visa variance",
+            "Block close if deliveries pending",
+        ],
+        "bullets_ar": [
+            "فتح / إغلاق وردية مع رصيد افتتاحي",
+            "ورديات صباحية / مسائية / ليلية",
+            "تقارير X و Z؛ فروقات النقدي والفيزا",
+            "منع الإغلاق إذا توصيل معلق",
+        ],
     },
     {
         "id": "clinics",
-        "title": "9. Clinics & prescriptions",
-        "summary": "Partner clinics send prescriptions digitally.",
-        "bullets": [
-            "Register contracted clinics with a private portal link",
-            "Doctor submits prescription online; cashier loads it in POS",
-            "Track pending vs handled prescriptions",
-        ],
         "feature_keys": ["clinics"],
-        "video_hook": "Show clinic portal on phone → prescription appears in POS.",
+        "title_en": "9. Clinics & prescriptions",
+        "title_ar": "٩. العيادات والروشتات",
+        "summary_en": "Partner clinics send prescriptions digitally.",
+        "summary_ar": "العيادات الشريكة ترسل الروشتات إلكترونياً.",
+        "bullets_en": [
+            "Clinic portal with private link",
+            "Prescription loads in POS cart",
+            "Track pending vs handled",
+        ],
+        "bullets_ar": [
+            "بوابة عيادة برابط خاص",
+            "تحميل الروشتة في سلة نقطة البيع",
+            "متابعة المعلق والمنفذ",
+        ],
     },
     {
         "id": "reports",
-        "title": "10. Reports & business intelligence",
-        "summary": "Decisions backed by real numbers.",
-        "bullets": [
-            "Dashboard KPIs: sales, top items, low stock",
-            "Sales by item, seller, branch, payment method — with Excel export",
-            "Delivery summary, customer analysis, stock velocity",
-            "Fraud surveillance: unusual discounts and void patterns",
-            "Smart stock reallocation suggestions between branches",
-        ],
         "feature_keys": ["dashboard", "reports", "fraud_surveillance", "stock_reallocation"],
-        "video_hook": "Open Reports — filter last month sales by branch, export Excel.",
+        "title_en": "10. Reports & analytics",
+        "title_ar": "١٠. التقارير والتحليلات",
+        "summary_en": "Decisions backed by real numbers.",
+        "summary_ar": "قرارات مبنية على أرقام حقيقية.",
+        "bullets_en": [
+            "Dashboard KPIs",
+            "Sales reports with Excel export",
+            "Fraud surveillance",
+            "Smart stock reallocation",
+        ],
+        "bullets_ar": [
+            "مؤشرات لوحة التحكم",
+            "تقارير مبيعات مع تصدير Excel",
+            "مراقبة الاحتيال",
+            "إعادة توزيع المخزون الذكية",
+        ],
     },
     {
         "id": "hr",
-        "title": "11. HR & payroll (optional)",
-        "summary": "Employees, attendance, and payslips in the same system.",
-        "bullets": [
-            "Employee records linked to POS login users",
-            "QR / barcode clock-in for attendance",
-            "Salary slips with allowances and deductions — printable",
-            "HR permissions separate from POS roles",
-        ],
         "feature_keys": ["hr"],
-        "video_hook": "Scan employee card at clock terminal, preview payslip.",
+        "title_en": "11. HR & payroll",
+        "title_ar": "١١. الموارد البشرية والمرتبات",
+        "summary_en": "Employees, attendance, and payslips.",
+        "summary_ar": "الموظفون والحضور وكشوف المرتبات.",
+        "bullets_en": [
+            "Employee records linked to users",
+            "QR clock-in attendance",
+            "Printable salary slips",
+        ],
+        "bullets_ar": [
+            "سجلات موظفين مربوطة بالمستخدمين",
+            "حضور بمسح QR",
+            "كشوف مرتبات قابلة للطباعة",
+        ],
     },
     {
         "id": "platform",
-        "title": "12. Hosting, support & updates",
-        "summary": "We run the servers; you run the pharmacy.",
-        "bullets": [
-            "Secure HTTPS access at your pharmacy code (e.g. dms.erp.fratelanza.com)",
-            "Automatic schema updates — new features without reinstalling",
-            "Daily backups; data isolated per pharmacy",
-            "Training and onboarding support available",
+        "always_show": True,
+        "title_en": "12. Hosting & support",
+        "title_ar": "١٢. الاستضافة والدعم",
+        "summary_en": "We run the servers; you run the pharmacy.",
+        "summary_ar": "نحن نشغّل السيرفرات؛ أنت تشغّل الصيدلية.",
+        "bullets_en": [
+            "Secure HTTPS with your pharmacy code",
+            "Automatic updates",
+            "Daily backups; isolated data",
+            "Training and onboarding support",
         ],
-        "video_hook": "Close with trust: isolated data, Egyptian pounds, local support.",
+        "bullets_ar": [
+            "اتصال آمن HTTPS بكود صيدليتك",
+            "تحديثات تلقائية",
+            "نسخ احتياطي يومي؛ بيانات معزولة",
+            "تدريب ودعم عند التشغيل",
+        ],
     },
 ]
 
-VIDEO_SCRIPT = [
-    {"time": "0:00–0:30", "scene": "Hook", "script": "Pharmacy owners lose money when stock, sales, and accounts live in different places. Fratelanza ERP puts POS, inventory, purchases, and reports in one bilingual system."},
-    {"time": "0:30–1:30", "scene": "POS sale", "script": "Log in, scan barcodes, apply a discount, take cash and visa, print receipt. Show box vs strip sale if relevant."},
-    {"time": "1:30–2:30", "scene": "Inventory", "script": "Show product list, low-stock alert, expiry view, and bulk upload from Excel."},
-    {"time": "2:30–3:15", "scene": "Purchases", "script": "Receive a supplier delivery — stock updates instantly."},
-    {"time": "3:15–4:00", "scene": "Customer account", "script": "On-account sale and customer statement with payment."},
-    {"time": "4:00–4:45", "scene": "Shift close", "script": "Cashier closes shift — cash and visa variance on screen."},
-    {"time": "4:45–5:30", "scene": "Reports", "script": "Dashboard and one Excel export — sales by item or seller."},
-    {"time": "5:30–6:00", "scene": "Call to action", "script": "Your pharmacy gets its own private system. Contact Fratelanza for a demo and plan that fits your branches and team."},
+POS_VIDEO_SCRIPT = [
+    {
+        "time": "0:00–0:45",
+        "scene_en": "Introduction & login",
+        "scene_ar": "المقدمة وتسجيل الدخول",
+        "script_en": "Welcome to Fratelanza Pharmacy ERP. Every pharmacy has its own private system. Enter your pharmacy code, username, and password. Switch language Arabic/English anytime. Show the clean POS home screen.",
+        "script_ar": "مرحباً بكم في نظام فراتيلانزا للصيدليات. كل صيدلية لها نظام خاص معزول. أدخل كود الصيدلية واسم المستخدم وكلمة المرور. يمكن التبديل بين العربية والإنجليزية في أي وقت. اعرض شاشة نقطة البيع الرئيسية.",
+        "steps_en": ["Open erp.fratelanza.com", "Enter pharmacy code (e.g. dms)", "Login as cashier", "Toggle AR/EN language"],
+        "steps_ar": ["افتح erp.fratelanza.com", "أدخل كود الصيدلية", "سجّل دخول ككاشير", "بدّل اللغة عربي/إنجليزي"],
+    },
+    {
+        "time": "0:45–1:30",
+        "scene_en": "Open cash shift",
+        "scene_ar": "فتح وردية النقدية",
+        "script_en": "Before selling, open a cash shift. Choose morning, evening, or night. Enter opening float. Explain that all sales in this session link to this shift for Z report at close.",
+        "script_ar": "قبل البيع، افتح وردية نقدية. اختر صباحية أو مسائية أو ليلية. أدخل رصيد الافتتاح. كل المبيعات في هذه الجلسة ترتبط بالوردية لتقرير الإغلاق Z.",
+        "steps_en": ["Go to Cash Drawer / Shifts", "Click Open Shift", "Select shift type", "Enter opening cash amount", "Confirm"],
+        "steps_ar": ["اذهب إلى درج النقدية / الورديات", "اضغط فتح وردية", "اختر نوع الوردية", "أدخل رصيد الافتتاح", "أكّد"],
+    },
+    {
+        "time": "1:30–2:30",
+        "scene_en": "Barcode scan sale",
+        "scene_ar": "بيع بمسح الباركود",
+        "script_en": "Scan a product barcode — item adds to cart instantly with price and stock check. Change quantity with +/−. Show product name in Arabic and English on screen and receipt.",
+        "script_ar": "امسح باركود الصنف — يُضاف للسلة فوراً مع التحقق من السعر والمخزون. غيّر الكمية بـ +/−. اعرض اسم الصنف بالعربية والإنجليزية على الشاشة والإيصال.",
+        "steps_en": ["Focus barcode field", "Scan or type barcode", "Item appears in cart", "Adjust quantity", "Show running total"],
+        "steps_ar": ["ركّز حقل الباركود", "امسح أو اكتب الباركود", "يظهر الصنف في السلة", "عدّل الكمية", "اعرض الإجمالي"],
+    },
+    {
+        "time": "2:30–3:15",
+        "scene_en": "Search & multi-unit sale",
+        "scene_ar": "البحث والبيع بوحدة فرعية",
+        "script_en": "Search by product name if no barcode. For medicines sold by strip inside a box, switch unit to strip — stock deducts correctly per sub-unit. Show pack size on screen.",
+        "script_ar": "ابحث بالاسم إذا لا يوجد باركود. للأدوية المباعة بالشريط داخل العلبة، حوّل الوحدة إلى شريط — يُخصم المخزون بالوحدة الصحيحة. اعرض حجم العبوة على الشاشة.",
+        "steps_en": ["Type product name in search", "Select from results", "Click unit toggle box/strip", "Set quantity in strips", "Verify line total"],
+        "steps_ar": ["اكتب اسم الصنف", "اختر من النتائج", "بدّل الوحدة علبة/شريط", "حدد الكمية بالشرائط", "تحقق من إجمالي السطر"],
+    },
+    {
+        "time": "3:15–4:00",
+        "scene_en": "Discounts",
+        "scene_ar": "الخصومات",
+        "script_en": "Apply a line discount on one item, then an invoice discount on the whole sale. Show net total updating live. Mention discount limits follow user permissions.",
+        "script_ar": "طبّق خصماً على سطر واحد، ثم خصماً على الفاتورة كاملة. اعرض صافي الإجمالي يتحدث مباشرة. الخصومات تخضع لصلاحيات المستخدم.",
+        "steps_en": ["Select cart line", "Apply line discount % or amount", "Apply invoice-level discount", "Show subtotal → net total"],
+        "steps_ar": ["اختر سطراً في السلة", "طبّق خصم السطر", "طبّق خصم الفاتورة", "اعرض المجموع → الصافي"],
+    },
+    {
+        "time": "4:00–4:45",
+        "scene_en": "Cash payment",
+        "scene_ar": "الدفع نقداً",
+        "script_en": "Click checkout. Choose Cash. Enter amount received — system shows change. Complete sale and print 80mm receipt with pharmacy logo, seller, date, and invoice barcode.",
+        "script_ar": "اضغط إتمام البيع. اختر نقدي. أدخل المبلغ المستلم — النظام يحسب الباقي. أكمِل البيع واطبع إيصال 80مم مع الشعار والبائع والتاريخ وباركود الفاتورة.",
+        "steps_en": ["Click Pay / Checkout", "Select Cash", "Enter cash received", "Show change amount", "Print receipt", "New sale"],
+        "steps_ar": ["اضغط الدفع", "اختر نقدي", "أدخل المبلغ", "اعرض الباقي", "اطبع الإيصال", "بيع جديد"],
+    },
+    {
+        "time": "4:45–5:30",
+        "scene_en": "Visa & mixed payment",
+        "scene_ar": "الفيزا والدفع المختلط",
+        "script_en": "Second sale: pay with Visa only, then a third sale with part cash + part Visa. Show both amounts recorded on invoice for shift reconciliation.",
+        "script_ar": "بيع ثانٍ: ادفع بالفيزا فقط، ثم بيع ثالث جزء نقدي + جزء فيزا. اعرض المبلغين مسجلين على الفاتورة لمطابقة الوردية.",
+        "steps_en": ["Checkout → Visa", "Enter visa amount = total", "Checkout → Mixed", "Split cash + visa", "Complete & print"],
+        "steps_ar": ["دفع → فيزا", "مبلغ الفيزا = الإجمالي", "دفع → مختلط", "قسّم نقدي + فيزا", "أكمل واطبع"],
+    },
+    {
+        "time": "5:30–6:15",
+        "scene_en": "On-account customer",
+        "scene_ar": "البيع الآجل",
+        "script_en": "Select an authorized customer. Choose On Account payment — sale records as debt. Show customer balance update. Mention credit limit warning if exceeded.",
+        "script_ar": "اختر عميلاً مفوضاً. اختر الدفع آجل — تُسجّل الفاتورة كدين. اعرض تحديث رصيد العميل. تنبيه عند تجاوز حد الائتمان.",
+        "steps_en": ["Attach customer to sale", "Payment → On account", "Complete sale", "Open customer statement", "Show new balance"],
+        "steps_ar": ["اربط عميلاً بالبيع", "الدفع → آجل", "أكمل البيع", "افتح كشف العميل", "اعرض الرصيد الجديد"],
+    },
+    {
+        "time": "6:15–7:00",
+        "scene_en": "Digital platform sale",
+        "scene_ar": "بيع منصة رقمية",
+        "script_en": "Create a digital sale (Talabat / Vezeeta / etc.). Select platform account customer. Show on-account billing for later partner settlement.",
+        "script_ar": "أنشئ بيعاً رقمياً (طلبات / فيزيتا / إلخ). اختر حساب المنصة. يُسجّل آجل للتسوية لاحقاً مع الشريك.",
+        "steps_en": ["Sale type → Digital", "Pick platform", "Add items", "On account payment", "Complete"],
+        "steps_ar": ["نوع البيع → رقمي", "اختر المنصة", "أضف الأصناف", "دفع آجل", "أكمل"],
+    },
+    {
+        "time": "7:00–7:45",
+        "scene_en": "Delivery order",
+        "scene_ar": "طلب توصيل",
+        "script_en": "Switch to delivery sale. Enter customer name, phone, address, delivery fee. Assign driver. Show order appearing on Deliveries page.",
+        "script_ar": "حوّل لبيع توصيل. أدخل اسم العميل والهاتف والعنوان ورسوم التوصيل. عيّن مندوباً. اعرض الطلب في صفحة التوصيل.",
+        "steps_en": ["Sale type → Delivery", "Fill delivery fields", "Set delivery fee", "Choose driver", "Complete payment", "Open Deliveries queue"],
+        "steps_ar": ["نوع البيع → توصيل", "املأ بيانات التوصيل", "رسوم التوصيل", "اختر المندوب", "أكمل الدفع", "افتح طابور التوصيل"],
+    },
+    {
+        "time": "7:45–8:30",
+        "scene_en": "Clinic prescription",
+        "scene_ar": "روشتة عيادة",
+        "script_en": "Open pending prescriptions. Load clinic Rx into POS cart — medicines and quantities pre-filled. Cashier reviews and completes sale.",
+        "script_ar": "افتح الروشتات المعلقة. حمّل روشتة العيادة في السلة — الأدوية والكميات جاهزة. الكاشير يراجع ويكمل البيع.",
+        "steps_en": ["POS → Load prescription", "Select pending Rx", "Items fill cart", "Adjust if needed", "Checkout normally"],
+        "steps_ar": ["نقطة البيع → تحميل روشتة", "اختر روشتة معلقة", "تملأ السلة", "عدّل إن لزم", "أتمم الدفع"],
+    },
+    {
+        "time": "8:30–9:15",
+        "scene_en": "Receipt reprint & sales lookup",
+        "scene_ar": "إعادة طباعة الإيصال",
+        "script_en": "Go to Sales History. Find today's invoice by number or barcode scan. Reprint receipt for customer copy.",
+        "script_ar": "اذهب لسجل المبيعات. ابحث عن فاتورة اليوم برقمها أو باركود. أعد طباعة الإيصال لنسخة العميل.",
+        "steps_en": ["Open Sales menu", "Filter by today", "Search invoice #", "Open detail", "Reprint receipt"],
+        "steps_ar": ["افتح المبيعات", "فلتر اليوم", "ابحث برقم الفاتورة", "افتح التفاصيل", "أعد الطباعة"],
+    },
+    {
+        "time": "9:15–10:00",
+        "scene_en": "Return from invoice",
+        "scene_ar": "مرتجع من فاتورة",
+        "script_en": "From sales detail, start a return. Select items and quantities — refund and restock calculated from original sale data. Print return receipt.",
+        "script_ar": "من تفاصيل البيع، ابدأ مرتجعاً. اختر الأصناف والكميات — الاسترداد وإعادة المخزون من بيانات البيع الأصلية. اطبع إيصال المرتجع.",
+        "steps_en": ["Open original invoice", "Click Return", "Select lines & qty", "Confirm refund method", "Stock restored"],
+        "steps_ar": ["افتح الفاتورة الأصلية", "اضغط مرتجع", "اختر الأسطر والكمية", "أكّد الاسترداد", "يُعاد المخزون"],
+    },
+    {
+        "time": "10:00–10:45",
+        "scene_en": "Close shift (Z report)",
+        "scene_ar": "إغلاق الوردية (تقرير Z)",
+        "script_en": "End of day: close shift. Enter counted cash and counted Visa. System shows expected vs actual and variance. Print Z report. Mention pending deliveries block close.",
+        "script_ar": "نهاية اليوم: أغلق الوردية. أدخل النقدي المعدود والفيزا المعدودة. النظام يعرض المتوقع مقابل الفعلي والفرق. اطبع تقرير Z. التوصيل المعلق يمنع الإغلاق.",
+        "steps_en": ["Shifts → Close", "Count cash drawer", "Enter counted cash & visa", "Review variance", "Confirm close", "Print Z report"],
+        "steps_ar": ["الورديات → إغلاق", "عدّ الدرج", "أدخل النقدي والفيزا", "راجع الفروقات", "أكّد الإغلاق", "اطبع Z"],
+    },
+    {
+        "time": "10:45–11:30",
+        "scene_en": "Call to action",
+        "scene_ar": "الختام والتواصل",
+        "script_en": "Fratelanza gives your pharmacy one bilingual POS with isolated data, Egyptian pound pricing, and modules that grow with you. Contact us for your pharmacy code and demo account.",
+        "script_ar": "فراتيلانزا تمنح صيدليتك نقطة بيع ثنائية اللغة وبيانات معزولة وأسعار بالجنيه المصري ووحدات تنمو معك. تواصل معنا لكود الصيدلية وحساب تجريبي.",
+        "steps_en": ["Show logo & website", "Mention plans", "Contact phone/email", "Thank you"],
+        "steps_ar": ["اعرض الشعار والموقع", "اذكر الباقات", "هاتف/إيميل التواصل", "شكراً"],
+    },
 ]
+
+
+def sections_for_plan(plan_features: list[str] | None) -> list[dict]:
+    feats = set(plan_features or [])
+    out = []
+    for sec in BLUEPRINT_SECTIONS:
+        if sec.get("always_show"):
+            out.append(sec)
+            continue
+        keys = sec.get("feature_keys") or []
+        if any(k in feats for k in keys):
+            out.append(sec)
+    return out
+
+
+def video_script_markdown() -> str:
+    lines = [
+        "# Fratelanza POS — Demo Video Script",
+        "# سكربت فيديو نقطة البيع — فراتيلانزا",
+        "",
+        "Bilingual script for sales & training videos (~11 minutes).",
+        "سكربت ثنائي اللغة لفيديوهات البيع والتدريب.",
+        "",
+        "---",
+        "",
+    ]
+    for i, s in enumerate(POS_VIDEO_SCRIPT, 1):
+        lines.append(f"## Scene {i} · {s['time']}")
+        lines.append(f"### {s['scene_en']} / {s['scene_ar']}")
+        lines.append("")
+        lines.append("**English**")
+        lines.append(s["script_en"])
+        lines.append("")
+        lines.append("*Steps:*")
+        for step in s["steps_en"]:
+            lines.append(f"- {step}")
+        lines.append("")
+        lines.append("**العربية**")
+        lines.append(s["script_ar"])
+        lines.append("")
+        lines.append("*الخطوات:*")
+        for step in s["steps_ar"]:
+            lines.append(f"- {step}")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    lines.append("© 2026 Fratelanza. All rights reserved.")
+    return "\n".join(lines)
 
 
 def get_blueprint() -> dict:
@@ -192,7 +474,8 @@ def get_blueprint() -> dict:
     return {
         "meta": BLUEPRINT_META,
         "sections": BLUEPRINT_SECTIONS,
-        "video_script": VIDEO_SCRIPT,
+        "pos_video_script": POS_VIDEO_SCRIPT,
         "plans": plans,
         "features": features,
+        "feature_labels_ar": FEATURE_LABELS_AR,
     }

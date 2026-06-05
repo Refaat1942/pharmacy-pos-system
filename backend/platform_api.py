@@ -189,6 +189,22 @@ def sales_blueprint(admin=Depends(get_super_admin)):
     return platform_blueprint.get_blueprint()
 
 
+@router.get("/blueprint/video-script/download")
+def download_pos_video_script(admin=Depends(get_super_admin)):
+    """Download bilingual POS video script as Markdown."""
+    from fastapi.responses import Response
+    import platform_blueprint
+    from datetime import date
+
+    body = platform_blueprint.video_script_markdown()
+    filename = f"fratelanza_pos_video_script_{date.today().isoformat()}.md"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/plans")
 def list_plans(admin=Depends(get_super_admin)):
     return platform_db.list_plans()
