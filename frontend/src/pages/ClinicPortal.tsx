@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Stethoscope, Plus, Trash2, Send, CheckCircle2 } from 'lucide-react'
 import { clinicPortalAPI, ClinicPortalInfo } from '../lib/api'
+import CopyrightNotice from '../components/CopyrightNotice'
 
 interface Row { medicine_name: string; quantity: number; dose: string; note: string }
 
@@ -253,6 +254,8 @@ export default function ClinicPortal() {
           <Send size={18} />
           {submitting ? t('common.saving') : t('portal.send')}
         </button>
+
+        <CopyrightNotice className="text-center text-xs text-slate-400 pt-4" />
       </main>
     </div>
   )

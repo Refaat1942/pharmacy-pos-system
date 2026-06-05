@@ -1,6 +1,8 @@
 {
   "app_name": "Fratelanza ERP",
   "app_subtitle": "Management System",
+  "copyright": "© 2026 Fratelanza. All rights reserved.",
+  "copyright_short": "© 2026 Fratelanza",
   "login": {
     "title": "Welcome Back",
     "subtitle": "Sign in to Fratelanza ERP Management System",

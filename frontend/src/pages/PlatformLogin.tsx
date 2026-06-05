@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { platformAPI } from '../lib/platform'
+import { COPYRIGHT_EN } from '../lib/branding'
 
 export default function PlatformLogin() {
   const navigate = useNavigate()
@@ -76,9 +77,7 @@ export default function PlatformLogin() {
             className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg">
             {loading ? <><Loader2 size={18} className="animate-spin" /> Signing in…</> : 'Sign in'}
           </button>
-          <p className="text-center text-xs text-gray-400">
-            Fratelanza Control Platform v1.0
-          </p>
+          <p className="text-center text-xs text-gray-400">{COPYRIGHT_EN}</p>
         </form>
       </div>
     </div>

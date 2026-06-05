@@ -9,6 +9,7 @@ import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } 
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import DateInput from '../components/DateInput'
 import { formatDateTime } from '../lib/formatDate'
+import { COPYRIGHT_EN } from '../lib/branding'
 
 function fmtLimit(n: number | null | undefined) {
   return n == null ? '∞' : String(n)
@@ -387,6 +388,8 @@ export default function Platform() {
       {editing && <EditModal tenant={editing} catalog={featuresCatalog} plans={plans} onClose={() => setEditing(null)} onDone={load} />}
       {deleting && <DeleteModal tenant={deleting} onClose={() => setDeleting(null)} onDone={load} />}
       {showPwd && <ChangePwdModal onClose={() => setShowPwd(false)} />}
+
+      <p className="text-center text-xs text-slate-400 pb-2">{COPYRIGHT_EN}</p>
     </div>
   )
 }

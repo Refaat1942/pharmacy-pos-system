@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
+import CopyrightNotice from './CopyrightNotice'
 
 interface NavItem {
   to: string
@@ -164,8 +165,8 @@ export default function Sidebar() {
       )}
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-white/10 text-[10px] text-white/30 text-center shrink-0">
-        v1.0 · Fratelanza ERP
+      <div className="px-4 py-3 border-t border-white/10 shrink-0">
+        <CopyrightNotice variant="short" className="text-[10px] text-white/30 text-center" />
       </div>
     </aside>
   )

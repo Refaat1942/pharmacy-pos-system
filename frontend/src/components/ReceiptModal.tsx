@@ -6,6 +6,7 @@ import type { SaleResponse } from '../lib/api'
 import api from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatDate } from '../lib/formatDate'
+import CopyrightNotice from './CopyrightNotice'
 
 interface Props {
   sale: SaleResponse
@@ -340,7 +341,8 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
             )}
           </div>
 
-          <p className="text-center text-xs text-gray-500 pb-2 whitespace-pre-line">{footerText}</p>
+          <p className="text-center text-xs text-gray-500 pb-1 whitespace-pre-line">{footerText}</p>
+          <CopyrightNotice variant="short" className="text-center text-[10px] text-gray-400 pb-2" />
 
           {/* Scannable barcode at the bottom for fast invoice retrieval */}
           {profile?.show_barcode !== false && (

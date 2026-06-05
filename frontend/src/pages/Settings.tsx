@@ -9,6 +9,7 @@ import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
+import CopyrightNotice from '../components/CopyrightNotice'
 
 interface UserRow {
   id: number
@@ -1239,6 +1240,7 @@ function ReceiptPreview({ profile: p }: { profile: PharmacyProfile }) {
       <div className="border-t border-dashed border-slate-300 my-2"></div>
       <div className="flex justify-between font-bold"><span>{t('الصافي', 'Net Total')}</span><span style={{ color: p.receipt_accent }}>{t('ج.م', 'EGP')} 80.00</span></div>
       <div className="text-center text-[10px] text-slate-500 mt-3 whitespace-pre-line">{footer}</div>
+      <CopyrightNotice variant="short" className="text-center text-[9px] text-slate-400 mt-1" />
     </div>
   )
 }

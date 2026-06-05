@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth'
 import { getDefaultHomePath } from '../lib/routeAccess'
 import { authAPI } from '../lib/api'
 import i18n from '../lib/i18n'
+import CopyrightNotice from '../components/CopyrightNotice'
 
 export default function Login() {
   const { t } = useTranslation()
@@ -145,9 +146,7 @@ export default function Login() {
             )}
           </button>
 
-          <p className="text-center text-xs text-gray-400">
-            Fratelanza ERP Management System v1.0
-          </p>
+          <CopyrightNotice className="text-center text-xs text-gray-400" />
         </form>
       </div>
     </div>
