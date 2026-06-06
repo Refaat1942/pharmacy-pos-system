@@ -1,0 +1,11 @@
+{
+  "name": "pharmapos-screenshots",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-pos-screenshots.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.49.0"
+  }
+}

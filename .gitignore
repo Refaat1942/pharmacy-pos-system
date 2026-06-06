@@ -3,4 +3,5 @@ __pycache__/
 receipts/
 .env
 frontend/node_modules/
+scripts/node_modules/
 frontend/dist/
