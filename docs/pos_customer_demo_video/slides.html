@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>test POS demo</title>
+  <style>
+    :root {
+      --pharma: #0f766e;
+      --pharma-2: #14b8a6;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #dbe4ee;
+      --paper: #ffffff;
+      --soft: #f8fafc;
+      --amber: #f59e0b;
+      --blue: #2563eb;
+      --green: #16a34a;
+      --red: #dc2626;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      width: 1280px;
+      height: 720px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(20, 184, 166, 0.22), transparent 30%),
+        linear-gradient(135deg, #f8fafc 0%, #e0f2fe 52%, #ecfeff 100%);
+      color: var(--ink);
+      font-family: "Noto Sans Arabic", "Arimo", Arial, sans-serif;
+    }
+
+    .slide {
+      width: 1280px;
+      height: 720px;
+      padding: 38px 44px;
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 30px;
+      position: relative;
+    }
+
+    .brand {
+      position: absolute;
+      top: 24px;
+      inset-inline-start: 44px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 900;
+      color: var(--pharma);
+      letter-spacing: .02em;
+      direction: ltr;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--pharma), var(--pharma-2));
+      display: grid;
+      place-items: center;
+      color: #fff;
+      box-shadow: 0 12px 28px rgba(15, 118, 110, .28);
+      font-size: 23px;
+      line-height: 1;
+    }
+
+    .content {
+      padding-top: 54px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .kicker {
+      color: var(--pharma);
+      font-size: 20px;
+      font-weight: 900;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 1.17;
+      letter-spacing: -0.02em;
+    }
+
+    .en-title {
+      margin: 12px 0 0;
+      direction: ltr;
+      text-align: left;
+      font-family: "Arimo", Arial, sans-serif;
+      color: #334155;
+      font-size: 23px;
+      line-height: 1.24;
+      font-weight: 800;
+    }
+
+    .points {
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+      font-size: 20px;
+      line-height: 1.45;
+    }
+
+    .points li {
+      background: rgba(255,255,255,.72);
+      border: 1px solid rgba(203,213,225,.72);
+      border-radius: 18px;
+      padding: 13px 16px;
+      box-shadow: 0 10px 24px rgba(15,23,42,.05);
+    }
+
+    .points .en {
+      direction: ltr;
+      text-align: left;
+      display: block;
+      color: var(--muted);
+      font-family: "Arimo", Arial, sans-serif;
+      font-size: 15px;
+      margin-top: 3px;
+    }
+
+    .caption {
+      position: absolute;
+      inset-inline-start: 44px;
+      inset-inline-end: 44px;
+      bottom: 22px;
+      border: 1px solid rgba(15, 118, 110, .22);
+      background: rgba(255,255,255,.86);
+      border-radius: 20px;
+      padding: 11px 18px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      font-size: 17px;
+      line-height: 1.4;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, .09);
+    }
+
+    .caption .en {
+      direction: ltr;
+      text-align: left;
+      font-family: "Arimo", Arial, sans-serif;
+      color: #334155;
+    }
+
+    .stage {
+      align-self: center;
+      height: 590px;
+      border-radius: 32px;
+      background: rgba(255,255,255,.76);
+      box-shadow: 0 28px 70px rgba(15,23,42,.16);
+      border: 1px solid rgba(148,163,184,.4);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .pos-window {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      background: #f8fafc;
+    }
+
+    .main {
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    .top {
+      padding: 22px 24px 12px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+
+    .pharmacy {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .name {
+      font-size: 24px;
+      font-weight: 1000;
+      color: var(--pharma);
+      line-height: 1;
+      direction: ltr;
+      text-align: left;
+    }
+
+    .hint { color: #94a3b8; font-size: 13px; margin-top: 6px; }
+
+    .pillbar { display: flex; gap: 8px; align-items: center; }
+
+    .pill {
+      border-radius: 14px;
+      border: 1px solid #dbe4ee;
+      background: #f8fafc;
+      color: #475569;
+      padding: 8px 11px;
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pill.warn { background: #fff7ed; color: #b45309; border-color: #fed7aa; }
+    .pill.green { background: #ecfdf5; color: #047857; border-color: #bbf7d0; }
+    .pill.blue { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .pill.red { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+    .search {
+      margin-top: 16px;
+      border: 2px solid #ccfbf1;
+      border-radius: 22px;
+      padding: 15px 20px;
+      background: #f0fdfa;
+      color: #64748b;
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 14px 30px rgba(20,184,166,.12);
+    }
+
+    .body {
+      padding: 18px 24px;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    .dropdown, .cart, .modal, .receipt, .held-list, .rx-panel {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #fff;
+      box-shadow: 0 18px 40px rgba(15,23,42,.08);
+      overflow: hidden;
+    }
+
+    .product-row, .cart-row, .held-row, .rx-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid #eef2f7;
+    }
+
+    .product-row:last-child, .cart-row:last-child, .held-row:last-child, .rx-row:last-child { border-bottom: 0; }
+
+    .small { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .price { color: var(--pharma); font-weight: 1000; font-variant-numeric: tabular-nums; }
+    .status-ok { color: var(--green); font-weight: 900; }
+    .status-low { color: var(--amber); font-weight: 900; }
+    .status-out { color: var(--red); font-weight: 900; }
+
+    .cart-head {
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-bottom: 1px solid #eef2f7;
+      display: flex;
+      justify-content: space-between;
+      font-weight: 1000;
+    }
+
+    .cart-row {
+      grid-template-columns: 1fr 110px 86px 28px;
+    }
+
+    .qty {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 6px;
+      justify-content: center;
+      font-weight: 900;
+      direction: ltr;
+    }
+
+    .round {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      background: #fff;
+      display: grid;
+      place-items: center;
+      box-shadow: 0 2px 8px rgba(15,23,42,.1);
+    }
+
+    .discount-box, .guard-box {
+      border: 2px solid #fde68a;
+      background: #fffbeb;
+      border-radius: 18px;
+      padding: 13px;
+      margin-top: 12px;
+      display: grid;
+      gap: 9px;
+    }
+
+    .toggle {
+      display: inline-flex;
+      gap: 5px;
+      padding: 4px;
+      background: #e2e8f0;
+      border-radius: 12px;
+      direction: ltr;
+      vertical-align: middle;
+    }
+
+    .toggle span {
+      padding: 7px 12px;
+      border-radius: 9px;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 1000;
+    }
+
+    .toggle span.active { background: var(--pharma); color: #fff; }
+
+    .sidebar {
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .side-title {
+      padding: 18px;
+      border-bottom: 1px solid #eef2f7;
+      color: #94a3b8;
+      font-size: 13px;
+      font-weight: 1000;
+    }
+
+    .side-section {
+      padding: 16px 18px;
+      border-bottom: 1px solid #eef2f7;
+    }
+
+    label {
+      display: block;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 1000;
+      margin-bottom: 7px;
+    }
+
+    .input {
+      border: 1px solid #dbe4ee;
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .total {
+      font-size: 34px;
+      font-weight: 1000;
+      color: var(--pharma);
+      text-align: left;
+      direction: ltr;
+    }
+
+    .button {
+      border-radius: 18px;
+      padding: 13px 16px;
+      background: linear-gradient(135deg, var(--pharma), var(--pharma-2));
+      color: white;
+      font-weight: 1000;
+      text-align: center;
+      margin-top: auto;
+      box-shadow: 0 16px 34px rgba(15,118,110,.25);
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .mini-card {
+      border-radius: 18px;
+      border: 1px solid #dbe4ee;
+      background: #fff;
+      padding: 13px;
+      min-height: 72px;
+      box-shadow: 0 10px 24px rgba(15,23,42,.05);
+    }
+
+    .mini-card strong { display: block; color: #0f172a; margin-bottom: 5px; }
+
+    .modal {
+      width: 90%;
+      margin: 22px auto;
+      display: grid;
+      grid-template-columns: 1fr 230px;
+      min-height: 500px;
+    }
+
+    .modal-main { padding: 18px; border-left: 1px solid #eef2f7; }
+    .modal-summary { background: #f8fafc; padding: 18px; }
+    .modal h3 { margin: 0 0 15px; font-size: 22px; }
+
+    .pay-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin: 9px 0 16px;
+    }
+
+    .pay {
+      border: 2px solid #dbe4ee;
+      border-radius: 16px;
+      padding: 12px 8px;
+      text-align: center;
+      font-weight: 900;
+      font-size: 13px;
+      background: #fff;
+    }
+
+    .pay.active { border-color: var(--pharma); color: var(--pharma); background: #f0fdfa; }
+    .pay.blue { border-color: #bfdbfe; color: var(--blue); background: #eff6ff; }
+    .pay.amber { border-color: #fde68a; color: #92400e; background: #fffbeb; }
+
+    .receipt {
+      width: 305px;
+      margin: 20px auto;
+      padding: 18px;
+      font-size: 14px;
+      box-shadow: 0 18px 44px rgba(15,23,42,.12);
+    }
+
+    .receipt .r-head {
+      text-align: center;
+      padding-bottom: 12px;
+      border-bottom: 1px dashed #cbd5e1;
+      margin-bottom: 12px;
+    }
+
+    .receipt .r-name {
+      color: var(--pharma);
+      font-weight: 1000;
+      font-size: 22px;
+      direction: ltr;
+    }
+
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 5px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .barcode {
+      height: 46px;
+      margin: 12px auto;
+      width: 220px;
+      background: repeating-linear-gradient(90deg, #111 0 2px, #fff 2px 5px, #111 5px 7px, #fff 7px 11px);
+    }
+
+    .guard-box.red { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+    .guard-box.green { border-color: #bbf7d0; background: #ecfdf5; color: #065f46; }
+
+    .progress {
+      position: absolute;
+      bottom: 0;
+      inset-inline: 0;
+      height: 7px;
+      background: rgba(15, 118, 110, .12);
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--pharma), var(--pharma-2));
+      width: var(--w);
+    }
+  </style>
+</head>
+<body>
+  <main id="root"></main>
+  <script>
+    const slides = [
+      {
+        ar: 'عرض نقطة البيع العربية لعميل test',
+        en: 'Arabic POS customer walkthrough for test',
+        kicker: 'POS فقط',
+        points: [
+          ['نغطي شاشة البيع فقط: البحث، السلة، الدفع، الفاتورة، والاسترداد.', 'Only the POS selling flow: search, cart, payment, receipt, and refund.'],
+          ['كل الأسماء الظاهرة في العرض تستخدم test.', 'All visible business/customer identity uses test.'],
+          ['لا توجد شاشات منصة أو إعدادات إدارة في هذا الفيديو.', 'No platform or back-office setup screens are shown.']
+        ],
+        captionAr: 'هذا الفيديو مخصص لشرح تجربة الكاشير والعميل داخل نقطة البيع العربية.',
+        captionEn: 'This video explains the cashier and customer experience inside the Arabic POS.',
+        scene: 'intro'
+      },
+      {
+        ar: 'فتح نقطة البيع والوردية',
+        en: 'Open POS and cash-drawer shift',
+        kicker: 'بداية البيع',
+        points: [
+          ['اسم نقطة البيع ظاهر أعلى الشاشة: test.', 'The POS name shown at the top is test.'],
+          ['لو لا توجد وردية مفتوحة، تظهر رسالة تطلب فتح وردية قبل البيع.', 'If no shift is open, the POS asks the cashier to open a shift before checkout.'],
+          ['زر نافذة بيع جديدة يفتح سلة مستقلة لعميل آخر.', 'New POS window opens a separate cart for another sale.']
+        ],
+        captionAr: 'ابدأ من شاشة عربية واضحة: اسم test، تنبيه الوردية، وأزرار نقطة البيع فقط.',
+        captionEn: 'Start on the Arabic POS: test name, shift alert, and POS-only actions.',
+        scene: 'shift'
+      },
+      {
+        ar: 'البحث أو مسح الباركود',
+        en: 'Search or scan barcode',
+        kicker: 'إضافة الأصناف',
+        points: [
+          ['اكتب اسم المنتج أو امسح الباركود في نفس خانة البحث.', 'Type a product name or scan a barcode in the same search box.'],
+          ['النتائج تعرض الاسم، التصنيف، الباركود، السعر، وحالة المخزون.', 'Results show name, category, barcode, price, and stock status.'],
+          ['يمكن الاختيار بالماوس أو بلوحة المفاتيح ثم Enter.', 'Use the mouse or keyboard arrows and Enter.']
+        ],
+        captionAr: 'الموظف يستطيع البيع بسرعة بالباركود أو بالبحث العربي عن الصنف.',
+        captionEn: 'The cashier can sell quickly with barcode scanning or Arabic product search.',
+        scene: 'search'
+      },
+      {
+        ar: 'إدارة السلة والكميات',
+        en: 'Cart and quantity control',
+        kicker: 'السلة',
+        points: [
+          ['كل صنف يظهر بسعر الوحدة، الكمية، والإجمالي.', 'Each item shows unit price, quantity, and line total.'],
+          ['الكميات تتغير بزر + و - أو بكتابة الرقم مباشرة.', 'Quantities change with + / - or by typing the number.'],
+          ['يمكن حذف صنف واحد أو تفريغ السلة بالكامل.', 'Remove one item or clear the full cart.']
+        ],
+        captionAr: 'السلة مصممة للكاشير: تعديل سريع، حذف، وتحديث الإجمالي فوراً.',
+        captionEn: 'The cart is cashier-friendly: quick edits, remove, and instant totals.',
+        scene: 'cart'
+      },
+      {
+        ar: 'بيع العبوة أو الوحدة الفرعية',
+        en: 'Sell pack or sub-unit',
+        kicker: 'وحدات البيع',
+        points: [
+          ['عند وجود حجم عبوة، يمكن التبديل بين علبة وشريط أو وحدة فرعية.', 'When pack size exists, switch between box and strip/sub-unit.'],
+          ['يتغير سعر الوحدة والإجمالي حسب الاختيار.', 'Unit price and line total update based on the selected unit.'],
+          ['تنبيهات الصلاحية تمنع بيع المنتهي وتحذر من القريب من الانتهاء.', 'Expiry guards block expired products and warn for near-expiry items.']
+        ],
+        captionAr: 'ميزة الوحدات الفرعية مناسبة للصيدليات التي تبيع علبة كاملة أو شريطاً واحداً.',
+        captionEn: 'Sub-unit selling fits pharmacies that sell a full box or a single strip.',
+        scene: 'units'
+      },
+      {
+        ar: 'خصومات الصنف والفاتورة',
+        en: 'Item and invoice discounts',
+        kicker: 'الخصومات',
+        points: [
+          ['كل صنف له خصم مستقل بالجنيه أو بالنسبة المئوية.', 'Each item can have its own EGP or percentage discount.'],
+          ['خصم الفاتورة يطبق على الإجمالي بعد خصومات الأصناف.', 'Invoice discount applies after item discounts.'],
+          ['الإجمالي الصافي يظهر بوضوح قبل الدفع.', 'Net total is clear before payment.']
+        ],
+        captionAr: 'يمكن تطبيق خصومات دقيقة على مستوى الصنف أو الفاتورة بالكامل.',
+        captionEn: 'Discounts can be applied precisely per item or for the whole invoice.',
+        scene: 'discounts'
+      },
+      {
+        ar: 'البائع والعميل test',
+        en: 'Seller and customer test',
+        kicker: 'هوية العملية',
+        points: [
+          ['يجب تحديد البائع قبل تأكيد البيع.', 'A seller must be selected before confirming payment.'],
+          ['يمكن اختيار البائع من القائمة أو مسح بطاقة البائع أو استخدام زر أنا.', 'Choose seller from the list, scan seller card, or use Me.'],
+          ['اختيار العميل test يحفظ الفاتورة باسمه، أو يمكن البيع كعميل عادي.', 'Choosing customer test saves the invoice to test, or sell as walk-in.']
+        ],
+        captionAr: 'كل عملية بيع لها بائع واضح، ويمكن ربطها بالعميل test عند الحاجة.',
+        captionEn: 'Every sale has a clear seller and can be linked to customer test when needed.',
+        scene: 'people'
+      },
+      {
+        ar: 'تعليق الفاتورة واسترجاعها',
+        en: 'Suspend and recall held sales',
+        kicker: 'المبيعات المعلقة',
+        points: [
+          ['زر تعليق يحفظ السلة الحالية مع العميل والبائع والخصم.', 'Suspend saves the current cart with customer, seller, and discount.'],
+          ['قائمة المعلّقة تعرض عدد الأصناف، الإجمالي، ووقت التعليق.', 'Held sales show item count, total, and hold time.'],
+          ['يمكن استرجاع الفاتورة أو حذفها من القائمة.', 'Recall or delete a held sale from the list.']
+        ],
+        captionAr: 'التعليق مفيد عندما ينتظر العميل أو يحتاج الكاشير لبدء عملية جديدة بسرعة.',
+        captionEn: 'Holding a sale helps when the customer waits or the cashier must start another sale.',
+        scene: 'held'
+      },
+      {
+        ar: 'الوصفات الطبية من العيادة',
+        en: 'Clinic prescriptions into POS',
+        kicker: 'اختياري حسب الباقة',
+        points: [
+          ['جرس الوصفات يعرض الوصفات النشطة والمتجاهلة داخل نقطة البيع.', 'The prescription bell lists active and dismissed prescriptions inside POS.'],
+          ['تحميل الوصفة يضيف الأصناف المطابقة إلى السلة تلقائياً.', 'Load prescription adds matched medicines to the cart automatically.'],
+          ['الأصناف غير المطابقة تظهر للتعامل اليدوي.', 'Unmatched items are shown for manual handling.']
+        ],
+        captionAr: 'إذا كانت ميزة العيادات مفعلة، يستطيع الكاشير تحويل الوصفة مباشرة إلى سلة بيع.',
+        captionEn: 'When clinics are enabled, the cashier can turn a prescription directly into a cart.',
+        scene: 'rx'
+      },
+      {
+        ar: 'أنواع البيع وطرق الدفع',
+        en: 'Sale types and payment methods',
+        kicker: 'إتمام الدفع',
+        points: [
+          ['أنواع البيع: نقدي، توصيل، أو رقمي.', 'Sale types: cash, delivery, or digital.'],
+          ['طرق الدفع: نقدي، فيزا، نقدي + بطاقة، إنستاباي، فودافون كاش، أو على الحساب.', 'Payment methods: cash, card, hybrid, InstaPay, Vodafone Cash, or account.'],
+          ['الدفع النقدي يحسب الباقي تلقائياً.', 'Cash payment calculates change automatically.']
+        ],
+        captionAr: 'نافذة الدفع تجمع كل طرق التحصيل اليومية التي يحتاجها الكاشير.',
+        captionEn: 'The payment window covers the daily collection methods cashiers need.',
+        scene: 'payment'
+      },
+      {
+        ar: 'التوصيل والطلبات الرقمية',
+        en: 'Delivery and digital orders',
+        kicker: 'طلبات خارج الفرع',
+        points: [
+          ['التوصيل يتطلب اسم العميل، الهاتف، العنوان، المندوب، ورسوم التوصيل.', 'Delivery requires customer name, phone, address, driver, and delivery fee.'],
+          ['الطلبات الرقمية تدعم منصات مثل طلبات وفيزيتا أو أخرى.', 'Digital orders support platforms such as Talabat, Vezeeta, or Other.'],
+          ['يمكن تسجيل المنصة كمدفوعة أو كآجل على حساب المنصة.', 'The platform can be recorded as paid or on-account.']
+        ],
+        captionAr: 'تساعد نقطة البيع على تسجيل تفاصيل الطلب من الفرع حتى التسليم أو تسوية المنصة.',
+        captionEn: 'The POS records the order details from branch sale to delivery or platform settlement.',
+        scene: 'delivery'
+      },
+      {
+        ar: 'البيع على الحساب والدفع الجزئي',
+        en: 'On-account sale and partial payment',
+        kicker: 'آجل',
+        points: [
+          ['اختيار على الحساب يحتاج ربط الفاتورة بعميل مثل test.', 'On-account requires linking the invoice to a customer such as test.'],
+          ['يمكن إدخال مبلغ مدفوع الآن وطريقة دفعه.', 'Enter an amount paid now and its payment method.'],
+          ['يظهر المتبقي على الحساب قبل تأكيد البيع.', 'Remaining balance is shown before confirming.']
+        ],
+        captionAr: 'الآجل والدفع الجزئي يدعمان العملاء الدائمين مع توثيق المبلغ المتبقي.',
+        captionEn: 'Account and partial payments support repeat customers with clear remaining balance.',
+        scene: 'account'
+      },
+      {
+        ar: 'الفاتورة والطباعة',
+        en: 'Receipt and printing',
+        kicker: 'بعد التأكيد',
+        points: [
+          ['الفاتورة تعرض رقم الفاتورة، التاريخ، الفرع، البائع، العميل test، والأصناف.', 'Receipt shows invoice number, date, branch, seller, customer test, and items.'],
+          ['تدعم الفاتورة لغة عربية أو إنجليزية حسب إعداد اللغة.', 'Receipt supports Arabic or English based on receipt language.'],
+          ['يمكن طباعة الفاتورة أو بدء بيع جديد مباشرة.', 'Print the receipt or start a new sale immediately.']
+        ],
+        captionAr: 'بعد الدفع تظهر فاتورة جاهزة للطباعة باسم test ومعلومات العملية كاملة.',
+        captionEn: 'After payment, a printable receipt appears with test and complete sale details.',
+        scene: 'receipt'
+      },
+      {
+        ar: 'استرداد فاتورة سابقة',
+        en: 'Refund a previous receipt',
+        kicker: 'المرتجعات',
+        points: [
+          ['زر استرداد فاتورة يفتح وضع البحث عن إيصال سابق.', 'Refund Receipt opens the previous-invoice search flow.'],
+          ['يتم اختيار الفاتورة ثم تحديد كميات المرتجع وسبب الإرجاع.', 'Select an invoice, then choose return quantities and reason.'],
+          ['العملية تبقى ضمن نقاط البيع وسجل المبيعات فقط.', 'The flow stays within POS and sales history.']
+        ],
+        captionAr: 'الاسترداد يبدأ من نقطة البيع ويعود إلى فاتورة محددة لضمان التتبع.',
+        captionEn: 'Refund starts from POS and ties back to a specific receipt for traceability.',
+        scene: 'refund'
+      },
+      {
+        ar: 'ملخص ميزات POS العربية',
+        en: 'Arabic POS feature summary',
+        kicker: 'جاهز للعميل',
+        points: [
+          ['بحث وباركود، سلة، وحدات، خصومات، بائع، عميل test، وتعليق.', 'Search/barcode, cart, units, discounts, seller, customer test, and held sales.'],
+          ['نقدي، بطاقة، مختلط، رقمي، توصيل، آجل، ودفع جزئي.', 'Cash, card, hybrid, digital, delivery, account, and partial payment.'],
+          ['فاتورة قابلة للطباعة، وصفات اختيارية، واسترداد فاتورة.', 'Printable receipt, optional prescriptions, and invoice refund.']
+        ],
+        captionAr: 'هذا هو نطاق الفيديو: نقطة البيع العربية فقط، باسم test، وبلا أي شاشات خارج رحلة البيع.',
+        captionEn: 'This is the video scope: Arabic POS only, named test, without screens outside the sale journey.',
+        scene: 'summary'
+      }
+    ];
+
+    const egp = '<span class="price">ج.م</span>';
+
+    function posShell(inner, sidebar = '') {
+      return `
+        <div class="pos-window">
+          <section class="main">
+            <div class="top">
+              <div class="pharmacy">
+                <div>
+                  <div class="name">test</div>
+                  <div class="hint">نقطة البيع • امسح الباركود أو ابحث عن منتج لبدء البيع</div>
+                </div>
+                <div class="pillbar">
+                  <span class="pill green">وردية مفتوحة</span>
+                  <span class="pill blue">نافذة بيع جديدة</span>
+                  <span class="pill warn">استرداد فاتورة</span>
+                </div>
+              </div>
+              <div class="search">بحث بالاسم أو الباركود... <span>⌕</span></div>
+            </div>
+            <div class="body">${inner}</div>
+          </section>
+          <aside class="sidebar">
+            ${sidebar || defaultSidebar()}
+          </aside>
+        </div>`;
+    }
+
+    function defaultSidebar(total = '226.00') {
+      return `
+        <div class="side-title">ملخص الطلب</div>
+        <div class="side-section">
+          <label>البائع</label>
+          <div class="input">صيدلي test</div>
+          <label>العميل</label>
+          <div class="input">test · 01000000000</div>
+        </div>
+        <div class="side-section">
+          <div style="display:flex;justify-content:space-between;margin-bottom:12px"><span>المجموع الفرعي</span><strong>${egp} ${total}</strong></div>
+          <div class="discount-box">
+            <strong>خصم الفاتورة</strong>
+            <div><span class="toggle"><span class="active">EGP</span><span>%</span></span> 10.00</div>
+          </div>
+          <div style="margin-top:18px">الإجمالي</div>
+          <div class="total">${Number(total) - 10}.00</div>
+        </div>
+        <div class="side-section split">
+          <div class="pill warn" style="text-align:center">تعليق</div>
+          <div class="pill" style="text-align:center">المعلقة</div>
+        </div>
+        <div class="side-section" style="margin-top:auto;border-bottom:0"><div class="button">إتمام البيع ←</div></div>`;
+    }
+
+    const scenes = {
+      intro: () => posShell(`
+        <div class="cart" style="height:390px;display:grid;place-items:center;text-align:center;background:linear-gradient(135deg,#fff,#ecfeff)">
+          <div>
+            <div style="font-size:74px;color:var(--pharma);font-weight:1000;direction:ltr">test</div>
+            <div style="font-size:28px;font-weight:1000;margin-top:8px">نقطة البيع العربية</div>
+            <div class="small" style="font-size:18px;margin-top:10px;direction:ltr">Arabic POS customer demo</div>
+          </div>
+        </div>`),
+      shift: () => posShell(`
+        <div class="guard-box red" style="margin-top:0;font-size:20px;font-weight:900">افتح وردية درج النقدية قبل إتمام أي بيع. <span class="pill warn">فتح وردية</span></div>
+        <div class="split" style="margin-top:18px">
+          <div class="mini-card"><strong>نافذة بيع جديدة</strong><span class="small">سلة مستقلة لنفس الجهاز</span></div>
+          <div class="mini-card"><strong>استرداد فاتورة</strong><span class="small">ابحث عن فاتورة سابقة للاسترداد</span></div>
+        </div>
+        <div class="guard-box green"><strong>بعد فتح الوردية</strong> زر إتمام البيع يصبح متاحاً وتبقى شاشة POS مفتوحة للكاشير.</div>`,
+        defaultSidebar('0.00')),
+      search: () => posShell(`
+        <div class="dropdown">
+          ${product('باراسيتامول 500', 'أدوية · 622100000001', '42 متاح', '18.00', 'ok')}
+          ${product('فيتامين C', 'مكملات · 622100000002', 'مخزون منخفض', '95.00', 'low')}
+          ${product('كريم عناية', 'عناية شخصية · 622100000003', 'نفذ من المخزون', '125.00', 'out')}
+        </div>
+        <div class="guard-box" style="font-size:17px"><strong>Enter</strong> يضيف نتيجة الباركود المطابقة مباشرة إلى السلة.</div>`),
+      cart: () => posShell(cartTable(false)),
+      units: () => posShell(cartTable(true) + `
+        <div class="guard-box red"><strong>تنبيه صلاحية</strong> لا يتم بيع منتج منتهي، والمنتج القريب من الانتهاء يحتاج تأكيد الكاشير.</div>`),
+      discounts: () => posShell(cartTable(false, true), defaultSidebar('226.00')),
+      people: () => posShell(`
+        <div class="split">
+          <div class="mini-card"><strong>اختيار البائع</strong><span class="small">صيدلي test</span><span class="pill green">تم اختيار البائع</span></div>
+          <div class="mini-card"><strong>مسح بطاقة البائع</strong><span class="small">امسح الباركود أو QR</span><span class="pill">تطبيق</span></div>
+        </div>
+        <div class="dropdown" style="margin-top:18px">
+          <div class="product-row"><div><strong>العميل</strong><div class="small">test · 01000000000</div></div><span class="pill green">محدد</span></div>
+          <div class="product-row"><div><strong>عميل عادي</strong><div class="small">بيع سريع بدون حفظ بيانات عميل</div></div><span class="pill">اختيار</span></div>
+        </div>
+        <div class="guard-box">المبيعات الأكبر من 100 ج.م تطلب بيانات عميل أو بيانات توصيل.</div>`),
+      held: () => posShell(`
+        <div class="held-list">
+          <div class="cart-head"><span>الفواتير المعلقة</span><span class="pill green">2</span></div>
+          ${held('test', '3 صنف · ج.م 216.00 · 02:15 PM')}
+          ${held('عميل عادي', '1 صنف · ج.م 95.00 · 02:18 PM')}
+        </div>
+        <div class="guard-box"><strong>استرجاع</strong> يعيد الفاتورة للسلة، وإذا كانت هناك سلة حالية يتم حفظها كمعلقة أولاً.</div>`),
+      rx: () => posShell(`
+        <div class="rx-panel">
+          <div class="cart-head"><span>الوصفات الطبية</span><span class="pill red">3</span></div>
+          ${rx('عيادة test', 'النشطة · 2× باراسيتامول 500 · 1× فيتامين C', 'تحميل إلى السلة')}
+          ${rx('عيادة test', 'المتجاهلة · يمكن استعادتها', 'استعادة')}
+        </div>
+        <div class="guard-box">إذا لم يجد النظام صنفاً مطابقاً، تظهر قائمة بالأصناف المطلوب إضافتها يدوياً.</div>`),
+      payment: () => modalPayment('cash'),
+      delivery: () => modalPayment('delivery'),
+      account: () => modalPayment('account'),
+      receipt: () => posShell(`
+        <div class="receipt">
+          <div class="r-head"><div class="r-name">test</div><div class="small">فرع test · 01000000000</div></div>
+          <div class="receipt-row"><span>فاتورة رقم</span><strong>TST-000145</strong></div>
+          <div class="receipt-row"><span>نوع البيع</span><span>بيع نقدي</span></div>
+          <div class="receipt-row"><span>البائع</span><span>صيدلي test</span></div>
+          <div class="receipt-row"><span>العميل</span><span>test</span></div>
+          <div class="receipt-row"><span>باراسيتامول 500 ×2</span><strong>36.00</strong></div>
+          <div class="receipt-row"><span>فيتامين C ×2</span><strong>190.00</strong></div>
+          <div class="receipt-row"><span>الصافي</span><strong>216.00</strong></div>
+          <div class="barcode"></div>
+          <div class="split"><span class="pill green" style="text-align:center">طباعة الفاتورة</span><span class="pill" style="text-align:center">بيع جديد</span></div>
+        </div>`),
+      refund: () => posShell(`
+        <div class="guard-box" style="margin-top:0"><strong>وضع الاسترداد</strong> ابحث عن الفاتورة في القائمة، ثم اضغط على أيقونة الاسترداد.</div>
+        <div class="dropdown" style="margin-top:16px">
+          <div class="product-row"><div><strong>TST-000145</strong><div class="small">test · بيع نقدي · ج.م 216.00</div></div><span class="pill warn">استرداد</span></div>
+          <div class="product-row"><div><strong>كمية الإرجاع</strong><div class="small">حدد الكمية وسبب الإرجاع</div></div><span class="pill green">تأكيد المرتجع</span></div>
+        </div>`),
+      summary: () => posShell(`
+        <div class="split">
+          <div class="mini-card"><strong>بيع سريع</strong><span class="small">بحث، باركود، سلة، وحدات</span></div>
+          <div class="mini-card"><strong>تحصيل كامل</strong><span class="small">نقدي، بطاقة، رقمي، آجل</span></div>
+          <div class="mini-card"><strong>تشغيل يومي</strong><span class="small">وردية، تعليق، استرداد</span></div>
+          <div class="mini-card"><strong>مخرجات العميل</strong><span class="small">فاتورة مطبوعة باسم test</span></div>
+        </div>
+        <div class="guard-box green" style="font-size:19px"><strong>النتيجة:</strong> فيديو تعريفي كامل لنقطة البيع العربية باسم test.</div>`)
+    };
+
+    function product(name, meta, status, price, tone) {
+      return `<div class="product-row"><div><strong>${name}</strong><div class="small">${meta} · <span class="status-${tone}">${status}</span></div></div><div class="price">ج.م ${price}</div></div>`;
+    }
+
+    function cartTable(withUnits, withDiscounts) {
+      return `
+        <div class="cart">
+          <div class="cart-head"><span>السلة <span class="pill green">4</span></span><span class="pill red">Clear</span></div>
+          <div class="cart-row">
+            <div><strong>باراسيتامول 500</strong><div class="small">ج.م 18.00 × 2 علبة ${withUnits ? '<br><span class="toggle"><span class="active">علبة</span><span>شريط</span></span>' : ''}${withDiscounts ? '<br>خصم: 5% = ج.م 1.80' : ''}</div></div>
+            <div class="qty"><span class="round">-</span>2<span class="round">+</span></div><div class="price">34.20</div><div>×</div>
+          </div>
+          <div class="cart-row">
+            <div><strong>فيتامين C</strong><div class="small">ج.م 95.00 × 2 عبوة ${withUnits ? '<br><span class="toggle"><span>عبوة</span><span class="active">قرص</span></span>' : ''}${withDiscounts ? '<br>خصم: ج.م 10.00' : ''}</div></div>
+            <div class="qty"><span class="round">-</span>2<span class="round">+</span></div><div class="price">180.00</div><div>×</div>
+          </div>
+        </div>
+        ${withDiscounts ? '<div class="discount-box"><strong>خصم الفاتورة</strong><div><span class="toggle"><span>EGP</span><span class="active">%</span></span> 10%</div></div>' : ''}`;
+    }
+
+    function held(name, meta) {
+      return `<div class="held-row"><div><strong>${name}</strong><div class="small">${meta}</div></div><div><span class="pill green">استرجاع</span> <span class="pill red">حذف</span></div></div>`;
+    }
+
+    function rx(clinic, meta, action) {
+      return `<div class="rx-row"><div><strong>${clinic}</strong><div class="small">${meta}</div></div><span class="pill green">${action}</span></div>`;
+    }
+
+    function modalPayment(kind) {
+      const delivery = kind === 'delivery';
+      const account = kind === 'account';
+      return `<div class="modal">
+        <div class="modal-main">
+          <h3>إتمام الدفع</h3>
+          <div class="guard-box ${account ? 'green' : ''}" style="margin-top:0"><strong>البائع</strong> صيدلي test</div>
+          <label>نوع البيع</label>
+          <div class="pay-grid">
+            <div class="pay ${!delivery ? 'active' : ''}">نقدي</div>
+            <div class="pay ${delivery ? 'active' : ''}">توصيل</div>
+            <div class="pay blue">رقمي</div>
+          </div>
+          ${delivery ? `
+            <div class="guard-box">
+              <strong>بيانات التوصيل</strong>
+              <div class="split"><div class="input">test</div><div class="input">01000000000</div></div>
+              <div class="input">عنوان test</div>
+              <div class="input">مندوب test · رسوم توصيل 20.00</div>
+            </div>
+            <label>المنصة الرقمية</label>
+            <div class="pay-grid"><div class="pay active">طلبات</div><div class="pay">فيزيتا</div><div class="pay">أخرى</div></div>
+          ` : account ? `
+            <label>طريقة الدفع</label>
+            <div class="pay-grid"><div class="pay">نقدي</div><div class="pay">فيزا</div><div class="pay amber active">على الحساب</div></div>
+            <div class="guard-box"><strong>تحميل على حساب:</strong> test<br>المدفوع الآن: ج.م 50.00 نقدي<br>المتبقي على الحساب: ج.م 166.00</div>
+          ` : `
+            <label>طريقة الدفع</label>
+            <div class="pay-grid"><div class="pay active">نقدي</div><div class="pay">فيزا / بطاقة</div><div class="pay">نقدي + بطاقة</div><div class="pay">انستا باي</div><div class="pay">فودافون كاش</div><div class="pay">على الحساب</div></div>
+            <div class="guard-box green"><strong>المبلغ المدفوع:</strong> ج.م 250.00<br><strong>الباقي:</strong> ج.م 34.00</div>
+          `}
+          <div class="button">تأكيد الدفع</div>
+        </div>
+        <div class="modal-summary">
+          <strong>ملخص الطلب</strong>
+          <div class="small" style="margin-top:14px">باراسيتامول 500 ×2</div>
+          <div class="small">فيتامين C ×2</div>
+          <hr style="border:0;border-top:1px solid #dbe4ee;margin:18px 0">
+          <div style="display:flex;justify-content:space-between"><span>المجموع</span><strong>226.00</strong></div>
+          <div style="display:flex;justify-content:space-between;color:var(--green)"><span>الخصم</span><strong>10.00</strong></div>
+          ${delivery ? '<div style="display:flex;justify-content:space-between;color:#b45309"><span>رسوم التوصيل</span><strong>20.00</strong></div>' : ''}
+          <div style="margin-top:16px;font-size:22px;font-weight:1000;color:var(--pharma);direction:ltr;text-align:left">ج.م ${delivery ? '236.00' : '216.00'}</div>
+        </div>
+      </div>`;
+    }
+
+    function render() {
+      const i = Math.max(0, Math.min(slides.length - 1, Number(new URLSearchParams(location.search).get('slide') || 0)));
+      const s = slides[i];
+      document.getElementById('root').innerHTML = `
+        <section class="slide">
+          <div class="brand"><span class="brand-mark">+</span><span>test POS</span></div>
+          <div class="content">
+            <p class="kicker">${s.kicker}</p>
+            <h1>${s.ar}</h1>
+            <p class="en-title">${s.en}</p>
+            <ul class="points">${s.points.map(([ar,en]) => `<li>${ar}<span class="en">${en}</span></li>`).join('')}</ul>
+          </div>
+          <div class="stage">${scenes[s.scene]()}</div>
+          <div class="caption"><div>${s.captionAr}</div><div class="en">${s.captionEn}</div></div>
+          <div class="progress"><span style="--w:${((i + 1) / slides.length) * 100}%"></span></div>
+        </section>`;
+    }
+
+    render();
+  </script>
+</body>
+</html>
