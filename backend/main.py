@@ -351,11 +351,15 @@ def unlock_terminal(req: UnlockRequest, request: Request, current_user=Depends(g
 def search_products(q: str = "",
                     current_user=Depends(get_current_user),
                     active_branch=Depends(get_active_branch_id)):
+    from barcode_utils import product_search_clause
+
+    q = (q or "").strip()
+    if not q:
+        return []
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    search = f"%{q}%"
-    where = ["active = true", "(name_ar ILIKE %s OR name_en ILIKE %s OR barcode = %s OR international_barcode = %s)"]
-    params = [search, search, q, q]
+    search_clause, params = product_search_clause(q)
+    where = ["active = true", search_clause]
     if active_branch is not None:
         where.append("(branch_id = %s OR branch_id IS NULL)")
         params.append(active_branch)

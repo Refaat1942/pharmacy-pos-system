@@ -30,6 +30,8 @@ import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
+import { matchProductByBarcode } from '../lib/barcodeSearch'
+import { useBlockScannerBrowserShortcuts } from '../lib/scannerGuard'
 
 interface HeldCart {
   id: string
@@ -149,6 +151,8 @@ export default function POS() {
   const RXID_KEY = `pos_rxid_${scope}`
   const HELD_KEY = `pos_held_${scope}`
   const recallLock = useRef(false)
+
+  useBlockScannerBrowserShortcuts()
 
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<Product[]>([])
@@ -374,7 +378,7 @@ export default function POS() {
       try {
         const r = await productsAPI.search(name)
         const items = r.data || []
-        product = items.find((p) =>
+        product = matchProductByBarcode(items, name) || items.find((p) =>
           p.name_en?.toLowerCase() === name.toLowerCase() ||
           p.name_ar === name ||
           p.barcode === name,
@@ -440,14 +444,23 @@ export default function POS() {
     )
   }, [])
 
+  const resolveScanToProduct = useCallback(async (code: string) => {
+    const trimmed = code.trim()
+    if (!trimmed) return
+    const r = await productsAPI.search(trimmed)
+    const matched = matchProductByBarcode(r.data, trimmed)
+    if (matched) {
+      addToCart(matched)
+      return
+    }
+    if (r.data.length === 1) addToCart(r.data[0])
+  }, [addToCart])
+
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showResults || results.length === 0) {
       if (e.key === 'Enter' && search.trim()) {
-        // Possible barcode scan: if a single exact-barcode match, add it
-        productsAPI.search(search.trim()).then((r) => {
-          const exact = r.data.find((p) => p.barcode === search.trim())
-          if (exact) addToCart(exact)
-        })
+        e.preventDefault()
+        void resolveScanToProduct(search)
       }
       return
     }
@@ -459,6 +472,11 @@ export default function POS() {
       setHighlight((h) => Math.max(h - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
+      const scanned = matchProductByBarcode(results, search)
+      if (scanned) {
+        addToCart(scanned)
+        return
+      }
       const p = results[highlight]
       if (p) addToCart(p)
     } else if (e.key === 'Escape') {

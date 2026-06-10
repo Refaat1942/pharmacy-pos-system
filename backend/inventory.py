@@ -417,19 +417,23 @@ def _parse_search_terms(q: str) -> list[str]:
 
 def _branch_stock_term_clause(term: str) -> tuple[str, list]:
     """Match one term by exact/prefix barcode or by name contains."""
+    from barcode_utils import barcode_lookup_candidates
+
     params: list = []
-    t_upper = term.strip().upper()
-    prefix = f"{term.strip()}%"
     name_like = f"%{term.strip()}%"
-    clause = (
-        "(UPPER(COALESCE(p.barcode, '')) = %s "
-        "OR UPPER(COALESCE(p.international_barcode, '')) = %s "
-        "OR COALESCE(p.barcode, '') ILIKE %s "
-        "OR COALESCE(p.international_barcode, '') ILIKE %s "
-        "OR p.name_en ILIKE %s OR p.name_ar ILIKE %s)"
-    )
-    params.extend([t_upper, t_upper, prefix, prefix, name_like, name_like])
-    return clause, params
+    parts = ["p.name_en ILIKE %s", "p.name_ar ILIKE %s"]
+    params.extend([name_like, name_like])
+    for cand in barcode_lookup_candidates(term):
+        t_upper = cand.upper()
+        prefix = f"{cand}%"
+        parts.extend([
+            "UPPER(COALESCE(p.barcode, '')) = %s",
+            "UPPER(COALESCE(p.international_barcode, '')) = %s",
+            "COALESCE(p.barcode, '') ILIKE %s",
+            "COALESCE(p.international_barcode, '') ILIKE %s",
+        ])
+        params.extend([t_upper, t_upper, prefix, prefix])
+    return f"({' OR '.join(parts)})", params
 
 
 # ─── INVENTORY SUMMARY (accurate DB counts) ─────────────────────────────────
@@ -453,11 +457,10 @@ def inventory_summary(
     where = ["p.active = true"]
     params: list = []
     if q:
-        where.append(
-            "(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s OR p.international_barcode ILIKE %s)"
-        )
-        s = f"%{q}%"
-        params += [s, s, s, s]
+        from barcode_utils import product_search_clause
+        clause, clause_params = product_search_clause(q, table_prefix="p")
+        where.append(clause)
+        params += clause_params
     if effective_branch is not None:
         where.append("p.branch_id = %s")
         params.append(effective_branch)
@@ -507,9 +510,10 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     if not include_inactive:
         where.append("p.active = true")
     if q:
-        where.append("(p.name_ar ILIKE %s OR p.name_en ILIKE %s OR p.barcode ILIKE %s OR p.international_barcode ILIKE %s)")
-        s = f"%{q}%"
-        params += [s, s, s, s]
+        from barcode_utils import product_search_clause
+        clause, clause_params = product_search_clause(q, table_prefix="p")
+        where.append(clause)
+        params += clause_params
     if branch_id is not None and current_user.get("role") != "admin":
         if branch_id != current_user.get("branch_id"):
             raise HTTPException(status_code=403, detail="Cross-branch access denied")

@@ -4,6 +4,7 @@ import { ArrowRightLeft, Plus, Check, X, Eye, Trash2, ScanLine, Printer } from '
 import Layout from '../components/Layout'
 import { branchesAPI, transfersAPI, Branch, Transfer, TransferItem } from '../lib/api'
 import api from '../lib/api'
+import { matchProductByBarcode } from '../lib/barcodeSearch'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { formatDateTime } from '../lib/formatDate'
@@ -311,9 +312,7 @@ function CreateTransferModal({
     setScanError('')
     try {
       const r = await api.get('/inventory/items', { params: { q: code, branch_id: fromBranch } })
-      const norm = code.toLowerCase()
-      const exact = r.data.find((p: any) => (p.barcode || '').trim().toLowerCase() === norm)
-      let p = exact || (r.data.length === 1 ? r.data[0] : null)
+      let p = matchProductByBarcode(r.data, code) || (r.data.length === 1 ? r.data[0] : null)
       if (!p) {
         setScanError(
           r.data.length > 1
