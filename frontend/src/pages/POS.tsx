@@ -30,7 +30,7 @@ import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
-import { matchProductByBarcode } from '../lib/barcodeSearch'
+import { matchProductByBarcode, sanitizeScannedBarcode } from '../lib/barcodeSearch'
 import { useBlockScannerBrowserShortcuts } from '../lib/scannerGuard'
 
 interface HeldCart {
@@ -445,9 +445,9 @@ export default function POS() {
   }, [])
 
   const resolveScanToProduct = useCallback(async (code: string) => {
-    const trimmed = code.trim()
+    const trimmed = sanitizeScannedBarcode(code) || code.trim()
     if (!trimmed) return
-    const r = await productsAPI.search(trimmed)
+    const r = await productsAPI.search(code.trim())
     const matched = matchProductByBarcode(r.data, trimmed)
     if (matched) {
       addToCart(matched)
