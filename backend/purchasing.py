@@ -164,6 +164,7 @@ class POItemIn(BaseModel):
     product_name_ar: Optional[str] = None
     product_name_en: Optional[str] = None
     quantity: int
+    bonus_qty: int = 0
     unit_cost: float
     discount_pct: float = 0
     vat_pct: float = 0
@@ -179,6 +180,7 @@ class POIn(BaseModel):
     discount: float = 0
     tax: float = 0
     notes: Optional[str] = None
+    receive_immediately: bool = False
     items: List[POItemIn]
 
 
@@ -187,6 +189,89 @@ def _assert_po_branch_access(user, branch_id: int):
         return
     if user.get("branch_id") != branch_id:
         raise HTTPException(status_code=403, detail="Cannot manage POs for another branch")
+
+
+def _inventory_unit_cost(paid_qty: int, bonus_qty: int, eff_cost: float) -> float:
+    """Spread paid line cost across paid + bonus units (e.g. 10 paid + 2 free)."""
+    total_units = paid_qty + bonus_qty
+    if total_units <= 0:
+        return eff_cost
+    return (paid_qty * eff_cost) / total_units
+
+
+def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> None:
+    """Apply one PO line to branch stock (paid qty + bonus qty)."""
+    eff_cost = _eff_unit_cost(it["unit_cost"], it.get("discount_pct"), it.get("vat_pct"))
+    pub_price = it.get("public_price")
+    new_price = float(pub_price) if pub_price not in (None, "") and float(pub_price) > 0 else None
+    paid_qty = int(it["quantity"])
+    bonus_qty = max(0, int(it.get("bonus_qty") or 0))
+    stock_qty = paid_qty + bonus_qty
+    if stock_qty <= 0:
+        raise HTTPException(status_code=400, detail="Line quantity must be positive")
+    inventory_cost = _inventory_unit_cost(paid_qty, bonus_qty, eff_cost)
+
+    pid = it["product_id"]
+    if pid:
+        cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE", (pid,))
+        p = cur.fetchone()
+        if not p:
+            raise HTTPException(status_code=400, detail=f"Product id {pid} no longer exists")
+        if p["branch_id"] != branch_id:
+            pid = None
+    if not pid and it["barcode"]:
+        cur.execute(
+            "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+            (it["barcode"], branch_id),
+        )
+        p = cur.fetchone()
+        if p:
+            pid = p["id"]
+    if not pid:
+        cur.execute(
+            """INSERT INTO products
+               (barcode, name_ar, name_en, category, unit, price, cost,
+                stock, min_stock, expiry_date, branch_id, active)
+               VALUES (%s,%s,%s,'',' ',%s,%s,0,5,%s,%s,true)
+               ON CONFLICT (barcode, branch_id) DO NOTHING
+               RETURNING id, stock""",
+            (it["barcode"], it["product_name_ar"] or it["product_name_en"],
+             it["product_name_en"] or it["product_name_ar"],
+             new_price if new_price is not None else inventory_cost, inventory_cost,
+             it["expiry_date"], branch_id),
+        )
+        p = cur.fetchone()
+        if not p and it["barcode"]:
+            cur.execute(
+                "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+                (it["barcode"], branch_id),
+            )
+            p = cur.fetchone()
+        if not p:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not create/find product for '{it.get('product_name_en') or it.get('barcode')}' — barcode required for new items",
+            )
+        pid = p["id"]
+
+    add_batch_stock(cur, pid, branch_id, stock_qty, it["expiry_date"])
+    new_stock = sync_product_from_batches(cur, pid)
+    sets = ["cost=%s"]
+    params: list = [inventory_cost]
+    if new_price is not None:
+        sets.append("price=%s")
+        params.append(new_price)
+    params.append(pid)
+    cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
+    cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s", (pid, it["id"]))
+    log_movement(
+        cur, pid, branch_id, "purchase",
+        stock_qty, new_stock,
+        reference_type="po", reference_id=po["id"],
+        reason=f"PO {po['po_number']} received"
+        + (f" ({paid_qty}+{bonus_qty} bonus)" if bonus_qty else ""),
+        user_id=current_user.get("user_id"),
+    )
 
 
 @router.post("/purchase-orders")
@@ -209,6 +294,8 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
         for it in req.items:
             if it.quantity <= 0:
                 raise HTTPException(status_code=400, detail="Quantity must be positive")
+            if it.bonus_qty < 0:
+                raise HTTPException(status_code=400, detail="Bonus quantity cannot be negative")
             if it.unit_cost < 0:
                 raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
             if it.discount_pct < 0 or it.discount_pct > 100:
@@ -280,15 +367,36 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
             cur.execute(
                 """INSERT INTO purchase_order_items
                    (po_id, product_id, barcode, product_name_ar, product_name_en,
-                    quantity, unit_cost, discount_pct, vat_pct, public_price,
+                    quantity, bonus_qty, unit_cost, discount_pct, vat_pct, public_price,
                     expiry_date, total)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (po_id, it.product_id, barcode, pname_ar, pname_en,
-                 it.quantity, it.unit_cost, it.discount_pct, it.vat_pct, it.public_price,
-                 it.expiry_date, line_total),
+                 it.quantity, it.bonus_qty, it.unit_cost, it.discount_pct, it.vat_pct,
+                 it.public_price, it.expiry_date, line_total),
             )
+
+        po_row = {"id": po_id, "po_number": po_number, "branch_id": req.branch_id}
+        status = "draft"
+        if req.receive_immediately:
+            cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s", (po_id,))
+            for row in cur.fetchall():
+                _receive_po_line(cur, row, po_row, req.branch_id, current_user)
+            cur.execute(
+                """UPDATE purchase_orders
+                   SET status='received', received_by=%s, received_at=NOW()
+                   WHERE id=%s""",
+                (current_user.get("user_id"), po_id),
+            )
+            status = "received"
+
         conn.commit()
-        return {"ok": True, "po_id": po_id, "po_number": po_number, "total": total}
+        return {
+            "ok": True,
+            "po_id": po_id,
+            "po_number": po_number,
+            "total": total,
+            "status": status,
+        }
     except HTTPException:
         conn.rollback()
         raise
@@ -384,70 +492,7 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
         cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s", (po_id,))
         items = cur.fetchall()
         for it in items:
-            eff_cost = _eff_unit_cost(it["unit_cost"], it.get("discount_pct"), it.get("vat_pct"))
-            pub_price = it.get("public_price")
-            new_price = float(pub_price) if pub_price not in (None, "") and float(pub_price) > 0 else None
-            pid = it["product_id"]
-            # Resolve / create destination product in this branch
-            if pid:
-                cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE", (pid,))
-                p = cur.fetchone()
-                if not p:
-                    raise HTTPException(status_code=400, detail=f"Product id {pid} no longer exists")
-                if p["branch_id"] != branch_id:
-                    # try to find/create by barcode in this branch
-                    pid = None
-            if not pid and it["barcode"]:
-                cur.execute(
-                    "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
-                    (it["barcode"], branch_id),
-                )
-                p = cur.fetchone()
-                if p:
-                    pid = p["id"]
-            if not pid:
-                # Create new product (price = public price if given, else effective cost as placeholder)
-                cur.execute(
-                    """INSERT INTO products
-                       (barcode, name_ar, name_en, category, unit, price, cost,
-                        stock, min_stock, expiry_date, branch_id, active)
-                       VALUES (%s,%s,%s,'',' ',%s,%s,0,5,%s,%s,true)
-                       ON CONFLICT (barcode, branch_id) DO NOTHING
-                       RETURNING id, stock""",
-                    (it["barcode"], it["product_name_ar"] or it["product_name_en"],
-                     it["product_name_en"] or it["product_name_ar"],
-                     new_price if new_price is not None else eff_cost, eff_cost,
-                     it["expiry_date"], branch_id),
-                )
-                p = cur.fetchone()
-                if not p and it["barcode"]:
-                    cur.execute(
-                        "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
-                        (it["barcode"], branch_id),
-                    )
-                    p = cur.fetchone()
-                if not p:
-                    raise HTTPException(status_code=500, detail="Could not create/find destination product")
-                pid = p["id"]
-
-            add_batch_stock(cur, pid, branch_id, int(it["quantity"]), it["expiry_date"])
-            new_stock = sync_product_from_batches(cur, pid)
-            sets = ["cost=%s"]
-            params: list = [eff_cost]
-            if new_price is not None:
-                sets.append("price=%s")
-                params.append(new_price)
-            params.append(pid)
-            cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
-            cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s",
-                        (pid, it["id"]))
-            log_movement(
-                cur, pid, branch_id, "purchase",
-                int(it["quantity"]), new_stock,
-                reference_type="po", reference_id=po_id,
-                reason=f"PO {po['po_number']} received",
-                user_id=current_user.get("user_id"),
-            )
+            _receive_po_line(cur, it, po, branch_id, current_user)
 
         cur.execute(
             """UPDATE purchase_orders

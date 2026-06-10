@@ -81,14 +81,43 @@ body {
 /* Print styles */
 .print-only { display: none; }
 @media print {
+  @page { margin: 1mm 2mm; }
   body > * { visibility: hidden !important; }
   .receipt-print, .receipt-print * { visibility: visible !important; }
   .receipt-print {
     position: fixed;
     left: 0; top: 0;
     width: 80mm;
-    font-family: 'Cairo', sans-serif;
+    max-width: 80mm;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-family: 'Cairo', Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.25;
+    color: #000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+  .receipt-print.receipt-paper-58mm { width: 58mm; max-width: 58mm; }
+  .receipt-print.receipt-paper-A4 { width: 190mm; max-width: 190mm; }
+  .receipt-print * {
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  .receipt-print .bg-gray-50,
+  .receipt-print .bg-blue-50,
+  .receipt-print .rounded-xl,
+  .receipt-print .rounded-lg {
+    background: transparent !important;
+    border-radius: 0 !important;
+  }
+  .receipt-print .receipt-pharmacy-name {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+  }
+  .receipt-print .receipt-header-block { margin-bottom: 4px !important; }
+  .receipt-print .receipt-info-block { padding: 2px 0 !important; margin-bottom: 4px !important; }
+  .receipt-print img { max-height: 48px !important; margin-bottom: 4px !important; }
   .blueprint-print, .blueprint-print * { visibility: visible !important; }
   .blueprint-print {
     position: absolute;

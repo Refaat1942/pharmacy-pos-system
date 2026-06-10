@@ -570,6 +570,9 @@ CREATE INDEX IF NOT EXISTS invoices_prescription_id_idx ON invoices(prescription
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS discount_pct DECIMAL(6,2) DEFAULT 0;
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS vat_pct      DECIMAL(6,2) DEFAULT 0;
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS public_price DECIMAL(12,2);
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFAULT 0;
+
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 """
 
 

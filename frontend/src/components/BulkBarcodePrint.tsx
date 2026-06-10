@@ -15,12 +15,13 @@ export interface BulkItem {
   defaultQty?: number
 }
 
-type LabelSize = 'sm' | 'md' | 'lg'
+type LabelSize = 'sm' | 'md' | 'lg' | 'thermal'
 
-const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string }> = {
-  sm: { cols: 5, cellPad: '2mm', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm' },
-  md: { cols: 3, cellPad: '4mm', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm' },
-  lg: { cols: 2, cellPad: '5mm', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm' },
+const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string; scale: number; height: number }> = {
+  sm: { cols: 5, cellPad: '2mm', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', scale: 1.5, height: 40 },
+  md: { cols: 3, cellPad: '4mm', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', scale: 2, height: 60 },
+  lg: { cols: 2, cellPad: '5mm', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', scale: 2.5, height: 80 },
+  thermal: { cols: 1, cellPad: '2mm', nameFs: '11px', priceFs: '11px', expiryFs: '10px', imgMaxW: '38mm', scale: 2.2, height: 55 },
 }
 
 function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
@@ -43,9 +44,11 @@ async function renderBarcodeDataUrl(value: string, useQR: boolean, scale: number
       displayValue: true,
       width: scale,
       height,
-      margin: 4,
-      font: 'Inter, sans-serif',
-      fontSize: 12,
+      margin: 2,
+      font: 'Arial, sans-serif',
+      fontSize: 13,
+      lineColor: '#000000',
+      background: '#ffffff',
     })
     return c.toDataURL('image/png')
   } catch {
@@ -56,16 +59,17 @@ async function renderBarcodeDataUrl(value: string, useQR: boolean, scale: number
 interface Props {
   items: BulkItem[]
   currency?: string
+  defaultSize?: LabelSize
   onClose: () => void
 }
 
-export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
+export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', onClose }: Props) {
   const { t } = useTranslation()
   const printable = items.filter(i => i.barcode && i.barcode.trim().length > 0)
   const [qty, setQty] = useState<Record<number, number>>(() =>
     Object.fromEntries(printable.map((i) => [i.id, i.defaultQty ?? 1])),
   )
-  const [size, setSize] = useState<LabelSize>('md')
+  const [size, setSize] = useState<LabelSize>(defaultSize)
   const [useQR, setUseQR] = useState(false)
   const [showName, setShowName] = useState(true)
   const [showPrice, setShowPrice] = useState(true)
@@ -86,20 +90,21 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
     setBusy(true)
     try {
       const cfg = SIZE_CSS[size]
-      const scale = size === 'sm' ? 1.5 : size === 'md' ? 2 : 2.5
-      const height = size === 'sm' ? 40 : size === 'md' ? 60 : 80
+      const scale = cfg.scale
+      const height = cfg.height
 
       const w = window.open('', 'PRINT_BULK')
       if (!w) return
       w.document.title = `Barcodes (${totalLabels})`
       const style = w.document.createElement('style')
       style.textContent = `
-        body{margin:6mm;font-family:Inter,Arial,sans-serif;background:#fff;color:#0f172a}
-        .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:3mm}
-        .cell{border:1px dashed #cbd5e1;border-radius:3px;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
-        .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:600;line-height:1.15;max-height:2.5em;overflow:hidden}
-        .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700}
-        .expiry{font-size:${cfg.expiryFs};margin-bottom:2px;font-weight:600;color:#b45309}
+        @page{margin:3mm}
+        body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
+        .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm}
+        .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
+        .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
+        .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
         img{max-width:${cfg.imgMaxW};height:auto}
         @media print{ .cell{border-color:transparent} @page{margin:5mm} }
       `
@@ -170,6 +175,7 @@ export default function BulkBarcodePrint({ items, currency, onClose }: Props) {
               <option value="sm">{t('bulk_barcode.size_sm')}</option>
               <option value="md">{t('bulk_barcode.size_md')}</option>
               <option value="lg">{t('bulk_barcode.size_lg')}</option>
+              <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
             </select>
           </div>
           <div>
