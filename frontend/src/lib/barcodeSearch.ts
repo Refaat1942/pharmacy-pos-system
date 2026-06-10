@@ -83,6 +83,37 @@ export function barcodeLookupCandidates(scanned: string): string[] {
   return result
 }
 
+/** True when input is likely from a barcode wedge (not a slow name search). */
+export function looksLikeScannerInput(value: string): boolean {
+  const t = value.trim()
+  if (t.length < 4 || /\s/.test(t)) return false
+  return /^[A-Za-z0-9*\-_[\]>]+$/.test(t)
+}
+
+/** API search queries in best-first order (DB item code before noisy scan string). */
+export function barcodeSearchQueries(scanned: string): string[] {
+  const all = barcodeLookupCandidates(scanned)
+  const ranked = [...all].sort((a, b) => {
+    const score = (c: string) => {
+      if (/^\d{4,8}$/.test(c)) return 0
+      if (/^\d{8,14}$/.test(c)) return 1
+      if (/^\d+-\d+$/.test(c)) return 2
+      return 3
+    }
+    const d = score(a) - score(b)
+    return d !== 0 ? d : a.length - b.length
+  })
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const q of ranked) {
+    const k = q.toUpperCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(q)
+  }
+  return out
+}
+
 /** Pick the best product match for a scanned barcode (intl barcode preferred). */
 export function matchProductByBarcode(products: Product[], scanned: string): Product | undefined {
   const candidates = barcodeLookupCandidates(scanned).map((c) => c.toUpperCase())

@@ -3,13 +3,15 @@ import { useEffect } from 'react'
 /** Browser shortcuts that USB barcode wedges sometimes emit as scan suffixes. */
 function isBlockedScannerKey(e: KeyboardEvent): boolean {
   const key = e.key
-  if (key === 'F12') return true
+  // Legacy keyCode for F12 on some wedges
+  if (e.keyCode === 123 || key === 'F12') return true
   if (/^F\d{1,2}$/.test(key)) return true
   if (e.ctrlKey && e.shiftKey) {
     const k = key.toUpperCase()
-    if (k === 'I' || k === 'J' || k === 'C' || k === 'K' || k === 'U') return true
+    if (k === 'I' || k === 'J' || k === 'C' || k === 'K' || k === 'U' || k === 'D') return true
   }
   if (e.ctrlKey && !e.shiftKey && !e.altKey && key.toUpperCase() === 'U') return true
+  if (e.metaKey && e.altKey && key.toLowerCase() === 'i') return true
   return false
 }
 

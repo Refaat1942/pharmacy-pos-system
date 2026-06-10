@@ -30,8 +30,11 @@ import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
-import { matchProductByBarcode, sanitizeScannedBarcode } from '../lib/barcodeSearch'
-import { useBlockScannerBrowserShortcuts } from '../lib/scannerGuard'
+import {
+  barcodeSearchQueries,
+  looksLikeScannerInput,
+  matchProductByBarcode,
+} from '../lib/barcodeSearch'
 
 interface HeldCart {
   id: string
@@ -151,8 +154,6 @@ export default function POS() {
   const RXID_KEY = `pos_rxid_${scope}`
   const HELD_KEY = `pos_held_${scope}`
   const recallLock = useRef(false)
-
-  useBlockScannerBrowserShortcuts()
 
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<Product[]>([])
@@ -308,26 +309,11 @@ export default function POS() {
     searchRef.current?.focus()
   }, [])
 
-  // Debounced search
-  useEffect(() => {
-    if (!search.trim()) {
-      setResults([])
-      setShowResults(false)
-      return
-    }
-    setSearching(true)
-    const timer = setTimeout(() => {
-      productsAPI
-        .search(search.trim())
-        .then((r) => {
-          setResults(r.data.slice(0, 12))
-          setShowResults(true)
-          setHighlight(0)
-        })
-        .finally(() => setSearching(false))
-    }, 200)
-    return () => clearTimeout(timer)
-  }, [search])
+  const clearSearch = useCallback(() => {
+    setSearch('')
+    setResults([])
+    setShowResults(false)
+  }, [])
 
   // Selling is allowed even when stock is zero or negative; replenishment nets it out.
   const maxQty = useCallback((_p: Product, _unit_type: 'pack' | 'sub') => {
@@ -366,6 +352,46 @@ export default function POS() {
     setShowResults(false)
     searchRef.current?.focus()
   }, [t, maxQty])
+
+  // Debounced search — strips wedge noise (C85947-13C) and matches DB code (85947).
+  useEffect(() => {
+    if (!search.trim()) {
+      setResults([])
+      setShowResults(false)
+      return
+    }
+    setSearching(true)
+    const raw = search.trim()
+    const queries = barcodeSearchQueries(raw)
+    const timer = setTimeout(() => {
+      const run = async () => {
+        const merged = new Map<number, Product>()
+        for (const q of queries) {
+          const r = await productsAPI.search(q)
+          for (const p of r.data) merged.set(p.id, p)
+          const hit = matchProductByBarcode(r.data, raw)
+          if (hit) {
+            if (looksLikeScannerInput(raw)) {
+              addToCart(hit)
+              clearSearch()
+              searchRef.current?.focus()
+              return
+            }
+            setResults([hit])
+            setShowResults(true)
+            setHighlight(0)
+            return
+          }
+        }
+        const list = [...merged.values()].slice(0, 12)
+        setResults(list)
+        setShowResults(true)
+        setHighlight(0)
+      }
+      run().finally(() => setSearching(false))
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [search, addToCart, clearSearch])
 
   const loadPrescription = useCallback(async (rx: Prescription): Promise<string[]> => {
     setRxClinic({ id: rx.clinic_id, name: rx.clinic_name })
@@ -445,15 +471,20 @@ export default function POS() {
   }, [])
 
   const resolveScanToProduct = useCallback(async (code: string) => {
-    const trimmed = sanitizeScannedBarcode(code) || code.trim()
-    if (!trimmed) return
-    const r = await productsAPI.search(code.trim())
-    const matched = matchProductByBarcode(r.data, trimmed)
-    if (matched) {
-      addToCart(matched)
-      return
+    const raw = code.trim()
+    if (!raw) return
+    const tried = new Set<string>()
+    for (const q of barcodeSearchQueries(raw)) {
+      const key = q.toUpperCase()
+      if (tried.has(key)) continue
+      tried.add(key)
+      const r = await productsAPI.search(q)
+      const matched = matchProductByBarcode(r.data, raw)
+      if (matched) {
+        addToCart(matched)
+        return
+      }
     }
-    if (r.data.length === 1) addToCart(r.data[0])
   }, [addToCart])
 
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
