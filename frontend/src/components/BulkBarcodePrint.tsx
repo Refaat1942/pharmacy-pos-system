@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '../lib/api'
 import { useTranslation } from 'react-i18next'
-import { X, Printer, Minus, Plus } from 'lucide-react'
+import { X, Printer, Minus, Plus, Eye } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
@@ -106,31 +106,81 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const setQ = (id: number, v: number) =>
     setQty(q => ({ ...q, [id]: Math.max(0, Math.min(500, isNaN(v) ? 0 : v)) }))
 
-  const print = async () => {
+  const waitForImages = (doc: Document) =>
+    Promise.all(
+      Array.from(doc.images).map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) resolve()
+            else {
+              img.onload = () => resolve()
+              img.onerror = () => resolve()
+            }
+          }),
+      ),
+    )
+
+  const openPrintWindow = async (openPrinterDialog: boolean) => {
     if (totalLabels === 0) return
     setBusy(true)
     try {
       const cfg = SIZE_CSS[size]
       const scale = cfg.scale
       const height = cfg.height
+      const pageMargin = size === 'thermal' ? '1mm' : '3mm'
 
-      const w = window.open('', 'PRINT_BULK')
-      if (!w) return
+      const w = window.open('', 'PRINT_BULK', 'width=960,height=720,scrollbars=yes')
+      if (!w) {
+        alert(t('bulk_barcode.popup_blocked'))
+        return
+      }
       w.document.title = `Barcodes (${totalLabels})`
       const style = w.document.createElement('style')
       style.textContent = `
-        @page{margin:3mm}
+        @page{margin:${pageMargin}}
         body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
-        .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm}
+        #print-toolbar{
+          position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
+          border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
+        }
+        #print-toolbar strong{font-size:14px;color:#065f46}
+        #print-toolbar button{
+          padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
+          border-radius:8px;cursor:pointer;font-size:14px
+        }
+        #print-toolbar button:hover{background:#047857}
+        #print-toolbar span{font-size:12px;color:#047857}
+        .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm;padding:8px}
         .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
         .pharmacy{font-size:${cfg.pharmacyFs};font-weight:800;margin-bottom:2px;line-height:1.1;max-height:2.2em;overflow:hidden;color:#000;text-transform:uppercase;letter-spacing:0.02em}
         .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
         .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
         .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
         img{max-width:${cfg.imgMaxW};height:auto}
-        @media print{ .cell{border-color:transparent} @page{margin:5mm} }
+        @media print{
+          #print-toolbar{display:none!important}
+          .grid{padding:0}
+          .cell{border-color:transparent}
+          @page{margin:${pageMargin}}
+        }
       `
       w.document.head.appendChild(style)
+
+      const toolbar = w.document.createElement('div')
+      toolbar.id = 'print-toolbar'
+      const title = w.document.createElement('strong')
+      title.textContent = t('bulk_barcode.print_toolbar_title')
+      const btn = w.document.createElement('button')
+      btn.type = 'button'
+      btn.textContent = t('bulk_barcode.print_toolbar_btn')
+      btn.onclick = () => {
+        w.focus()
+        w.print()
+      }
+      const hint = w.document.createElement('span')
+      hint.textContent = t('bulk_barcode.print_toolbar_hint')
+      toolbar.append(title, btn, hint)
+      w.document.body.appendChild(toolbar)
 
       const grid = w.document.createElement('div')
       grid.className = 'grid'
@@ -176,9 +226,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
         }
       }
 
-      const script = w.document.createElement('script')
-      script.textContent = 'window.onload=function(){setTimeout(function(){window.print();setTimeout(function(){window.close()},600)},150)}'
-      w.document.body.appendChild(script)
+      await waitForImages(w.document)
+      w.focus()
+      if (openPrinterDialog) {
+        // Opens the OS / browser printer picker (choose XP-370B, etc.)
+        w.print()
+      }
     } finally {
       setBusy(false)
     }
@@ -287,9 +340,21 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-100">
               {t('common.cancel')}
             </button>
-            <button onClick={print} disabled={busy || totalLabels === 0}
-              className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1">
-              <Printer size={14} /> {t('bulk_barcode.print', { n: totalLabels })}
+            <button
+              type="button"
+              onClick={() => openPrintWindow(false)}
+              disabled={busy || totalLabels === 0}
+              className="px-4 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50 font-medium disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              <Eye size={14} /> {t('bulk_barcode.preview')}
+            </button>
+            <button
+              type="button"
+              onClick={() => openPrintWindow(true)}
+              disabled={busy || totalLabels === 0}
+              className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              <Printer size={14} /> {t('bulk_barcode.choose_printer', { n: totalLabels })}
             </button>
           </div>
         </div>

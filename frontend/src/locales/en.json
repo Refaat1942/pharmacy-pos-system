@@ -74,6 +74,12 @@
     "none": "No items with a barcode selected",
     "skipped": "{{n}} selected item(s) skipped (no barcode)",
     "print": "Print ({{n}})",
+    "choose_printer": "Choose printer & print ({{n}})",
+    "preview": "Preview labels",
+    "popup_blocked": "Pop-up blocked. Allow pop-ups for this site to print barcode labels.",
+    "print_toolbar_title": "Barcode labels — ready to print",
+    "print_toolbar_btn": "Select printer & print",
+    "print_toolbar_hint": "Pick your label printer (e.g. Xprinter XP-370B) in the dialog, then click Print.",
     "selected": "{{n}} selected"
   },
   "nav": {

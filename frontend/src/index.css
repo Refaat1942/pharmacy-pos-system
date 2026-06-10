@@ -96,10 +96,10 @@ body {
   .receipt-print, .receipt-print * { visibility: visible !important; }
   .receipt-print {
     position: absolute;
-    left: 0;
+    left: -0.3mm;
     top: 0;
-    width: 80mm;
-    max-width: 80mm;
+    width: 80.6mm;
+    max-width: 80.6mm;
     padding: 0 !important;
     margin: 0 !important;
     font-family: 'Cairo', Arial, Helvetica, sans-serif;
@@ -113,8 +113,9 @@ body {
     print-color-adjust: exact;
   }
   .receipt-print.receipt-paper-58mm {
-    width: 58mm;
-    max-width: 58mm;
+    left: -0.3mm;
+    width: 58.6mm;
+    max-width: 58.6mm;
     font-size: 11px;
   }
   @page :first {
