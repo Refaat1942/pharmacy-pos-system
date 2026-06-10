@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -156,7 +157,7 @@ type Movement = {
   created_at: string
 }
 
-type Tab = 'items' | 'branch_stock' | 'stocktake' | 'movements' | 'velocity' | 'alerts'
+type Tab = 'items' | 'barcodes' | 'branch_stock' | 'stocktake' | 'movements' | 'velocity' | 'alerts'
 
 type BranchStockRow = {
   key: string
@@ -345,6 +346,7 @@ export default function Inventory() {
         <div className="flex gap-2 mb-6 border-b border-slate-200">
           {([
             ['items', t('inventory.tab_items')],
+            ['barcodes', t('inventory.tab_barcodes')],
             ['branch_stock', t('inventory.tab_branch_stock')],
             ['stocktake', t('inventory.tab_stocktake')],
             ['movements', t('inventory.tab_movements')],
@@ -437,7 +439,7 @@ export default function Inventory() {
                 className="flex items-center gap-1.5 px-3 py-2 bg-white border border-pharma-200 text-pharma-700 hover:bg-pharma-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-sm font-medium"
               >
                 <Printer size={15} />
-                {t('bulk_barcode.open')}
+                {t('inventory.barcode_labels_btn')}
                 {selected.size > 0 && <span className="ms-1 px-1.5 py-0.5 bg-pharma-600 text-white text-[10px] rounded-full">{selected.size}</span>}
               </button>
               <button
@@ -549,6 +551,7 @@ export default function Inventory() {
           </>
         )}
 
+        {tab === 'barcodes' && <BarcodeLabelsTab />}
         {tab === 'branch_stock' && <BranchStockTab />}
         {tab === 'stocktake' && <StocktakeTab />}
         {tab === 'movements' && <MovementsTab />}
@@ -565,6 +568,7 @@ export default function Inventory() {
         <BulkBarcodePrint
           items={items.filter(i => selected.has(i.id)).flatMap((i) => bulkItemsForProduct(i, isAr))}
           currency={t('pos.egp') as string}
+          defaultSize="thermal"
           onClose={() => setShowBulkPrint(false)}
         />
       )}
@@ -1547,6 +1551,176 @@ function AlertsTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+// ─── Barcode labels tab ────────────────────────────────────────────────
+
+function BarcodeLabelsTab() {
+  const { t, i18n } = useTranslation()
+  const isAr = i18n.language === 'ar'
+  const [q, setQ] = useState('')
+  const [items, setItems] = useState<Product[]>([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [showPrint, setShowPrint] = useState(false)
+
+  const load = async () => {
+    const searchQ = q.trim()
+    if (!searchQ) {
+      setItems([])
+      return
+    }
+    setLoading(true)
+    try {
+      const { data } = await api.get<Product[]>('/inventory/items', { params: { q: searchQ } })
+      setItems(data)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    const id = setTimeout(load, 300)
+    return () => clearTimeout(id)
+  }, [q])
+
+  const toggleOne = (id: number) => {
+    setSelected((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
+  const withBarcode = items.filter((i) => i.barcode && i.barcode.trim())
+  const printItems = withBarcode
+    .filter((i) => selected.has(i.id))
+    .flatMap((i) => bulkItemsForProduct(i, isAr))
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-pharma-50 border border-pharma-200 rounded-xl p-4 text-sm text-pharma-900">
+        <h2 className="font-semibold text-base mb-2">{t('inventory.barcodes_panel_title')}</h2>
+        <p className="mb-2">{t('inventory.barcodes_panel_hint')}</p>
+        <ul className="list-disc ps-5 space-y-1 text-pharma-800">
+          <li>{t('inventory.barcodes_thermal_note')}</li>
+          <li>
+            {t('inventory.barcodes_po_note')}{' '}
+            <Link to="/purchases" className="font-semibold underline hover:text-pharma-700">
+              {t('nav.purchases')}
+            </Link>
+          </li>
+          <li>
+            {t('inventory.barcodes_receipt_note')}{' '}
+            <Link to="/settings" className="font-semibold underline hover:text-pharma-700">
+              {t('nav.settings')}
+            </Link>
+          </li>
+        </ul>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
+        <div className="flex-1 min-w-64 relative">
+          <Search size={16} className="absolute top-1/2 -translate-y-1/2 start-3 text-slate-400" />
+          <input
+            type="text"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t('inventory.barcodes_search_placeholder') as string}
+            className="w-full ps-9 pe-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-pharma-500 text-sm"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPrint(true)}
+          disabled={printItems.length === 0}
+          className="flex items-center gap-2 px-5 py-2.5 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 shadow-sm"
+        >
+          <Printer size={16} />
+          {t('inventory.barcode_labels_btn')}
+          {selected.size > 0 && (
+            <span className="px-2 py-0.5 bg-white/20 rounded-full text-xs">{selected.size}</span>
+          )}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <Th className="w-8 text-center">
+                <input
+                  type="checkbox"
+                  checked={withBarcode.length > 0 && withBarcode.every((i) => selected.has(i.id))}
+                  onChange={() => {
+                    setSelected((s) => {
+                      const ids = withBarcode.map((i) => i.id)
+                      const all = ids.every((id) => s.has(id))
+                      if (all) {
+                        const n = new Set(s)
+                        ids.forEach((id) => n.delete(id))
+                        return n
+                      }
+                      const n = new Set(s)
+                      ids.forEach((id) => n.add(id))
+                      return n
+                    })
+                  }}
+                />
+              </Th>
+              <Th>{t('inventory.col_barcode')}</Th>
+              <Th>{t('inventory.col_name')}</Th>
+              <Th>{t('inventory.col_expiry_lots')}</Th>
+              <Th className="text-center">{t('inventory.col_stock')}</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <TableLoadingRow colSpan={5} />}
+            {!loading && !q.trim() && (
+              <tr>
+                <td colSpan={5} className="text-center py-8 text-slate-500">
+                  {t('inventory.barcodes_search_required')}
+                </td>
+              </tr>
+            )}
+            {!loading && q.trim() && items.length === 0 && (
+              <tr>
+                <td colSpan={5} className="text-center py-8 text-slate-500">{t('inventory.no_items')}</td>
+              </tr>
+            )}
+            {items.map((it) => {
+              const hasBc = Boolean(it.barcode && it.barcode.trim())
+              return (
+                <tr key={it.id} className={`border-t border-slate-100 ${!hasBc ? 'opacity-50' : 'hover:bg-slate-50'}`}>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      disabled={!hasBc}
+                      checked={selected.has(it.id)}
+                      onChange={() => toggleOne(it.id)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
+                  <td className="px-3 py-2 font-medium">{isAr ? it.name_ar : it.name_en}</td>
+                  <td className="px-3 py-2 text-xs text-slate-600">{formatExpiryLots(it)}</td>
+                  <td className="px-3 py-2 text-center">{formatInt(it.stock)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {showPrint && (
+        <BulkBarcodePrint
+          items={printItems}
+          currency={t('pos.egp') as string}
+          defaultSize="thermal"
+          onClose={() => setShowPrint(false)}
+        />
+      )}
     </div>
   )
 }

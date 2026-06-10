@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import api from '../lib/api'
 import { useTranslation } from 'react-i18next'
 import { X, Printer, Minus, Plus } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
@@ -17,11 +18,11 @@ export interface BulkItem {
 
 type LabelSize = 'sm' | 'md' | 'lg' | 'thermal'
 
-const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string; scale: number; height: number }> = {
-  sm: { cols: 5, cellPad: '2mm', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', scale: 1.5, height: 40 },
-  md: { cols: 3, cellPad: '4mm', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', scale: 2, height: 60 },
-  lg: { cols: 2, cellPad: '5mm', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', scale: 2.5, height: 80 },
-  thermal: { cols: 1, cellPad: '2mm', nameFs: '11px', priceFs: '11px', expiryFs: '10px', imgMaxW: '38mm', scale: 2.2, height: 55 },
+const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; pharmacyFs: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string; scale: number; height: number }> = {
+  sm: { cols: 5, cellPad: '2mm', pharmacyFs: '7px', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', scale: 1.5, height: 40 },
+  md: { cols: 3, cellPad: '4mm', pharmacyFs: '8px', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', scale: 2, height: 60 },
+  lg: { cols: 2, cellPad: '5mm', pharmacyFs: '9px', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', scale: 2.5, height: 80 },
+  thermal: { cols: 1, cellPad: '2mm', pharmacyFs: '9px', nameFs: '11px', priceFs: '11px', expiryFs: '10px', imgMaxW: '38mm', scale: 2.2, height: 55 },
 }
 
 function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
@@ -63,8 +64,15 @@ interface Props {
   onClose: () => void
 }
 
+type PharmacyProfile = {
+  name_ar?: string
+  name_en?: string
+  show_pharmacy_name_on_labels?: boolean
+}
+
 export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', onClose }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isAr = i18n.language === 'ar'
   const printable = items.filter(i => i.barcode && i.barcode.trim().length > 0)
   const [qty, setQty] = useState<Record<number, number>>(() =>
     Object.fromEntries(printable.map((i) => [i.id, i.defaultQty ?? 1])),
@@ -74,7 +82,20 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [showName, setShowName] = useState(true)
   const [showPrice, setShowPrice] = useState(true)
   const [showExpiry, setShowExpiry] = useState(true)
+  const [showPharmacy, setShowPharmacy] = useState(true)
+  const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api.get<PharmacyProfile>('/settings/profile')
+      .then((r) => {
+        const p = r.data
+        const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
+        setPharmacyName(nm.trim())
+        setShowPharmacy(p.show_pharmacy_name_on_labels !== false)
+      })
+      .catch(() => {})
+  }, [isAr])
 
   const totalLabels = useMemo(() => printable.reduce((s, i) => s + (qty[i.id] || 0), 0), [qty, printable])
   const skipped = items.length - printable.length
@@ -102,6 +123,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
         body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
         .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm}
         .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
+        .pharmacy{font-size:${cfg.pharmacyFs};font-weight:800;margin-bottom:2px;line-height:1.1;max-height:2.2em;overflow:hidden;color:#000;text-transform:uppercase;letter-spacing:0.02em}
         .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
         .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
         .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
@@ -122,6 +144,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
         for (let i = 0; i < n; i++) {
           const cell = w.document.createElement('div')
           cell.className = 'cell'
+          if (showPharmacy && pharmacyName) {
+            const ph = w.document.createElement('div')
+            ph.className = 'pharmacy'
+            ph.textContent = pharmacyName
+            cell.appendChild(ph)
+          }
           if (showName) {
             const nm = w.document.createElement('div')
             nm.className = 'name'
@@ -167,15 +195,21 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
 
+        {size === 'thermal' && (
+          <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900">
+            {t('bulk_barcode.thermal_hint')}
+          </div>
+        )}
+
         <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <div>
+          <div className="md:col-span-2">
             <label className="text-slate-600 font-medium">{t('bulk_barcode.size')}</label>
             <select value={size} onChange={e => setSize(e.target.value as LabelSize)}
-              className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1">
+              className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1 font-medium">
+              <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
               <option value="sm">{t('bulk_barcode.size_sm')}</option>
               <option value="md">{t('bulk_barcode.size_md')}</option>
               <option value="lg">{t('bulk_barcode.size_lg')}</option>
-              <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
             </select>
           </div>
           <div>
@@ -197,6 +231,15 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           <label className="flex items-end gap-2 pb-1">
             <input type="checkbox" checked={showExpiry} onChange={e => setShowExpiry(e.target.checked)} />
             <span>{t('bulk_barcode.show_expiry')}</span>
+          </label>
+          <label className="flex items-end gap-2 pb-1 md:col-span-2">
+            <input
+              type="checkbox"
+              checked={showPharmacy}
+              onChange={e => setShowPharmacy(e.target.checked)}
+              disabled={!pharmacyName}
+            />
+            <span>{t('bulk_barcode.show_pharmacy', { name: pharmacyName || '—' })}</span>
           </label>
         </div>
 

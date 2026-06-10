@@ -573,6 +573,7 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS public_price DECIMAL(1
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFAULT 0;
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
 """
 
 
