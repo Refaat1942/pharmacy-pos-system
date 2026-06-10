@@ -18,11 +18,47 @@ export interface BulkItem {
 
 type LabelSize = 'sm' | 'md' | 'lg' | 'thermal'
 
-const SIZE_CSS: Record<LabelSize, { cols: number; cellPad: string; pharmacyFs: string; nameFs: string; priceFs: string; expiryFs: string; imgMaxW: string; scale: number; height: number }> = {
-  sm: { cols: 5, cellPad: '2mm', pharmacyFs: '7px', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', scale: 1.5, height: 40 },
-  md: { cols: 3, cellPad: '4mm', pharmacyFs: '8px', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', scale: 2, height: 60 },
-  lg: { cols: 2, cellPad: '5mm', pharmacyFs: '9px', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', scale: 2.5, height: 80 },
-  thermal: { cols: 1, cellPad: '2mm', pharmacyFs: '9px', nameFs: '11px', priceFs: '11px', expiryFs: '10px', imgMaxW: '38mm', scale: 2.2, height: 55 },
+type SizeCfg = {
+  cols: number
+  cellPad: string
+  pharmacyFs: string
+  nameFs: string
+  priceFs: string
+  expiryFs: string
+  imgMaxW: string
+  imgMaxH: string
+  scale: number
+  height: number
+  barcodeFontSize: number
+  labelW?: string
+  labelH?: string
+}
+
+const SIZE_CSS: Record<LabelSize, SizeCfg> = {
+  sm: { cols: 5, cellPad: '2mm', pharmacyFs: '7px', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', imgMaxH: 'none', scale: 1.5, height: 40, barcodeFontSize: 11 },
+  md: { cols: 3, cellPad: '4mm', pharmacyFs: '8px', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', imgMaxH: 'none', scale: 2, height: 60, barcodeFontSize: 12 },
+  lg: { cols: 2, cellPad: '5mm', pharmacyFs: '9px', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', imgMaxH: 'none', scale: 2.5, height: 80, barcodeFontSize: 13 },
+  /* XP-370B 38mm roll — one sticker = one print page (38×30mm), compact bold text */
+  thermal: {
+    cols: 1,
+    cellPad: '0.5mm 1mm',
+    pharmacyFs: '6px',
+    nameFs: '7px',
+    priceFs: '8px',
+    expiryFs: '6px',
+    imgMaxW: '34mm',
+    imgMaxH: '11mm',
+    scale: 1.05,
+    height: 22,
+    barcodeFontSize: 8,
+    labelW: '38mm',
+    labelH: '25mm',
+  },
+}
+
+function truncLabel(s: string, max: number): string {
+  const t = s.trim()
+  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
 }
 
 function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
@@ -34,20 +70,28 @@ function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
   return 'CODE128'
 }
 
-async function renderBarcodeDataUrl(value: string, useQR: boolean, scale: number, height: number): Promise<string | null> {
+async function renderBarcodeDataUrl(
+  value: string,
+  useQR: boolean,
+  cfg: SizeCfg,
+  thermal: boolean,
+): Promise<string | null> {
   try {
     if (useQR) {
-      return await QRCode.toDataURL(value, { margin: 1, scale: Math.max(3, scale + 2), errorCorrectionLevel: 'M' })
+      const qrScale = thermal ? 3 : Math.max(3, cfg.scale + 2)
+      return await QRCode.toDataURL(value, { margin: 0, scale: qrScale, errorCorrectionLevel: 'M' })
     }
     const c = document.createElement('canvas')
     JsBarcode(c, value, {
       format: detectType(value),
       displayValue: true,
-      width: scale,
-      height,
-      margin: 2,
-      font: 'Arial, sans-serif',
-      fontSize: 13,
+      width: cfg.scale,
+      height: cfg.height,
+      margin: thermal ? 0 : 2,
+      font: 'Arial Black, Arial, sans-serif',
+      fontSize: cfg.barcodeFontSize,
+      fontOptions: 'bold',
+      textMargin: thermal ? 0 : 2,
       lineColor: '#000000',
       background: '#ffffff',
     })
@@ -55,6 +99,83 @@ async function renderBarcodeDataUrl(value: string, useQR: boolean, scale: number
   } catch {
     return null
   }
+}
+
+function buildPrintStyles(size: LabelSize, cfg: SizeCfg, pageMargin: string): string {
+  if (size === 'thermal' && cfg.labelW && cfg.labelH) {
+    return `
+      @page{size:${cfg.labelW} ${cfg.labelH};margin:0}
+      body{margin:0;font-family:Arial Black,Arial,sans-serif;background:#fff;color:#000;font-weight:700}
+      #print-toolbar{
+        position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
+        border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
+      }
+      #print-toolbar strong{font-size:14px;color:#065f46;font-weight:700}
+      #print-toolbar button{
+        padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
+        border-radius:8px;cursor:pointer;font-size:14px
+      }
+      #print-toolbar span{font-size:12px;color:#047857}
+      .grid{display:block;padding:8px}
+      .cell{
+        width:${cfg.labelW};height:${cfg.labelH};max-width:${cfg.labelW};max-height:${cfg.labelH};
+        box-sizing:border-box;overflow:hidden;padding:${cfg.cellPad};
+        margin:0 auto 4px;border:1px dashed #ccc;
+        display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+        text-align:center;page-break-after:always;page-break-inside:avoid;break-after:page
+      }
+      .pharmacy{
+        font-size:${cfg.pharmacyFs};font-weight:900;line-height:1;margin:0 0 0.5mm;
+        max-height:1.2em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;
+        color:#000;text-transform:uppercase
+      }
+      .name{
+        font-size:${cfg.nameFs};font-weight:900;line-height:1.05;margin:0 0 0.5mm;
+        max-height:2.1em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+        width:100%;color:#000
+      }
+      .expiry{font-size:${cfg.expiryFs};font-weight:900;line-height:1;margin:0;color:#000}
+      .price{font-size:${cfg.priceFs};font-weight:900;line-height:1;margin:0;color:#000}
+      .row{display:flex;justify-content:space-between;width:100%;gap:2px;margin-top:0.5mm}
+      img{
+        max-width:${cfg.imgMaxW};max-height:${cfg.imgMaxH};width:auto;height:auto;
+        object-fit:contain;margin:0.5mm 0;flex-shrink:0
+      }
+      @media print{
+        #print-toolbar{display:none!important}
+        .grid{padding:0}
+        .cell{border:none;margin:0;page-break-after:always}
+        @page{size:${cfg.labelW} ${cfg.labelH};margin:0}
+      }
+    `
+  }
+  return `
+    @page{margin:${pageMargin}}
+    body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
+    #print-toolbar{
+      position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
+      border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
+    }
+    #print-toolbar strong{font-size:14px;color:#065f46}
+    #print-toolbar button{
+      padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
+      border-radius:8px;cursor:pointer;font-size:14px
+    }
+    #print-toolbar span{font-size:12px;color:#047857}
+    .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm;padding:8px}
+    .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .pharmacy{font-size:${cfg.pharmacyFs};font-weight:800;margin-bottom:2px;line-height:1.1;max-height:2.2em;overflow:hidden;color:#000;text-transform:uppercase;letter-spacing:0.02em}
+    .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
+    .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
+    .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
+    img{max-width:${cfg.imgMaxW};height:auto}
+    @media print{
+      #print-toolbar{display:none!important}
+      .grid{padding:0}
+      .cell{border-color:transparent}
+      @page{margin:${pageMargin}}
+    }
+  `
 }
 
 interface Props {
@@ -125,9 +246,8 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     setBusy(true)
     try {
       const cfg = SIZE_CSS[size]
-      const scale = cfg.scale
-      const height = cfg.height
-      const pageMargin = size === 'thermal' ? '1mm' : '3mm'
+      const isThermal = size === 'thermal'
+      const pageMargin = isThermal ? '0' : '3mm'
 
       const w = window.open('', 'PRINT_BULK', 'width=960,height=720,scrollbars=yes')
       if (!w) {
@@ -136,34 +256,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
       }
       w.document.title = `Barcodes (${totalLabels})`
       const style = w.document.createElement('style')
-      style.textContent = `
-        @page{margin:${pageMargin}}
-        body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
-        #print-toolbar{
-          position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
-          border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
-        }
-        #print-toolbar strong{font-size:14px;color:#065f46}
-        #print-toolbar button{
-          padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
-          border-radius:8px;cursor:pointer;font-size:14px
-        }
-        #print-toolbar button:hover{background:#047857}
-        #print-toolbar span{font-size:12px;color:#047857}
-        .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm;padding:8px}
-        .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
-        .pharmacy{font-size:${cfg.pharmacyFs};font-weight:800;margin-bottom:2px;line-height:1.1;max-height:2.2em;overflow:hidden;color:#000;text-transform:uppercase;letter-spacing:0.02em}
-        .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
-        .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
-        .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
-        img{max-width:${cfg.imgMaxW};height:auto}
-        @media print{
-          #print-toolbar{display:none!important}
-          .grid{padding:0}
-          .cell{border-color:transparent}
-          @page{margin:${pageMargin}}
-        }
-      `
+      style.textContent = buildPrintStyles(size, cfg, pageMargin)
       w.document.head.appendChild(style)
 
       const toolbar = w.document.createElement('div')
@@ -189,7 +282,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
-        const url = await renderBarcodeDataUrl(it.barcode!, useQR, scale, height)
+        const url = await renderBarcodeDataUrl(it.barcode!, useQR, cfg, isThermal)
         if (!url) continue
         for (let i = 0; i < n; i++) {
           const cell = w.document.createElement('div')
@@ -197,30 +290,49 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           if (showPharmacy && pharmacyName) {
             const ph = w.document.createElement('div')
             ph.className = 'pharmacy'
-            ph.textContent = pharmacyName
+            ph.textContent = isThermal ? truncLabel(pharmacyName, 26) : pharmacyName
             cell.appendChild(ph)
           }
           if (showName) {
             const nm = w.document.createElement('div')
             nm.className = 'name'
-            nm.textContent = it.name
+            nm.textContent = isThermal ? truncLabel(it.name, 34) : it.name
             cell.appendChild(nm)
-          }
-          const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
-          if (exp) {
-            const ex = w.document.createElement('div')
-            ex.className = 'expiry'
-            ex.textContent = `${t('barcode_studio.exp_label')} ${exp}`
-            cell.appendChild(ex)
           }
           const img = w.document.createElement('img')
           img.src = url
           cell.appendChild(img)
-          if (showPrice && it.price != null) {
-            const pr = w.document.createElement('div')
-            pr.className = 'price'
-            pr.textContent = `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
-            cell.appendChild(pr)
+          const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
+          const hasPrice = showPrice && it.price != null
+          if (isThermal && (exp || hasPrice)) {
+            const row = w.document.createElement('div')
+            row.className = 'row'
+            if (exp) {
+              const ex = w.document.createElement('span')
+              ex.className = 'expiry'
+              ex.textContent = `Exp ${exp}`
+              row.appendChild(ex)
+            }
+            if (hasPrice) {
+              const pr = w.document.createElement('span')
+              pr.className = 'price'
+              pr.textContent = `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
+              row.appendChild(pr)
+            }
+            cell.appendChild(row)
+          } else {
+            if (exp) {
+              const ex = w.document.createElement('div')
+              ex.className = 'expiry'
+              ex.textContent = `${t('barcode_studio.exp_label')} ${exp}`
+              cell.appendChild(ex)
+            }
+            if (hasPrice) {
+              const pr = w.document.createElement('div')
+              pr.className = 'price'
+              pr.textContent = `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
+              cell.appendChild(pr)
+            }
           }
           grid.appendChild(cell)
         }

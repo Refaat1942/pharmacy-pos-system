@@ -55,7 +55,7 @@
     "subtitle": "{{n}} item(s) selected · {{total}} label(s) to print",
     "open": "Barcode labels",
     "size": "Label size",
-    "thermal_hint": "Thermal 38mm preset for Xprinter XP-370B and similar shelf label printers. Choose your label printer in the browser print dialog.",
+    "thermal_hint": "Thermal 38×25mm — one sticker per label, bold compact layout for Xprinter XP-370B. In print dialog set paper to 38mm width and scale 100%.",
     "show_pharmacy": "Show pharmacy name ({{name}})",
     "size_sm": "Small (5/row)",
     "size_md": "Medium (3/row)",
