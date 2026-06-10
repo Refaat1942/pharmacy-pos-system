@@ -30,6 +30,7 @@ interface PharmacyProfile {
   receipt_paper?: '58mm' | '80mm' | 'A4'
   receipt_accent?: string
   show_logo?: boolean
+  show_pharmacy_name?: boolean
   show_tax_id?: boolean
   show_seller?: boolean
   show_customer?: boolean
@@ -150,12 +151,12 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
 
         {/* Receipt content — width follows configured paper size for print */}
         <div
-          className="flex-1 overflow-y-auto p-5 receipt-print mx-auto"
+          className={`flex-1 overflow-y-auto p-3 sm:p-5 receipt-print receipt-paper-${paper} mx-auto`}
           dir={dir}
           style={{ width: '100%', maxWidth: paperWidth[paper] }}
         >
           {/* Pharmacy header */}
-          <div className="text-center mb-5">
+          <div className="text-center mb-2 receipt-header-block">
             {profile?.show_logo !== false && profile?.logo_data_url ? (
               <img
                 src={profile.logo_data_url}
@@ -172,9 +173,13 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 </svg>
               </div>
             ) : null}
-            <h3 className="font-bold text-gray-900 text-xl">{name}</h3>
-            {address && <p className="text-xs text-gray-500 mt-1">{address}</p>}
-            {profile?.phone && <p className="text-xs text-gray-500">{profile.phone}</p>}
+            {profile?.show_pharmacy_name !== false && (
+              <>
+                <h3 className="font-bold text-gray-900 text-lg receipt-pharmacy-name">{name}</h3>
+                {address && <p className="text-xs text-gray-700 mt-0.5 receipt-meta">{address}</p>}
+                {profile?.phone && <p className="text-xs text-gray-700 receipt-meta">{profile.phone}</p>}
+              </>
+            )}
             {profile?.show_tax_id !== false && profile?.tax_id && (
               <p className="text-xs text-gray-500 mt-0.5">
                 {lang === 'ar' ? 'الرقم الضريبي' : 'Tax ID'}: {profile.tax_id}
@@ -193,7 +198,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
           </div>
 
           {/* Invoice info */}
-          <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-2">
+          <div className="receipt-info-block rounded-lg p-2 mb-2 space-y-1 bg-gray-50">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">{tr('receipt.invoice_no')}</span>
               <span className="font-mono font-bold" style={{ color: accent }}>{invoice.invoice_number}</span>

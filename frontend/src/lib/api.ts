@@ -479,6 +479,7 @@ export interface POItem {
   product_name_ar?: string | null
   product_name_en?: string | null
   quantity: number
+  bonus_qty?: number
   unit_cost: number
   discount_pct?: number
   vat_pct?: number
@@ -532,8 +533,9 @@ export const purchasesAPI = {
     discount?: number
     tax?: number
     notes?: string
+    receive_immediately?: boolean
     items: POItem[]
-  }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number }>('/purchase-orders', data),
+  }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number; status: string }>('/purchase-orders', data),
   receive: (id: number) => api.post(`/purchase-orders/${id}/receive`),
   cancel: (id: number) => api.post(`/purchase-orders/${id}/cancel`),
   replenishment: (params: { branch_id?: number; supplier_id?: number; only_zero?: boolean; include_all?: boolean; q?: string } = {}) =>

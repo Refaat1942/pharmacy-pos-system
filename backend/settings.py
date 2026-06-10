@@ -18,7 +18,7 @@ PROFILE_FIELDS = [
     "logo_data_url", "receipt_header_ar", "receipt_header_en",
     "receipt_footer_ar", "receipt_footer_en", "receipt_language",
     "receipt_paper", "receipt_accent",
-    "show_logo", "show_tax_id", "show_seller", "show_customer",
+    "show_logo", "show_pharmacy_name", "show_tax_id", "show_seller", "show_customer",
     "show_sale_type", "show_branch", "show_date", "show_time", "show_barcode",
     "shift_morning_start", "shift_evening_start", "shift_night_start",
 ]
@@ -40,6 +40,7 @@ class ProfilePatch(BaseModel):
     receipt_paper: Optional[str] = None     # '58mm' | '80mm' | 'A4'
     receipt_accent: Optional[str] = None    # hex color
     show_logo: Optional[bool] = None
+    show_pharmacy_name: Optional[bool] = None
     show_tax_id: Optional[bool] = None
     show_seller: Optional[bool] = None
     show_customer: Optional[bool] = None

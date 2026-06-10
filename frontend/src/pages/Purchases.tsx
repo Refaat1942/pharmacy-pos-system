@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search } from 'lucide-react'
+import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer } from 'lucide-react'
+import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner } from '../components/LoadingSpinner'
@@ -27,10 +28,12 @@ function lotsTotal(lots: POExpiryLot[]): number {
 
 function flattenPOItemsForApi(items: POItemDraft[]): POItem[] {
   return items.flatMap((it) => {
+    const bonus = Math.max(0, Number(it.bonus_qty) || 0)
     const lots = (it.expiry_lots || []).filter((l) => (Number(l.quantity) || 0) > 0)
     if (lots.length === 0) {
       return [{
         ...it,
+        bonus_qty: bonus,
         expiry_date: it.expiry_date || undefined,
       }]
     }
@@ -38,15 +41,30 @@ function flattenPOItemsForApi(items: POItemDraft[]): POItem[] {
       return [{
         ...it,
         quantity: lots[0].quantity || it.quantity,
+        bonus_qty: bonus,
         expiry_date: undefined,
       }]
     }
-    return lots.map((l) => ({
+    return lots.map((l, idx) => ({
       ...it,
       quantity: Number(l.quantity) || 1,
+      bonus_qty: idx === lots.length - 1 ? bonus : 0,
       expiry_date: l.expiry_date?.trim() || undefined,
     }))
   })
+}
+
+function poItemsToBulkItems(items: POItem[]): BulkItem[] {
+  return items
+    .filter((it) => it.barcode && String(it.barcode).trim())
+    .map((it, idx) => ({
+      id: it.product_id || it.id || idx,
+      barcode: it.barcode ?? null,
+      name: it.product_name_en || it.product_name_ar || '',
+      price: it.public_price,
+      expiryDate: it.expiry_date,
+      defaultQty: (Number(it.quantity) || 0) + (Number(it.bonus_qty) || 0),
+    }))
 }
 
 function initialPOBranchId(userBranchId?: number | null): number | '' {
@@ -70,6 +88,7 @@ export default function Purchases() {
   const [creating, setCreating] = useState(false)
   const [replenishing, setReplenishing] = useState(false)
   const [viewing, setViewing] = useState<PurchaseOrder | null>(null)
+  const [poLabelsToPrint, setPoLabelsToPrint] = useState<BulkItem[] | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -93,10 +112,28 @@ export default function Purchases() {
     return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[s] || ''}`}>{t(`purchases.status_${s}`)}</span>
   }
 
+  const openPoLabelPrint = async (poId: number) => {
+    try {
+      const r = await purchasesAPI.get(poId)
+      const bulk = poItemsToBulkItems(r.data.items || [])
+      if (bulk.length === 0) {
+        alert(t('purchases.no_barcodes_to_print') as string)
+        return
+      }
+      setPoLabelsToPrint(bulk)
+    } catch {
+      alert(t('common.error') as string)
+    }
+  }
+
   const handleReceive = async (id: number) => {
     if (!confirm(t('purchases.confirm_receive') as string)) return
-    try { await purchasesAPI.receive(id); load(); setViewing(null) }
-    catch (e: any) { alert(e.response?.data?.detail || 'Error') }
+    try {
+      await purchasesAPI.receive(id)
+      load()
+      setViewing(null)
+      await openPoLabelPrint(id)
+    } catch (e: any) { alert(e.response?.data?.detail || 'Error') }
   }
   const handleCancel = async (id: number) => {
     if (!confirm(t('purchases.confirm_cancel') as string)) return
@@ -212,7 +249,11 @@ export default function Purchases() {
           suppliers={suppliers}
           branches={branches}
           onClose={() => setCreating(false)}
-          onSaved={() => { setCreating(false); load() }}
+          onSaved={async (result) => {
+            setCreating(false)
+            load()
+            if (result?.received && result.poId) await openPoLabelPrint(result.poId)
+          }}
         />
       )}
       {replenishing && (
@@ -229,8 +270,16 @@ export default function Purchases() {
           onClose={() => setViewing(null)}
           onReceive={() => handleReceive(viewing.id)}
           onCancel={() => handleCancel(viewing.id)}
+          onPrintLabels={() => openPoLabelPrint(viewing.id)}
           canReceive={user?.role === 'admin' || user?.branch_id === viewing.branch_id}
           canCancel={user?.role === 'admin'}
+        />
+      )}
+      {poLabelsToPrint && (
+        <BulkBarcodePrint
+          items={poLabelsToPrint}
+          defaultSize="thermal"
+          onClose={() => setPoLabelsToPrint(null)}
         />
       )}
     </Layout>
@@ -239,7 +288,12 @@ export default function Purchases() {
 
 function CreatePOModal({
   suppliers, branches, onClose, onSaved,
-}: { suppliers: Supplier[]; branches: Branch[]; onClose: () => void; onSaved: () => void }) {
+}: {
+  suppliers: Supplier[]
+  branches: Branch[]
+  onClose: () => void
+  onSaved: (result?: { poId: number; received: boolean }) => void
+}) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -298,6 +352,7 @@ function CreatePOModal({
           product_name_en: p.name_en,
           product_name_ar: p.name_ar,
           quantity: 1,
+          bonus_qty: 0,
           unit_cost: p.cost || 0,
           discount_pct: 0,
           vat_pct: 0,
@@ -316,6 +371,7 @@ function CreatePOModal({
         product_name_en: '',
         product_name_ar: '',
         quantity: 1,
+        bonus_qty: 0,
         unit_cost: 0,
         discount_pct: 0,
         vat_pct: 0,
@@ -363,7 +419,7 @@ function CreatePOModal({
   const subtotal = items.reduce((s, i) => s + lineNet(i), 0)
   const total = subtotal - discount + tax
 
-  const submit = async () => {
+  const submit = async (receiveImmediately: boolean) => {
     if (!supplierId || !branchId || items.length === 0) { alert(t('purchases.fill_required')); return }
     for (const it of items) {
       const lt = lotsTotal(it.expiry_lots)
@@ -375,18 +431,20 @@ function CreatePOModal({
     setSaving(true)
     try {
       const flat = flattenPOItemsForApi(items)
-      await purchasesAPI.create({
+      const res = await purchasesAPI.create({
         supplier_id: Number(supplierId),
         branch_id: Number(branchId),
         supplier_invoice_number: invNum || undefined,
         supplier_invoice_date: invDate || undefined,
         discount, tax, notes: notes || undefined,
+        receive_immediately: receiveImmediately,
         items: flat.map((i) => ({
           product_id: i.product_id ?? undefined,
           barcode: i.barcode || undefined,
           product_name_ar: i.product_name_ar || undefined,
           product_name_en: i.product_name_en || undefined,
           quantity: i.quantity,
+          bonus_qty: i.bonus_qty || 0,
           unit_cost: i.unit_cost,
           discount_pct: i.discount_pct || 0,
           vat_pct: i.vat_pct || 0,
@@ -394,7 +452,7 @@ function CreatePOModal({
           expiry_date: i.expiry_date || undefined,
         })),
       })
-      onSaved()
+      onSaved({ poId: res.data.po_id, received: receiveImmediately })
     } catch (e: any) {
       alert(e.response?.data?.detail || 'Error')
     } finally { setSaving(false) }
@@ -408,6 +466,9 @@ function CreatePOModal({
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 overflow-auto flex-1">
+          <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            {t('purchases.stock_receive_hint')}
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('purchases.supplier')}</label>
@@ -418,7 +479,7 @@ function CreatePOModal({
             </div>
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('purchases.branch')}</label>
-              <select value={branchId} onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')} disabled={!isAdmin} className="input mt-1 w-full">
+              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input mt-1 w-full">
                 <option value="">--</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>)}
               </select>
@@ -495,11 +556,12 @@ function CreatePOModal({
                   <div className="col-span-2">{t('purchases.col_name')}</div>
                   <div className="col-span-2">{t('purchases.col_barcode')}</div>
                   <div className="col-span-1 text-end">{t('purchases.qty')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.bonus_qty')}</div>
                   <div className="col-span-1 text-end">{t('purchases.cost')}</div>
                   <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
                   <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
                   <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
-                  <div className="col-span-3">{t('purchases.col_expiry')}</div>
+                  <div className="col-span-2">{t('purchases.col_expiry')}</div>
                   <div className="col-span-1" />
                 </div>
               )}
@@ -515,6 +577,9 @@ function CreatePOModal({
                            value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
                     <input type="number" min={1} className="input col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
                            value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
+                    <input type="number" min={0} className="input col-span-1 text-xs text-end" placeholder={t('purchases.bonus_qty') as string}
+                           title={t('purchases.bonus_qty_hint') as string}
+                           value={it.bonus_qty ?? 0} onChange={(e) => update(i, { bonus_qty: Math.max(0, Number(e.target.value)) })} />
                     <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.cost') as string}
                            value={it.unit_cost} onChange={(e) => update(i, { unit_cost: Math.max(0, Number(e.target.value)) })} />
                     <input type="number" min={0} max={100} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
@@ -543,7 +608,7 @@ function CreatePOModal({
                     <p className="text-[10px] text-amber-800/90">{t('purchases.expiry_lots_hint')}</p>
                     {it.expiry_lots.map((lot, li) => (
                       <div key={li} className="flex flex-wrap items-center gap-2">
-                        <DateInput className="input text-xs flex-1 min-w-[8rem]"
+                        <DateInput className="input text-xs flex-1 min-w-[8rem] text-slate-900 font-medium"
                           value={lot.expiry_date || ''}
                           onChange={(v) => updateLot(i, li, { expiry_date: v })} />
                         <input type="number" min={1} className="input text-xs w-20 text-end"
@@ -573,10 +638,13 @@ function CreatePOModal({
             <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(total)}</b></div>
           </div>
         </div>
-        <div className="px-5 py-3 border-t flex justify-end gap-2">
+        <div className="px-5 py-3 border-t flex flex-wrap justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
-          <button onClick={submit} disabled={saving || items.length === 0} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
+          <button onClick={() => submit(false)} disabled={saving || items.length === 0} className="px-4 py-2 text-sm rounded-lg border border-slate-300 bg-white font-medium hover:bg-slate-50 disabled:opacity-50">
             {saving ? t('common.saving') : t('purchases.create_draft')}
+          </button>
+          <button onClick={() => submit(true)} disabled={saving || items.length === 0} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50">
+            {saving ? t('common.saving') : t('purchases.save_and_receive')}
           </button>
         </div>
       </div>
@@ -584,8 +652,14 @@ function CreatePOModal({
   )
 }
 
-function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel }: {
-  po: PurchaseOrder; onClose: () => void; onReceive: () => void; onCancel: () => void; canReceive: boolean; canCancel: boolean
+function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canReceive, canCancel }: {
+  po: PurchaseOrder
+  onClose: () => void
+  onReceive: () => void
+  onCancel: () => void
+  onPrintLabels: () => void
+  canReceive: boolean
+  canCancel: boolean
 }) {
   const { t } = useTranslation()
   const items = po.items || []
@@ -593,6 +667,7 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
     name: (it: POItem) => (i18n.language === 'ar' ? it.product_name_ar : it.product_name_en) || '',
     barcode: (it: POItem) => it.barcode || '',
     quantity: (it: POItem) => Number(it.quantity) || 0,
+    bonus_qty: (it: POItem) => Number(it.bonus_qty) || 0,
     unit_cost: (it: POItem) => Number(it.unit_cost) || 0,
     discount_pct: (it: POItem) => Number(it.discount_pct) || 0,
     vat_pct: (it: POItem) => Number(it.vat_pct) || 0,
@@ -623,6 +698,7 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
                 <SortTh k="name" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_name')}</SortTh>
                 <SortTh k="barcode" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_barcode')}</SortTh>
                 <SortTh k="quantity" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.qty')}</SortTh>
+                <SortTh k="bonus_qty" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.bonus_qty')}</SortTh>
                 <SortTh k="unit_cost" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.cost')}</SortTh>
                 <SortTh k="discount_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.discount_pct')}</SortTh>
                 <SortTh k="vat_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.vat_pct')}</SortTh>
@@ -637,11 +713,12 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
                   <td className="px-3 py-2 text-end">{formatInt(it.quantity)}</td>
+                  <td className="px-3 py-2 text-end text-emerald-700">{formatInt(it.bonus_qty || 0)}</td>
                   <td className="px-3 py-2 text-end">{formatMoney(it.unit_cost)}</td>
                   <td className="px-3 py-2 text-end">{formatNumber(it.discount_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
                   <td className="px-3 py-2 text-end">{formatNumber(it.vat_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
                   <td className="px-3 py-2 text-end">{it.public_price != null ? formatMoney(it.public_price) : '—'}</td>
-                  <td className="px-3 py-2 text-xs">{it.expiry_date || '—'}</td>
+                  <td className="px-3 py-2 text-xs font-medium text-slate-800">{it.expiry_date || '—'}</td>
                   <td className="px-3 py-2 text-end font-semibold">{formatMoney(it.total)}</td>
                 </tr>
               ))}
@@ -654,20 +731,23 @@ function PODetailModal({ po, onClose, onReceive, onCancel, canReceive, canCancel
             <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b></div>
           </div>
         </div>
-        {po.status === 'draft' && (canReceive || canCancel) && (
-          <div className="px-5 py-3 border-t flex justify-end gap-2">
-            {canCancel && (
-              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
-                {t('purchases.cancel')}
-              </button>
-            )}
-            {canReceive && (
-              <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
-                {t('purchases.receive')}
-              </button>
-            )}
-          </div>
-        )}
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          {po.status === 'received' && (
+            <button onClick={onPrintLabels} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-2">
+              <Printer size={14} /> {t('purchases.print_labels')}
+            </button>
+          )}
+          {po.status === 'draft' && canCancel && (
+            <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-red-200 text-red-700 hover:bg-red-50">
+              {t('purchases.cancel')}
+            </button>
+          )}
+          {po.status === 'draft' && canReceive && (
+            <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
+              {t('purchases.receive')}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -976,6 +976,7 @@ interface PharmacyProfile {
   receipt_paper: '58mm' | '80mm' | 'A4'
   receipt_accent: string
   show_logo: boolean
+  show_pharmacy_name: boolean
   show_tax_id: boolean
   show_seller: boolean
   show_customer: boolean
@@ -995,7 +996,7 @@ const EMPTY_PROFILE: PharmacyProfile = {
   receipt_header_ar: '', receipt_header_en: '',
   receipt_footer_ar: 'شكراً لزيارتكم', receipt_footer_en: 'Thank you for your visit',
   receipt_language: 'auto', receipt_paper: '80mm', receipt_accent: '#0EA5E9',
-  show_logo: true, show_tax_id: true, show_seller: true, show_customer: true,
+  show_logo: true, show_pharmacy_name: true, show_tax_id: true, show_seller: true, show_customer: true,
   show_sale_type: true, show_branch: true, show_date: true, show_time: true, show_barcode: true,
   shift_morning_start: '06:00', shift_evening_start: '14:00', shift_night_start: '22:00',
 }
@@ -1152,6 +1153,7 @@ function PharmacyTab() {
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
             <Toggle label={t('settings.pharma.show_logo')} value={p.show_logo} onChange={(v) => set('show_logo', v)} />
+            <Toggle label={t('settings.pharma.show_pharmacy_name')} value={p.show_pharmacy_name} onChange={(v) => set('show_pharmacy_name', v)} />
             <Toggle label={t('settings.pharma.show_tax_id')} value={p.show_tax_id} onChange={(v) => set('show_tax_id', v)} />
             <Toggle label={t('settings.pharma.show_seller')} value={p.show_seller} onChange={(v) => set('show_seller', v)} />
             <Toggle label={t('settings.pharma.show_customer')} value={p.show_customer} onChange={(v) => set('show_customer', v)} />
