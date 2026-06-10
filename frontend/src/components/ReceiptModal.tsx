@@ -127,8 +127,10 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
       JsBarcode(barcodeRef.current, invoice.invoice_number, {
         format: 'CODE128',
         displayValue: true,
-        fontSize: 11,
-        height: 40,
+        fontSize: 13,
+        fontOptions: 'bold',
+        height: 44,
+        width: 2,
         margin: 0,
         background: '#ffffff',
         lineColor: '#000000',

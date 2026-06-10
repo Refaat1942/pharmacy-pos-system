@@ -91,15 +91,22 @@ body {
     max-width: 80mm;
     padding: 0 !important;
     margin: 0 !important;
-    font-family: 'Cairo', Arial, sans-serif;
-    font-size: 11px;
-    line-height: 1.25;
+    font-family: 'Cairo', Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
     color: #000 !important;
+    text-rendering: geometricPrecision;
+    -webkit-font-smoothing: antialiased;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .receipt-print.receipt-paper-58mm { width: 58mm; max-width: 58mm; }
-  .receipt-print.receipt-paper-A4 { width: 190mm; max-width: 190mm; }
+  .receipt-print.receipt-paper-58mm {
+    width: 58mm;
+    max-width: 58mm;
+    font-size: 11px;
+  }
+  .receipt-print.receipt-paper-A4 { width: 190mm; max-width: 190mm; font-size: 13px; }
   .receipt-print * {
     color: #000 !important;
     box-shadow: none !important;
@@ -112,12 +119,58 @@ body {
     border-radius: 0 !important;
   }
   .receipt-print .receipt-pharmacy-name {
-    font-size: 14px !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.02em;
+  }
+  .receipt-print .receipt-meta,
+  .receipt-print .text-xs,
+  .receipt-print .text-sm {
+    font-weight: 600 !important;
+  }
+  .receipt-print .text-gray-400,
+  .receipt-print .text-gray-500,
+  .receipt-print .text-gray-600,
+  .receipt-print .text-gray-700,
+  .receipt-print .text-gray-800,
+  .receipt-print .text-blue-600,
+  .receipt-print .text-blue-700,
+  .receipt-print .text-blue-900 {
+    color: #000 !important;
+    font-weight: 600 !important;
+  }
+  .receipt-print .font-medium { font-weight: 700 !important; }
+  .receipt-print .font-semibold { font-weight: 700 !important; }
+  .receipt-print .font-bold { font-weight: 800 !important; }
+  .receipt-print table thead th {
+    font-weight: 800 !important;
+    font-size: 10px !important;
+    border-bottom: 2px solid #000 !important;
+    color: #000 !important;
+  }
+  .receipt-print table tbody td {
+    font-weight: 600 !important;
+    border-bottom: 1px solid #333 !important;
+  }
+  .receipt-print table tbody td p:first-child {
     font-weight: 700 !important;
+    font-size: 12px !important;
+  }
+  .receipt-print .receipt-info-block {
+    padding: 2px 0 !important;
+    margin-bottom: 4px !important;
+    border-top: 1px dashed #000 !important;
+    border-bottom: 1px dashed #000 !important;
+  }
+  .receipt-print .receipt-info-block .font-mono {
+    font-weight: 800 !important;
   }
   .receipt-print .receipt-header-block { margin-bottom: 4px !important; }
-  .receipt-print .receipt-info-block { padding: 2px 0 !important; margin-bottom: 4px !important; }
   .receipt-print img { max-height: 48px !important; margin-bottom: 4px !important; }
+  .receipt-print svg text {
+    font-weight: 700 !important;
+    fill: #000 !important;
+  }
   .blueprint-print, .blueprint-print * { visibility: visible !important; }
   .blueprint-print {
     position: absolute;
