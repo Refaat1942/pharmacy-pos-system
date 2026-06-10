@@ -81,12 +81,23 @@ body {
 /* Print styles */
 .print-only { display: none; }
 @media print {
-  @page { margin: 1mm 2mm; }
+  /* Thermal roll: no browser margins, height fits content (less blank paper) */
+  @page {
+    margin: 0;
+    size: 80mm auto;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
   body > * { visibility: hidden !important; }
   .receipt-print, .receipt-print * { visibility: visible !important; }
   .receipt-print {
-    position: fixed;
-    left: 0; top: 0;
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 80mm;
     max-width: 80mm;
     padding: 0 !important;
@@ -105,6 +116,56 @@ body {
     width: 58mm;
     max-width: 58mm;
     font-size: 11px;
+  }
+  @page :first {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  /* Collapse screen padding/margins that waste thermal paper */
+  .receipt-print.p-3,
+  .receipt-print.sm\:p-5 {
+    padding: 0 !important;
+  }
+  .receipt-print .mb-1,
+  .receipt-print .mb-2,
+  .receipt-print .mb-3,
+  .receipt-print .mb-4,
+  .receipt-print .mt-2,
+  .receipt-print .mt-3,
+  .receipt-print .pb-1,
+  .receipt-print .pb-2 {
+    margin-top: 0 !important;
+    margin-bottom: 2px !important;
+    padding-bottom: 0 !important;
+  }
+  .receipt-print .p-2,
+  .receipt-print .p-4 {
+    padding: 0 !important;
+  }
+  .receipt-print .py-2\.5 {
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
+  }
+  .receipt-print .space-y-1\.5 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0 !important;
+  }
+  .receipt-print table {
+    margin-bottom: 2px !important;
+  }
+  .receipt-print thead th {
+    padding-bottom: 2px !important;
+  }
+  .receipt-print .receipt-footer-block {
+    margin-top: 2px !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .receipt-print .receipt-barcode-block {
+    margin-top: 2px !important;
+    margin-bottom: 0 !important;
+  }
+  .receipt-print .receipt-logo-placeholder {
+    display: none !important;
   }
   .receipt-print.receipt-paper-A4 { width: 190mm; max-width: 190mm; font-size: 13px; }
   .receipt-print * {

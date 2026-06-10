@@ -167,7 +167,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
               />
             ) : profile?.show_logo !== false ? (
               <div
-                className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
+                className="receipt-logo-placeholder inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
                 style={{ backgroundColor: accent }}
               >
                 <svg viewBox="0 0 24 24" className="w-8 h-8 text-white fill-current">
@@ -348,12 +348,12 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
             )}
           </div>
 
-          <p className="text-center text-xs text-gray-500 pb-1 whitespace-pre-line">{footerText}</p>
-          <CopyrightNotice variant="short" className="text-center text-[10px] text-gray-400 pb-2" />
+          <p className="receipt-footer-block text-center text-xs text-gray-500 pb-1 whitespace-pre-line">{footerText}</p>
+          <CopyrightNotice variant="short" className="no-print text-center text-[10px] text-gray-400 pb-2" />
 
           {/* Scannable barcode at the bottom for fast invoice retrieval */}
           {profile?.show_barcode !== false && (
-            <div className="mt-2 mb-1 flex flex-col items-center" dir="ltr">
+            <div className="receipt-barcode-block mt-2 mb-1 flex flex-col items-center" dir="ltr">
               <svg ref={barcodeRef} />
             </div>
           )}
