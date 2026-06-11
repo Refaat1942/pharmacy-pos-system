@@ -1373,6 +1373,7 @@
   },
   "customers": {
     "title": "Customers",
+    "subtitle": "Pharmacy retail customers only. Digital platform partners (Talabat, Instashop, etc.) are managed under Settings → Digital Platforms.",
     "new": "New Customer",
     "edit": "Edit Customer",
     "empty": "No customers yet",

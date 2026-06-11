@@ -14,7 +14,12 @@ from regions import resolve_region_key, REGIONS
 router = APIRouter(prefix="/api", tags=["customers"])
 
 # Back-compat alias — prefer digital_platforms module.
-from digital_platforms import lookup_platform_partner, platform_display_name as platform_partner_display_name
+from digital_platforms import (
+    is_platform_partner_customer_id,
+    lookup_platform_partner,
+    platform_display_name as platform_partner_display_name,
+    sql_exclude_platform_partner_customers,
+)
 
 PLATFORM_PARTNER_NAMES = {
     "talabat": "Talabat",
@@ -331,13 +336,23 @@ class CustomerIn(BaseModel):
 
 
 @router.get("/customers/v2")
-def list_customers_v2(q: str = "", active_only: bool = True,
-                     current_user=Depends(get_current_user)):
-    """Extended customer list with balance, charged, paid, region."""
+def list_customers_v2(
+    q: str = "",
+    active_only: bool = True,
+    include_platform_partners: bool = False,
+    current_user=Depends(get_current_user),
+):
+    """Extended customer list with balance, charged, paid, region.
+
+  Digital platform B2B partners (Talabat, Instashop, etc.) are excluded by default;
+  manage them under Settings → Digital Platforms.
+    """
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     where = []
     params: list = []
+    if not include_platform_partners:
+        where.append(sql_exclude_platform_partner_customers("c"))
     if active_only:
         where.append("c.active = true")
     if q:
@@ -416,6 +431,11 @@ def update_customer_v2(customer_id: int, req: CustomerIn,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if is_platform_partner_customer_id(cur, customer_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Digital platform partner accounts are managed in Settings → Digital Platforms, not here.",
+            )
         cur.execute("SELECT code FROM customers WHERE id=%s", (customer_id,))
         existing_code_row = cur.fetchone()
         if not existing_code_row:
@@ -475,8 +495,13 @@ def list_customer_branches(customer_id: int, current_user=Depends(get_current_us
 def deactivate_customer(customer_id: int, current_user=Depends(get_current_user)):
     _admin_only(current_user)
     conn = get_db_connection()
-    cur = conn.cursor()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if is_platform_partner_customer_id(cur, customer_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Digital platform partner accounts cannot be removed here — use Settings → Digital Platforms.",
+            )
         cur.execute("UPDATE customers SET active=false WHERE id=%s", (customer_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Customer not found")

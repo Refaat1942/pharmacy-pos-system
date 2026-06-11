@@ -84,6 +84,35 @@ def platform_display_name(platform_key: str, cur=None, lang: str = "en") -> str:
     return platform_key.replace("_", " ").title()
 
 
+def sql_exclude_platform_partner_customers(table_alias: str = "c") -> str:
+    """SQL predicate: true for pharmacy retail customers (not digital B2B partners)."""
+    a = table_alias
+    return f"""NOT EXISTS (
+        SELECT 1 FROM digital_platforms dp
+        WHERE dp.customer_id = {a}.id
+           OR (
+             LOWER(TRIM({a}.name)) = LOWER(TRIM(dp.name_en))
+             OR (
+               dp.name_ar IS NOT NULL AND TRIM(dp.name_ar) <> ''
+               AND LOWER(TRIM({a}.name)) = LOWER(TRIM(dp.name_ar))
+             )
+           )
+    )"""
+
+
+def is_platform_partner_customer_id(cur, customer_id: int) -> bool:
+    cur.execute(
+        f"""
+        SELECT 1 FROM customers c
+        WHERE c.id = %s
+          AND NOT ({sql_exclude_platform_partner_customers("c")})
+        LIMIT 1
+        """,
+        (customer_id,),
+    )
+    return cur.fetchone() is not None
+
+
 def lookup_platform_partner(cur, digital_type: str):
     """Return active customer row for a digital platform partner, or None."""
     ensure_default_platforms(cur)

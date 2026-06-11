@@ -509,13 +509,16 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
 def list_customers(q: str = "", current_user=Depends(get_current_user)):
     """Legacy customer lookup (used by POS). Branch-scoped for non-admins:
     only customers with at least one invoice in the user's branch are visible."""
+    from digital_platforms import sql_exclude_platform_partner_customers
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     like = f"%{q}%"
+    partner_filter = sql_exclude_platform_partner_customers("c")
     if current_user.get("role") == "admin":
         cur.execute(
-            "SELECT * FROM customers WHERE (name ILIKE %s OR phone ILIKE %s) "
-            "AND COALESCE(active, true)=true ORDER BY name LIMIT 30",
+            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
+            f"AND COALESCE(c.active, true)=true AND ({partner_filter}) "
+            f"ORDER BY c.name LIMIT 30",
             (like, like),
         )
     else:
@@ -524,10 +527,10 @@ def list_customers(q: str = "", current_user=Depends(get_current_user)):
             conn.close()
             return []
         cur.execute(
-            "SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
-            "AND COALESCE(c.active, true)=true AND EXISTS "
-            "(SELECT 1 FROM customer_branches cb WHERE cb.customer_id=c.id AND cb.branch_id=%s) "
-            "ORDER BY c.name LIMIT 30",
+            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
+            f"AND COALESCE(c.active, true)=true AND ({partner_filter}) AND EXISTS "
+            f"(SELECT 1 FROM customer_branches cb WHERE cb.customer_id=c.id AND cb.branch_id=%s) "
+            f"ORDER BY c.name LIMIT 30",
             (like, like, ub),
         )
     customers = cur.fetchall()
