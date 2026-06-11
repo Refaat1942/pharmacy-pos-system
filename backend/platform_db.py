@@ -40,6 +40,9 @@ FEATURES_CATALOG = [
     {"key": "hr",         "label": "HR & Payroll",         "default": False},
     {"key": "settings",   "label": "Settings",             "default": True},
     {"key": "ai_assistant", "label": "Smart AI Assistant", "default": True},
+    {"key": "offers",     "label": "Promo Offers",         "default": False},
+    {"key": "loyalty",    "label": "Loyalty Program",      "default": False},
+    {"key": "pos_counseling", "label": "Smart POS Counseling", "default": True},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
@@ -57,7 +60,7 @@ _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     "enterprise": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
         "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
-        "stock_reallocation", "shifts", "hr", "settings",
+        "stock_reallocation", "shifts", "hr", "settings", "offers",
     ],
     "pilot": list(ALL_FEATURE_KEYS),
 }
@@ -115,7 +118,11 @@ DEFAULT_PLANS = [
         "sort_order": 4,
     },
 ]
+<<<<<<< HEAD
 _PENDING_FEATURE_BACKFILL = {"clinics", "ai_assistant"}
+=======
+_PENDING_FEATURE_BACKFILL = {"clinics", "offers"}
+>>>>>>> origin/cursor/offer-generator-96d6
 _FEATURE_ROLLOUT_LOCK = 778001
 _FEATURE_ROLLOUT_SENTINEL = "__seeded__"
 

@@ -10,6 +10,9 @@ interface Props {
   subtotal: number
   invoiceDiscount: number
   netTotal: number
+  offerIds?: number[]
+  offerSavings?: number
+  offerNames?: string
   selectedSeller: Employee | null
   selectedCustomer: Customer | null
   clinicId?: number | null
@@ -23,6 +26,7 @@ type SettlementMethod = (typeof SETTLEMENT_METHODS)[number]
 
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
+  offerIds, offerSavings, offerNames,
   selectedSeller, selectedCustomer, clinicId, prescriptionId, onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
@@ -196,9 +200,14 @@ export default function PaymentModal({
           quantity: item.quantity,
           unit_price: item.unit_price,
           discount: item.discount,
+          offer_id: item.offer_id,
+          offer_discount: item.offer_discount || 0,
           unit_type: item.unit_type || 'pack',
         })),
         discount: invoiceDiscount,
+        offer_ids: offerIds?.length ? offerIds : undefined,
+        offer_savings: offerSavings || 0,
+        offer_names: offerNames || undefined,
         cash_amount:
           paymentMethod === 'cash'
             ? parseFloat(cashAmount) || netTotal

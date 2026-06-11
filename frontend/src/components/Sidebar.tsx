@@ -5,7 +5,7 @@ import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
-  ShieldAlert, Sparkles,
+  ShieldAlert, Sparkles, Gift,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
@@ -35,6 +35,7 @@ const NAV: NavItem[] = [
   { to: '/branches-stock', labelKey: 'nav.branches_stock', Icon: Layers, feature: 'branches_stock' },
   { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
+  { to: '/offers',    labelKey: 'nav.offers',     Icon: Gift,         feature: 'offers', adminOnly: true },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
   { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  feature: 'clinics', adminOnly: true },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },

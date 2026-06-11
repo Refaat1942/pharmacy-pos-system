@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import {
   TrendingUp, DollarSign, RotateCcw, PieChart, Building2, CreditCard,
   Package as PackageIcon, BarChart3, Download, ShieldAlert, Stethoscope,
-  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, Users, Receipt, type LucideIcon,
+  Smartphone, ArrowLeft, FileSpreadsheet, UserRound, Bike, MapPin, Users, Receipt, Gift, type LucideIcon,
 } from 'lucide-react'
 import { ListLoadingPanel } from '../components/LoadingSpinner'
 import Layout from '../components/Layout'
@@ -350,6 +350,7 @@ type ReportId =
   | 'delivery_zones'
   | 'customer_analysis'
   | 'sales_report'
+  | 'offer_sales'
 
 type ReportDef = {
   id: ReportId
@@ -359,6 +360,31 @@ type ReportDef = {
   needsClinics?: boolean
   fixedPeriod?: boolean
   xlsxExport?: boolean
+  needsOffers?: boolean
+}
+
+type OfferSalesReport = {
+  date_from: string
+  date_to: string
+  invoice_count: number
+  total_offer_savings: number
+  invoices: {
+    invoice_number: string
+    created_at: string
+    net_total: number
+    offer_savings: number
+    offer_names: string | null
+    seller_name_en: string | null
+    branch_name_en: string | null
+  }[]
+  by_offer: {
+    offer_id: number
+    name_en: string
+    offer_type: string
+    invoice_count: number
+    total_discount: number
+    units_sold: number
+  }[]
 }
 
 const REPORT_DEFS: ReportDef[] = [
@@ -374,6 +400,7 @@ const REPORT_DEFS: ReportDef[] = [
   { id: 'delivery_zones', labelKey: 'reports.delivery_zones', Icon: MapPin, xlsxExport: true },
   { id: 'customer_analysis', labelKey: 'reports.customer_analysis', Icon: Users, xlsxExport: true },
   { id: 'sales_report', labelKey: 'reports.sales_report', Icon: Receipt, xlsxExport: true },
+  { id: 'offer_sales', labelKey: 'reports.offer_sales', Icon: Gift, xlsxExport: true, needsOffers: true },
   { id: 'sales_by_item', labelKey: 'reports.sales_by_item', Icon: BarChart3 },
   { id: 'top_products', labelKey: 'reports.top_profit_products', Icon: PackageIcon },
 ]
@@ -403,6 +430,7 @@ export default function Reports() {
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZonesReport | null>(null)
   const [customerAnalysis, setCustomerAnalysis] = useState<CustomerAnalysisReport | null>(null)
   const [salesReport, setSalesReport] = useState<SalesReport | null>(null)
+  const [offerSalesReport, setOfferSalesReport] = useState<OfferSalesReport | null>(null)
   const [activeReport, setActiveReport] = useState<ReportId | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -416,6 +444,7 @@ export default function Reports() {
     () => REPORT_DEFS.filter((r) => {
       if (r.adminOnly && !isAdmin) return false
       if (r.needsClinics && !hasFeature('clinics')) return false
+      if (r.needsOffers && !hasFeature('offers')) return false
       return true
     }),
     [isAdmin, hasFeature],
@@ -513,6 +542,11 @@ export default function Reports() {
           setSalesReport(data)
           break
         }
+        case 'offer_sales': {
+          const { data } = await api.get('/reports/offer-sales', { params })
+          setOfferSalesReport(data)
+          break
+        }
       }
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load report')
@@ -554,6 +588,10 @@ export default function Reports() {
       }
       if (activeReport === 'sales_report') {
         await downloadApiExcel('/reports/sales-report/export', `sales_report_${suffix}.xlsx`, dateParams)
+        return
+      }
+      if (activeReport === 'offer_sales') {
+        await downloadApiExcel('/reports/offer-sales/export', `offer_sales_${suffix}.xlsx`, dateParams)
         return
       }
     }
@@ -1210,6 +1248,49 @@ export default function Reports() {
         {/* Sales report */}
         {!loading && activeReport === 'sales_report' && salesReport && (
           <SalesReportPanel report={salesReport} reportFrom={from} reportTo={to} dateParams={dateParams} />
+        )}
+
+        {!loading && activeReport === 'offer_sales' && offerSalesReport && (
+          <section className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-slate-200 p-4">
+                <p className="text-xs text-slate-500 uppercase font-semibold">{t('reports.offer_invoices')}</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{offerSalesReport.invoice_count}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-pharma-100 p-4">
+                <p className="text-xs text-pharma-700 uppercase font-semibold">{t('reports.offer_total_savings')}</p>
+                <p className="text-2xl font-bold text-pharma-700 mt-1">{fmt(offerSalesReport.total_offer_savings)}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className="px-4 py-3 border-b font-semibold text-slate-800">{t('reports.offer_by_promo')}</div>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 text-start">{t('offers.col_name')}</th>
+                    <th className="px-3 py-2 text-start">{t('offers.col_type')}</th>
+                    <th className="px-3 py-2 text-end">{t('reports.invoices')}</th>
+                    <th className="px-3 py-2 text-end">{t('reports.offer_units')}</th>
+                    <th className="px-3 py-2 text-end">{t('reports.total_discount')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {offerSalesReport.by_offer.map((r) => (
+                    <tr key={r.offer_id} className="border-t border-slate-100">
+                      <td className="px-3 py-2 font-medium">{r.name_en}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.offer_type}</td>
+                      <td className="px-3 py-2 text-end tabular-nums">{r.invoice_count}</td>
+                      <td className="px-3 py-2 text-end tabular-nums">{r.units_sold}</td>
+                      <td className="px-3 py-2 text-end tabular-nums font-semibold text-pharma-700">{fmt(r.total_discount)}</td>
+                    </tr>
+                  ))}
+                  {offerSalesReport.by_offer.length === 0 && (
+                    <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('common.no_data')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
 
         {/* Delivery zones */}

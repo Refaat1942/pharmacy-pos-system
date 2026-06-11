@@ -19,10 +19,13 @@ FEATURE_LABELS_AR = {
     "reports": "التقارير والتحليلات",
     "fraud_surveillance": "مراقبة الاحتيال",
     "stock_reallocation": "إعادة توزيع المخزون",
+    "offers": "العروض الترويجية",
     "shifts": "درج النقدية / الورديات",
     "hr": "الموارد البشرية والمرتبات",
     "settings": "الإعدادات",
     "ai_assistant": "المساعد الذكي",
+    "loyalty": "برنامج الولاء",
+    "pos_counseling": "نصائح ذكية في نقطة البيع",
 }
 
 BLUEPRINT_META = {

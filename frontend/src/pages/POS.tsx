@@ -35,6 +35,8 @@ import {
   looksLikeScannerInput,
   matchProductByBarcode,
 } from '../lib/barcodeSearch'
+import { applyOffersToCart, type PromoOffer } from '../lib/offerEngine'
+import OffersPosButton from '../components/OffersPosButton'
 
 interface HeldCart {
   id: string
@@ -188,6 +190,23 @@ export default function POS() {
   const [shiftLoading, setShiftLoading] = useState(true)
 
   const [pharmacyName, setPharmacyName] = useState<string>('')
+  const [activeOffers, setActiveOffers] = useState<PromoOffer[]>([])
+  const offersEnabled = hasFeature('offers')
+
+  const pricedCart = useMemo(() => {
+    if (!offersEnabled || !activeOffers.length) {
+      return {
+        items: cartItems,
+        offerIds: [] as number[],
+        offerSavings: 0,
+        offerNames: '',
+      }
+    }
+    return applyOffersToCart(cartItems, activeOffers)
+  }, [cartItems, activeOffers, offersEnabled])
+
+  const displayCart = pricedCart.items
+
   const refreshShift = useCallback(() => {
     setShiftLoading(true)
     api.get('/shifts/current')
@@ -219,9 +238,16 @@ export default function POS() {
       .catch(() => setPharmacyName(''))
   }, [lang])
 
+  useEffect(() => {
+    if (!offersEnabled) return
+    api.get<PromoOffer[]>('/offers/active')
+      .then((r) => setActiveOffers(r.data))
+      .catch(() => setActiveOffers([]))
+  }, [offersEnabled])
+
   const subtotal = useMemo(
-    () => cartItems.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
-    [cartItems]
+    () => displayCart.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
+    [displayCart]
   )
   const effectiveInvoiceDiscount = Math.min(
     subtotal,
@@ -577,7 +603,19 @@ export default function POS() {
                   {pharmacyName ? `${t('nav.pos')} • ${t('pos.header_hint')}` : t('pos.header_hint')}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {offersEnabled && activeOffers.length > 0 && (
+                  <OffersPosButton
+                    offers={activeOffers}
+                    onSelectProduct={async (productId) => {
+                      try {
+                        const r = await productsAPI.search(String(productId))
+                        const p = r.data.find((x) => x.id === productId)
+                        if (p) addToCart(p)
+                      } catch { /* ignore */ }
+                    }}
+                  />
+                )}
                 {hasFeature('clinics') && <PrescriptionBell onLoad={loadPrescription} />}
                 <button
                   type="button"
@@ -739,7 +777,7 @@ export default function POS() {
                     </div>
                   )}
                   <div className="divide-y divide-slate-100">
-                    {cartItems.map((item) => {
+                    {displayCart.map((item) => {
                       const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
                       const itemTotal = item.quantity * item.unit_price - item.discount
                       const pack = Math.max(1, item.product.pack_size || 1)
@@ -754,6 +792,11 @@ export default function POS() {
                             <p className="text-[11px] text-slate-400 tabular-nums">
                               {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
                             </p>
+                            {(item.offer_discount || 0) > 0 && (
+                              <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-wide text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">
+                                <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
+                              </span>
+                            )}
                             {hasSub && (
                               <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
                                 <button
@@ -1028,6 +1071,12 @@ export default function POS() {
                 {t('pos.egp')} {formatMoney(subtotal)}
               </span>
             </div>
+            {pricedCart.offerSavings > 0 && (
+              <div className="flex justify-between text-sm text-pharma-700 bg-pharma-50 rounded-lg px-3 py-2 border border-pharma-100">
+                <span className="font-medium">{t('pos.offer_savings')}</span>
+                <span className="font-bold tabular-nums">− {t('pos.egp')} {formatMoney(pricedCart.offerSavings)}</span>
+              </div>
+            )}
 
             <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2.5">
               <label className="flex items-center gap-2 text-sm font-bold text-amber-900">
@@ -1113,10 +1162,13 @@ export default function POS() {
 
       {showPaymentModal && (
         <PaymentModal
-          cartItems={cartItems}
+          cartItems={displayCart}
           subtotal={subtotal}
           invoiceDiscount={effectiveInvoiceDiscount}
           netTotal={netTotal}
+          offerIds={pricedCart.offerIds}
+          offerSavings={pricedCart.offerSavings}
+          offerNames={pricedCart.offerNames}
           selectedSeller={selectedSeller}
           selectedCustomer={selectedCustomer}
           clinicId={rxClinic?.id ?? null}
