@@ -35,6 +35,7 @@ import {
   looksLikeScannerInput,
   matchProductByBarcode,
 } from '../lib/barcodeSearch'
+import PosQuickItems from '../components/PosQuickItems'
 
 interface HeldCart {
   id: string
@@ -694,6 +695,8 @@ export default function POS() {
                   )}
                 </div>
               )}
+
+              <PosQuickItems onAdd={addToCart} />
             </div>
           </div>
 

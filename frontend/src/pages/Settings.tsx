@@ -10,6 +10,7 @@ import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import CopyrightNotice from '../components/CopyrightNotice'
+import PosQuickItemsSettings from '../components/PosQuickItemsSettings'
 
 interface UserRow {
   id: number
@@ -989,6 +990,7 @@ interface PharmacyProfile {
   shift_morning_start: string
   shift_evening_start: string
   shift_night_start: string
+  pos_quick_items: number[]
 }
 
 const EMPTY_PROFILE: PharmacyProfile = {
@@ -1000,6 +1002,7 @@ const EMPTY_PROFILE: PharmacyProfile = {
   show_logo: true, show_pharmacy_name: true, show_pharmacy_name_on_labels: true, show_tax_id: true, show_seller: true, show_customer: true,
   show_sale_type: true, show_branch: true, show_date: true, show_time: true, show_barcode: true,
   shift_morning_start: '06:00', shift_evening_start: '14:00', shift_night_start: '22:00',
+  pos_quick_items: [],
 }
 
 function PharmacyTab() {
@@ -1017,6 +1020,7 @@ function PharmacyTab() {
         for (const k of ['shift_morning_start', 'shift_evening_start', 'shift_night_start']) {
           if (d[k] && typeof d[k] === 'string' && d[k].length >= 5) d[k] = d[k].slice(0, 5)
         }
+        if (!Array.isArray(d.pos_quick_items)) d.pos_quick_items = []
         setP({ ...EMPTY_PROFILE, ...d })
       })
       .catch(() => {})
@@ -1183,6 +1187,11 @@ function PharmacyTab() {
             </Field>
           </div>
         </div>
+
+        <PosQuickItemsSettings
+          productIds={p.pos_quick_items}
+          onChange={(ids) => set('pos_quick_items', ids)}
+        />
 
         <div className="flex items-center gap-3">
           <button onClick={save} disabled={saving} className="px-5 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm shadow">

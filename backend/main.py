@@ -401,6 +401,43 @@ def get_product(product_id: int, current_user=Depends(get_current_user)):
     return dict(product)
 
 
+@app.get("/api/pos/quick-items")
+def pos_quick_items(
+    current_user=Depends(get_current_user),
+    active_branch=Depends(get_active_branch_id),
+):
+    """Small / change items configured for one-tap add on POS (tissues, bags, etc.)."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT pos_quick_items FROM pharmacy_profile WHERE id = 1")
+        row = cur.fetchone()
+        ids = row.get("pos_quick_items") if row else None
+        if not ids or not isinstance(ids, list):
+            return []
+        id_list = [int(x) for x in ids if str(x).isdigit() or isinstance(x, int)]
+        if not id_list:
+            return []
+        placeholders = ",".join(["%s"] * len(id_list))
+        cur.execute(
+            f"""SELECT * FROM products
+                WHERE id IN ({placeholders}) AND active = true""",
+            id_list,
+        )
+        by_id = {int(p["id"]): dict(p) for p in cur.fetchall()}
+        out = []
+        for pid in id_list:
+            p = by_id.get(pid)
+            if not p:
+                continue
+            if active_branch is not None and p.get("branch_id") not in (None, active_branch):
+                continue
+            out.append(p)
+        return out
+    finally:
+        conn.close()
+
+
 class ProductCreate(BaseModel):
     barcode: Optional[str] = None
     international_barcode: Optional[str] = None

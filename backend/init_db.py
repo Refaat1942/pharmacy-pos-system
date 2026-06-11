@@ -574,6 +574,7 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFA
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS pos_quick_items JSONB DEFAULT '[]'::jsonb;
 """
 
 
