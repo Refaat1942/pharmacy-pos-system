@@ -16,7 +16,6 @@ import {
   Pause,
   ClipboardList,
   ExternalLink,
-  Pill,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ComponentType } from 'react'
@@ -40,7 +39,9 @@ import {
 import { applyOffersToCart, type PromoOffer } from '../lib/offerEngine'
 import OffersPosButton from '../components/OffersPosButton'
 import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
+import PosItemDoseLabel from '../components/PosItemDoseLabel'
 import PosQuickItems from '../components/PosQuickItems'
+import type { DosePresetCustom } from '../lib/dosePresets'
 
 interface HeldCart {
   id: string
@@ -195,6 +196,8 @@ export default function POS() {
   const [shiftLoading, setShiftLoading] = useState(true)
 
   const [pharmacyName, setPharmacyName] = useState<string>('')
+  const [doseLabelPresets, setDoseLabelPresets] = useState<DosePresetCustom[]>([])
+  const [showPharmacyOnLabels, setShowPharmacyOnLabels] = useState(true)
   const [activeOffers, setActiveOffers] = useState<PromoOffer[]>([])
   const offersEnabled = hasFeature('offers')
 
@@ -262,15 +265,35 @@ export default function POS() {
   }, [])
 
   useEffect(() => {
-    api.get<{ name_en?: string | null; name_ar?: string | null }>('/settings/profile')
+    api.get<{
+      name_en?: string | null
+      name_ar?: string | null
+      dose_label_presets?: DosePresetCustom[]
+      show_pharmacy_name_on_labels?: boolean
+    }>('/settings/profile')
       .then((r) => {
         const n = lang === 'ar'
           ? (r.data.name_ar || r.data.name_en || '')
           : (r.data.name_en || r.data.name_ar || '')
         setPharmacyName(n || '')
+        setDoseLabelPresets(Array.isArray(r.data.dose_label_presets) ? r.data.dose_label_presets : [])
+        setShowPharmacyOnLabels(r.data.show_pharmacy_name_on_labels !== false)
       })
-      .catch(() => setPharmacyName(''))
+      .catch(() => {
+        setPharmacyName('')
+        setDoseLabelPresets([])
+      })
   }, [lang])
+
+  const openDoseLabelEditor = useCallback((item: CartItem, displayName: string, doseText = '') => {
+    setDoseLabelItems([{
+      id: item.product.id,
+      name: displayName || item.product.name_en,
+      doseText,
+      defaultQty: item.quantity,
+      patientName: selectedCustomer?.name || '',
+    }])
+  }, [selectedCustomer])
 
   useEffect(() => {
     if (!offersEnabled) return
@@ -839,6 +862,16 @@ export default function POS() {
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
                               </span>
                             )}
+                            <PosItemDoseLabel
+                              productId={item.product.id}
+                              productName={name || item.product.name_en}
+                              patientName={selectedCustomer?.name || ''}
+                              defaultQty={item.quantity}
+                              customPresets={doseLabelPresets}
+                              pharmacyName={pharmacyName}
+                              showPharmacyOnLabels={showPharmacyOnLabels}
+                              onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
+                            />
                             {hasSub && (
                               <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
                                 <button
@@ -925,20 +958,6 @@ export default function POS() {
                           <div className="w-24 text-end font-bold text-pharma-700 tabular-nums text-sm">
                             {t('pos.egp')} {formatMoney(itemTotal)}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setDoseLabelItems([{
-                              id: item.product.id,
-                              name: name || item.product.name_en,
-                              doseText: '',
-                              defaultQty: 1,
-                              patientName: selectedCustomer?.name || '',
-                            }])}
-                            className="text-slate-400 hover:text-blue-600 transition-colors p-1"
-                            title={t('dose_labels.pos_btn') as string}
-                          >
-                            <Pill size={15} />
-                          </button>
                           <button
                             onClick={() => removeFromCart(item.product.id)}
                             className="text-slate-300 hover:text-red-500 transition-colors p-1"

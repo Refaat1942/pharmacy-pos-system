@@ -109,7 +109,8 @@
     "print_toolbar_title": "Dose labels — ready to print",
     "print_toolbar_btn": "Select printer & print",
     "print_toolbar_hint": "Use your thermal label printer (38mm). Scale 100%.",
-    "pos_btn": "Print dose label"
+    "pos_btn": "Dose label",
+    "pos_more": "More options"
   },
   "nav": {
     "pos": "Point of Sale",
