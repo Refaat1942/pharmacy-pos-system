@@ -60,7 +60,7 @@ _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     "enterprise": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
         "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
-        "stock_reallocation", "shifts", "hr", "settings", "offers",
+        "stock_reallocation", "shifts", "hr", "settings", "offers", "loyalty",
     ],
     "pilot": list(ALL_FEATURE_KEYS),
 }
@@ -118,11 +118,7 @@ DEFAULT_PLANS = [
         "sort_order": 4,
     },
 ]
-<<<<<<< HEAD
-_PENDING_FEATURE_BACKFILL = {"clinics", "ai_assistant"}
-=======
-_PENDING_FEATURE_BACKFILL = {"clinics", "offers"}
->>>>>>> origin/cursor/offer-generator-96d6
+_PENDING_FEATURE_BACKFILL = {"clinics", "ai_assistant", "offers", "loyalty", "pos_counseling"}
 _FEATURE_ROLLOUT_LOCK = 778001
 _FEATURE_ROLLOUT_SENTINEL = "__seeded__"
 

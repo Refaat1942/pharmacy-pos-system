@@ -39,6 +39,7 @@ import {
 import { applyOffersToCart, type PromoOffer } from '../lib/offerEngine'
 import OffersPosButton from '../components/OffersPosButton'
 import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
+import PosQuickItems from '../components/PosQuickItems'
 
 interface HeldCart {
   id: string
@@ -735,6 +736,8 @@ export default function POS() {
                   )}
                 </div>
               )}
+
+              <PosQuickItems onAdd={addToCart} />
             </div>
           </div>
 

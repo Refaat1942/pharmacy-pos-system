@@ -23,6 +23,7 @@ PROFILE_FIELDS = [
     "show_sale_type", "show_branch", "show_date", "show_time", "show_barcode",
     "shift_morning_start", "shift_evening_start", "shift_night_start",
     "dose_label_presets",
+    "pos_quick_items",
 ]
 
 
@@ -56,6 +57,7 @@ class ProfilePatch(BaseModel):
     shift_evening_start: Optional[str] = None
     shift_night_start:   Optional[str] = None
     dose_label_presets: Optional[List[dict]] = None
+    pos_quick_items: Optional[List[int]] = None
 
 
 def _ensure_profile_row(cur):
@@ -144,6 +146,21 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
                     "text_ar": text_ar or text_en,
                 })
             values.append(psycopg2.extras.Json(cleaned))
+        elif k == "pos_quick_items":
+            if not isinstance(v, list):
+                raise HTTPException(400, "pos_quick_items must be an array of product IDs")
+            cleaned_ids: list[int] = []
+            seen: set[int] = set()
+            for raw in v[:30]:
+                try:
+                    pid = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if pid <= 0 or pid in seen:
+                    continue
+                seen.add(pid)
+                cleaned_ids.append(pid)
+            values.append(psycopg2.extras.Json(cleaned_ids))
         else:
             values.append(v)
     fields.append("updated_at = NOW()")

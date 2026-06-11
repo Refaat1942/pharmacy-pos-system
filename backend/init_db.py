@@ -608,6 +608,8 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS offer_names TEXT;
 
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS offer_id INTEGER REFERENCES promo_offers(id);
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS offer_discount DECIMAL(10,2) DEFAULT 0;
+
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS pos_quick_items JSONB DEFAULT '[]'::jsonb;
 """
 
 
