@@ -270,4 +270,14 @@ If something goes wrong:
 
 ---
 
+## 13. New features (2026 update)
+
+The following modules were added recently: **Smart AI assistant**, **Customer WhatsApp**, **Promo offers**, **Dose label printing**, **POS quick items**, **Loyalty program**, and **Smart POS counseling**.
+
+For full step-by-step instructions (setup, POS usage, admin rules, and troubleshooting), see:
+
+**[NEW_FEATURES_MANUAL_EN.md](./NEW_FEATURES_MANUAL_EN.md)**
+
+---
+
 *This manual covers everyday use. For technical issues, server administration, deployment, and troubleshooting, see the separate technical handover document (HANDOVER.md / TROUBLESHOOTING.md).*
