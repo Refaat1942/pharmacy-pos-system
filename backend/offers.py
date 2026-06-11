@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 import psycopg2.extras
 
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id, requires_feature
+from deps import get_current_user, get_active_branch_id, requires_feature, requires_feature_option
 from offer_engine import OFFER_TYPES, apply_offers_to_cart
 
 router = APIRouter(prefix="/api/offers", tags=["offers"])
@@ -174,7 +174,7 @@ def active_offers(
         conn.close()
 
 
-@router.post("", dependencies=[Depends(requires_feature("offers"))])
+@router.post("", dependencies=[Depends(requires_feature("offers")), Depends(requires_feature_option("offers", "manage"))])
 def create_offer(body: OfferIn, current_user=Depends(get_current_user)):
     _require_admin(current_user)
     _validate_offer_type(body)
@@ -226,7 +226,7 @@ def create_offer(body: OfferIn, current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.put("/{offer_id}", dependencies=[Depends(requires_feature("offers"))])
+@router.put("/{offer_id}", dependencies=[Depends(requires_feature("offers")), Depends(requires_feature_option("offers", "manage"))])
 def update_offer(offer_id: int, body: OfferIn, current_user=Depends(get_current_user)):
     _require_admin(current_user)
     _validate_offer_type(body)
@@ -281,7 +281,7 @@ def update_offer(offer_id: int, body: OfferIn, current_user=Depends(get_current_
         conn.close()
 
 
-@router.delete("/{offer_id}", dependencies=[Depends(requires_feature("offers"))])
+@router.delete("/{offer_id}", dependencies=[Depends(requires_feature("offers")), Depends(requires_feature_option("offers", "manage"))])
 def delete_offer(offer_id: int, current_user=Depends(get_current_user)):
     _require_admin(current_user)
     conn = get_db_connection()

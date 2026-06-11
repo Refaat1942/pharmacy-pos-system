@@ -39,11 +39,22 @@ function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
   return token ? <>{children}</> : <Navigate to="/platform/login" replace />
 }
 
-function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature?: string }) {
-  const { isAuthenticated, hasFeature, user } = useAuth()
+function ProtectedRoute({
+  children,
+  feature,
+  featureOption,
+}: {
+  children: React.ReactNode
+  feature?: string
+  featureOption?: string
+}) {
+  const { isAuthenticated, hasFeature, hasFeatureOption, user } = useAuth()
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (!user) return <Navigate to="/login" replace />
   if (feature && !canAccessFeature(user, feature, hasFeature)) {
+    return <Navigate to={getDefaultHomePath(user, hasFeature)} replace />
+  }
+  if (feature && featureOption && !hasFeatureOption(feature, featureOption)) {
     return <Navigate to={getDefaultHomePath(user, hasFeature)} replace />
   }
   return <>{children}</>
@@ -66,7 +77,7 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute feature="pos"><POS /></ProtectedRoute>} />
       <Route path="/sales" element={<ProtectedRoute feature="sales"><Sales /></ProtectedRoute>} />
-      <Route path="/deliveries" element={<ProtectedRoute feature="sales"><Deliveries /></ProtectedRoute>} />
+      <Route path="/deliveries" element={<ProtectedRoute feature="sales" featureOption="deliveries"><Deliveries /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute feature="inventory"><Inventory /></ProtectedRoute>} />
       <Route path="/transfers" element={<ProtectedRoute feature="transfers"><Transfers /></ProtectedRoute>} />
       <Route path="/branches-stock" element={<ProtectedRoute feature="branches_stock"><BranchesStock /></ProtectedRoute>} />
@@ -85,9 +96,9 @@ function AppRoutes() {
       <Route path="/offers" element={<ProtectedRoute feature="offers"><Offers /></ProtectedRoute>} />
       <Route path="/shifts" element={<ProtectedRoute feature="shifts"><Shifts /></ProtectedRoute>} />
       <Route path="/hr" element={<ProtectedRoute feature="hr"><HR /></ProtectedRoute>} />
-      <Route path="/hr/cards" element={<ProtectedRoute feature="hr"><EmployeeCards /></ProtectedRoute>} />
-      <Route path="/settings/login-cards" element={<ProtectedRoute feature="settings"><UserCards /></ProtectedRoute>} />
-      <Route path="/clock" element={isAuthenticated ? <Clock /> : <Navigate to="/login" replace />} />
+      <Route path="/hr/cards" element={<ProtectedRoute feature="hr" featureOption="employee_cards"><EmployeeCards /></ProtectedRoute>} />
+      <Route path="/settings/login-cards" element={<ProtectedRoute feature="settings" featureOption="login_cards"><UserCards /></ProtectedRoute>} />
+      <Route path="/clock" element={<ProtectedRoute feature="hr" featureOption="clock"><Clock /></ProtectedRoute>} />
       <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />

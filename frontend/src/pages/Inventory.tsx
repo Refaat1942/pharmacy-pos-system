@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
@@ -30,6 +30,7 @@ import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
 import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import { useAuth } from '../lib/auth'
+import { inventoryTabEnabled } from '../lib/featureGates'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 const SORT_TH_CLASS = 'font-semibold text-xs uppercase tracking-wider'
@@ -199,10 +200,22 @@ function stockQtyBoxes(i: { stock: number; pack_size?: number | null }): number 
 export default function Inventory() {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
-  const { user } = useAuth()
+  const { user, hasFeatureOption } = useAuth()
   const isAdmin = user?.role === 'admin'
 
+  const tabAllowed = useCallback((k: Tab) => inventoryTabEnabled(k, hasFeatureOption), [hasFeatureOption])
+  const visibleTabs = useMemo(
+    () => (['items', 'barcodes', 'dose_labels', 'branch_stock', 'stocktake', 'movements', 'velocity', 'alerts'] as Tab[])
+      .filter(tabAllowed),
+    [tabAllowed],
+  )
   const [tab, setTab] = useState<Tab>('items')
+
+  useEffect(() => {
+    if (!visibleTabs.includes(tab)) {
+      setTab(visibleTabs[0] ?? 'items')
+    }
+  }, [visibleTabs, tab])
   const [items, setItems] = useState<Product[]>([])
   const [itemStats, setItemStats] = useState<{ total: number; zero: number; low_stock: number; stock_value: number } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -354,7 +367,7 @@ export default function Inventory() {
             ['movements', t('inventory.tab_movements')],
             ['velocity', t('inventory.tab_velocity')],
             ['alerts', t('inventory.tab_alerts')],
-          ] as [Tab, string][]).map(([k, label]) => (
+          ] as [Tab, string][]).filter(([k]) => tabAllowed(k)).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}

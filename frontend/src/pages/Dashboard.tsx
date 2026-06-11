@@ -39,7 +39,12 @@ function dashboardBranchHeaders(branchFilter: string, isAdmin: boolean) {
 
 export default function Dashboard() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeatureOption } = useAuth()
+  const showKpis = hasFeatureOption('dashboard', 'kpis')
+  const showCharts = hasFeatureOption('dashboard', 'charts')
+  const showTopLists = hasFeatureOption('dashboard', 'top_lists')
+  const showAlerts = hasFeatureOption('dashboard', 'alerts')
+  const showProfitMargin = hasFeatureOption('dashboard', 'profit_margin')
   const lang = i18n.language
   const isAdmin = user?.role === 'admin'
 
@@ -197,6 +202,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <>
+              {showKpis && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KpiCard
                   icon={<TrendingUp size={18} />}
@@ -223,7 +229,9 @@ export default function Dashboard() {
                   tone="green"
                 />
               </div>
+              )}
 
+              {showProfitMargin && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                   <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
@@ -280,8 +288,9 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+              )}
 
-              {alerts && (alerts.expired_count > 0 || alerts.near_expiry_count > 0 ||
+              {showAlerts && alerts && (alerts.expired_count > 0 || alerts.near_expiry_count > 0 ||
                           alerts.low_stock_count > 0 || alerts.returns_high) && (
                 <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-2">
                   <h2 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5">
@@ -309,6 +318,7 @@ export default function Dashboard() {
                 </div>
               )}
 
+              {showCharts && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5">
                 <h2 className="text-sm font-bold text-gray-700 mb-4">{t('dashboard.last_7_days')}</h2>
                 <div className="flex items-end gap-3 h-48">
@@ -334,7 +344,9 @@ export default function Dashboard() {
                   })}
                 </div>
               </div>
+              )}
 
+              {showTopLists && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
                   <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
@@ -406,6 +418,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
+              )}
             </>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -63,8 +63,25 @@ const roleClass: Record<string, string> = {
 export default function Settings() {
   const { t } = useTranslation()
   const { user, hasFeatureOption } = useAuth()
-  const platformsTabOn = hasFeatureOption('settings', 'digital_platforms')
-  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual'>('users')
+  const tabOn = {
+    users: hasFeatureOption('settings', 'users'),
+    branches: hasFeatureOption('settings', 'branches'),
+    pharmacy: hasFeatureOption('settings', 'pharmacy'),
+    platforms: hasFeatureOption('settings', 'digital_platforms'),
+    manual: hasFeatureOption('settings', 'manual'),
+  }
+  const defaultTab = (['users', 'branches', 'pharmacy', 'platforms', 'manual'] as const)
+    .find((k) => tabOn[k]) ?? 'users'
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual'>(defaultTab)
+
+  const firstOpenTab = useCallback(() => {
+    const order = ['users', 'branches', 'pharmacy', 'platforms', 'manual'] as const
+    return order.find((k) => tabOn[k]) ?? 'users'
+  }, [tabOn])
+
+  useEffect(() => {
+    if (!tabOn[tab]) setTab(firstOpenTab())
+  }, [tab, tabOn, firstOpenTab])
 
   if (user?.role !== 'admin') {
     return (
@@ -85,21 +102,29 @@ export default function Settings() {
           <p className="text-sm text-slate-500 mt-0.5">{t('settings.subtitle')}</p>
         </div>
 
-        <div className="flex border-b border-slate-200 mb-5">
-          <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
-          <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
-          <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
-          {platformsTabOn && (
+        <div className="flex border-b border-slate-200 mb-5 flex-wrap">
+          {tabOn.users && (
+            <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
+          )}
+          {tabOn.branches && (
+            <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
+          )}
+          {tabOn.pharmacy && (
+            <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
+          )}
+          {tabOn.platforms && (
             <TabButton active={tab === 'platforms'} onClick={() => setTab('platforms')} icon={<Bike size={15} />} label={t('settings.platforms_tab')} />
           )}
-          <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
+          {tabOn.manual && (
+            <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
+          )}
         </div>
 
-        {tab === 'users' && <UsersTab />}
-        {tab === 'branches' && <BranchesTab />}
-        {tab === 'pharmacy' && <PharmacyTab />}
-        {tab === 'platforms' && platformsTabOn && <DigitalPlatformsSettings />}
-        {tab === 'manual' && <ManualTab />}
+        {tab === 'users' && tabOn.users && <UsersTab />}
+        {tab === 'branches' && tabOn.branches && <BranchesTab />}
+        {tab === 'pharmacy' && tabOn.pharmacy && <PharmacyTab />}
+        {tab === 'platforms' && tabOn.platforms && <DigitalPlatformsSettings />}
+        {tab === 'manual' && tabOn.manual && <ManualTab />}
       </div>
     </Layout>
   )

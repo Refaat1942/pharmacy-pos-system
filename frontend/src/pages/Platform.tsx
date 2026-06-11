@@ -534,9 +534,9 @@ function FeatureOptionsPicker({
   }
 
   return (
-    <div className="mt-4 space-y-3">
-      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-        Inside each feature
+    <div className="mt-4 space-y-3 max-h-[min(28rem,50vh)] overflow-y-auto pe-1">
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide sticky top-0 bg-white py-1 z-10">
+        Inside each feature ({groups.length} modules)
       </p>
       {groups.map((group) => (
         <div key={group.feature} className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">

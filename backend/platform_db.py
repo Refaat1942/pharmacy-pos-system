@@ -48,46 +48,17 @@ DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
 
 # Sub-controls inside a parent feature (superadmin toggles per tenant).
+# Every key in FEATURES_CATALOG must appear here exactly once.
 FEATURE_OPTIONS_CATALOG = [
     {
-        "feature": "loyalty",
-        "label": "Loyalty Program",
+        "feature": "dashboard",
+        "label": "Dashboard",
         "options": [
-            {"key": "admin_settings", "label": "Admin rules & calculator", "default": True},
-            {"key": "pos_redeem", "label": "Redeem points at POS", "default": True},
-            {"key": "members_export", "label": "Members Excel export", "default": True},
-        ],
-    },
-    {
-        "feature": "offers",
-        "label": "Promo Offers",
-        "options": [
-            {"key": "manage", "label": "Create & edit offers", "default": True},
-            {"key": "pos_auto_apply", "label": "Auto-apply at POS", "default": True},
-            {"key": "reports", "label": "Offer sales report", "default": True},
-        ],
-    },
-    {
-        "feature": "ai_assistant",
-        "label": "Smart AI Assistant",
-        "options": [
-            {"key": "widget", "label": "Floating assistant widget", "default": True},
-            {"key": "openai", "label": "OpenAI answers (not FAQ only)", "default": True},
-        ],
-    },
-    {
-        "feature": "pos_counseling",
-        "label": "Smart POS Counseling",
-        "options": [
-            {"key": "tips", "label": "Counseling tips on scan", "default": True},
-            {"key": "related_products", "label": "Suggest related products", "default": True},
-        ],
-    },
-    {
-        "feature": "customers",
-        "label": "Customers",
-        "options": [
-            {"key": "whatsapp", "label": "WhatsApp button on customers", "default": True},
+            {"key": "kpis", "label": "Sales KPI cards", "default": True},
+            {"key": "charts", "label": "Sales charts", "default": True},
+            {"key": "top_lists", "label": "Top products & sellers", "default": True},
+            {"key": "alerts", "label": "Operational alerts", "default": True},
+            {"key": "profit_margin", "label": "Profit margin panel", "default": True},
         ],
     },
     {
@@ -100,13 +71,206 @@ FEATURE_OPTIONS_CATALOG = [
         ],
     },
     {
+        "feature": "sales",
+        "label": "Sales History",
+        "options": [
+            {"key": "history", "label": "Sales list & invoice detail", "default": True},
+            {"key": "deliveries", "label": "Delivery queue", "default": True},
+            {"key": "inline_refund", "label": "Refund shortcut from POS / sales", "default": True},
+            {"key": "export", "label": "Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "returns",
+        "label": "Returns",
+        "options": [
+            {"key": "list", "label": "Returns list", "default": True},
+            {"key": "process", "label": "Process returns", "default": True},
+        ],
+    },
+    {
+        "feature": "inventory",
+        "label": "Inventory",
+        "options": [
+            {"key": "items", "label": "Products list & edit", "default": True},
+            {"key": "barcodes", "label": "Barcode labels", "default": True},
+            {"key": "dose_labels", "label": "Dose label templates", "default": True},
+            {"key": "branch_stock", "label": "Branch stock tab", "default": True},
+            {"key": "stocktake", "label": "Stocktake", "default": True},
+            {"key": "movements", "label": "Stock movements", "default": True},
+            {"key": "velocity", "label": "Velocity report", "default": True},
+            {"key": "alerts", "label": "Consumption alerts", "default": True},
+            {"key": "import_export", "label": "Bulk import & export", "default": True},
+        ],
+    },
+    {
+        "feature": "transfers",
+        "label": "Branch Transfers",
+        "options": [
+            {"key": "list", "label": "View transfers", "default": True},
+            {"key": "create", "label": "Create transfers", "default": True},
+            {"key": "receive", "label": "Receive & cancel", "default": True},
+        ],
+    },
+    {
+        "feature": "branches_stock",
+        "label": "Branches Stock Overview",
+        "options": [
+            {"key": "view", "label": "Multi-branch matrix", "default": True},
+            {"key": "export", "label": "Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "expiry",
+        "label": "Expiry Tracking",
+        "options": [
+            {"key": "near_expiry", "label": "Near expiry list", "default": True},
+            {"key": "expired", "label": "Expired products", "default": True},
+            {"key": "export", "label": "Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "purchases",
+        "label": "Purchase Orders",
+        "options": [
+            {"key": "orders", "label": "PO list & create", "default": True},
+            {"key": "receive", "label": "Receive goods", "default": True},
+            {"key": "replenishment", "label": "Replenishment suggestions", "default": True},
+        ],
+    },
+    {
+        "feature": "suppliers",
+        "label": "Suppliers",
+        "options": [
+            {"key": "manage", "label": "Supplier list & edit", "default": True},
+            {"key": "payments", "label": "Payments & statements", "default": True},
+        ],
+    },
+    {
+        "feature": "customers",
+        "label": "Customers / Accounts",
+        "options": [
+            {"key": "manage", "label": "Customer list & edit", "default": True},
+            {"key": "credit_accounts", "label": "Credit / on-account", "default": True},
+            {"key": "payments", "label": "Record payments", "default": True},
+            {"key": "whatsapp", "label": "WhatsApp button", "default": True},
+            {"key": "bulk_import", "label": "Bulk Excel import", "default": True},
+        ],
+    },
+    {
+        "feature": "clinics",
+        "label": "Clinics & Prescriptions",
+        "options": [
+            {"key": "admin", "label": "Manage clinics", "default": True},
+            {"key": "pos_prescriptions", "label": "POS prescription bell", "default": True},
+            {"key": "portal", "label": "Clinic portal (RX submit)", "default": True},
+        ],
+    },
+    {
+        "feature": "reports",
+        "label": "Reports & Analytics",
+        "options": [
+            {"key": "financial", "label": "P&L, trend, category, branch", "default": True},
+            {"key": "sales", "label": "Sales by item, seller, top products", "default": True},
+            {"key": "delivery", "label": "Delivery reports", "default": True},
+            {"key": "digital", "label": "Digital platform account", "default": True},
+            {"key": "clinic", "label": "Clinic sales report", "default": True},
+            {"key": "customer", "label": "Customer analysis", "default": True},
+            {"key": "payment", "label": "Payment breakdown", "default": True},
+            {"key": "export", "label": "Excel export on reports", "default": True},
+        ],
+    },
+    {
+        "feature": "fraud_surveillance",
+        "label": "Fraud Surveillance",
+        "options": [
+            {"key": "alerts", "label": "Alert feed", "default": True},
+            {"key": "export", "label": "Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "stock_reallocation",
+        "label": "Smart Stock Reallocation",
+        "options": [
+            {"key": "suggestions", "label": "Reallocation suggestions", "default": True},
+            {"key": "export", "label": "Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "shifts",
+        "label": "Cash Shifts",
+        "options": [
+            {"key": "open_close", "label": "Open & close shifts", "default": True},
+            {"key": "history", "label": "Shift history", "default": True},
+            {"key": "reports", "label": "Shift reports", "default": True},
+            {"key": "delivery_roster", "label": "Delivery person roster", "default": True},
+        ],
+    },
+    {
+        "feature": "hr",
+        "label": "HR & Payroll",
+        "options": [
+            {"key": "employees", "label": "Employees tab", "default": True},
+            {"key": "attendance", "label": "Attendance tab", "default": True},
+            {"key": "payroll", "label": "Payroll tab", "default": True},
+            {"key": "performance", "label": "Performance tab", "default": True},
+            {"key": "clock", "label": "Clock kiosk screen", "default": True},
+            {"key": "employee_cards", "label": "Employee QR cards", "default": True},
+        ],
+    },
+    {
         "feature": "settings",
         "label": "Settings",
         "options": [
-            {"key": "digital_platforms", "label": "Manage digital platforms tab", "default": True},
+            {"key": "users", "label": "Users tab", "default": True},
+            {"key": "branches", "label": "Branches tab", "default": True},
+            {"key": "pharmacy", "label": "Pharmacy profile tab", "default": True},
+            {"key": "digital_platforms", "label": "Digital platforms tab", "default": True},
+            {"key": "manual", "label": "User manual tab", "default": True},
+            {"key": "login_cards", "label": "Login card printing", "default": True},
+        ],
+    },
+    {
+        "feature": "ai_assistant",
+        "label": "Smart AI Assistant",
+        "options": [
+            {"key": "widget", "label": "Floating assistant widget", "default": True},
+            {"key": "openai", "label": "OpenAI answers (not FAQ only)", "default": True},
+        ],
+    },
+    {
+        "feature": "offers",
+        "label": "Promo Offers",
+        "options": [
+            {"key": "manage", "label": "Create & edit offers", "default": True},
+            {"key": "pos_auto_apply", "label": "Auto-apply at POS", "default": True},
+            {"key": "reports", "label": "Offer sales report", "default": True},
+        ],
+    },
+    {
+        "feature": "loyalty",
+        "label": "Loyalty Program",
+        "options": [
+            {"key": "admin_settings", "label": "Admin rules & calculator", "default": True},
+            {"key": "pos_redeem", "label": "Redeem points at POS", "default": True},
+            {"key": "members_export", "label": "Members Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "pos_counseling",
+        "label": "Smart POS Counseling",
+        "options": [
+            {"key": "tips", "label": "Counseling tips on scan", "default": True},
+            {"key": "related_products", "label": "Suggest related products", "default": True},
         ],
     },
 ]
+
+_catalog_features = {g["feature"] for g in FEATURE_OPTIONS_CATALOG}
+assert _catalog_features == ALL_FEATURE_KEYS, (
+    f"FEATURE_OPTIONS_CATALOG must cover every feature: "
+    f"missing={ALL_FEATURE_KEYS - _catalog_features}, extra={_catalog_features - ALL_FEATURE_KEYS}"
+)
 
 # Default feature bundles per plan (used when seeding platform.plans).
 _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {

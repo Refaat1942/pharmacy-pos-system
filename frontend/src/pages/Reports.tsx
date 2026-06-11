@@ -14,6 +14,7 @@ import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { platformBadgeClass, platformDisplayLabel } from '../lib/digitalPlatforms'
 import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
+import { reportOptionEnabled } from '../lib/featureGates'
 import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay, formatDateTime } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
 
@@ -448,6 +449,7 @@ export default function Reports() {
       if (r.adminOnly && !isAdmin) return false
       if (r.needsClinics && !hasFeature('clinics')) return false
       if (r.needsOffers && (!hasFeature('offers') || !hasFeatureOption('offers', 'reports'))) return false
+      if (!reportOptionEnabled(r.id, hasFeatureOption)) return false
       return true
     }),
     [isAdmin, hasFeature, hasFeatureOption],

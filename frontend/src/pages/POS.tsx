@@ -205,6 +205,8 @@ export default function POS() {
   const counselingRelatedOn = hasFeature('pos_counseling') && hasFeatureOption('pos_counseling', 'related_products')
   const doseLabelsOn = hasFeature('pos') && hasFeatureOption('pos', 'dose_labels')
   const quickItemsOn = hasFeature('pos') && hasFeatureOption('pos', 'quick_items')
+  const clinicsRxOn = hasFeature('clinics') && hasFeatureOption('clinics', 'pos_prescriptions')
+  const inlineRefundOn = hasFeature('sales') && hasFeatureOption('sales', 'inline_refund')
 
   const pricedCart = useMemo(() => {
     if (!offersAutoApply || !activeOffers.length) {
@@ -702,7 +704,7 @@ export default function POS() {
                     }}
                   />
                 )}
-                {hasFeature('clinics') && <PrescriptionBell onLoad={loadPrescription} />}
+                {clinicsRxOn && <PrescriptionBell onLoad={loadPrescription} />}
                 <button
                   type="button"
                   onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}
@@ -712,6 +714,7 @@ export default function POS() {
                   <ExternalLink size={14} />
                   {t('pos.new_window')}
                 </button>
+                {inlineRefundOn && (
                 <Link
                   to="/sales?refund=1"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl px-3 py-2 transition-colors"
@@ -719,6 +722,7 @@ export default function POS() {
                 >
                   <RotateCcw size={14} /> {t('pos.refund_receipt')}
                 </Link>
+                )}
               </div>
             </div>
           </div>

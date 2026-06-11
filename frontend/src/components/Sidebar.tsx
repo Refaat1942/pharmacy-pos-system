@@ -18,6 +18,8 @@ interface NavItem {
   adminOnly?: boolean
   roles?: string[]
   feature?: string
+  /** Sub-option inside `feature` (tenant feature_options). */
+  featureOption?: string
   /** Time clock kiosk — visible to every logged-in user */
   clockScreen?: boolean
   /** Pinned above footer — always visible, never inside scroll container */
@@ -28,7 +30,7 @@ const NAV: NavItem[] = [
   { to: '/dashboard', labelKey: 'nav.dashboard', Icon: BarChart3,    feature: 'dashboard' },
   { to: '/',          labelKey: 'nav.pos',        Icon: ShoppingCart, feature: 'pos' },
   { to: '/sales',     labelKey: 'nav.sales',      Icon: History,      feature: 'sales' },
-  { to: '/deliveries', labelKey: 'nav.deliveries', Icon: Bike,        feature: 'sales' },
+  { to: '/deliveries', labelKey: 'nav.deliveries', Icon: Bike,        feature: 'sales', featureOption: 'deliveries' },
   { to: '/returns',   labelKey: 'nav.returns',    Icon: RotateCcw,    feature: 'returns' },
   { to: '/inventory', labelKey: 'nav.inventory',  Icon: Package,      feature: 'inventory' },
   { to: '/transfers', labelKey: 'nav.transfers',  Icon: ArrowRightLeft, feature: 'transfers' },
@@ -42,7 +44,7 @@ const NAV: NavItem[] = [
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
   { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
-  { to: '/clock',     labelKey: 'nav.clock',      Icon: Clock,        clockScreen: true },
+  { to: '/clock',     labelKey: 'nav.clock',      Icon: Clock,        feature: 'hr', featureOption: 'clock', clockScreen: true },
   { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       roles: ['admin', 'branch'] },
   { to: '/fraud',     labelKey: 'nav.fraud',      Icon: ShieldAlert,  feature: 'fraud_surveillance', adminOnly: true, pinned: true },
   { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist'], pinned: true },
@@ -94,7 +96,7 @@ function NavLinks({
 export default function Sidebar() {
   const { t } = useTranslation()
   const location = useLocation()
-  const { user, hasFeature } = useAuth()
+  const { user, hasFeature, hasFeatureOption } = useAuth()
   const isAdmin = user?.role === 'admin'
   const isBranch = user?.role === 'branch'
   const userPerms = !isAdmin && Array.isArray(user?.permissions) ? new Set(user!.permissions as string[]) : null
@@ -111,6 +113,7 @@ export default function Sidebar() {
     }
     if (isBranch && (!n.feature || !BRANCH_ALLOWED.has(n.feature))) return false
     if (n.feature && !hasFeature(n.feature)) return false
+    if (n.feature && n.featureOption && !hasFeatureOption(n.feature, n.featureOption)) return false
     if (userPerms && n.feature) {
       if (n.feature === 'hr') {
         if (!canAccessHr(user)) return false
@@ -119,7 +122,7 @@ export default function Sidebar() {
       }
     }
     return true
-  }), [isAdmin, isBranch, user, userPerms, hasFeature])
+  }), [isAdmin, isBranch, user, userPerms, hasFeature, hasFeatureOption])
 
   const scrollItems = useMemo(() => visibleNav.filter((n) => !n.pinned), [visibleNav])
   const pinnedItems = useMemo(() => visibleNav.filter((n) => n.pinned), [visibleNav])

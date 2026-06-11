@@ -6,6 +6,7 @@ import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/Data
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { allowedHrTabs, canAccessHr, canManageEmployees, canRecordAttendance, hasHrTab } from '../lib/hrAccess'
+import { hrTabEnabled } from '../lib/featureGates'
 import HrUnauthorized from '../components/HrUnauthorized'
 import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
@@ -68,9 +69,12 @@ const ym = () => today().slice(0, 7)
 
 export default function HR() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeatureOption } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const allowedTabs = useMemo(() => allowedHrTabs(user), [user])
+  const allowedTabs = useMemo(
+    () => allowedHrTabs(user).filter((tab) => hrTabEnabled(tab, hasFeatureOption)),
+    [user, hasFeatureOption],
+  )
   const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>(
     () => allowedTabs[0] ?? 'attendance',
   )
