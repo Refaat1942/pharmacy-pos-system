@@ -1311,7 +1311,11 @@
     "imported": "imported",
     "updated_count": "updated",
     "errors": "errors",
-    "show_errors": "Show error details"
+    "show_errors": "Show error details",
+    "customer_card": "Customer Card",
+    "view_card": "View customer card",
+    "whatsapp_chat": "WhatsApp",
+    "whatsapp_open": "Open WhatsApp chat"
   },
   "dashboard": {
     "title": "Operational Dashboard",

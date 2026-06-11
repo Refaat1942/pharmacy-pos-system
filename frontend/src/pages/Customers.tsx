@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet } from 'lucide-react'
 import Layout from '../components/Layout'
 import RegionSelect from '../components/RegionSelect'
+import CustomerInfoCard from '../components/CustomerInfoCard'
+import CustomerWhatsAppButton from '../components/CustomerWhatsAppButton'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
@@ -25,6 +27,7 @@ export default function Customers() {
   const [statement, setStatement] = useState<any>(null)
   const [paying, setPaying] = useState<Customer | null>(null)
   const [showUpload, setShowUpload] = useState(false)
+  const [viewing, setViewing] = useState<Customer | null>(null)
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
 
   const filter = useQuickFilter(list, [
@@ -132,8 +135,22 @@ export default function Customers() {
                 return (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-3 py-2 font-mono text-xs text-slate-600">{c.code || '—'}</td>
-                    <td className="px-3 py-2 font-medium">{c.name}</td>
-                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">{c.phone || '—'}</td>
+                    <td className="px-3 py-2 font-medium">
+                      <button
+                        type="button"
+                        onClick={() => setViewing(c)}
+                        className="text-start hover:text-pharma-700 hover:underline"
+                        title={t('customers.view_card') as string}
+                      >
+                        {c.name}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600 font-mono text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <span>{c.phone || '—'}</span>
+                        <CustomerWhatsAppButton phone={c.phone} customerName={c.name} />
+                      </div>
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{regionLabel(c.region, lang) || '—'}</td>
                     <td className="px-3 py-2 text-end">{limit > 0 ? limit.toFixed(2) : '—'}</td>
                     <td className="px-3 py-2 text-end">{Number(c.total_charged || 0).toFixed(2)}</td>
@@ -176,6 +193,7 @@ export default function Customers() {
       </main>
 
       {editing && <EditModal initial={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {viewing && <CustomerCardModal customer={viewing} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} />}
       {statement && <StatementModal data={statement} onClose={() => setStatement(null)} />}
       {paying && <PaymentModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />}
       {showUpload && <CustomerUploadModal onClose={() => setShowUpload(false)} onDone={() => { setShowUpload(false); load() }} />}
@@ -279,6 +297,69 @@ function CustomerUploadModal({ onClose, onDone }: { onClose: () => void; onDone:
   )
 }
 
+function CustomerCardModal({
+  customer,
+  onClose,
+  onEdit,
+}: {
+  customer: Customer
+  onClose: () => void
+  onEdit: () => void
+}) {
+  const { t } = useTranslation()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h2 className="font-bold text-lg">{t('customers.customer_card')}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <CustomerInfoCard customer={customer} />
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            {customer.email && (
+              <>
+                <dt className="text-slate-500">{t('customers.col_email')}</dt>
+                <dd className="text-slate-800 break-all">{customer.email}</dd>
+              </>
+            )}
+            {customer.address_details && (
+              <>
+                <dt className="text-slate-500">{t('customers.col_address_details')}</dt>
+                <dd className="text-slate-800 col-span-1">{customer.address_details}</dd>
+              </>
+            )}
+            {customer.credit_limit != null && Number(customer.credit_limit) > 0 && (
+              <>
+                <dt className="text-slate-500">{t('customers.col_limit')}</dt>
+                <dd className="text-slate-800">{Number(customer.credit_limit).toFixed(2)}</dd>
+              </>
+            )}
+            {customer.region && (
+              <>
+                <dt className="text-slate-500">{t('customers.col_region')}</dt>
+                <dd className="text-slate-800">{regionLabel(customer.region, lang)}</dd>
+              </>
+            )}
+          </dl>
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.close')}</button>
+          {isAdmin && (
+            <button onClick={onEdit} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700">
+              {t('common.edit')}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
@@ -318,6 +399,9 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3 max-h-[75vh] overflow-auto">
+          {f.id && f.name && (
+            <CustomerInfoCard customer={f as Customer} showBalance={false} />
+          )}
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_code')}</label>
             <input value={f.code || ''} onChange={(e) => setF({ ...f, code: e.target.value.toUpperCase() })}
@@ -412,9 +496,8 @@ function StatementModal({ data, onClose }: { data: any; onClose: () => void }) {
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 overflow-auto flex-1">
-          <div className="mb-3 text-sm">
-            <span className="text-slate-500">{t('customers.col_balance')}: </span>
-            <b className={data.balance > 0 ? 'text-amber-700' : 'text-emerald-700'}>{Number(data.balance).toFixed(2)}</b>
+          <div className="mb-4">
+            <CustomerInfoCard customer={data.customer} />
           </div>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-500">
@@ -489,10 +572,7 @@ function PaymentModal({ customer, onClose, onSaved }: { customer: Customer; onCl
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-3">
-          <div className="text-sm">
-            <span className="text-slate-500">{t('customers.col_balance')}: </span>
-            <b className={Number(customer.balance) > 0 ? 'text-amber-700' : ''}>{Number(customer.balance).toFixed(2)}</b>
-          </div>
+          <CustomerInfoCard customer={customer} />
           <div>
             <label className="text-xs text-slate-600 font-medium">
               {t('customers.against_invoice')}{!isAdmin && ' *'}

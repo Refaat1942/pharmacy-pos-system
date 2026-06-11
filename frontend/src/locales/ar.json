@@ -1311,7 +1311,11 @@
     "imported": "تم إضافتهم",
     "updated_count": "تم تحديثهم",
     "errors": "أخطاء",
-    "show_errors": "عرض تفاصيل الأخطاء"
+    "show_errors": "عرض تفاصيل الأخطاء",
+    "customer_card": "بطاقة العميل",
+    "view_card": "عرض بطاقة العميل",
+    "whatsapp_chat": "واتساب",
+    "whatsapp_open": "فتح محادثة واتساب"
   },
   "dashboard": {
     "title": "لوحة التحكم التشغيلية",
