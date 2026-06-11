@@ -1424,5 +1424,22 @@
     "restore": "Restore",
     "notify_title": "New prescription",
     "notify_body": "{{count}} prescription(s) waiting in the queue"
+  },
+  "assistant": {
+    "title": "Smart Assistant",
+    "ask": "Ask AI",
+    "open": "Open assistant",
+    "close": "Close assistant",
+    "welcome": "Hi! Ask me anything about POS, inventory, sales, shifts, labels, customers, or how to use this system.",
+    "placeholder": "Ask about POS, inventory, backup…",
+    "send": "Send",
+    "thinking": "Thinking…",
+    "error": "Could not get a reply. Please try again.",
+    "mode_ai": "AI answers",
+    "mode_faq": "Quick help",
+    "suggest_sale": "How do I make a sale?",
+    "suggest_return": "How do I process a return?",
+    "suggest_barcode": "How to print barcode labels?",
+    "suggest_shift": "How do I open a cash shift?"
   }
 }

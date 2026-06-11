@@ -39,6 +39,7 @@ FEATURES_CATALOG = [
     {"key": "shifts",     "label": "Cash Shifts",          "default": True},
     {"key": "hr",         "label": "HR & Payroll",         "default": False},
     {"key": "settings",   "label": "Settings",             "default": True},
+    {"key": "ai_assistant", "label": "Smart AI Assistant", "default": True},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
@@ -114,7 +115,7 @@ DEFAULT_PLANS = [
         "sort_order": 4,
     },
 ]
-_PENDING_FEATURE_BACKFILL = {"clinics"}
+_PENDING_FEATURE_BACKFILL = {"clinics", "ai_assistant"}
 _FEATURE_ROLLOUT_LOCK = 778001
 _FEATURE_ROLLOUT_SENTINEL = "__seeded__"
 
