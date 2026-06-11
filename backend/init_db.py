@@ -574,6 +574,39 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFA
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
+
+-- Promotional offers (superadmin feature: offers)
+CREATE TABLE IF NOT EXISTS promo_offers (
+    id SERIAL PRIMARY KEY,
+    name_en VARCHAR(120) NOT NULL,
+    name_ar VARCHAR(120),
+    offer_type VARCHAR(30) NOT NULL,
+    discount_percent DECIMAL(6,2),
+    discount_amount DECIMAL(10,2),
+    priority INTEGER DEFAULT 0,
+    active BOOLEAN DEFAULT true,
+    valid_from DATE,
+    valid_to DATE,
+    branch_ids INTEGER[],
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_promo_offers_active ON promo_offers(active, priority);
+
+CREATE TABLE IF NOT EXISTS promo_offer_products (
+    offer_id INTEGER NOT NULL REFERENCES promo_offers(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    PRIMARY KEY (offer_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_promo_offer_products_product ON promo_offer_products(product_id);
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS offer_ids INTEGER[];
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS offer_savings DECIMAL(10,2) DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS offer_names TEXT;
+
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS offer_id INTEGER REFERENCES promo_offers(id);
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS offer_discount DECIMAL(10,2) DEFAULT 0;
 """
 
 

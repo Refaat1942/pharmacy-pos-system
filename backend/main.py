@@ -153,6 +153,8 @@ from shifts import router as shifts_router
 app.include_router(shifts_router, dependencies=[Depends(requires_feature("shifts"))])
 from hr import router as hr_router
 app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
+from offers import router as offers_router
+app.include_router(offers_router)
 from platform_api import router as platform_router
 app.include_router(platform_router)
 
@@ -630,6 +632,8 @@ class InvoiceItemInput(BaseModel):
     quantity: int
     unit_price: float
     discount: float = 0.0
+    offer_id: Optional[int] = None
+    offer_discount: float = 0.0
     # "pack" (main unit, default) or "sub" (inner unit when pack_size > 1)
     unit_type: Optional[str] = "pack"
 
@@ -655,6 +659,9 @@ class SaleRequest(BaseModel):
     delivery_person_name: Optional[str] = None
     account_paid_amount: Optional[float] = None
     account_paid_method: Optional[str] = None
+    offer_ids: Optional[List[int]] = None
+    offer_savings: float = 0.0
+    offer_names: Optional[str] = None
 
 
 @app.post("/api/sales")
@@ -836,20 +843,25 @@ def create_sale(req: SaleRequest,
             if _is_shipment_sale(req.type, req.delivery_address)
             else None
         )
+        offer_ids_val = req.offer_ids if req.offer_ids else None
+        offer_savings_val = float(req.offer_savings or 0)
+        offer_names_val = (req.offer_names or "").strip() or None
         cur.execute(
             """INSERT INTO invoices
                (invoice_number, type, payment_method, digital_type,
                 subtotal, discount, net_total, cash_amount, visa_amount,
                 change_amount, seller_id, customer_id, branch_id, clinic_id, prescription_id, notes,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone,
-                delivery_person_id, delivery_person_name, delivery_status)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                delivery_person_id, delivery_person_name, delivery_status,
+                offer_ids, offer_savings, offer_names)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
-             delivery_person_id, delivery_person_name, delivery_status),
+             delivery_person_id, delivery_person_name, delivery_status,
+             offer_ids_val, offer_savings_val, offer_names_val),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
@@ -902,14 +914,17 @@ def create_sale(req: SaleRequest,
                 unit_label = prod["unit"] or "unit"
                 line_pack = pack_size
             item_total = item.quantity * item.unit_price - item.discount
+            offer_disc = float(item.offer_discount or 0)
             cur.execute(
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
-                    barcode, quantity, unit_price, discount, total, unit_label, pack_size)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    barcode, quantity, unit_price, discount, total, unit_label, pack_size,
+                    offer_id, offer_discount)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, item.discount,
-                 item_total, unit_label, line_pack),
+                 item_total, unit_label, line_pack,
+                 item.offer_id, offer_disc),
             )
             deduct_stock_fefo(cur, item.product_id, stock_used, today=today)
             new_stock = sync_product_from_batches(cur, item.product_id)

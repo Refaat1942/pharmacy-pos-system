@@ -550,7 +550,14 @@ export default function Sales() {
                         className="hover:bg-gray-50/80 transition-colors"
                       >
                         <td className="px-3 py-3 font-mono text-xs font-bold text-gray-900 whitespace-nowrap">
-                          {inv.invoice_number}
+                          <div className="flex flex-col gap-0.5">
+                            {inv.invoice_number}
+                            {!inv.isReturn && (inv.offer_savings || 0) > 0 && (
+                              <span className="inline-flex w-fit text-[9px] font-bold uppercase tracking-wide bg-pharma-100 text-pharma-800 px-1.5 py-0.5 rounded-full">
+                                {t('sales.promo_badge')}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-3 text-gray-500 text-xs whitespace-nowrap">
                           {formatDateTime(inv.created_at)}
@@ -732,6 +739,12 @@ export default function Sales() {
                   <DetailRow label={t('sales.customer')} value={customerDisplay(inv)} />
                   <DetailRow label={t('sales.customer_phone')} value={phoneDisplay(inv)} />
                   <DetailRow label={t('sales.clinic')} value={inv.clinic_name} />
+                  {(inv.offer_savings || 0) > 0 && (
+                    <DetailRow
+                      label={t('sales.promo_offer')}
+                      value={`${inv.offer_names || t('sales.promo_offer')} (−${Number(inv.offer_savings).toFixed(2)})`}
+                    />
+                  )}
                 </div>
               </div>
               {(inv.type === 'delivery' || inv.delivery_address || inv.delivery_person_name) && (

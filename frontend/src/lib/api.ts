@@ -81,6 +81,8 @@ export interface CartItem {
   discount: number
   discount_mode?: 'amount' | 'percent'
   discount_value?: number
+  offer_id?: number
+  offer_discount?: number
   // 'pack' = sell as main unit (Box), 'sub' = sell as inner unit (Strip).
   // When pack_size <= 1 this is always 'pack'.
   unit_type?: 'pack' | 'sub'
@@ -96,6 +98,8 @@ export interface InvoiceItem {
   unit_price: number
   discount: number
   total: number
+  offer_id?: number | null
+  offer_discount?: number
   unit_label?: string | null
   pack_size?: number
   prod_unit?: string | null
@@ -136,6 +140,9 @@ export interface Invoice {
   delivery_customer_name?: string | null
   delivery_customer_phone?: string | null
   delivery_status?: string | null
+  offer_ids?: number[] | null
+  offer_savings?: number
+  offer_names?: string | null
 }
 
 export interface SaleResponse {
@@ -208,8 +215,19 @@ export const salesAPI = {
     type: string
     payment_method: string
     digital_type?: string
-    items: { product_id: number; quantity: number; unit_price: number; discount: number }[]
+    items: {
+      product_id: number
+      quantity: number
+      unit_price: number
+      discount: number
+      offer_id?: number
+      offer_discount?: number
+      unit_type?: string
+    }[]
     discount: number
+    offer_ids?: number[]
+    offer_savings?: number
+    offer_names?: string
     cash_amount?: number
     visa_amount?: number
     customer_id?: number

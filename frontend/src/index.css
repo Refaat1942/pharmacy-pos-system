@@ -243,3 +243,36 @@ body {
   .print-only { display: block !important; }
   .no-print { display: none !important; }
 }
+
+/* POS animated offers button */
+.offers-glow-btn {
+  background: linear-gradient(135deg, #059669 0%, #0d9488 45%, #0891b2 100%);
+  animation: offers-pulse 2.8s ease-in-out infinite;
+}
+.offers-glow-btn__shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 65%
+  );
+  transform: translateX(-120%);
+  animation: offers-shine 3.2s ease-in-out infinite;
+}
+.offers-glow-btn__icon {
+  animation: offers-sparkle 1.6s ease-in-out infinite;
+}
+@keyframes offers-pulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35); transform: scale(1); }
+  50% { box-shadow: 0 6px 22px rgba(8, 145, 178, 0.55); transform: scale(1.02); }
+}
+@keyframes offers-shine {
+  0%, 40% { transform: translateX(-120%); }
+  60%, 100% { transform: translateX(120%); }
+}
+@keyframes offers-sparkle {
+  0%, 100% { transform: rotate(0deg) scale(1); opacity: 1; }
+  50% { transform: rotate(12deg) scale(1.12); opacity: 0.92; }
+}

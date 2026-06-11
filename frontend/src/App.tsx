@@ -21,6 +21,7 @@ import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import FraudSurveillance from './pages/FraudSurveillance'
 import StockReallocation from './pages/StockReallocation'
+import Offers from './pages/Offers'
 import Shifts from './pages/Shifts'
 import HR from './pages/HR'
 import Clock from './pages/Clock'
@@ -79,6 +80,7 @@ function AppRoutes() {
       <Route path="/reports" element={<ProtectedRoute feature="reports"><Reports /></ProtectedRoute>} />
       <Route path="/fraud" element={<ProtectedRoute feature="fraud_surveillance"><FraudSurveillance /></ProtectedRoute>} />
       <Route path="/stock-reallocation" element={<ProtectedRoute feature="stock_reallocation"><StockReallocation /></ProtectedRoute>} />
+      <Route path="/offers" element={<ProtectedRoute feature="offers"><Offers /></ProtectedRoute>} />
       <Route path="/shifts" element={<ProtectedRoute feature="shifts"><Shifts /></ProtectedRoute>} />
       <Route path="/hr" element={<ProtectedRoute feature="hr"><HR /></ProtectedRoute>} />
       <Route path="/hr/cards" element={<ProtectedRoute feature="hr"><EmployeeCards /></ProtectedRoute>} />

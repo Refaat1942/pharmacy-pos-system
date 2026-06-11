@@ -2261,3 +2261,128 @@ def export_sales_report(
         fname = f"sales_report_{sec}.xlsx"
         return xlsx_response(headers, data, fname)
     return xlsx_multi_sheet(sheets, "sales_report.xlsx")
+
+
+@router.get("/offer-sales")
+def offer_sales_report(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    _check_role(current_user)
+    active_branch_id = _resolve_report_branch(request, current_user)
+    df, dt = _date_range(date_from, date_to)
+    bf, bp = _branch_filter(current_user, active_branch_id)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            f"""
+            SELECT
+              i.id,
+              i.invoice_number,
+              i.created_at,
+              i.net_total,
+              i.offer_savings,
+              i.offer_names,
+              i.offer_ids,
+              u.name_en AS seller_name_en,
+              u.name_ar AS seller_name_ar,
+              b.name_en AS branch_name_en,
+              b.name_ar AS branch_name_ar
+            FROM invoices i
+            LEFT JOIN users u ON u.id = i.seller_id
+            LEFT JOIN branches b ON b.id = i.branch_id
+            WHERE i.status = 'completed'
+              AND i.type != 'return'
+              AND COALESCE(i.offer_savings, 0) > 0
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            ORDER BY i.created_at DESC
+            """,
+            [df, dt] + bp,
+        )
+        invoices = [dict(r) for r in cur.fetchall()]
+
+        cur.execute(
+            f"""
+            SELECT
+              po.id AS offer_id,
+              po.name_en,
+              po.name_ar,
+              po.offer_type,
+              COUNT(DISTINCT i.id)::int AS invoice_count,
+              COALESCE(SUM(ii.offer_discount), 0)::float AS total_discount,
+              COALESCE(SUM(ii.quantity), 0)::int AS units_sold
+            FROM invoice_items ii
+            JOIN invoices i ON i.id = ii.invoice_id
+            JOIN promo_offers po ON po.id = ii.offer_id
+            WHERE i.status = 'completed'
+              AND i.type != 'return'
+              AND ii.offer_id IS NOT NULL
+              AND i.created_at >= %s::date AND i.created_at < (%s::date + INTERVAL '1 day')
+              {bf.replace('branch_id', 'i.branch_id')}
+            GROUP BY po.id, po.name_en, po.name_ar, po.offer_type
+            ORDER BY total_discount DESC
+            """,
+            [df, dt] + bp,
+        )
+        by_offer = [dict(r) for r in cur.fetchall()]
+
+        total_savings = sum(float(r.get("offer_savings") or 0) for r in invoices)
+        return {
+            "date_from": str(df),
+            "date_to": str(dt),
+            "invoice_count": len(invoices),
+            "total_offer_savings": round(total_savings, 2),
+            "invoices": invoices,
+            "by_offer": by_offer,
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/offer-sales/export")
+def export_offer_sales(
+    request: Request,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    from excel_utils import xlsx_multi_sheet
+
+    report = offer_sales_report(request, date_from, date_to, current_user)
+    inv_headers = [
+        "Invoice", "Date", "Branch", "Seller", "Net total", "Offer savings", "Offers",
+    ]
+    inv_rows = []
+    for r in report["invoices"]:
+        inv_rows.append([
+            r.get("invoice_number"),
+            _fmt_display_date(r.get("created_at")),
+            r.get("branch_name_en") or "",
+            r.get("seller_name_en") or "",
+            float(r.get("net_total") or 0),
+            float(r.get("offer_savings") or 0),
+            r.get("offer_names") or "",
+        ])
+    offer_headers = ["Offer", "Type", "Invoices", "Units", "Total discount"]
+    offer_rows = []
+    for r in report["by_offer"]:
+        offer_rows.append([
+            r.get("name_en") or "",
+            r.get("offer_type") or "",
+            int(r.get("invoice_count") or 0),
+            int(r.get("units_sold") or 0),
+            float(r.get("total_discount") or 0),
+        ])
+    sheets = [
+        ("Summary", ["Metric", "Value"], [
+            ["Invoices with offers", report["invoice_count"]],
+            ["Total offer savings", report["total_offer_savings"]],
+        ]),
+        ("By offer", offer_headers, offer_rows),
+        ("Invoices", inv_headers, inv_rows),
+    ]
+    return xlsx_multi_sheet(sheets, "offer_sales.xlsx")
