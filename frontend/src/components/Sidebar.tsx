@@ -5,7 +5,7 @@ import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
-  ShieldAlert, Sparkles,
+  ShieldAlert, Sparkles, Award,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
   { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
   { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
   { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
+  { to: '/loyalty',   labelKey: 'nav.loyalty',    Icon: Award,        feature: 'loyalty', adminOnly: true },
   { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  feature: 'clinics', adminOnly: true },
   { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
   { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },

@@ -574,6 +574,36 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFA
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
+
+-- Loyalty program
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_enabled BOOLEAN DEFAULT false;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_points_per_egp DECIMAL(10,4) DEFAULT 1.0;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_egp_per_point DECIMAL(10,4) DEFAULT 0.1;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_min_redeem INTEGER DEFAULT 100;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_min_sale_egp DECIMAL(10,2) DEFAULT 0;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_earn_on_account BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_max_redeem_pct DECIMAL(6,2) DEFAULT 50;
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points INTEGER DEFAULT 0;
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS loyalty_points_earned INTEGER DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS loyalty_points_redeemed INTEGER DEFAULT 0;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS loyalty_discount DECIMAL(10,2) DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS loyalty_transactions (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    invoice_id INTEGER REFERENCES invoices(id),
+    kind VARCHAR(30) NOT NULL,
+    points INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    sale_amount DECIMAL(12,2),
+    notes TEXT,
+    recorded_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS loyalty_transactions_customer_idx ON loyalty_transactions(customer_id);
+CREATE INDEX IF NOT EXISTS loyalty_transactions_created_idx ON loyalty_transactions(created_at DESC);
 """
 
 

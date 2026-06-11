@@ -39,6 +39,7 @@ FEATURES_CATALOG = [
     {"key": "shifts",     "label": "Cash Shifts",          "default": True},
     {"key": "hr",         "label": "HR & Payroll",         "default": False},
     {"key": "settings",   "label": "Settings",             "default": True},
+    {"key": "loyalty",    "label": "Loyalty Program",      "default": False},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
@@ -55,7 +56,7 @@ _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     ],
     "enterprise": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
+        "purchases", "suppliers", "customers", "loyalty", "reports", "fraud_surveillance",
         "stock_reallocation", "shifts", "hr", "settings",
     ],
     "pilot": list(ALL_FEATURE_KEYS),
@@ -114,7 +115,7 @@ DEFAULT_PLANS = [
         "sort_order": 4,
     },
 ]
-_PENDING_FEATURE_BACKFILL = {"clinics"}
+_PENDING_FEATURE_BACKFILL = {"clinics", "loyalty"}
 _FEATURE_ROLLOUT_LOCK = 778001
 _FEATURE_ROLLOUT_SENTINEL = "__seeded__"
 

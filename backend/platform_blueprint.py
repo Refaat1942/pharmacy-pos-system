@@ -22,6 +22,7 @@ FEATURE_LABELS_AR = {
     "shifts": "درج النقدية / الورديات",
     "hr": "الموارد البشرية والمرتبات",
     "settings": "الإعدادات",
+    "loyalty": "برنامج الولاء",
 }
 
 BLUEPRINT_META = {

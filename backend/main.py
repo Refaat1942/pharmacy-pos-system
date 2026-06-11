@@ -155,6 +155,8 @@ from hr import router as hr_router
 app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
 from platform_api import router as platform_router
 app.include_router(platform_router)
+from loyalty import router as loyalty_router
+app.include_router(loyalty_router)
 
 
 @app.on_event("startup")
@@ -655,6 +657,7 @@ class SaleRequest(BaseModel):
     delivery_person_name: Optional[str] = None
     account_paid_amount: Optional[float] = None
     account_paid_method: Optional[str] = None
+    loyalty_points_redeemed: int = 0
 
 
 @app.post("/api/sales")
@@ -779,6 +782,68 @@ def create_sale(req: SaleRequest,
                     detail="Customer is not authorized for this branch — ask an admin to open an account here",
                 )
 
+        loyalty_points_redeemed = 0
+        loyalty_discount = 0.0
+        loyalty_points_earned = 0
+        if req.type != "return" and invoice_customer_id:
+            from loyalty_engine import prepare_sale_loyalty
+            pre_credit = 0.0
+            if req.payment_method == "account":
+                pre_credit = max(0.0, net_total - float(req.account_paid_amount or 0))
+            try:
+                loy = prepare_sale_loyalty(
+                    cur,
+                    current_user,
+                    invoice_customer_id,
+                    net_total,
+                    int(req.loyalty_points_redeemed or 0),
+                    req.payment_method,
+                    pre_credit,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            if loy.get("active"):
+                loyalty_discount = float(loy.get("loyalty_discount") or 0)
+                loyalty_points_redeemed = int(loy.get("points_redeemed") or 0)
+                loyalty_points_earned = int(loy.get("points_earned") or 0)
+                if loyalty_discount > 0:
+                    net_total = float(loy["net_after_loyalty"])
+                    if req.payment_method == "cash" and req.cash_amount:
+                        change = max(0.0, req.cash_amount - net_total)
+                    if req.payment_method == "account" and req.type != "return":
+                        account_paid_now = float(req.account_paid_amount or 0)
+                        if account_paid_now < 0:
+                            account_paid_now = 0.0
+                        if account_paid_now > net_total:
+                            account_paid_now = net_total
+                        if account_paid_now > 0:
+                            if account_paid_method == "cash":
+                                cash_amount_val = account_paid_now
+                            else:
+                                visa_amount_val = account_paid_now
+                        credit_portion = net_total - account_paid_now
+                        cur.execute(
+                            """SELECT COALESCE(SUM(net_total),0) AS charged FROM invoices
+                               WHERE customer_id=%s AND payment_method='account' AND type!='return'""",
+                            (account_customer_id,),
+                        )
+                        charged = float(cur.fetchone()["charged"])
+                        cur.execute(
+                            "SELECT COALESCE(SUM(amount),0) AS paid FROM customer_payments WHERE customer_id=%s",
+                            (account_customer_id,),
+                        )
+                        paid = float(cur.fetchone()["paid"])
+                        current_bal = charged - paid
+                        limit = float(cust["credit_limit"] or 0)
+                        if limit > 0 and (current_bal + credit_portion) > limit:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=(
+                                    f"Credit limit exceeded for {cust['name']} "
+                                    f"(balance {current_bal:.2f} + sale {credit_portion:.2f} > limit {limit:.2f})"
+                                ),
+                            )
+
         if req.type != "return":
             _validate_delivery_digital_sale(
                 req.type,
@@ -842,14 +907,16 @@ def create_sale(req: SaleRequest,
                 subtotal, discount, net_total, cash_amount, visa_amount,
                 change_amount, seller_id, customer_id, branch_id, clinic_id, prescription_id, notes,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone,
-                delivery_person_id, delivery_person_name, delivery_status)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                delivery_person_id, delivery_person_name, delivery_status,
+                loyalty_points_earned, loyalty_points_redeemed, loyalty_discount)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
-             delivery_person_id, delivery_person_name, delivery_status),
+             delivery_person_id, delivery_person_name, delivery_status,
+             loyalty_points_earned, loyalty_points_redeemed, loyalty_discount),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
@@ -919,6 +986,19 @@ def create_sale(req: SaleRequest,
                 reference_type="invoice", reference_id=invoice_id,
                 reason=f"Sale {invoice_number} ({item.quantity} {unit_label})",
                 user_id=seller_id,
+            )
+
+        if req.type != "return" and invoice_customer_id and (loyalty_points_earned or loyalty_points_redeemed):
+            from loyalty_engine import apply_sale_loyalty
+            apply_sale_loyalty(
+                cur,
+                invoice_customer_id,
+                invoice_id,
+                points_earned=loyalty_points_earned,
+                points_redeemed=loyalty_points_redeemed,
+                loyalty_discount=loyalty_discount,
+                net_paid=net_total,
+                user_id=current_user.get("user_id"),
             )
 
         conn.commit()
@@ -1360,6 +1440,10 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 
         cur.execute("UPDATE returns SET total_returned=%s WHERE id=%s",
                     (round(total_returned, 2), ret["id"]))
+        from loyalty_engine import reverse_loyalty_on_return
+        reverse_loyalty_on_return(
+            cur, invoice_id, round(total_returned, 2), current_user.get("user_id"),
+        )
         conn.commit()
         ret["total_returned"] = round(total_returned, 2)
         return dict(ret)
