@@ -1590,5 +1590,10 @@
     "pos_discount": "Loyalty discount: {{amount}} EGP",
     "pos_discount_label": "Loyalty discount",
     "pos_earn": "Will earn {{n}} points"
+  },
+  "counseling": {
+    "banner_title": "Pharmacist tip",
+    "related_items": "You may also suggest",
+    "add_to_cart": "Add to cart"
   }
 }

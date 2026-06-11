@@ -1590,5 +1590,10 @@
     "pos_discount": "خصم الولاء: {{amount}} جنيه",
     "pos_discount_label": "خصم الولاء",
     "pos_earn": "سيكسب {{n}} نقطة"
+  },
+  "counseling": {
+    "banner_title": "نصيحة للصيدلي",
+    "related_items": "يمكنك أيضاً اقتراح",
+    "add_to_cart": "أضف للسلة"
   }
 }

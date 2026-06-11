@@ -161,6 +161,8 @@ from ai_assistant import router as ai_assistant_router
 app.include_router(ai_assistant_router)
 from loyalty import router as loyalty_router
 app.include_router(loyalty_router)
+from pos_counseling import router as pos_counseling_router
+app.include_router(pos_counseling_router)
 
 
 @app.on_event("startup")

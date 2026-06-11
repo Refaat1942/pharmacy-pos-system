@@ -238,6 +238,21 @@ export const productsAPI = {
   create: (data: Partial<Product>) => api.post<Product>('/products', data),
 }
 
+export interface CounselingSuggestion {
+  active: boolean
+  matched?: boolean
+  product_id?: number
+  product_name?: string
+  advice?: string
+  suggest?: string
+  related_products?: Product[]
+}
+
+export const posCounselingAPI = {
+  suggest: (data: { product_id: number; cart_product_ids?: number[]; lang?: string }) =>
+    api.post<CounselingSuggestion>('/pos/counseling/suggest', data),
+}
+
 export const customersAPI = {
   list: (q: string = '') => api.get<Customer[]>('/customers', { params: { q } }),
   create: (data: { name: string; phone?: string; notes?: string }) =>
