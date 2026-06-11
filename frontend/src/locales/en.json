@@ -1424,5 +1424,10 @@
     "restore": "Restore",
     "notify_title": "New prescription",
     "notify_body": "{{count}} prescription(s) waiting in the queue"
+  },
+  "counseling": {
+    "banner_title": "Pharmacist tip",
+    "related_items": "You may also suggest",
+    "add_to_cart": "Add to cart"
   }
 }

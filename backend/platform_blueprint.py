@@ -22,6 +22,7 @@ FEATURE_LABELS_AR = {
     "shifts": "درج النقدية / الورديات",
     "hr": "الموارد البشرية والمرتبات",
     "settings": "الإعدادات",
+    "pos_counseling": "نصائح ذكية في نقطة البيع",
 }
 
 BLUEPRINT_META = {

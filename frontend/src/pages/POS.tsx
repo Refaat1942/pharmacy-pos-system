@@ -24,8 +24,9 @@ import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
+import PosCounselingTips, { type CounselingTip } from '../components/PosCounselingTips'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import { productsAPI, employeesAPI, customersAPI } from '../lib/api'
+import { productsAPI, employeesAPI, customersAPI, posCounselingAPI } from '../lib/api'
 import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -188,6 +189,35 @@ export default function POS() {
   const [shiftLoading, setShiftLoading] = useState(true)
 
   const [pharmacyName, setPharmacyName] = useState<string>('')
+  const [counselingTips, setCounselingTips] = useState<CounselingTip[]>([])
+  const cartItemsRef = useRef(cartItems)
+  cartItemsRef.current = cartItems
+
+  const pushCounseling = useCallback(async (product: Product) => {
+    if (!hasFeature('pos_counseling')) return
+    try {
+      const { data } = await posCounselingAPI.suggest({
+        product_id: product.id,
+        cart_product_ids: cartItemsRef.current.map((i) => i.product.id),
+        lang: lang === 'ar' ? 'ar' : 'en',
+      })
+      if (!data.matched || !data.advice) return
+      setCounselingTips((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-${product.id}`,
+          product_id: product.id,
+          product_name: data.product_name || (lang === 'ar' ? product.name_ar : product.name_en) || product.name_en,
+          advice: data.advice || '',
+          suggest: data.suggest || '',
+          related_products: data.related_products || [],
+        },
+      ].slice(-3))
+    } catch {
+      /* optional feature — ignore failures */
+    }
+  }, [hasFeature, lang])
+
   const refreshShift = useCallback(() => {
     setShiftLoading(true)
     api.get('/shifts/current')
@@ -351,7 +381,8 @@ export default function POS() {
     setResults([])
     setShowResults(false)
     searchRef.current?.focus()
-  }, [t, maxQty])
+    void pushCounseling(product)
+  }, [t, maxQty, pushCounseling])
 
   // Debounced search — strips wedge noise (C85947-13C) and matches DB code (85947).
   useEffect(() => {
@@ -543,6 +574,11 @@ export default function POS() {
 
   return (
     <Layout>
+      <PosCounselingTips
+        tips={counselingTips}
+        onDismiss={(id) => setCounselingTips((prev) => prev.filter((x) => x.id !== id))}
+        onAddProduct={(p) => addToCart(p)}
+      />
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
       {!shiftLoading && !openShift && (
         <div className="mx-4 mt-3 flex-shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

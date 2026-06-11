@@ -1424,5 +1424,10 @@
     "restore": "استعادة",
     "notify_title": "وصفة جديدة",
     "notify_body": "{{count}} وصفة بانتظار التحضير"
+  },
+  "counseling": {
+    "banner_title": "نصيحة للصيدلي",
+    "related_items": "يمكنك أيضاً اقتراح",
+    "add_to_cart": "أضف للسلة"
   }
 }

@@ -155,6 +155,8 @@ from hr import router as hr_router
 app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
 from platform_api import router as platform_router
 app.include_router(platform_router)
+from pos_counseling import router as pos_counseling_router
+app.include_router(pos_counseling_router)
 
 
 @app.on_event("startup")
