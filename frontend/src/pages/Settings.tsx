@@ -989,6 +989,7 @@ interface PharmacyProfile {
   shift_morning_start: string
   shift_evening_start: string
   shift_night_start: string
+  dose_label_presets: { id: string; text_en: string; text_ar: string }[]
 }
 
 const EMPTY_PROFILE: PharmacyProfile = {
@@ -1000,6 +1001,7 @@ const EMPTY_PROFILE: PharmacyProfile = {
   show_logo: true, show_pharmacy_name: true, show_pharmacy_name_on_labels: true, show_tax_id: true, show_seller: true, show_customer: true,
   show_sale_type: true, show_branch: true, show_date: true, show_time: true, show_barcode: true,
   shift_morning_start: '06:00', shift_evening_start: '14:00', shift_night_start: '22:00',
+  dose_label_presets: [],
 }
 
 function PharmacyTab() {
@@ -1017,6 +1019,7 @@ function PharmacyTab() {
         for (const k of ['shift_morning_start', 'shift_evening_start', 'shift_night_start']) {
           if (d[k] && typeof d[k] === 'string' && d[k].length >= 5) d[k] = d[k].slice(0, 5)
         }
+        if (!Array.isArray(d.dose_label_presets)) d.dose_label_presets = []
         setP({ ...EMPTY_PROFILE, ...d })
       })
       .catch(() => {})
@@ -1182,6 +1185,58 @@ function PharmacyTab() {
               <input type="time" value={p.shift_night_start} onChange={(e) => set('shift_night_start', e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </Field>
           </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-slate-800 mb-2">{t('settings.pharma.dose_presets_title')}</h3>
+          <p className="text-xs text-slate-500 mb-4">{t('settings.pharma.dose_presets_hint')}</p>
+          <div className="space-y-2 mb-3">
+            {p.dose_label_presets.map((preset, idx) => (
+              <div key={preset.id || idx} className="grid grid-cols-1 md:grid-cols-2 gap-2 items-start">
+                <input
+                  dir="ltr"
+                  className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder={t('settings.pharma.dose_preset_en') as string}
+                  value={preset.text_en}
+                  onChange={(e) => {
+                    const next = [...p.dose_label_presets]
+                    next[idx] = { ...next[idx], text_en: e.target.value }
+                    set('dose_label_presets', next)
+                  }}
+                />
+                <div className="flex gap-2">
+                  <input
+                    dir="rtl"
+                    className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                    placeholder={t('settings.pharma.dose_preset_ar') as string}
+                    value={preset.text_ar}
+                    onChange={(e) => {
+                      const next = [...p.dose_label_presets]
+                      next[idx] = { ...next[idx], text_ar: e.target.value }
+                      set('dose_label_presets', next)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => set('dose_label_presets', p.dose_label_presets.filter((_, i) => i !== idx))}
+                    className="p-2 text-red-600 border border-red-200 rounded-lg hover:bg-red-50"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => set('dose_label_presets', [
+              ...p.dose_label_presets,
+              { id: `custom-${Date.now()}`, text_en: '', text_ar: '' },
+            ])}
+            className="text-sm font-semibold text-pharma-700 hover:underline"
+          >
+            + {t('settings.pharma.dose_preset_add')}
+          </button>
         </div>
 
         <div className="flex items-center gap-3">

@@ -22,6 +22,7 @@ PROFILE_FIELDS = [
     "show_tax_id", "show_seller", "show_customer",
     "show_sale_type", "show_branch", "show_date", "show_time", "show_barcode",
     "shift_morning_start", "shift_evening_start", "shift_night_start",
+    "dose_label_presets",
 ]
 
 
@@ -54,6 +55,7 @@ class ProfilePatch(BaseModel):
     shift_morning_start: Optional[str] = None   # 'HH:MM'
     shift_evening_start: Optional[str] = None
     shift_night_start:   Optional[str] = None
+    dose_label_presets: Optional[List[dict]] = None
 
 
 def _ensure_profile_row(cur):
@@ -125,7 +127,25 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
     values = []
     for k, v in data.items():
         fields.append(f"{k} = %s")
-        values.append(v)
+        if k == "dose_label_presets":
+            if not isinstance(v, list):
+                raise HTTPException(400, "dose_label_presets must be a JSON array")
+            cleaned = []
+            for item in v[:50]:
+                if not isinstance(item, dict):
+                    continue
+                text_en = str(item.get("text_en") or "").strip()
+                text_ar = str(item.get("text_ar") or "").strip()
+                if not text_en and not text_ar:
+                    continue
+                cleaned.append({
+                    "id": str(item.get("id") or f"custom-{len(cleaned)}"),
+                    "text_en": text_en or text_ar,
+                    "text_ar": text_ar or text_en,
+                })
+            values.append(psycopg2.extras.Json(cleaned))
+        else:
+            values.append(v)
     fields.append("updated_at = NOW()")
 
     conn = get_db_connection()

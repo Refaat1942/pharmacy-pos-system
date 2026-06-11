@@ -574,6 +574,7 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFA
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS dose_label_presets JSONB DEFAULT '[]'::jsonb;
 
 -- Promotional offers (superadmin feature: offers)
 CREATE TABLE IF NOT EXISTS promo_offers (
