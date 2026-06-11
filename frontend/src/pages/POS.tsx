@@ -16,6 +16,7 @@ import {
   Pause,
   ClipboardList,
   ExternalLink,
+  Pill,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ComponentType } from 'react'
@@ -35,6 +36,7 @@ import {
   looksLikeScannerInput,
   matchProductByBarcode,
 } from '../lib/barcodeSearch'
+import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
 
 interface HeldCart {
   id: string
@@ -181,6 +183,7 @@ export default function POS() {
   const [held, setHeld] = useState<HeldCart[]>(() => loadJSON<HeldCart[]>(HELD_KEY, []))
   const [showHeld, setShowHeld] = useState(false)
 
+  const [doseLabelItems, setDoseLabelItems] = useState<DoseLabelItem[] | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
@@ -841,6 +844,20 @@ export default function POS() {
                             {t('pos.egp')} {formatMoney(itemTotal)}
                           </div>
                           <button
+                            type="button"
+                            onClick={() => setDoseLabelItems([{
+                              id: item.product.id,
+                              name: name || item.product.name_en,
+                              doseText: '',
+                              defaultQty: 1,
+                              patientName: selectedCustomer?.name || '',
+                            }])}
+                            className="text-slate-400 hover:text-blue-600 transition-colors p-1"
+                            title={t('dose_labels.pos_btn') as string}
+                          >
+                            <Pill size={15} />
+                          </button>
+                          <button
                             onClick={() => removeFromCart(item.product.id)}
                             className="text-slate-300 hover:text-red-500 transition-colors p-1"
                           >
@@ -1110,6 +1127,13 @@ export default function POS() {
         </aside>
       </div>
       </div>
+
+      {doseLabelItems && (
+        <DoseLabelPrint
+          items={doseLabelItems}
+          onClose={() => setDoseLabelItems(null)}
+        />
+      )}
 
       {showPaymentModal && (
         <PaymentModal
