@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
+import AiAssistantWidget from './AiAssistantWidget'
 import { useBlockScannerBrowserShortcuts } from '../lib/scannerGuard'
 
 export default function Layout({ children, bg = 'bg-slate-50' }: { children: ReactNode; bg?: string }) {
@@ -14,6 +15,7 @@ export default function Layout({ children, bg = 'bg-slate-50' }: { children: Rea
           {children}
         </div>
       </div>
+      <AiAssistantWidget />
     </div>
   )
 }
