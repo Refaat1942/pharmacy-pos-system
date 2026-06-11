@@ -72,6 +72,57 @@ export interface Customer {
   total_charged?: number
   total_paid?: number
   branch_ids?: number[]
+  loyalty_points?: number
+}
+
+export interface LoyaltySettings {
+  loyalty_enabled: boolean
+  loyalty_points_per_egp: number
+  loyalty_egp_per_point: number
+  loyalty_min_redeem: number
+  loyalty_min_sale_egp: number
+  loyalty_earn_on_account: boolean
+  loyalty_max_redeem_pct: number
+}
+
+export interface LoyaltyMember {
+  id: number
+  code?: string | null
+  name: string
+  phone?: string | null
+  loyalty_points: number
+  total_sales: number
+  sale_count: number
+  lifetime_earned: number
+  last_sale_at?: string | null
+}
+
+export interface LoyaltyTransaction {
+  id: number
+  customer_id: number
+  customer_name?: string
+  customer_code?: string | null
+  customer_phone?: string | null
+  invoice_id?: number | null
+  invoice_number?: string | null
+  kind: string
+  points: number
+  balance_after: number
+  sale_amount?: number | null
+  notes?: string | null
+  created_at: string
+}
+
+export interface LoyaltyCalculateResult {
+  active: boolean
+  net_total?: number
+  points_balance?: number
+  max_redeem_points?: number
+  points_redeem?: number
+  loyalty_discount?: number
+  net_after_loyalty?: number
+  points_earn?: number
+  points_balance_after?: number
 }
 
 export interface CartItem {
@@ -243,6 +294,7 @@ export const salesAPI = {
     delivery_person_name?: string
     account_paid_amount?: number
     account_paid_method?: string
+    loyalty_points_redeemed?: number
   }) => api.post<SaleResponse>('/sales', data),
   list: (params: {
     limit?: number; offset?: number;
@@ -613,4 +665,30 @@ export const transfersAPI = {
   ),
   receive: (id: number) => api.post(`/inventory/transfers/${id}/receive`),
   cancel: (id: number) => api.post(`/inventory/transfers/${id}/cancel`),
+}
+
+export const loyaltyAPI = {
+  status: () => api.get<{ operational: boolean; feature_enabled: boolean; settings: LoyaltySettings }>('/loyalty/status'),
+  getSettings: () => api.get<LoyaltySettings>('/loyalty/settings'),
+  updateSettings: (data: Partial<LoyaltySettings>) => api.put('/loyalty/settings', data),
+  calculate: (data: {
+    customer_id?: number
+    net_total: number
+    redeem_points?: number
+    payment_method?: string
+    credit_portion?: number
+  }) => api.post<LoyaltyCalculateResult>('/loyalty/calculate', data),
+  members: (params: { q?: string; min_points?: number; max_points?: number } = {}) =>
+    api.get<LoyaltyMember[]>('/loyalty/members', { params }),
+  transactions: (params: {
+    q?: string
+    kind?: string
+    customer_id?: number
+    date_from?: string
+    date_to?: string
+  } = {}) => api.get<LoyaltyTransaction[]>('/loyalty/transactions', { params }),
+  customerSummary: (customerId: number) =>
+    api.get(`/loyalty/customers/${customerId}/summary`),
+  adjust: (customerId: number, data: { points: number; notes?: string }) =>
+    api.post(`/loyalty/customers/${customerId}/adjust`, data),
 }

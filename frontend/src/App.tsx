@@ -13,6 +13,7 @@ import Expiry from './pages/Expiry'
 import Suppliers from './pages/Suppliers'
 import Purchases from './pages/Purchases'
 import Customers from './pages/Customers'
+import Loyalty from './pages/Loyalty'
 import Clinics from './pages/Clinics'
 import ClinicPortal from './pages/ClinicPortal'
 import Dashboard from './pages/Dashboard'
@@ -73,6 +74,7 @@ function AppRoutes() {
       <Route path="/suppliers" element={<ProtectedRoute feature="suppliers"><Suppliers /></ProtectedRoute>} />
       <Route path="/purchases" element={<ProtectedRoute feature="purchases"><Purchases /></ProtectedRoute>} />
       <Route path="/customers" element={<ProtectedRoute feature="customers"><Customers /></ProtectedRoute>} />
+      <Route path="/loyalty" element={<ProtectedRoute feature="loyalty"><Loyalty /></ProtectedRoute>} />
       <Route path="/clinics" element={<ProtectedRoute feature="clinics"><Clinics /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute feature="dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="/returns" element={<ProtectedRoute feature="returns"><Returns /></ProtectedRoute>} />

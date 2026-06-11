@@ -1050,6 +1050,11 @@ export default function POS() {
                   </button>
                 )}
               </div>
+              {hasFeature('loyalty') && selectedCustomer && (
+                <p className="text-xs text-indigo-700 mt-1.5 font-medium">
+                  {t('loyalty.pos_balance', { points: selectedCustomer.loyalty_points ?? 0 })}
+                </p>
+              )}
               {showCustomerList && !selectedCustomer && (
                 <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                   {customers
@@ -1067,7 +1072,14 @@ export default function POS() {
                         onClick={() => { setSelectedCustomer(c); setCustomerSearch(''); setShowCustomerList(false) }}
                         className="w-full text-start px-3 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
                       >
-                        <div className="font-medium text-slate-800">{c.name}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium text-slate-800">{c.name}</div>
+                          {hasFeature('loyalty') && (c.loyalty_points ?? 0) > 0 && (
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              {c.loyalty_points} pts
+                            </span>
+                          )}
+                        </div>
                         {c.phone && <div className="text-xs text-slate-500 font-mono">{c.phone}</div>}
                       </button>
                     ))}

@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2, AlertCircle } from 'lucide-react'
-import { salesAPI, employeesAPI } from '../lib/api'
-import type { CartItem, Employee, Customer, SaleResponse } from '../lib/api'
+import { salesAPI, employeesAPI, loyaltyAPI } from '../lib/api'
+import type { CartItem, Employee, Customer, SaleResponse, LoyaltyCalculateResult } from '../lib/api'
 import i18n from '../lib/i18n'
+import { useAuth } from '../lib/auth'
 
 interface Props {
   cartItems: CartItem[]
@@ -30,7 +31,9 @@ export default function PaymentModal({
   selectedSeller, selectedCustomer, clinicId, prescriptionId, onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
+  const { hasFeature } = useAuth()
   const lang = i18n.language
+  const loyaltyOn = hasFeature('loyalty')
 
   const [saleType, setSaleType] = useState('cash')
   const [paymentMethod, setPaymentMethod] = useState('cash')
@@ -50,6 +53,8 @@ export default function PaymentModal({
   const [accountPaidMethod, setAccountPaidMethod] = useState('cash')
   /** Digital sales: platform already paid vs billed to platform on account */
   const [digitalBilling, setDigitalBilling] = useState<'paid' | 'account'>('paid')
+  const [loyaltyRedeem, setLoyaltyRedeem] = useState('')
+  const [loyaltyPreview, setLoyaltyPreview] = useState<LoyaltyCalculateResult | null>(null)
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
@@ -95,7 +100,32 @@ export default function PaymentModal({
 
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
-  const effectiveTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
+  const cartTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
+  const accountPaidNow = Math.min(Math.max(parseFloat(accountPaidAmount) || 0, 0), cartTotal)
+  const loyaltyDiscount = loyaltyOn && loyaltyPreview?.active ? (loyaltyPreview.loyalty_discount || 0) : 0
+  const effectiveTotal = Math.max(0, cartTotal - loyaltyDiscount)
+
+  useEffect(() => {
+    if (!loyaltyOn || !selectedCustomer?.id) {
+      setLoyaltyPreview(null)
+      setLoyaltyRedeem('')
+      return
+    }
+    const redeem = parseInt(loyaltyRedeem, 10) || 0
+    const creditPortion = paymentMethod === 'account' ? Math.max(0, cartTotal - accountPaidNow) : 0
+    const timer = setTimeout(() => {
+      loyaltyAPI.calculate({
+        customer_id: selectedCustomer.id,
+        net_total: cartTotal,
+        redeem_points: redeem,
+        payment_method: paymentMethod,
+        credit_portion: creditPortion,
+      }).then((r) => setLoyaltyPreview(r.data)).catch(() => setLoyaltyPreview(null))
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [
+    loyaltyOn, selectedCustomer?.id, cartTotal, loyaltyRedeem, paymentMethod, accountPaidNow,
+  ])
   const requiresCustomerInfo = effectiveTotal > 100
   const hasDeliveryCustomerDetails =
     deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== ''
@@ -113,8 +143,8 @@ export default function PaymentModal({
   const hybridSum = (parseFloat(cashPart) || 0) + (parseFloat(cardPart) || 0)
   const hybridDiff = hybridSum - effectiveTotal
 
-  const accountPaidNow = Math.min(Math.max(parseFloat(accountPaidAmount) || 0, 0), effectiveTotal)
-  const accountRemaining = Math.max(0, effectiveTotal - accountPaidNow)
+  const accountPaidNowFinal = Math.min(accountPaidNow, effectiveTotal)
+  const accountRemaining = Math.max(0, effectiveTotal - accountPaidNowFinal)
 
   const isValid = () => {
     if (!selectedSeller) return false
@@ -220,8 +250,11 @@ export default function PaymentModal({
             : paymentMethod === 'hybrid'
             ? parseFloat(cardPart) || 0
             : undefined,
-        account_paid_amount: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidNow : undefined,
-        account_paid_method: paymentMethod === 'account' && accountPaidNow > 0 ? accountPaidMethod : undefined,
+        account_paid_amount: paymentMethod === 'account' && accountPaidNowFinal > 0 ? accountPaidNowFinal : undefined,
+        account_paid_method: paymentMethod === 'account' && accountPaidNowFinal > 0 ? accountPaidMethod : undefined,
+        loyalty_points_redeemed: loyaltyOn && selectedCustomer && loyaltyPreview?.active
+          ? (loyaltyPreview.points_redeem || parseInt(loyaltyRedeem, 10) || 0)
+          : undefined,
         customer_id:
           paymentMethod === 'account' && saleType === 'digital'
             ? undefined
@@ -286,6 +319,41 @@ export default function PaymentModal({
                   : t('payment.seller_required')}
               </p>
             </div>
+
+            {loyaltyOn && selectedCustomer && (
+              <div className="p-3 rounded-xl border-2 border-indigo-100 bg-indigo-50/80 space-y-2">
+                <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider">
+                  {t('loyalty.pos_title')}
+                </p>
+                <p className="text-sm text-indigo-900">
+                  {t('loyalty.pos_balance', { points: selectedCustomer.loyalty_points ?? loyaltyPreview?.points_balance ?? 0 })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={loyaltyPreview?.max_redeem_points ?? 0}
+                    value={loyaltyRedeem}
+                    onChange={(e) => setLoyaltyRedeem(e.target.value)}
+                    placeholder={t('loyalty.pos_redeem_placeholder') as string}
+                    className="input flex-1 text-sm"
+                  />
+                  <span className="text-xs text-indigo-700 whitespace-nowrap">
+                    {t('loyalty.pos_max', { n: loyaltyPreview?.max_redeem_points ?? 0 })}
+                  </span>
+                </div>
+                {loyaltyDiscount > 0 && (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    {t('loyalty.pos_discount', { amount: loyaltyDiscount.toFixed(2) })}
+                  </p>
+                )}
+                {loyaltyPreview?.points_earn != null && loyaltyPreview.points_earn > 0 && (
+                  <p className="text-xs text-indigo-700">
+                    {t('loyalty.pos_earn', { n: loyaltyPreview.points_earn })}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Sale type */}
             <div>
@@ -614,7 +682,7 @@ export default function PaymentModal({
                         ))}
                       </select>
                     </div>
-                    {accountPaidNow > 0 && (
+                    {accountPaidNowFinal > 0 && (
                       <div className="flex justify-between text-sm font-semibold text-amber-900">
                         <span>{t('payment.remaining_on_account')}</span>
                         <span className="tabular-nums">{t('receipt.egp')} {accountRemaining.toFixed(2)}</span>
@@ -682,6 +750,12 @@ export default function PaymentModal({
                 <div className="flex justify-between text-xs text-amber-700">
                   <span>+ {t('payment.delivery_fee')}</span>
                   <span className="tabular-nums">{deliveryFeeNum.toFixed(2)}</span>
+                </div>
+              )}
+              {loyaltyDiscount > 0 && (
+                <div className="flex justify-between text-xs text-indigo-700">
+                  <span>- {t('loyalty.pos_discount_label')}</span>
+                  <span className="tabular-nums">{loyaltyDiscount.toFixed(2)}</span>
                 </div>
               )}
               <div className="flex justify-between text-sm font-bold text-gray-900 pt-2 border-t border-gray-200">
