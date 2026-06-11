@@ -13,27 +13,14 @@ from regions import resolve_region_key, REGIONS
 
 router = APIRouter(prefix="/api", tags=["customers"])
 
-# Delivery-platform partners billed on account (not walk-in POS customers).
+# Back-compat alias — prefer digital_platforms module.
+from digital_platforms import lookup_platform_partner, platform_display_name as platform_partner_display_name
+
 PLATFORM_PARTNER_NAMES = {
     "talabat": "Talabat",
     "vezeeta": "Vezeeta",
     "other_digital": "Other Digital",
 }
-
-
-def platform_partner_display_name(digital_type: str) -> str:
-    return PLATFORM_PARTNER_NAMES.get(digital_type, digital_type.replace("_", " ").title())
-
-
-def lookup_platform_partner(cur, digital_type: str):
-    """Return active customer row for a digital platform partner, or None."""
-    name = platform_partner_display_name(digital_type)
-    cur.execute(
-        "SELECT id, name, credit_limit, active FROM customers "
-        "WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1",
-        (name,),
-    )
-    return cur.fetchone()
 
 
 def _admin_only(user):

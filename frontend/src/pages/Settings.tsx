@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download, Bike } from 'lucide-react'
+import DigitalPlatformsSettings from '../components/DigitalPlatformsSettings'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -62,7 +63,7 @@ const roleClass: Record<string, string> = {
 export default function Settings() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'manual'>('users')
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual'>('users')
 
   if (user?.role !== 'admin') {
     return (
@@ -87,12 +88,14 @@ export default function Settings() {
           <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
           <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
           <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
+          <TabButton active={tab === 'platforms'} onClick={() => setTab('platforms')} icon={<Bike size={15} />} label={t('settings.platforms_tab')} />
           <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
         </div>
 
         {tab === 'users' && <UsersTab />}
         {tab === 'branches' && <BranchesTab />}
         {tab === 'pharmacy' && <PharmacyTab />}
+        {tab === 'platforms' && <DigitalPlatformsSettings />}
         {tab === 'manual' && <ManualTab />}
       </div>
     </Layout>

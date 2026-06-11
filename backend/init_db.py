@@ -640,6 +640,20 @@ CREATE TABLE IF NOT EXISTS loyalty_transactions (
 );
 CREATE INDEX IF NOT EXISTS loyalty_transactions_customer_idx ON loyalty_transactions(customer_id);
 CREATE INDEX IF NOT EXISTS loyalty_transactions_created_idx ON loyalty_transactions(created_at DESC);
+
+-- Digital delivery platforms (Talabat, Vezeeta, custom — managed in Settings)
+CREATE TABLE IF NOT EXISTS digital_platforms (
+    id SERIAL PRIMARY KEY,
+    platform_key VARCHAR(40) UNIQUE NOT NULL,
+    name_en VARCHAR(120) NOT NULL,
+    name_ar VARCHAR(120),
+    customer_id INTEGER REFERENCES customers(id),
+    badge_color VARCHAR(30) DEFAULT 'slate',
+    active BOOLEAN DEFAULT true,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_digital_platforms_active ON digital_platforms(active, sort_order);
 """
 
 
@@ -647,6 +661,8 @@ def init():
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(SQL)
+    from digital_platforms import ensure_default_platforms
+    ensure_default_platforms(cur)
     conn.commit()
     conn.close()
     print("✅ Database tables created successfully!")

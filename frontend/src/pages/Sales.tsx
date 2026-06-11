@@ -8,7 +8,8 @@ import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
 import type { TFunction } from 'i18next'
-import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
+import { platformBadgeClass, platformDisplayLabel } from '../lib/digitalPlatforms'
+import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 import { formatDateTime } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
 
@@ -231,14 +232,20 @@ export default function Sales() {
     account: t('payment.account'),
   }
 
-  const platformLabel: Record<string, string> = useMemo(
-    () => ({
+  const { platforms, byKey } = useDigitalPlatforms()
+  const langCode = i18n.language === 'ar' ? 'ar' : 'en'
+
+  const platformLabel: Record<string, string> = useMemo(() => {
+    const map: Record<string, string> = {
       talabat: t('sales.talabat'),
       vezeeta: t('sales.vezeeta'),
       other_digital: t('sales.other_digital'),
-    }),
-    [t],
-  )
+    }
+    platforms.forEach((p) => {
+      map[p.platform_key] = platformDisplayLabel(p, p.platform_key, langCode)
+    })
+    return map
+  }, [platforms, t, langCode])
 
   const paymentLabelsWithPlatform = useMemo(
     () => ({ ...paymentLabel, ...platformLabel }),
@@ -476,8 +483,10 @@ export default function Sales() {
                 className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm min-w-[8rem]"
               >
                 <option value="">{t('common.all')}</option>
-                {DIGITAL_PLATFORMS.map((p) => (
-                  <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
+                {platforms.map((p) => (
+                  <option key={p.platform_key} value={p.platform_key}>
+                    {platformDisplayLabel(p, p.platform_key, langCode)}
+                  </option>
                 ))}
               </select>
             </div>
@@ -568,7 +577,7 @@ export default function Sales() {
                         <td className="px-3 py-3 whitespace-nowrap">
                           {inv.digital_type ? (
                             <span
-                              className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(inv.digital_type)}`}
+                              className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(inv.digital_type, byKey(inv.digital_type)?.badge_color)}`}
                             >
                               {platformLabel[inv.digital_type] || inv.digital_type}
                             </span>

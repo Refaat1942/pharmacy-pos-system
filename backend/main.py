@@ -163,6 +163,8 @@ from loyalty import router as loyalty_router
 app.include_router(loyalty_router)
 from pos_counseling import router as pos_counseling_router
 app.include_router(pos_counseling_router)
+from digital_platforms import router as digital_platforms_router
+app.include_router(digital_platforms_router)
 
 
 @app.on_event("startup")
@@ -748,10 +750,16 @@ def create_sale(req: SaleRequest,
                         status_code=400,
                         detail="Platform is required for digital on-account sales",
                     )
-                from customers import lookup_platform_partner, platform_partner_display_name
+                from digital_platforms import (
+                    is_active_platform,
+                    lookup_platform_partner,
+                    platform_display_name as platform_partner_display_name,
+                )
+                if not is_active_platform(cur, req.digital_type):
+                    raise HTTPException(status_code=400, detail="Unknown or inactive digital platform")
                 cust = lookup_platform_partner(cur, req.digital_type)
                 if not cust:
-                    pname = platform_partner_display_name(req.digital_type)
+                    pname = platform_partner_display_name(req.digital_type, cur=cur)
                     raise HTTPException(
                         status_code=400,
                         detail=f"Create a customer named '{pname}' for platform on-account sales",

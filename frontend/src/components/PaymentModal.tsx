@@ -5,6 +5,8 @@ import { salesAPI, employeesAPI, loyaltyAPI } from '../lib/api'
 import type { CartItem, Employee, Customer, SaleResponse, LoyaltyCalculateResult } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useAuth } from '../lib/auth'
+import { platformDisplayLabel } from '../lib/digitalPlatforms'
+import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 
 interface Props {
   cartItems: CartItem[]
@@ -34,6 +36,8 @@ export default function PaymentModal({
   const { hasFeature } = useAuth()
   const lang = i18n.language
   const loyaltyOn = hasFeature('loyalty')
+  const { platforms } = useDigitalPlatforms()
+  const langCode = lang === 'ar' ? 'ar' : 'en'
 
   const [saleType, setSaleType] = useState('cash')
   const [paymentMethod, setPaymentMethod] = useState('cash')
@@ -67,6 +71,13 @@ export default function PaymentModal({
     window.addEventListener('branch-changed', load)
     return () => window.removeEventListener('branch-changed', load)
   }, [])
+
+  useEffect(() => {
+    if (!platforms.length) return
+    setDigitalType((prev) => (
+      platforms.some((p) => p.platform_key === prev) ? prev : platforms[0].platform_key
+    ))
+  }, [platforms])
 
   useEffect(() => {
     if (selectedCustomer) {
@@ -704,9 +715,9 @@ export default function PaymentModal({
                   onChange={(e) => setDigitalType(e.target.value)}
                   className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
                 >
-                  {['talabat', 'vezeeta', 'other_digital'].map((dt) => (
-                    <option key={dt} value={dt}>
-                      {t(`payment.${dt}`)}
+                  {platforms.map((p) => (
+                    <option key={p.platform_key} value={p.platform_key}>
+                      {platformDisplayLabel(p, p.platform_key, langCode)}
                     </option>
                   ))}
                 </select>

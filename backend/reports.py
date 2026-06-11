@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, resolve_analytics_branch
-from customers import PLATFORM_PARTNER_NAMES, platform_partner_display_name
+from digital_platforms import platform_display_name as platform_partner_display_name
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -441,7 +441,7 @@ def digital_platform_account_report(
     try:
         extra = []
         params: list = [df, dt]
-        if digital_type and digital_type in PLATFORM_PARTNER_NAMES:
+        if digital_type:
             extra.append("AND i.digital_type = %s")
             params.append(digital_type)
         extra_sql = " ".join(extra)
@@ -486,7 +486,7 @@ def digital_platform_account_report(
             balance = round(net - paid, 2)
             row["paid_total"] = round(paid, 2)
             row["balance"] = balance
-            row["platform_name"] = platform_partner_display_name(dt_key)
+            row["platform_name"] = platform_partner_display_name(dt_key, cur=cur)
             invoices.append(row)
 
             total_charged += net
@@ -513,7 +513,7 @@ def digital_platform_account_report(
         # Payments recorded in the period against digital on-account invoices
         pay_params: list = [df, dt]
         pay_extra = ""
-        if digital_type and digital_type in PLATFORM_PARTNER_NAMES:
+        if digital_type:
             pay_extra = "AND i.digital_type = %s"
             pay_params.append(digital_type)
         cur.execute(
@@ -541,7 +541,7 @@ def digital_platform_account_report(
 
         # All-time balance per platform partner customer
         for dt_key in list(by_platform.keys()):
-            pname = platform_partner_display_name(dt_key)
+            pname = platform_partner_display_name(dt_key, cur=cur)
             cur.execute(
                 """SELECT id FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1""",
                 (pname,),

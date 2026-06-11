@@ -12,7 +12,8 @@ import api from '../lib/api'
 import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
-import { DIGITAL_PLATFORMS, platformBadgeClass } from '../lib/digitalPlatforms'
+import { platformBadgeClass, platformDisplayLabel } from '../lib/digitalPlatforms'
+import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay, formatDateTime } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
 
@@ -327,9 +328,9 @@ function exportCSV(filename: string, rows: any[], columns: { key: string; label:
   URL.revokeObjectURL(url)
 }
 
-function PlatformBadge({ platformId, label }: { platformId: string; label: string }) {
+function PlatformBadge({ platformId, label, badgeColor }: { platformId: string; label: string; badgeColor?: string | null }) {
   return (
-    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(platformId)}`}>
+    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(platformId, badgeColor)}`}>
       {label}
     </span>
   )
@@ -408,6 +409,8 @@ const REPORT_DEFS: ReportDef[] = [
 export default function Reports() {
   const { t } = useTranslation()
   const { user, hasFeature } = useAuth()
+  const { platforms, byKey } = useDigitalPlatforms()
+  const langCode = i18n.language === 'ar' ? 'ar' : 'en'
   const [from, setFrom] = useState(firstOfMonth())
   const [to, setTo] = useState(today())
   const [digitalPlatformFilter, setDigitalPlatformFilter] = useState('')
@@ -906,7 +909,7 @@ export default function Reports() {
                 title={t('reports.digital_account_title')}
                 subtitle={`${digitalAccount.date_from} → ${digitalAccount.date_to}${
                   digitalPlatformFilter
-                    ? ` · ${t(DIGITAL_PLATFORMS.find((p) => p.id === digitalPlatformFilter)?.labelKey || 'sales.talabat')}`
+                    ? ` · ${platformDisplayLabel(byKey(digitalPlatformFilter), digitalPlatformFilter, langCode)}`
                     : ''
                 }`}
                 inline
@@ -957,8 +960,10 @@ export default function Reports() {
                   className="input text-sm min-w-[10rem] bg-white"
                 >
                   <option value="">{t('common.all')}</option>
-                  {DIGITAL_PLATFORMS.map((p) => (
-                    <option key={p.id} value={p.id}>{t(p.labelKey)}</option>
+                  {platforms.map((p) => (
+                    <option key={p.platform_key} value={p.platform_key}>
+                      {platformDisplayLabel(p, p.platform_key, langCode)}
+                    </option>
                   ))}
                 </select>
               </div>
