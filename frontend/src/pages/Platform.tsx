@@ -6,6 +6,11 @@ import {
   CalendarClock, Sparkles, Download, FileText,
 } from 'lucide-react'
 import { platformAPI, Tenant, TenantStats, PlatformAdmin, FeatureDef, PlanDef } from '../lib/platform'
+import {
+  buildFeatureOptionsState,
+  type FeatureOptionGroup,
+  type FeatureOptionsMap,
+} from '../lib/featureOptions'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import DateInput from '../components/DateInput'
 import { formatDateTime } from '../lib/formatDate'
@@ -123,6 +128,7 @@ export default function Platform() {
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [stats, setStats] = useState<Record<number, TenantStats>>({})
   const [featuresCatalog, setFeaturesCatalog] = useState<FeatureDef[]>([])
+  const [featureOptionsCatalog, setFeatureOptionsCatalog] = useState<FeatureOptionGroup[]>([])
   const [featureDefaults, setFeatureDefaults] = useState<string[]>([])
   const [plans, setPlans] = useState<PlanDef[]>([])
   const [loading, setLoading] = useState(true)
@@ -145,6 +151,7 @@ export default function Platform() {
       ])
       setTenants(r.data)
       setFeaturesCatalog(fc.data.features)
+      setFeatureOptionsCatalog(fc.data.feature_options || [])
       setFeatureDefaults(fc.data.defaults)
       setPlans(pl.data)
       // Fetch stats in parallel
@@ -397,8 +404,26 @@ export default function Platform() {
         </div>
       </div>
 
-      {showCreate && <CreateModal catalog={featuresCatalog} defaults={featureDefaults} plans={plans} onClose={() => setShowCreate(false)} onDone={load} />}
-      {editing && <EditModal tenant={editing} catalog={featuresCatalog} plans={plans} onClose={() => setEditing(null)} onDone={load} />}
+      {showCreate && (
+        <CreateModal
+          catalog={featuresCatalog}
+          optionsCatalog={featureOptionsCatalog}
+          defaults={featureDefaults}
+          plans={plans}
+          onClose={() => setShowCreate(false)}
+          onDone={load}
+        />
+      )}
+      {editing && (
+        <EditModal
+          tenant={editing}
+          catalog={featuresCatalog}
+          optionsCatalog={featureOptionsCatalog}
+          plans={plans}
+          onClose={() => setEditing(null)}
+          onDone={load}
+        />
+      )}
       {deleting && <DeleteModal tenant={deleting} onClose={() => setDeleting(null)} onDone={load} />}
       {showPwd && <ChangePwdModal onClose={() => setShowPwd(false)} />}
 
@@ -481,6 +506,65 @@ function FeaturesPicker({ catalog, value, onChange }: {
           </button>
         )
       })}
+    </div>
+  )
+}
+
+function FeatureOptionsPicker({
+  catalog,
+  enabledFeatures,
+  value,
+  onChange,
+}: {
+  catalog: FeatureOptionGroup[]
+  enabledFeatures: string[]
+  value: FeatureOptionsMap
+  onChange: (v: FeatureOptionsMap) => void
+}) {
+  const enabled = new Set(enabledFeatures)
+  const groups = catalog.filter((g) => enabled.has(g.feature))
+  if (!groups.length) return null
+
+  const toggle = (feature: string, option: string) => {
+    const current = value[feature]?.[option] ?? true
+    onChange({
+      ...value,
+      [feature]: { ...value[feature], [option]: !current },
+    })
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        Inside each feature
+      </p>
+      {groups.map((group) => (
+        <div key={group.feature} className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+          <p className="text-xs font-semibold text-slate-700 mb-2">{group.label}</p>
+          <div className="flex flex-wrap gap-2">
+            {group.options.map((opt) => {
+              const on = value[group.feature]?.[opt.key] ?? opt.default
+              return (
+                <button
+                  type="button"
+                  key={`${group.feature}.${opt.key}`}
+                  onClick={() => toggle(group.feature, opt.key)}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border text-xs text-start transition ${
+                    on
+                      ? 'bg-white border-indigo-200 text-indigo-800 shadow-sm'
+                      : 'bg-slate-100 border-slate-200 text-slate-400 line-through'
+                  }`}
+                >
+                  <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center text-[9px] ${
+                    on ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'
+                  }`}>{on ? '✓' : ''}</span>
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -660,8 +744,13 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
   )
 }
 
-function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
-  catalog: FeatureDef[]; defaults: string[]; plans: PlanDef[]; onClose: () => void; onDone: () => void
+function CreateModal({ catalog, optionsCatalog, defaults, plans, onClose, onDone }: {
+  catalog: FeatureDef[]
+  optionsCatalog: FeatureOptionGroup[]
+  defaults: string[]
+  plans: PlanDef[]
+  onClose: () => void
+  onDone: () => void
 }) {
   const [form, setForm] = useState({
     slug: '', name: '', plan: 'basic',
@@ -671,6 +760,9 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
     subscription_end: todayPlus(12),
   })
   const [features, setFeatures] = useState<string[]>(defaults)
+  const [featureOptions, setFeatureOptions] = useState<FeatureOptionsMap>(() =>
+    buildFeatureOptionsState(defaults, optionsCatalog),
+  )
   const [maxUsers, setMaxUsers] = useState('')
   const [maxBranches, setMaxBranches] = useState('')
   const [priceLe, setPriceLe] = useState('')
@@ -679,10 +771,16 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
   const planSynced = useRef(false)
 
   useEffect(() => {
+    setFeatureOptions((prev) => buildFeatureOptionsState(features, optionsCatalog, prev))
+  }, [features, optionsCatalog])
+
+  useEffect(() => {
     if (!plans.length || planSynced.current) return
     planSynced.current = true
     const applied = applyPlanSelection(form.plan, plans, catalog)
-    setFeatures(applied.features.length ? applied.features : defaults)
+    const nextFeatures = applied.features.length ? applied.features : defaults
+    setFeatures(nextFeatures)
+    setFeatureOptions(buildFeatureOptionsState(nextFeatures, optionsCatalog))
     setMaxUsers(applied.maxUsers)
     setMaxBranches(applied.maxBranches)
     setPriceLe(applied.priceLe)
@@ -692,6 +790,7 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
     setForm({ ...form, plan })
     const applied = applyPlanSelection(plan, plans, catalog)
     setFeatures(applied.features)
+    setFeatureOptions((prev) => buildFeatureOptionsState(applied.features, optionsCatalog, prev))
     setMaxUsers(applied.maxUsers)
     setMaxBranches(applied.maxBranches)
     setPriceLe(applied.priceLe)
@@ -712,6 +811,7 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
         admin_username: form.admin_username,
         admin_password: form.admin_password,
         features,
+        feature_options: featureOptions,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
         ...limitsForSubmit(form.plan, plans, maxUsers, maxBranches, priceLe),
@@ -798,6 +898,12 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
             <span className="text-xs font-normal text-slate-400 ms-auto">{features.length} enabled</span>
           </h3>
           <FeaturesPicker catalog={catalog} value={features} onChange={setFeatures} />
+          <FeatureOptionsPicker
+            catalog={optionsCatalog}
+            enabledFeatures={features}
+            value={featureOptions}
+            onChange={setFeatureOptions}
+          />
         </div>
 
         <div className="border-t border-slate-100 pt-4">
@@ -822,8 +928,13 @@ function CreateModal({ catalog, defaults, plans, onClose, onDone }: {
   )
 }
 
-function EditModal({ tenant, catalog, plans, onClose, onDone }: {
-  tenant: Tenant; catalog: FeatureDef[]; plans: PlanDef[]; onClose: () => void; onDone: () => void
+function EditModal({ tenant, catalog, optionsCatalog, plans, onClose, onDone }: {
+  tenant: Tenant
+  catalog: FeatureDef[]
+  optionsCatalog: FeatureOptionGroup[]
+  plans: PlanDef[]
+  onClose: () => void
+  onDone: () => void
 }) {
   const [form, setForm] = useState({
     name: tenant.name,
@@ -836,8 +947,10 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
     subscription_end: tenant.subscription_end || '',
   })
   const initialLimits = resolveTenantLimits(tenant, plans)
-  const [features, setFeatures] = useState<string[]>(
-    tenant.features ?? catalog.filter(c => c.default).map(c => c.key)
+  const initialFeatures = tenant.features ?? catalog.filter(c => c.default).map(c => c.key)
+  const [features, setFeatures] = useState<string[]>(initialFeatures)
+  const [featureOptions, setFeatureOptions] = useState<FeatureOptionsMap>(() =>
+    buildFeatureOptionsState(initialFeatures, optionsCatalog, tenant.feature_options),
   )
   const [maxUsers, setMaxUsers] = useState(initialLimits.maxUsers)
   const [maxBranches, setMaxBranches] = useState(initialLimits.maxBranches)
@@ -845,10 +958,15 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
+  useEffect(() => {
+    setFeatureOptions((prev) => buildFeatureOptionsState(features, optionsCatalog, prev))
+  }, [features, optionsCatalog])
+
   const onPlanChange = (plan: string) => {
     setForm({ ...form, plan })
     const applied = applyPlanSelection(plan, plans, catalog)
     setFeatures(applied.features)
+    setFeatureOptions((prev) => buildFeatureOptionsState(applied.features, optionsCatalog, prev))
     setMaxUsers(applied.maxUsers)
     setMaxBranches(applied.maxBranches)
     setPriceLe(applied.priceLe)
@@ -860,6 +978,7 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
       await platformAPI.updateTenant(tenant.id, {
         ...form,
         features,
+        feature_options: featureOptions,
         subscription_start: form.subscription_start || null,
         subscription_end: form.subscription_end || null,
         ...limitsForSubmit(form.plan, plans, maxUsers, maxBranches, priceLe),
@@ -933,6 +1052,12 @@ function EditModal({ tenant, catalog, plans, onClose, onDone }: {
             <span className="text-xs font-normal text-slate-400 ms-auto">{features.length} enabled</span>
           </h3>
           <FeaturesPicker catalog={catalog} value={features} onChange={setFeatures} />
+          <FeatureOptionsPicker
+            catalog={optionsCatalog}
+            enabledFeatures={features}
+            value={featureOptions}
+            onChange={setFeatureOptions}
+          />
         </div>
 
         <Field label="Notes"><textarea className={inputCls} rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>

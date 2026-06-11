@@ -26,7 +26,7 @@ function pageContextFromPath(pathname: string): string {
 
 export default function AiAssistantWidget() {
   const { t, i18n } = useTranslation()
-  const { hasFeature } = useAuth()
+  const { hasFeature, hasFeatureOption } = useAuth()
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -102,7 +102,7 @@ export default function AiAssistantWidget() {
     void sendMessage(input)
   }
 
-  if (!hasFeature('ai_assistant')) return null
+  if (!hasFeature('ai_assistant') || !hasFeatureOption('ai_assistant', 'widget')) return null
 
   return (
     <div className="fixed bottom-5 end-5 z-[60] flex flex-col items-end gap-3 pointer-events-none">

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from counseling_knowledge import build_counseling_message, match_counseling_rule
 from db import get_db_connection
-from deps import get_active_branch_id, get_current_user, requires_feature
+from deps import get_active_branch_id, get_current_user, requires_feature, requires_feature_option
 
 router = APIRouter(prefix="/api/pos/counseling", tags=["pos-counseling"])
 
@@ -29,7 +29,10 @@ class RelatedProduct(BaseModel):
     stock: int = 0
 
 
-@router.post("/suggest", dependencies=[Depends(requires_feature("pos_counseling"))])
+@router.post("/suggest", dependencies=[
+    Depends(requires_feature("pos_counseling")),
+    Depends(requires_feature_option("pos_counseling", "tips")),
+])
 def suggest_counseling(
     body: SuggestRequest,
     current_user=Depends(get_current_user),

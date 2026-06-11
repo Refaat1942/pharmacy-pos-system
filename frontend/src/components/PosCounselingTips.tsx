@@ -16,9 +16,15 @@ interface Props {
   tips: CounselingTip[]
   onDismiss: (id: string) => void
   onAddProduct: (product: Product) => void
+  showRelatedProducts?: boolean
 }
 
-export default function PosCounselingTips({ tips, onDismiss, onAddProduct }: Props) {
+export default function PosCounselingTips({
+  tips,
+  onDismiss,
+  onAddProduct,
+  showRelatedProducts = true,
+}: Props) {
   const { t } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
 
@@ -58,7 +64,7 @@ export default function PosCounselingTips({ tips, onDismiss, onAddProduct }: Pro
             <p className="text-xs text-teal-800 bg-teal-50/80 rounded-lg px-2 py-1.5 leading-relaxed border border-teal-100">
               {tip.suggest}
             </p>
-            {tip.related_products.length > 0 && (
+            {showRelatedProducts && tip.related_products.length > 0 && (
               <div className="pt-1">
                 <p className="text-[10px] font-semibold uppercase text-slate-500 mb-1.5">
                   {t('counseling.related_items')}

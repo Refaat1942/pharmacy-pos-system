@@ -148,7 +148,7 @@ function getPosWindowId(): string {
 export default function POS() {
   const { t } = useTranslation()
   const lang = i18n.language
-  const { user, tenant, hasFeature } = useAuth()
+  const { user, tenant, hasFeature, hasFeatureOption } = useAuth()
 
   const posWindowId = useMemo(() => getPosWindowId(), [])
   const scope = `${tenant?.slug || 't'}_${user?.id || 'u'}_${localStorage.getItem('pharma_active_branch') || '0'}_${posWindowId}`
@@ -200,9 +200,14 @@ export default function POS() {
   const [showPharmacyOnLabels, setShowPharmacyOnLabels] = useState(true)
   const [activeOffers, setActiveOffers] = useState<PromoOffer[]>([])
   const offersEnabled = hasFeature('offers')
+  const offersAutoApply = offersEnabled && hasFeatureOption('offers', 'pos_auto_apply')
+  const counselingTipsOn = hasFeature('pos_counseling') && hasFeatureOption('pos_counseling', 'tips')
+  const counselingRelatedOn = hasFeature('pos_counseling') && hasFeatureOption('pos_counseling', 'related_products')
+  const doseLabelsOn = hasFeature('pos') && hasFeatureOption('pos', 'dose_labels')
+  const quickItemsOn = hasFeature('pos') && hasFeatureOption('pos', 'quick_items')
 
   const pricedCart = useMemo(() => {
-    if (!offersEnabled || !activeOffers.length) {
+    if (!offersAutoApply || !activeOffers.length) {
       return {
         items: cartItems,
         offerIds: [] as number[],
@@ -211,7 +216,7 @@ export default function POS() {
       }
     }
     return applyOffersToCart(cartItems, activeOffers)
-  }, [cartItems, activeOffers, offersEnabled])
+  }, [cartItems, activeOffers, offersAutoApply])
 
   const displayCart = pricedCart.items
 
@@ -220,7 +225,7 @@ export default function POS() {
   cartItemsRef.current = cartItems
 
   const pushCounseling = useCallback(async (product: Product) => {
-    if (!hasFeature('pos_counseling')) return
+    if (!counselingTipsOn) return
     try {
       const { data } = await posCounselingAPI.suggest({
         product_id: product.id,
@@ -236,13 +241,13 @@ export default function POS() {
           product_name: data.product_name || (lang === 'ar' ? product.name_ar : product.name_en) || product.name_en,
           advice: data.advice || '',
           suggest: data.suggest || '',
-          related_products: data.related_products || [],
+          related_products: counselingRelatedOn ? (data.related_products || []) : [],
         },
       ].slice(-3))
     } catch {
       /* optional feature — ignore failures */
     }
-  }, [hasFeature, lang])
+  }, [counselingTipsOn, counselingRelatedOn, lang])
 
   const refreshShift = useCallback(() => {
     setShiftLoading(true)
@@ -627,11 +632,14 @@ export default function POS() {
 
   return (
     <Layout>
-      <PosCounselingTips
-        tips={counselingTips}
-        onDismiss={(id) => setCounselingTips((prev) => prev.filter((x) => x.id !== id))}
-        onAddProduct={(p) => addToCart(p)}
-      />
+      {counselingTipsOn && (
+        <PosCounselingTips
+          tips={counselingTips}
+          onDismiss={(id) => setCounselingTips((prev) => prev.filter((x) => x.id !== id))}
+          onAddProduct={(p) => addToCart(p)}
+          showRelatedProducts={counselingRelatedOn}
+        />
+      )}
       <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
       {!shiftLoading && !openShift && (
         <div className="mx-4 mt-3 flex-shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -796,7 +804,7 @@ export default function POS() {
                 </div>
               )}
 
-              <PosQuickItems onAdd={addToCart} />
+              {quickItemsOn && <PosQuickItems onAdd={addToCart} />}
             </div>
           </div>
 
@@ -862,16 +870,18 @@ export default function POS() {
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
                               </span>
                             )}
-                            <PosItemDoseLabel
-                              productId={item.product.id}
-                              productName={name || item.product.name_en}
-                              patientName={selectedCustomer?.name || ''}
-                              defaultQty={item.quantity}
-                              customPresets={doseLabelPresets}
-                              pharmacyName={pharmacyName}
-                              showPharmacyOnLabels={showPharmacyOnLabels}
-                              onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
-                            />
+                            {doseLabelsOn && (
+                              <PosItemDoseLabel
+                                productId={item.product.id}
+                                productName={name || item.product.name_en}
+                                patientName={selectedCustomer?.name || ''}
+                                defaultQty={item.quantity}
+                                customPresets={doseLabelPresets}
+                                pharmacyName={pharmacyName}
+                                showPharmacyOnLabels={showPharmacyOnLabels}
+                                onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
+                              />
+                            )}
                             {hasSub && (
                               <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
                                 <button

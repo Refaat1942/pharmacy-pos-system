@@ -33,9 +33,10 @@ export default function PaymentModal({
   selectedSeller, selectedCustomer, clinicId, prescriptionId, onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
-  const { hasFeature } = useAuth()
+  const { hasFeature, hasFeatureOption } = useAuth()
   const lang = i18n.language
-  const loyaltyOn = hasFeature('loyalty')
+  const loyaltyOn = hasFeature('loyalty') && hasFeatureOption('loyalty', 'pos_redeem')
+  const digitalSalesOn = hasFeature('pos') && hasFeatureOption('pos', 'digital_sales')
   const { platforms } = useDigitalPlatforms()
   const langCode = lang === 'ar' ? 'ar' : 'en'
 
@@ -78,6 +79,13 @@ export default function PaymentModal({
       platforms.some((p) => p.platform_key === prev) ? prev : platforms[0].platform_key
     ))
   }, [platforms])
+
+  useEffect(() => {
+    if (!digitalSalesOn && saleType === 'digital') {
+      setSaleType('cash')
+      setPaymentMethod('cash')
+    }
+  }, [digitalSalesOn, saleType])
 
   useEffect(() => {
     if (selectedCustomer) {
@@ -371,11 +379,11 @@ export default function PaymentModal({
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 {t('payment.sale_type')}
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className={`grid gap-2 ${digitalSalesOn ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {[
                   { value: 'cash', icon: Banknote, label: t('payment.cash_sale') },
                   { value: 'delivery', icon: ShoppingBag, label: t('payment.delivery_sale') },
-                  { value: 'digital', icon: Smartphone, label: t('payment.digital_sale') },
+                  ...(digitalSalesOn ? [{ value: 'digital' as const, icon: Smartphone, label: t('payment.digital_sale') }] : []),
                 ].map(({ value, icon: Icon, label }) => (
                   <button
                     key={value}

@@ -203,7 +203,7 @@ def login(req: LoginRequest, request: Request):
         _login_throttle_record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
     from platform_db import (
-        is_tenant_live, normalize_features,
+        is_tenant_live, normalize_features, resolve_feature_options,
         get_tenant_stats, tenant_limits_payload,
     )
     live, reason = is_tenant_live(tenant)
@@ -248,6 +248,7 @@ def login(req: LoginRequest, request: Request):
             "name": tenant["name"],
             "plan": tenant.get("plan"),
             "features": normalize_features(tenant.get("features")),
+            "feature_options": resolve_feature_options(tenant),
             "subscription_start": tenant.get("subscription_start").isoformat() if tenant.get("subscription_start") else None,
             "subscription_end": tenant.get("subscription_end").isoformat() if tenant.get("subscription_end") else None,
             "limits": tenant_limits_payload(tenant, get_tenant_stats(tenant)),
@@ -259,7 +260,10 @@ def login(req: LoginRequest, request: Request):
 def get_me(current_user=Depends(get_current_user)):
     # Return fresh tenant info too, so the frontend can react to feature/plan
     # changes made in the super-admin without forcing a logout.
-    from platform_db import get_tenant_by_slug, normalize_features, is_tenant_live, get_tenant_stats, tenant_limits_payload
+    from platform_db import (
+        get_tenant_by_slug, normalize_features, resolve_feature_options,
+        is_tenant_live, get_tenant_stats, tenant_limits_payload,
+    )
     slug = current_user.get("tenant_slug")
     tenant_payload = None
     if slug:
@@ -271,6 +275,7 @@ def get_me(current_user=Depends(get_current_user)):
                 "name": t["name"],
                 "plan": t.get("plan"),
                 "features": normalize_features(t.get("features")),
+                "feature_options": resolve_feature_options(t),
                 "subscription_start": t["subscription_start"].isoformat() if t.get("subscription_start") else None,
                 "subscription_end": t["subscription_end"].isoformat() if t.get("subscription_end") else None,
                 "active": live,
@@ -722,6 +727,11 @@ def create_sale(req: SaleRequest,
                 raise HTTPException(400, "Active branch is required to complete a sale")
             from shifts import assert_open_shift_for_sales
             assert_open_shift_for_sales(cur, current_user["user_id"], active_branch)
+
+        if req.type == "digital":
+            from feature_access import user_feature_option
+            if not user_feature_option(current_user, "pos", "digital_sales"):
+                raise HTTPException(400, "Digital platform sales are not enabled for your account")
 
         subtotal = sum(i.quantity * i.unit_price for i in req.items)
         delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0

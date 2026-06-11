@@ -19,7 +19,7 @@ Pharmacy POS web app: **FastAPI** backend (`backend/`) + **React/Vite** frontend
 
 ### Feature flags
 
-New modules (AI assistant, offers, loyalty, POS counseling, etc.) are gated by **superadmin tenant features** in the Control Platform (`platform_db.py` catalog). After deploy, enable them per tenant or they will not appear in the UI even though code is present.
+New modules are gated by **superadmin tenant features** in the Control Platform (`backend/platform_db.py` → `FEATURES_CATALOG`). Sub-options inside a module (e.g. loyalty POS redeem vs admin settings, POS dose labels vs quick items) are controlled via **`feature_options`** on the same tenant edit screen under **Inside each feature** (`FEATURE_OPTIONS_CATALOG`). Pharmacy users must **log out and back in** after changes so `/api/auth/me` refreshes `feature_options`.
 
 ### Production deploy
 

@@ -7,6 +7,7 @@ import { productsAPI, type Product } from '../lib/api'
 import type { PromoOffer, OfferType } from '../lib/offerEngine'
 import { offerTypeLabel } from '../lib/offerEngine'
 import i18n from '../lib/i18n'
+import { useAuth } from '../lib/auth'
 
 const OFFER_TYPES: OfferType[] = ['second_half', 'bogo', 'buy2get1', 'direct_percent', 'direct_amount']
 
@@ -38,6 +39,8 @@ const emptyForm = (): OfferForm => ({
 
 export default function Offers() {
   const { t } = useTranslation()
+  const { hasFeatureOption } = useAuth()
+  const canManage = hasFeatureOption('offers', 'manage')
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const [list, setList] = useState<PromoOffer[]>([])
   const [loading, setLoading] = useState(true)
@@ -131,9 +134,11 @@ export default function Offers() {
             </h1>
             <p className="text-sm text-slate-500 mt-1">{t('offers.subtitle')}</p>
           </div>
-          <button onClick={openNew} className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
-            <Plus size={16} /> {t('offers.new')}
-          </button>
+          {canManage && (
+            <button onClick={openNew} className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+              <Plus size={16} /> {t('offers.new')}
+            </button>
+          )}
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -161,8 +166,12 @@ export default function Offers() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-end">
-                    <button onClick={() => openEdit(o)} className="p-1.5 hover:bg-slate-100 rounded text-slate-600"><Edit2 size={14} /></button>
-                    <button onClick={() => remove(o.id)} className="p-1.5 hover:bg-red-100 rounded text-red-700"><Trash2 size={14} /></button>
+                    {canManage && (
+                      <>
+                        <button onClick={() => openEdit(o)} className="p-1.5 hover:bg-slate-100 rounded text-slate-600"><Edit2 size={14} /></button>
+                        <button onClick={() => remove(o.id)} className="p-1.5 hover:bg-red-100 rounded text-red-700"><Trash2 size={14} /></button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}

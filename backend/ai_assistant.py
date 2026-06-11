@@ -92,7 +92,9 @@ def assistant_chat(body: ChatRequest, current_user=Depends(get_current_user)):
     history = [{"role": m.role, "content": m.content.strip()} for m in body.messages[-12:]]
     last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
-    reply = _call_openai(system, history)
+    from feature_access import user_feature_option
+    use_openai = user_feature_option(current_user, "ai_assistant", "openai")
+    reply = _call_openai(system, history) if use_openai else None
     source = "ai"
     if not reply:
         reply = faq_fallback(last_user, lang)
@@ -103,9 +105,12 @@ def assistant_chat(body: ChatRequest, current_user=Depends(get_current_user)):
 
 @router.get("/status", dependencies=[Depends(requires_feature("ai_assistant"))])
 def assistant_status(current_user=Depends(get_current_user)):
+    from feature_access import user_feature_option
     has_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("AI_API_KEY"))
+    openai_allowed = user_feature_option(current_user, "ai_assistant", "openai")
+    ai_on = has_key and openai_allowed
     return {
-        "ai_enabled": has_key,
-        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini") if has_key else None,
-        "mode": "ai" if has_key else "faq",
+        "ai_enabled": ai_on,
+        "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini") if ai_on else None,
+        "mode": "ai" if ai_on else "faq",
     }

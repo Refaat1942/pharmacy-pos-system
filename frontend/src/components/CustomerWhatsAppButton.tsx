@@ -2,6 +2,7 @@ import type { MouseEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { canOpenWhatsApp, openWhatsApp, whatsAppGreeting } from '../lib/whatsapp'
 import i18n from '../lib/i18n'
+import { useAuth } from '../lib/auth'
 
 function WhatsAppIcon({ className }: { className?: string }) {
   return (
@@ -29,6 +30,8 @@ export default function CustomerWhatsAppButton({
   message,
 }: Props) {
   const { t } = useTranslation()
+  const { hasFeatureOption } = useAuth()
+  if (!hasFeatureOption('customers', 'whatsapp')) return null
   if (!canOpenWhatsApp(phone)) return null
 
   const lang = i18n.language === 'ar' ? 'ar' : 'en'

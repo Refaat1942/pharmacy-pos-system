@@ -47,6 +47,67 @@ FEATURES_CATALOG = [
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
 
+# Sub-controls inside a parent feature (superadmin toggles per tenant).
+FEATURE_OPTIONS_CATALOG = [
+    {
+        "feature": "loyalty",
+        "label": "Loyalty Program",
+        "options": [
+            {"key": "admin_settings", "label": "Admin rules & calculator", "default": True},
+            {"key": "pos_redeem", "label": "Redeem points at POS", "default": True},
+            {"key": "members_export", "label": "Members Excel export", "default": True},
+        ],
+    },
+    {
+        "feature": "offers",
+        "label": "Promo Offers",
+        "options": [
+            {"key": "manage", "label": "Create & edit offers", "default": True},
+            {"key": "pos_auto_apply", "label": "Auto-apply at POS", "default": True},
+            {"key": "reports", "label": "Offer sales report", "default": True},
+        ],
+    },
+    {
+        "feature": "ai_assistant",
+        "label": "Smart AI Assistant",
+        "options": [
+            {"key": "widget", "label": "Floating assistant widget", "default": True},
+            {"key": "openai", "label": "OpenAI answers (not FAQ only)", "default": True},
+        ],
+    },
+    {
+        "feature": "pos_counseling",
+        "label": "Smart POS Counseling",
+        "options": [
+            {"key": "tips", "label": "Counseling tips on scan", "default": True},
+            {"key": "related_products", "label": "Suggest related products", "default": True},
+        ],
+    },
+    {
+        "feature": "customers",
+        "label": "Customers",
+        "options": [
+            {"key": "whatsapp", "label": "WhatsApp button on customers", "default": True},
+        ],
+    },
+    {
+        "feature": "pos",
+        "label": "Point of Sale",
+        "options": [
+            {"key": "dose_labels", "label": "Dose label printing", "default": True},
+            {"key": "quick_items", "label": "Quick-add small items", "default": True},
+            {"key": "digital_sales", "label": "Digital platform sales", "default": True},
+        ],
+    },
+    {
+        "feature": "settings",
+        "label": "Settings",
+        "options": [
+            {"key": "digital_platforms", "label": "Manage digital platforms tab", "default": True},
+        ],
+    },
+]
+
 # Default feature bundles per plan (used when seeding platform.plans).
 _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     "test": list(ALL_FEATURE_KEYS),
@@ -150,6 +211,54 @@ def normalize_features(features) -> list[str]:
     return [f["key"] for f in FEATURES_CATALOG if f["key"] in requested]
 
 
+def default_feature_options(enabled_features: list[str]) -> dict[str, dict[str, bool]]:
+    """Defaults for sub-options of enabled parent features."""
+    enabled = set(enabled_features)
+    out: dict[str, dict[str, bool]] = {}
+    for group in FEATURE_OPTIONS_CATALOG:
+        fk = group["feature"]
+        if fk not in enabled:
+            continue
+        out[fk] = {
+            o["key"]: bool(o.get("default", True))
+            for o in group["options"]
+        }
+    return out
+
+
+def normalize_feature_options(stored, enabled_features: list[str]) -> dict[str, dict[str, bool]]:
+    """Merge stored overrides with defaults for enabled features."""
+    base = default_feature_options(enabled_features)
+    if not stored or not isinstance(stored, dict):
+        return base
+    for feat, opts in stored.items():
+        if feat not in base or not isinstance(opts, dict):
+            continue
+        for k, v in opts.items():
+            if k in base[feat]:
+                base[feat][k] = bool(v)
+    return base
+
+
+def resolve_feature_options(tenant: dict) -> dict[str, dict[str, bool]]:
+    feats = normalize_features(tenant.get("features"))
+    return normalize_feature_options(tenant.get("feature_options"), feats)
+
+
+def tenant_option_enabled(tenant: dict, feature: str, option: str) -> bool:
+    if feature not in normalize_features(tenant.get("features")):
+        return False
+    return resolve_feature_options(tenant).get(feature, {}).get(option, True)
+
+
+def serialize_tenant_row(row: dict) -> dict:
+    """API-safe tenant dict with normalized features and effective feature_options."""
+    d = dict(row)
+    d["features"] = normalize_features(d.get("features"))
+    d["feature_options"] = resolve_feature_options(d)
+    return d
+
+
 class _DuplicateSlug(Exception):
     """Internal sentinel: slug already exists; do not run destructive cleanup."""
     def __init__(self, slug: str):
@@ -181,6 +290,7 @@ ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS subscription_end   DATE;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_users         INT;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_branches      INT;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS price_le          INT;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS feature_options   JSONB;
 
 CREATE TABLE IF NOT EXISTS platform.plans (
     key           VARCHAR(50) PRIMARY KEY,
@@ -456,7 +566,7 @@ def get_tenant_by_slug(slug: str) -> Optional[dict]:
     try:
         cur.execute("SELECT * FROM tenants WHERE slug = %s", [slug])
         row = cur.fetchone()
-        return dict(row) if row else None
+        return serialize_tenant_row(row) if row else None
     finally:
         conn.close()
 
@@ -467,7 +577,7 @@ def get_tenant_by_id(tid: int) -> Optional[dict]:
     try:
         cur.execute("SELECT * FROM tenants WHERE id = %s", [tid])
         row = cur.fetchone()
-        return dict(row) if row else None
+        return serialize_tenant_row(row) if row else None
     finally:
         conn.close()
 
@@ -477,7 +587,7 @@ def list_tenants() -> list:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute("SELECT * FROM tenants ORDER BY created_at DESC")
-        return [dict(r) for r in cur.fetchall()]
+        return [serialize_tenant_row(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
@@ -528,6 +638,7 @@ def create_tenant(
     max_users: Optional[int] = None,
     max_branches: Optional[int] = None,
     price_le: Optional[int] = None,
+    feature_options: Optional[dict] = None,
 ) -> dict:
     """Race-safe atomic tenant provisioning.
 
@@ -553,6 +664,7 @@ def create_tenant(
 
     schema_name = f"tenant_{slug.replace('-', '_')}"
     features_norm = normalize_features(features)
+    feature_options_norm = normalize_feature_options(feature_options, features_norm)
 
     import json as _json
     import init_db
@@ -573,14 +685,15 @@ def create_tenant(
             pcur.execute(
                 """INSERT INTO tenants(slug, name, schema_name, status, plan,
                                         contact_name, contact_email, contact_phone, notes,
-                                        features, subscription_start, subscription_end,
+                                        features, feature_options, subscription_start, subscription_end,
                                         max_users, max_branches, price_le)
                    VALUES (%s, %s, %s, 'provisioning', %s, %s, %s, %s, %s,
-                           %s::jsonb, %s, %s, %s, %s, %s)
+                           %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s)
                    RETURNING *""",
                 [slug, name, schema_name, plan,
                  contact_name, contact_email, contact_phone, notes,
                  _json.dumps(features_norm),
+                 _json.dumps(feature_options_norm),
                  subscription_start or None,
                  subscription_end or None,
                  max_users, max_branches, price_le],
@@ -656,7 +769,7 @@ def create_tenant(
         )
         row = dict(pcur.fetchone())
         pconn.commit()
-        return row
+        return serialize_tenant_row(row)
     except _DuplicateSlug:
         # Slug already belongs to another tenant. DO NOT touch the schema.
         raise ValueError(f"Slug '{slug}' is already in use")
@@ -703,22 +816,29 @@ def update_tenant(tid: int, fields: dict) -> dict:
     if "features" in fields:
         sets.append(sql.SQL("features = %s::jsonb"))
         params.append(_json.dumps(normalize_features(fields["features"])))
-    if "status" in fields:
-        sets.append(sql.SQL("suspended_at = %s"))
-        params.append(None if fields["status"] == "active" else "now()")
-        # but easier to just use NOW() literal; rewrite:
-        sets.pop()
-        params.pop()
-        if fields["status"] == "active":
-            sets.append(sql.SQL("suspended_at = NULL"))
-        else:
-            sets.append(sql.SQL("suspended_at = NOW()"))
-    if not sets:
-        raise ValueError("No fields to update")
-    params.append(tid)
     conn = get_platform_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        cur.execute("SELECT features FROM tenants WHERE id = %s", [tid])
+        current = cur.fetchone()
+        if not current:
+            raise ValueError("Tenant not found")
+        enabled_feats = normalize_features(
+            fields["features"] if "features" in fields else current.get("features")
+        )
+        if "feature_options" in fields:
+            sets.append(sql.SQL("feature_options = %s::jsonb"))
+            params.append(_json.dumps(
+                normalize_feature_options(fields["feature_options"], enabled_feats)
+            ))
+        if "status" in fields:
+            if fields["status"] == "active":
+                sets.append(sql.SQL("suspended_at = NULL"))
+            else:
+                sets.append(sql.SQL("suspended_at = NOW()"))
+        if not sets:
+            raise ValueError("No fields to update")
+        params.append(tid)
         cur.execute(
             sql.SQL("UPDATE tenants SET {} WHERE id = %s RETURNING *").format(
                 sql.SQL(", ").join(sets)
@@ -729,7 +849,7 @@ def update_tenant(tid: int, fields: dict) -> dict:
         if not row:
             raise ValueError("Tenant not found")
         conn.commit()
-        return dict(row)
+        return serialize_tenant_row(row)
     finally:
         conn.close()
 

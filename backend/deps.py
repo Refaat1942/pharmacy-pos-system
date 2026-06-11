@@ -45,6 +45,19 @@ def requires_feature(key: str):
     return _dep
 
 
+def requires_feature_option(feature: str, option: str):
+    """Gate an endpoint by a sub-option inside a parent feature."""
+    def _dep(current_user=Depends(get_current_user)):
+        from feature_access import user_feature_option
+        if not user_feature_option(current_user, feature, option):
+            raise HTTPException(
+                status_code=403,
+                detail=f"This capability ('{feature}.{option}') is not enabled for your plan.",
+            )
+        return current_user
+    return _dep
+
+
 def check_tenant_quota(slug: str, resource: str, current_count: int) -> None:
     """Raise 403 if tenant is at or over quota. resource is 'users' or 'branches'."""
     from platform_db import get_tenant_by_slug, get_tenant_limits

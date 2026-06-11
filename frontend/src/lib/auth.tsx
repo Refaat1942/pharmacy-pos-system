@@ -15,6 +15,7 @@ export interface TenantInfo {
   name: string
   plan: string | null
   features: string[]
+  feature_options?: Record<string, Record<string, boolean>>
   subscription_start: string | null
   subscription_end: string | null
   limits?: {
@@ -34,6 +35,7 @@ interface AuthContextType {
   logout: () => void
   isAuthenticated: boolean
   hasFeature: (key: string) => boolean
+  hasFeatureOption: (feature: string, option: string) => boolean
   refreshTenant: () => Promise<void>
   isLocked: boolean
   lock: () => void
@@ -140,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: data.tenant.name,
           plan: data.tenant.plan,
           features: data.tenant.features || [],
+          feature_options: data.tenant.feature_options || {},
           subscription_start: data.tenant.subscription_start,
           subscription_end: data.tenant.subscription_end,
         }
@@ -240,8 +243,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return tenant.features.includes(key)
   }, [tenant])
 
+  const hasFeatureOption = useCallback((feature: string, option: string) => {
+    if (!hasFeature(feature)) return false
+    if (!tenant?.feature_options) return true
+    const opts = tenant.feature_options[feature]
+    if (!opts || !(option in opts)) return true
+    return Boolean(opts[option])
+  }, [tenant, hasFeature])
+
   return (
-    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature, refreshTenant, isLocked, lock, unlock }}>
+    <AuthContext.Provider value={{ user, token, tenant, login, logout, isAuthenticated: !!token, hasFeature, hasFeatureOption, refreshTenant, isLocked, lock, unlock }}>
       {children}
     </AuthContext.Provider>
   )

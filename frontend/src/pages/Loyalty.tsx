@@ -12,8 +12,10 @@ type Tab = 'settings' | 'members' | 'transactions'
 
 export default function Loyalty() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeatureOption } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const canManageSettings = hasFeatureOption('loyalty', 'admin_settings')
+  const canExportMembers = hasFeatureOption('loyalty', 'members_export')
   const [tab, setTab] = useState<Tab>('members')
   const [status, setStatus] = useState<{ operational: boolean } | null>(null)
 
@@ -42,7 +44,9 @@ export default function Loyalty() {
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6 border-b border-slate-200 pb-2">
-          {(['members', 'transactions', 'settings'] as Tab[]).map((key) => (
+          {(['members', 'transactions', 'settings'] as Tab[])
+            .filter((key) => key !== 'settings' || canManageSettings)
+            .map((key) => (
             <button
               key={key}
               type="button"
@@ -56,8 +60,10 @@ export default function Loyalty() {
           ))}
         </div>
 
-        {tab === 'settings' && <SettingsPanel isAdmin={isAdmin} onSaved={() => loyaltyAPI.status().then((r) => setStatus(r.data))} />}
-        {tab === 'members' && <MembersPanel isAdmin={isAdmin} />}
+        {tab === 'settings' && canManageSettings && (
+          <SettingsPanel isAdmin={isAdmin} onSaved={() => loyaltyAPI.status().then((r) => setStatus(r.data))} />
+        )}
+        {tab === 'members' && <MembersPanel isAdmin={isAdmin} canExport={canExportMembers} />}
         {tab === 'transactions' && <TransactionsPanel isAdmin={isAdmin} />}
       </main>
     </Layout>
@@ -215,7 +221,7 @@ function SettingsPanel({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => 
   )
 }
 
-function MembersPanel({ isAdmin }: { isAdmin: boolean }) {
+function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boolean }) {
   const { t } = useTranslation()
   const [list, setList] = useState<LoyaltyMember[]>([])
   const [loading, setLoading] = useState(false)
@@ -275,7 +281,7 @@ function MembersPanel({ isAdmin }: { isAdmin: boolean }) {
           className="input w-28" type="number" min={0} />
         <TableFilter value={filter.query} onChange={filter.setQuery}
           placeholder={t('common.filter_placeholder') as string} className="w-full md:w-56" />
-        {isAdmin && (
+        {isAdmin && canExport && (
           <button onClick={exportExcel} disabled={list.length === 0}
             className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 disabled:opacity-40 ms-auto">
             <Download size={16} /> {t('loyalty.export_excel')}

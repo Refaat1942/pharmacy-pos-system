@@ -26,6 +26,12 @@ platformApi.interceptors.response.use(
   },
 )
 
+export interface FeatureOptionGroup {
+  feature: string
+  label: string
+  options: { key: string; label: string; default: boolean }[]
+}
+
 export interface Tenant {
   id: number
   slug: string
@@ -40,6 +46,7 @@ export interface Tenant {
   created_at: string
   suspended_at: string | null
   features: string[] | null
+  feature_options?: Record<string, Record<string, boolean>> | null
   subscription_start: string | null
   subscription_end: string | null
   max_users: number | null
@@ -99,6 +106,7 @@ export const platformAPI = {
     admin_username: string
     admin_password: string
     features?: string[]
+    feature_options?: Record<string, Record<string, boolean>>
     subscription_start?: string | null
     subscription_end?: string | null
     max_users?: number | null
@@ -110,7 +118,11 @@ export const platformAPI = {
   deleteTenant: (id: number, confirm_slug: string) =>
     platformApi.delete(`/tenants/${id}`, { params: { confirm_slug } }),
   migrateAll: () => platformApi.post<{ ok: number; failed: { slug: string; error: string }[] }>('/migrate-all'),
-  featuresCatalog: () => platformApi.get<{ features: FeatureDef[]; defaults: string[] }>('/features-catalog'),
+  featuresCatalog: () => platformApi.get<{
+    features: FeatureDef[]
+    defaults: string[]
+    feature_options: FeatureOptionGroup[]
+  }>('/features-catalog'),
   listPlans: () => platformApi.get<PlanDef[]>('/plans'),
   updatePlan: (key: string, data: Partial<PlanDef>) =>
     platformApi.patch<PlanDef>(`/plans/${key}`, data),

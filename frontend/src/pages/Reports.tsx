@@ -408,7 +408,7 @@ const REPORT_DEFS: ReportDef[] = [
 
 export default function Reports() {
   const { t } = useTranslation()
-  const { user, hasFeature } = useAuth()
+  const { user, hasFeature, hasFeatureOption } = useAuth()
   const { platforms, byKey } = useDigitalPlatforms()
   const langCode = i18n.language === 'ar' ? 'ar' : 'en'
   const [from, setFrom] = useState(firstOfMonth())
@@ -447,10 +447,10 @@ export default function Reports() {
     () => REPORT_DEFS.filter((r) => {
       if (r.adminOnly && !isAdmin) return false
       if (r.needsClinics && !hasFeature('clinics')) return false
-      if (r.needsOffers && !hasFeature('offers')) return false
+      if (r.needsOffers && (!hasFeature('offers') || !hasFeatureOption('offers', 'reports'))) return false
       return true
     }),
-    [isAdmin, hasFeature],
+    [isAdmin, hasFeature, hasFeatureOption],
   )
 
   useEffect(() => {

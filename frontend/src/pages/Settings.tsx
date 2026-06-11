@@ -62,7 +62,8 @@ const roleClass: Record<string, string> = {
 
 export default function Settings() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeatureOption } = useAuth()
+  const platformsTabOn = hasFeatureOption('settings', 'digital_platforms')
   const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual'>('users')
 
   if (user?.role !== 'admin') {
@@ -88,14 +89,16 @@ export default function Settings() {
           <TabButton active={tab === 'users'} onClick={() => setTab('users')} icon={<UsersIcon size={15} />} label={t('settings.users')} />
           <TabButton active={tab === 'branches'} onClick={() => setTab('branches')} icon={<Building2 size={15} />} label={t('settings.branches')} />
           <TabButton active={tab === 'pharmacy'} onClick={() => setTab('pharmacy')} icon={<Receipt size={15} />} label={t('settings.pharmacy')} />
-          <TabButton active={tab === 'platforms'} onClick={() => setTab('platforms')} icon={<Bike size={15} />} label={t('settings.platforms_tab')} />
+          {platformsTabOn && (
+            <TabButton active={tab === 'platforms'} onClick={() => setTab('platforms')} icon={<Bike size={15} />} label={t('settings.platforms_tab')} />
+          )}
           <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
         </div>
 
         {tab === 'users' && <UsersTab />}
         {tab === 'branches' && <BranchesTab />}
         {tab === 'pharmacy' && <PharmacyTab />}
-        {tab === 'platforms' && <DigitalPlatformsSettings />}
+        {tab === 'platforms' && platformsTabOn && <DigitalPlatformsSettings />}
         {tab === 'manual' && <ManualTab />}
       </div>
     </Layout>
@@ -1012,6 +1015,9 @@ const EMPTY_PROFILE: PharmacyProfile = {
 
 function PharmacyTab() {
   const { t } = useTranslation()
+  const { hasFeatureOption } = useAuth()
+  const doseLabelsOn = hasFeatureOption('pos', 'dose_labels')
+  const quickItemsOn = hasFeatureOption('pos', 'quick_items')
   const [p, setP] = useState<PharmacyProfile>(EMPTY_PROFILE)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1194,6 +1200,7 @@ function PharmacyTab() {
           </div>
         </div>
 
+        {doseLabelsOn && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5">
           <h3 className="font-semibold text-slate-800 mb-2">{t('settings.pharma.dose_presets_title')}</h3>
           <p className="text-xs text-slate-500 mb-4">{t('settings.pharma.dose_presets_hint')}</p>
@@ -1245,11 +1252,14 @@ function PharmacyTab() {
             + {t('settings.pharma.dose_preset_add')}
           </button>
         </div>
+        )}
 
+        {quickItemsOn && (
         <PosQuickItemsSettings
           productIds={p.pos_quick_items}
           onChange={(ids) => set('pos_quick_items', ids)}
         />
+        )}
 
         <div className="flex items-center gap-3">
           <button onClick={save} disabled={saving} className="px-5 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm shadow">

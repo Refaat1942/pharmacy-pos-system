@@ -82,6 +82,7 @@ class TenantCreateIn(BaseModel):
     admin_username: str = "admin"
     admin_password: str = Field(min_length=6)
     features: Optional[list[str]] = None
+    feature_options: Optional[dict] = None
     subscription_start: Optional[str] = None  # ISO date 'YYYY-MM-DD'
     subscription_end: Optional[str] = None
     max_users: Optional[int] = None
@@ -103,6 +104,7 @@ def create_tenant(body: TenantCreateIn, admin=Depends(get_super_admin)):
             admin_username=body.admin_username,
             admin_password=body.admin_password,
             features=body.features,
+            feature_options=body.feature_options,
             subscription_start=body.subscription_start,
             subscription_end=body.subscription_end,
             max_users=body.max_users,
@@ -124,6 +126,7 @@ class TenantUpdateIn(BaseModel):
     contact_phone: Optional[str] = None
     notes: Optional[str] = None
     features: Optional[list[str]] = None
+    feature_options: Optional[dict] = None
     subscription_start: Optional[str] = None
     subscription_end: Optional[str] = None
     max_users: Optional[int] = None
@@ -179,6 +182,7 @@ def features_catalog(admin=Depends(get_super_admin)):
     return {
         "features": platform_db.FEATURES_CATALOG,
         "defaults": platform_db.DEFAULT_FEATURES,
+        "feature_options": platform_db.FEATURE_OPTIONS_CATALOG,
     }
 
 

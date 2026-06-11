@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 import psycopg2.extras
 
 from db import get_db_connection
-from deps import get_current_user
+from deps import get_current_user, requires_feature_option
 
 router = APIRouter(prefix="/api/digital-platforms", tags=["digital-platforms"])
 
@@ -196,7 +196,7 @@ def list_active_platforms(current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.get("/manage")
+@router.get("/manage", dependencies=[Depends(requires_feature_option("settings", "digital_platforms"))])
 def list_all_platforms(current_user=Depends(get_current_user)):
     _admin(current_user)
     conn = get_db_connection()
@@ -210,7 +210,7 @@ def list_all_platforms(current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.post("/manage")
+@router.post("/manage", dependencies=[Depends(requires_feature_option("settings", "digital_platforms"))])
 def create_platform(body: PlatformIn, current_user=Depends(get_current_user)):
     _admin(current_user)
     key = _slug_key(body.platform_key or body.name_en)
@@ -258,7 +258,7 @@ def create_platform(body: PlatformIn, current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.put("/manage/{platform_id}")
+@router.put("/manage/{platform_id}", dependencies=[Depends(requires_feature_option("settings", "digital_platforms"))])
 def update_platform(platform_id: int, body: PlatformPatch, current_user=Depends(get_current_user)):
     _admin(current_user)
     data = body.model_dump(exclude_unset=True)
@@ -309,7 +309,7 @@ def update_platform(platform_id: int, body: PlatformPatch, current_user=Depends(
         conn.close()
 
 
-@router.delete("/manage/{platform_id}")
+@router.delete("/manage/{platform_id}", dependencies=[Depends(requires_feature_option("settings", "digital_platforms"))])
 def deactivate_platform(platform_id: int, current_user=Depends(get_current_user)):
     _admin(current_user)
     conn = get_db_connection()

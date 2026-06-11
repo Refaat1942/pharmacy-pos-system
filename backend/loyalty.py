@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from db import get_db_connection
-from deps import get_current_user, requires_feature
+from deps import get_current_user, requires_feature, requires_feature_option
 from excel_utils import xlsx_response
 from loyalty_engine import (
     DEFAULT_LOYALTY_SETTINGS,
@@ -68,7 +68,7 @@ def loyalty_status(current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.get("/settings", dependencies=[Depends(requires_feature("loyalty"))])
+@router.get("/settings", dependencies=[Depends(requires_feature("loyalty")), Depends(requires_feature_option("loyalty", "admin_settings"))])
 def get_settings(current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -78,7 +78,7 @@ def get_settings(current_user=Depends(get_current_user)):
         conn.close()
 
 
-@router.put("/settings", dependencies=[Depends(requires_feature("loyalty"))])
+@router.put("/settings", dependencies=[Depends(requires_feature("loyalty")), Depends(requires_feature_option("loyalty", "admin_settings"))])
 def update_settings(body: LoyaltySettingsPatch, current_user=Depends(get_current_user)):
     _admin(current_user)
     data = body.model_dump(exclude_unset=True)
@@ -182,7 +182,7 @@ def list_members(
         conn.close()
 
 
-@router.get("/members/export", dependencies=[Depends(requires_feature("loyalty"))])
+@router.get("/members/export", dependencies=[Depends(requires_feature("loyalty")), Depends(requires_feature_option("loyalty", "members_export"))])
 def export_members(
     q: str = "",
     min_points: Optional[int] = None,
