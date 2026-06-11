@@ -125,3 +125,15 @@ def apply_offers_to_cart(
             "offer_discount": round(line_offer_discount.get(idx, 0), 2),
         })
     return enriched, used_offer_ids, total_savings
+
+
+def active_offer_product_ids(cur) -> set[int]:
+    """Product IDs in any active promotional offer group."""
+    cur.execute(
+        """
+        SELECT DISTINCT pop.product_id
+        FROM promo_offer_products pop
+        JOIN promo_offers o ON o.id = pop.offer_id AND o.active = true
+        """
+    )
+    return {int(r["product_id"]) for r in cur.fetchall()}

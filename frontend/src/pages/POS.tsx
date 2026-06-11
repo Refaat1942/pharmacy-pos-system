@@ -36,7 +36,7 @@ import {
   looksLikeScannerInput,
   matchProductByBarcode,
 } from '../lib/barcodeSearch'
-import { applyOffersToCart, type PromoOffer } from '../lib/offerEngine'
+import { applyOffersToCart, isOfferProduct, type PromoOffer } from '../lib/offerEngine'
 import OffersPosButton from '../components/OffersPosButton'
 import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
 import PosItemDoseLabel from '../components/PosItemDoseLabel'
@@ -307,6 +307,20 @@ export default function POS() {
       .catch(() => setActiveOffers([]))
   }, [offersEnabled])
 
+  useEffect(() => {
+    if (!offersEnabled || !activeOffers.length) return
+    setCartItems((prev) => {
+      let changed = false
+      const next = prev.map((i) => {
+        if (!isOfferProduct(i.product.id, activeOffers)) return i
+        if (!(i.discount_value || 0)) return i
+        changed = true
+        return { ...i, discount_mode: 'amount' as const, discount_value: 0, discount: 0 }
+      })
+      return changed ? next : prev
+    })
+  }, [offersEnabled, activeOffers])
+
   const subtotal = useMemo(
     () => displayCart.reduce((sum, item) => sum + item.quantity * item.unit_price - item.discount, 0),
     [displayCart]
@@ -550,6 +564,7 @@ export default function POS() {
   }, [removeFromCart])
 
   const setItemDiscount = useCallback((productId: number, mode: 'amount' | 'percent', value: number) => {
+    if (offersEnabled && isOfferProduct(productId, activeOffers)) return
     setCartItems((prev) =>
       prev.map((i) => {
         if (i.product.id !== productId) return i
@@ -557,7 +572,7 @@ export default function POS() {
         return { ...i, discount_mode: mode, discount_value: value, discount: calcLineDiscount(gross, mode, value) }
       })
     )
-  }, [])
+  }, [offersEnabled, activeOffers])
 
   const resolveScanToProduct = useCallback(async (code: string) => {
     const raw = code.trim()
@@ -902,6 +917,11 @@ export default function POS() {
                                 </button>
                               </div>
                             )}
+                            {offersEnabled && isOfferProduct(item.product.id, activeOffers) ? (
+                              <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                                {t('pos.offer_no_manual_discount')}
+                              </p>
+                            ) : (
                             <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
                               <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">
                                 {t('pos.item_discount')}
@@ -931,13 +951,18 @@ export default function POS() {
                                     setItemDiscount(item.product.id, 'percent', item.discount_value || 0)
                                   }
                                 />
-                                {item.discount > 0 && (
+                                {(item.discount_value || 0) > 0 && (
                                   <span className="self-center text-xs text-emerald-700 font-bold tabular-nums px-1">
-                                    − {formatMoney(item.discount)} {t('pos.egp')}
+                                    − {formatMoney(calcLineDiscount(
+                                      item.quantity * item.unit_price,
+                                      item.discount_mode,
+                                      item.discount_value,
+                                    ))} {t('pos.egp')}
                                   </span>
                                 )}
                               </div>
                             </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
                             <button

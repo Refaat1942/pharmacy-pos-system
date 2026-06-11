@@ -967,6 +967,7 @@
     "unit_price": "Unit Price",
     "item_discount": "Item discount",
     "offer_applied": "Offer",
+    "offer_no_manual_discount": "This item is in a promotional offer — manual discount is not allowed.",
     "offer_savings": "Promo savings",
     "suspend": "Suspend",
     "held": "Held",

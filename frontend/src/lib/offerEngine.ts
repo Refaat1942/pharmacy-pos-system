@@ -51,6 +51,20 @@ const calcManualDiscount = (
   return Math.min(gross, Math.max(0, +d.toFixed(2)))
 }
 
+/** Product IDs that belong to any active promo offer group. */
+export function offerProductIds(offers: PromoOffer[]): Set<number> {
+  const ids = new Set<number>()
+  for (const o of offers) {
+    if (!o.active) continue
+    for (const pid of o.product_ids || []) ids.add(pid)
+  }
+  return ids
+}
+
+export function isOfferProduct(productId: number, offers: PromoOffer[]): boolean {
+  return offerProductIds(offers).has(productId)
+}
+
 type UnitLine = { lineIdx: number; unitPrice: number; productId: number }
 
 function flattenUnits(lines: { product_id: number; quantity: number; unit_price: number }[], productIds: Set<number>): UnitLine[] {
@@ -131,6 +145,7 @@ export function applyOffersToCart(items: CartItem[], offers: PromoOffer[]): {
   }))
 
   const sorted = [...offers].sort((a, b) => (a.priority - b.priority) || (a.id - b.id))
+  const inOfferGroup = offerProductIds(sorted)
   const lineOfferDiscount = new Map<number, number>()
   const lineOfferId = new Map<number, number>()
   const usedIds: number[] = []
@@ -153,7 +168,10 @@ export function applyOffersToCart(items: CartItem[], offers: PromoOffer[]): {
   const enriched = items.map((item, idx) => {
     const gross = item.quantity * item.unit_price
     const offerDiscount = +(lineOfferDiscount.get(idx) || 0).toFixed(2)
-    const manual = calcManualDiscount(gross, item.discount_mode, item.discount_value)
+    const blockedManual = inOfferGroup.has(item.product.id)
+    const manual = blockedManual
+      ? 0
+      : calcManualDiscount(gross, item.discount_mode, item.discount_value)
     const totalDiscount = Math.min(gross, +(manual + offerDiscount).toFixed(2))
     return {
       ...item,

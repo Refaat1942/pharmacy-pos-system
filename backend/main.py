@@ -921,6 +921,13 @@ def create_sale(req: SaleRequest,
             )
 
         today = date.today()
+        offer_product_ids: set[int] = set()
+        if req.type != "return":
+            from feature_access import user_has_feature
+            if user_has_feature(current_user, "offers"):
+                from offer_engine import active_offer_product_ids
+                offer_product_ids = active_offer_product_ids(cur)
+
         for item in req.items:
             cur.execute("SELECT branch_id, active, expiry_date, name_en FROM products WHERE id=%s", (item.product_id,))
             p = cur.fetchone()
@@ -1039,8 +1046,16 @@ def create_sale(req: SaleRequest,
                 stock_used = item.quantity * pack_size
                 unit_label = prod["unit"] or "unit"
                 line_pack = pack_size
-            item_total = item.quantity * item.unit_price - item.discount
             offer_disc = float(item.offer_discount or 0)
+            line_discount = float(item.discount or 0)
+            if int(item.product_id) in offer_product_ids:
+                if line_discount > offer_disc + 0.009:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Manual discount is not allowed on promotional offer item '{prod['name_en']}'",
+                    )
+                line_discount = offer_disc
+            item_total = item.quantity * item.unit_price - line_discount
             cur.execute(
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
@@ -1048,7 +1063,7 @@ def create_sale(req: SaleRequest,
                     offer_id, offer_discount)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
-                 prod["barcode"], item.quantity, item.unit_price, item.discount,
+                 prod["barcode"], item.quantity, item.unit_price, line_discount,
                  item_total, unit_label, line_pack,
                  item.offer_id, offer_disc),
             )

@@ -967,6 +967,7 @@
     "unit_price": "سعر الوحدة",
     "item_discount": "خصم",
     "offer_applied": "عرض",
+    "offer_no_manual_discount": "هذا الصنف ضمن عرض ترويجي — لا يمكن إضافة خصم يدوي.",
     "offer_savings": "توفير العروض",
     "suspend": "تعليق",
     "held": "المعلّقة",

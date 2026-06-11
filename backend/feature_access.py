@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from platform_db import get_tenant_by_slug, tenant_option_enabled, resolve_feature_options
+from platform_db import get_tenant_by_slug, normalize_features, tenant_option_enabled, resolve_feature_options
 
 
 def tenant_for_user(user: dict | None) -> Optional[dict]:
@@ -13,6 +13,13 @@ def tenant_for_user(user: dict | None) -> Optional[dict]:
     if not slug:
         return None
     return get_tenant_by_slug(slug)
+
+
+def user_has_feature(user: dict | None, feature: str) -> bool:
+    tenant = tenant_for_user(user)
+    if not tenant:
+        return True
+    return feature in normalize_features(tenant.get("features"))
 
 
 def user_feature_option(user: dict | None, feature: str, option: str) -> bool:
