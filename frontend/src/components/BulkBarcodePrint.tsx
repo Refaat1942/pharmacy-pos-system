@@ -16,7 +16,7 @@ export interface BulkItem {
   defaultQty?: number
 }
 
-type LabelSize = 'sm' | 'md' | 'lg' | 'thermal' | 'zebra2x3'
+type LabelSize = 'sm' | 'md' | 'lg' | 'thermal' | 'zebra2x3' | 'custom'
 
 type SizeCfg = {
   cols: number
@@ -34,7 +34,7 @@ type SizeCfg = {
   labelH?: string
 }
 
-const SIZE_CSS: Record<LabelSize, SizeCfg> = {
+const SIZE_CSS: Record<Exclude<LabelSize, 'custom'>, SizeCfg> = {
   sm: { cols: 5, cellPad: '2mm', pharmacyFs: '7px', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', imgMaxH: 'none', scale: 1.5, height: 40, barcodeFontSize: 11 },
   md: { cols: 3, cellPad: '4mm', pharmacyFs: '8px', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', imgMaxH: 'none', scale: 2, height: 60, barcodeFontSize: 12 },
   lg: { cols: 2, cellPad: '5mm', pharmacyFs: '9px', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', imgMaxH: 'none', scale: 2.5, height: 80, barcodeFontSize: 13 },
@@ -81,6 +81,8 @@ type LabelPrefs = {
   showName?: boolean
   showPrice?: boolean
   showExpiry?: boolean
+  customW?: number
+  customH?: number
 }
 function loadLabelPrefs(): LabelPrefs {
   try {
@@ -95,6 +97,33 @@ function saveLabelPrefs(prefs: LabelPrefs): void {
     localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(prefs))
   } catch {
     /* ignore quota / privacy-mode errors */
+  }
+}
+
+const CUSTOM_DEFAULT_W = 3.13
+const CUSTOM_DEFAULT_H = 2.0
+
+/** Build a one-sticker-per-page config sized to an exact label (inches). */
+function customCfg(wIn: number, hIn: number): SizeCfg {
+  const w = Math.max(0.5, wIn || CUSTOM_DEFAULT_W)
+  const h = Math.max(0.5, hIn || CUSTOM_DEFAULT_H)
+  const hMm = h * 25.4
+  const wMm = w * 25.4
+  const big = hMm >= 38
+  return {
+    cols: 1,
+    cellPad: '1.5mm 2mm',
+    pharmacyFs: big ? '11px' : '8px',
+    nameFs: big ? '12px' : '9px',
+    priceFs: big ? '13px' : '9px',
+    expiryFs: big ? '11px' : '8px',
+    imgMaxW: `${Math.max(8, Math.round(wMm - 5))}mm`,
+    imgMaxH: `${Math.max(7, Math.round(hMm * 0.5))}mm`,
+    scale: 2,
+    height: big ? 55 : 32,
+    barcodeFontSize: big ? 14 : 10,
+    labelW: `${w}in`,
+    labelH: `${h}in`,
   }
 }
 
@@ -249,11 +278,13 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [showPharmacy, setShowPharmacy] = useState(true)
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT_W)
+  const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT_H)
 
   // Persist the chosen label settings so they are auto-applied next time.
   useEffect(() => {
-    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry })
-  }, [size, useQR, showName, showPrice, showExpiry])
+    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH })
+  }, [size, useQR, showName, showPrice, showExpiry, customW, customH])
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
@@ -293,7 +324,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     if (totalLabels === 0) return
     setBusy(true)
     try {
-      const cfg = SIZE_CSS[size]
+      const cfg = size === 'custom' ? customCfg(customW, customH) : SIZE_CSS[size]
       // Any preset with explicit label dimensions prints one sticker per page
       // (label/roll printers); the rest tile onto an A4 grid.
       const isThermal = !!(cfg.labelW && cfg.labelH)
@@ -420,6 +451,30 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             {t('bulk_barcode.zebra2x3_hint')}
           </div>
         )}
+        {size === 'custom' && (
+          <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900 space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 font-medium">
+                {t('bulk_barcode.custom_w')}
+                <input
+                  type="number" min={0.5} max={8} step={0.01} value={customW}
+                  onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT_W)}
+                  className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 font-medium">
+                {t('bulk_barcode.custom_h')}
+                <input
+                  type="number" min={0.5} max={8} step={0.01} value={customH}
+                  onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT_H)}
+                  className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900"
+                />
+              </label>
+              <span className="text-emerald-700">{t('bulk_barcode.custom_unit')}</span>
+            </div>
+            <div>{t('bulk_barcode.custom_hint')}</div>
+          </div>
+        )}
 
         <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="md:col-span-2">
@@ -428,6 +483,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
               className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1 font-medium">
               <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
               <option value="zebra2x3">{t('bulk_barcode.size_zebra2x3')}</option>
+              <option value="custom">{t('bulk_barcode.size_custom')}</option>
               <option value="sm">{t('bulk_barcode.size_sm')}</option>
               <option value="md">{t('bulk_barcode.size_md')}</option>
               <option value="lg">{t('bulk_barcode.size_lg')}</option>
