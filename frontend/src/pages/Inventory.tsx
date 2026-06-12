@@ -1930,7 +1930,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
           <div>{t('inventory.excel_help_cols')}</div>
           <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200">
-            Code, Material Name, Unit, Small Unit, Small Unit Quantity Per Unit, Quantity, Sales Price, Cost, Category, Min Stock
+            Code, International Barcode, Material Name, Name (Arabic), Unit, Small Unit, Small Unit Quantity Per Unit, Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}
@@ -2316,6 +2316,9 @@ function StocktakeTab() {
   const [counted, setCounted] = useState<Record<number, string>>({})
   const [expiries, setExpiries] = useState<Record<number, string>>({})
   const [categoriesEdits, setCategoriesEdits] = useState<Record<number, string>>({})
+  // Per-product expiry breakdown (multi-expiry mode). Presence of a key = active.
+  type StLot = { expiry_date: string; quantity: string }
+  const [lotsEdits, setLotsEdits] = useState<Record<number, StLot[]>>({})
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
@@ -2359,6 +2362,42 @@ function StocktakeTab() {
   const origCategory = (it: any) => it.category || ''
   const curCategory = (it: any) => (categoriesEdits[it.id] !== undefined ? categoriesEdits[it.id] : origCategory(it))
 
+  // ─── Multi-expiry (per-batch) stocktake helpers ──────────────────────────
+  const origBatches = (it: any): StLot[] =>
+    Array.isArray(it.batches)
+      ? it.batches
+          .filter((b: any) => Number(b.quantity) > 0)
+          .map((b: any) => ({
+            expiry_date: b.expiry_date ? String(b.expiry_date).slice(0, 10) : '',
+            quantity: String(b.quantity),
+          }))
+      : []
+  const lotsActive = (it: any) => lotsEdits[it.id] !== undefined
+  const curLots = (it: any): StLot[] => {
+    if (lotsEdits[it.id] !== undefined) return lotsEdits[it.id]
+    const ob = origBatches(it)
+    return ob.length ? ob : [{ expiry_date: origExpiry(it), quantity: String(it.stock || 0) }]
+  }
+  const lotsSum = (lots: StLot[]) => lots.reduce((s, l) => s + (parseInt(l.quantity, 10) || 0), 0)
+  const lotsSig = (lots: StLot[]) =>
+    lots
+      .filter(l => (parseInt(l.quantity, 10) || 0) > 0)
+      .map(l => `${l.expiry_date || '∞'}:${parseInt(l.quantity, 10) || 0}`)
+      .sort()
+      .join('|')
+  const enableLots = (it: any) => setLotsEdits(prev => ({ ...prev, [it.id]: curLots(it) }))
+  const disableLots = (it: any) => setLotsEdits(prev => { const n = { ...prev }; delete n[it.id]; return n })
+  const updateLot = (id: number, idx: number, field: keyof StLot, value: string) =>
+    setLotsEdits(prev => {
+      const lots = [...(prev[id] || [])]
+      lots[idx] = { ...lots[idx], [field]: value }
+      return { ...prev, [id]: lots }
+    })
+  const addLot = (id: number) =>
+    setLotsEdits(prev => ({ ...prev, [id]: [...(prev[id] || []), { expiry_date: '', quantity: '' }] }))
+  const removeLot = (id: number, idx: number) =>
+    setLotsEdits(prev => ({ ...prev, [id]: (prev[id] || []).filter((_, i) => i !== idx) }))
+
   const categoryOptions = useMemo(() => {
     const set = new Set<string>([...STANDARD_CATEGORIES, ...categories])
     items.forEach((it) => { if (it.category) set.add(it.category) })
@@ -2367,6 +2406,18 @@ function StocktakeTab() {
 
   const toApply = items
     .map(it => {
+      const curCat = curCategory(it)
+      const catChanged = curCat !== origCategory(it)
+      if (lotsActive(it)) {
+        const lots = curLots(it)
+        const total = lotsSum(lots)
+        const countChanged = total !== Number(it.stock)
+        const lotsChanged = lotsSig(lots) !== lotsSig(origBatches(it))
+        return {
+          it, counted: total, curExp: '', curCat,
+          countChanged, expChanged: false, catChanged, isLots: true, lotsChanged, lots,
+        }
+      }
       const raw = counted[it.id]
       const hasC = raw !== '' && raw !== undefined
       const pack = packSizeOf(it)
@@ -2374,8 +2425,6 @@ function StocktakeTab() {
       const countChanged = cnum !== null && cnum !== Number(it.stock)
       const curExp = curExpiry(it)
       const expChanged = curExp !== '' && curExp !== origExpiry(it)
-      const curCat = curCategory(it)
-      const catChanged = curCat !== origCategory(it)
       return {
         it,
         counted: countChanged && cnum !== null ? cnum : Number(it.stock),
@@ -2384,9 +2433,12 @@ function StocktakeTab() {
         countChanged,
         expChanged,
         catChanged,
+        isLots: false,
+        lotsChanged: false,
+        lots: [] as StLot[],
       }
     })
-    .filter(r => r.countChanged || r.expChanged || r.catChanged)
+    .filter(r => r.countChanged || r.expChanged || r.catChanged || r.lotsChanged)
 
   const stFilter = useQuickFilter(items, [
     (it: any) => it.name_en,
@@ -2409,7 +2461,14 @@ function StocktakeTab() {
     setApplying(true)
     try {
       const payload = {
-        items: toApply.map(r => ({
+        items: toApply.map(r => r.isLots ? ({
+          product_id: r.it.id,
+          counted: r.counted,
+          category: r.catChanged ? r.curCat : undefined,
+          lots: r.lots
+            .filter(l => (parseInt(l.quantity, 10) || 0) > 0)
+            .map(l => ({ expiry_date: l.expiry_date || null, quantity: parseInt(l.quantity, 10) || 0 })),
+        }) : ({
           product_id: r.it.id,
           counted: r.counted,
           expiry_date: r.expChanged ? r.curExp : undefined,
@@ -2426,6 +2485,7 @@ function StocktakeTab() {
       setCounted({})
       setExpiries({})
       setCategoriesEdits({})
+      setLotsEdits({})
       await load()
       await loadPastRuns()
     } catch (e: any) {
@@ -2438,7 +2498,7 @@ function StocktakeTab() {
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <select
           value={branchId}
-          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}) }}
+          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}); setExpiries({}); setLotsEdits({}) }}
           disabled={!isAdmin}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 disabled:bg-slate-50"
         >
@@ -2519,7 +2579,9 @@ function StocktakeTab() {
                 const raw = counted[it.id]
                 const has = raw !== '' && raw !== undefined
                 const pack = packSizeOf(it)
-                const val = has ? parsePackStockInput(String(raw), pack) : null
+                const isLots = lotsActive(it)
+                const lots = isLots ? curLots(it) : []
+                const val = isLots ? lotsSum(lots) : (has ? parsePackStockInput(String(raw), pack) : null)
                 const split = val !== null ? stockVarianceSplit(val, Number(it.stock), pack) : null
                 const unitLabel = it.unit || t('inventory.sub_unit_word')
                 const subLabel = it.sub_unit || t('inventory.sub_unit_word')
@@ -2560,14 +2622,21 @@ function StocktakeTab() {
                         : it.stock}
                     </td>
                     <td className="px-3 py-2.5 text-center">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={raw ?? ''}
-                        onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
-                        placeholder={pack > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
-                        className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
-                      />
+                      {isLots ? (
+                        <div className="text-sm font-mono text-slate-700">
+                          {val}
+                          <div className="text-[10px] text-slate-400 font-sans">{t('inventory.st_from_lots')}</div>
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={raw ?? ''}
+                          onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
+                          placeholder={pack > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+                          className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                        />
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-center font-mono text-xs">
                       {split === null ? <span className="text-slate-300">—</span> : (
@@ -2590,12 +2659,67 @@ function StocktakeTab() {
                           </span>
                         )}
                     </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <DateInput
-                        value={curExpiry(it)}
-                        onChange={(v) => setExpiries(prev => ({ ...prev, [it.id]: v }))}
-                        className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
-                      />
+                    <td className="px-3 py-2.5 text-center align-top">
+                      {isLots ? (
+                        <div className="space-y-1.5 min-w-[15rem] text-start">
+                          {lots.map((lot, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5">
+                              <DateInput
+                                value={lot.expiry_date}
+                                onChange={(v) => updateLot(it.id, idx, 'expiry_date', v)}
+                                className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                              />
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={lot.quantity}
+                                onChange={(e) => updateLot(it.id, idx, 'quantity', e.target.value)}
+                                placeholder={t('inventory.st_qty') as string}
+                                className="w-20 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => removeLot(it.id, idx)}
+                                className="text-slate-400 hover:text-red-500 p-1"
+                                title={t('common.remove') as string}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                            <button
+                              type="button"
+                              onClick={() => addLot(it.id)}
+                              className="inline-flex items-center gap-1 text-[11px] text-pharma-600 hover:text-pharma-800 font-medium"
+                            >
+                              <Plus size={12} /> {t('inventory.st_add_expiry')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => disableLots(it)}
+                              className="text-[11px] text-slate-400 hover:text-slate-600"
+                            >
+                              {t('inventory.st_single_expiry')}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-1">
+                          <DateInput
+                            value={curExpiry(it)}
+                            onChange={(v) => setExpiries(prev => ({ ...prev, [it.id]: v }))}
+                            className="w-28 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => enableLots(it)}
+                            className="text-[11px] text-pharma-600 hover:text-pharma-800 font-medium"
+                          >
+                            {t('inventory.st_multi_expiry')}
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )
