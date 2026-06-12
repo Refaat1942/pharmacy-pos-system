@@ -718,16 +718,39 @@ def create_adjustment(req: AdjustmentRequest,
 
 # ─── STOCKTAKE (physical count reconciliation) ──────────────────────────
 
+class StocktakeLot(BaseModel):
+    expiry_date: Optional[date] = None
+    quantity: int
+
+
 class StocktakeLine(BaseModel):
     product_id: int
     counted: int
     expiry_date: Optional[date] = None
     category: Optional[str] = None
+    # Optional per-expiry breakdown. When provided, it is the source of truth:
+    # `counted` is derived from the sum of lot quantities and the product's
+    # batches are rebuilt to match (mirrors how purchase orders record expiry).
+    lots: Optional[List[StocktakeLot]] = None
 
 
 class StocktakeRequest(BaseModel):
     items: List[StocktakeLine]
     note: Optional[str] = None
+
+
+def _current_batches_signature(cur, product_id: int) -> list:
+    """Sorted [(expiry_date_or_None, qty), ...] for the product's live batches."""
+    cur.execute(
+        """SELECT expiry_date, SUM(quantity)::int AS q
+           FROM product_batches
+           WHERE product_id = %s AND quantity > 0
+           GROUP BY expiry_date""",
+        (product_id,),
+    )
+    sig = [(r["expiry_date"], int(r["q"])) for r in cur.fetchall()]
+    sig.sort(key=lambda t: (t[0] is None, t[0] or date(9999, 12, 31)))
+    return sig
 
 
 @router.post("/stocktake")
@@ -760,8 +783,6 @@ def apply_stocktake(req: StocktakeRequest,
 
         changes = []
         for line in req.items:
-            if line.counted < 0:
-                raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
             cur.execute(
                 """SELECT id, stock, branch_id, expiry_date, category, pack_size
                    FROM products WHERE id=%s FOR UPDATE""",
@@ -774,20 +795,61 @@ def apply_stocktake(req: StocktakeRequest,
             old_stock = int(product["stock"])
             old_category = product.get("category")
             old_expiry = product.get("expiry_date")
-            delta = line.counted - old_stock
-            expiry_change = line.expiry_date is not None and line.expiry_date != old_expiry
+
+            # Normalise per-expiry lots when provided (the multi-expiry path).
+            use_lots = line.lots is not None
+            norm_lots: List[StocktakeLot] = []
+            if use_lots:
+                for lot in line.lots or []:
+                    if lot.quantity < 0:
+                        raise HTTPException(status_code=400, detail="Lot quantity cannot be negative")
+                    if lot.quantity > 0:
+                        norm_lots.append(lot)
+                counted = sum(int(lot.quantity) for lot in norm_lots)
+                lot_expiries = [lot.expiry_date for lot in norm_lots if lot.expiry_date is not None]
+                new_lot_expiry = min(lot_expiries) if lot_expiries else None
+                new_sig = sorted(
+                    [(lot.expiry_date, int(lot.quantity)) for lot in norm_lots],
+                    key=lambda tpl: (tpl[0] is None, tpl[0] or date(9999, 12, 31)),
+                )
+                lots_change = new_sig != _current_batches_signature(cur, line.product_id)
+            else:
+                counted = line.counted
+                if counted < 0:
+                    raise HTTPException(status_code=400, detail="Counted quantity cannot be negative")
+                lots_change = False
+                new_lot_expiry = None
+
+            delta = counted - old_stock
+            if use_lots:
+                expiry_change = lots_change
+                new_expiry = new_lot_expiry
+            else:
+                expiry_change = line.expiry_date is not None and line.expiry_date != old_expiry
+                new_expiry = line.expiry_date if expiry_change else old_expiry
             cat = (line.category or "").strip() if line.category is not None else None
             category_change = cat is not None and cat != (old_category or "")
             new_category = cat if category_change else old_category
-            new_expiry = line.expiry_date if expiry_change else old_expiry
             if delta == 0 and not expiry_change and not category_change:
                 continue
             if category_change:
                 cur.execute("UPDATE products SET category=%s WHERE id=%s", (cat, line.product_id))
-            if delta != 0 or expiry_change:
+            if use_lots:
+                if delta != 0 or lots_change:
+                    # Rebuild batches from scratch. Reset products.stock to 0 first so
+                    # add_batch_stock's lazy migration cannot re-seed a phantom lot from
+                    # the now-stale stock value.
+                    cur.execute("DELETE FROM product_batches WHERE product_id=%s", (line.product_id,))
+                    cur.execute("UPDATE products SET stock=0 WHERE id=%s", (line.product_id,))
+                    for lot in norm_lots:
+                        add_batch_stock(cur, line.product_id, product["branch_id"], int(lot.quantity), lot.expiry_date)
+                    if not norm_lots:
+                        sync_product_from_batches(cur, line.product_id)
+            elif delta != 0 or expiry_change:
                 cur.execute("DELETE FROM product_batches WHERE product_id=%s", (line.product_id,))
+                cur.execute("UPDATE products SET stock=0 WHERE id=%s", (line.product_id,))
                 exp = line.expiry_date if expiry_change else old_expiry
-                qty = line.counted if delta != 0 else int(product["stock"])
+                qty = counted if delta != 0 else old_stock
                 if qty > 0:
                     add_batch_stock(cur, line.product_id, product["branch_id"], qty, exp)
                 else:
@@ -795,7 +857,7 @@ def apply_stocktake(req: StocktakeRequest,
             if delta != 0:
                 log_movement(
                     cur, line.product_id, product["branch_id"], "adjustment",
-                    delta, line.counted,
+                    delta, counted,
                     reference_type="stocktake", reference_id=run_id,
                     reason=reason,
                     user_id=current_user.get("user_id"),
@@ -806,14 +868,14 @@ def apply_stocktake(req: StocktakeRequest,
                     old_category, new_category, old_expiry, new_expiry)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
-                    run_id, line.product_id, old_stock, line.counted, delta,
+                    run_id, line.product_id, old_stock, counted, delta,
                     old_category, new_category, old_expiry, new_expiry,
                 ),
             )
             changes.append({
                 "product_id": line.product_id,
                 "old_stock": old_stock,
-                "new_stock": line.counted,
+                "new_stock": counted,
                 "delta": delta,
             })
         if not changes:
@@ -1216,13 +1278,15 @@ def bulk_template(current_user=Depends(get_current_user)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
-    headers = ["Code", "International Barcode", "Material Name", "Unit", "Small Unit",
+    headers = ["Code", "International Barcode", "Material Name", "Name (Arabic)", "Unit", "Small Unit",
                "Small Unit Quantity Per Unit", "Quantity",
                "Sales Price", "Cost", "Category", "Min Stock", "Expiry Date"]
     ws.append(headers)
-    ws.append(["1234567890123", "5000112637922", "Panadol Extra 48 Tab", "Box", "Strip", 4, 100,
+    ws.append(["1234567890123", "5000112637922", "Panadol Extra 48 Tab", "بانادول اكسترا 48 قرص",
+               "Box", "Strip", 4, 100,
                116.00, 80.00, "Painkillers", 10, "2027-12-31"])
-    ws.append(["7654321098765", "8901234567890", "Augmentin 1g", "Box", "Tablet", 14, 50,
+    ws.append(["7654321098765", "8901234567890", "Augmentin 1g", "اوجمنتين 1 جم",
+               "Box", "Tablet", 14, 50,
                180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
     buf = io.BytesIO()
     wb.save(buf)
@@ -1314,7 +1378,9 @@ async def bulk_upload(file: UploadFile = File(...),
                 pack_size = 1
             sub_unit_name = sub_unit_name.lower()
 
-            qty_big = float(_row_get(r, "stock", "quantity", "qty") or 0)
+            qty_raw = _row_get(r, "stock", "quantity", "qty")
+            qty_provided = qty_raw not in (None, "")
+            qty_big = float(qty_raw) if qty_provided else 0.0
 
             from datetime import datetime as _dt, date as _date
             expiry_date = None
@@ -1356,19 +1422,40 @@ async def bulk_upload(file: UploadFile = File(...),
                     """UPDATE products SET name_en=%s, name_ar=%s, category=%s, unit=%s,
                        price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
                        sub_price=%s, active=true,
-                       international_barcode=COALESCE(%s, international_barcode),
-                       expiry_date=COALESCE(%s, expiry_date) WHERE id=%s""",
+                       international_barcode=COALESCE(%s, international_barcode)
+                       WHERE id=%s""",
                     (name_en, name_ar, category, unit, price, cost, min_stock,
-                     pack_size, sub_unit, sub_price, intl_barcode, expiry_date, existing["id"]),
+                     pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
                 )
-                if stock != int(existing["stock"]):
-                    delta = stock - int(existing["stock"])
-                    cur.execute("UPDATE products SET stock=%s WHERE id=%s", (stock, existing["id"]))
-                    log_movement(
-                        cur, existing["id"], branch_id, "adjustment",
-                        delta, stock,
-                        reference_type="bulk_upload", reason="Bulk upload sync",
-                        user_id=user_id,
+                # Stock & expiry live in the FEFO batch ledger. Only touch them when
+                # the row actually carries a quantity, so a metadata-only re-import
+                # never silently zeroes stock or wipes expiry batches.
+                if qty_provided:
+                    old_q = int(existing["stock"])
+                    delta = stock - old_q
+                    if delta > 0:
+                        add_batch_stock(cur, existing["id"], branch_id, delta, expiry_date)
+                    elif delta < 0:
+                        deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
+                    elif expiry_date is not None:
+                        # Quantity unchanged but a single expiry was supplied:
+                        # rebuild the lot so the expiry lands in the batch ledger.
+                        cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
+                        if stock > 0:
+                            add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
+                        else:
+                            sync_product_from_batches(cur, existing["id"])
+                    if delta != 0:
+                        log_movement(
+                            cur, existing["id"], branch_id, "adjustment",
+                            delta, stock,
+                            reference_type="bulk_upload", reason="Bulk upload sync",
+                            user_id=user_id,
+                        )
+                elif expiry_date is not None:
+                    cur.execute(
+                        "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
+                        (expiry_date, existing["id"]),
                     )
                 updated += 1
             else:
@@ -1377,10 +1464,13 @@ async def bulk_upload(file: UploadFile = File(...),
                        price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                     (barcode, intl_barcode, name_ar, name_en, category, unit,
-                     price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
+                     price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
                 )
                 new_id = cur.fetchone()["id"]
-                if stock > 0:
+                # Seed the opening quantity through the batch ledger so the expiry
+                # is recorded as a FEFO lot (consistent with PO receive & stocktake).
+                if qty_provided and stock > 0:
+                    add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
                     log_movement(
                         cur, new_id, branch_id, "initial",
                         stock, stock,
