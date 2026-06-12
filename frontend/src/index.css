@@ -229,6 +229,14 @@ body {
   }
   .receipt-print .receipt-header-block { margin-bottom: 4px !important; }
   .receipt-print img { max-height: 48px !important; margin-bottom: 4px !important; }
+  /* Logo gets a larger, crisper allowance than other receipt images (barcode is SVG). */
+  .receipt-print .receipt-logo {
+    max-height: 96px !important;
+    max-width: 100% !important;
+    width: auto !important;
+    margin-bottom: 6px !important;
+    image-rendering: -webkit-optimize-contrast;
+  }
   .receipt-print svg text {
     font-weight: 700 !important;
     fill: #000 !important;

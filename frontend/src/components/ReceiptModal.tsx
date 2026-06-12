@@ -163,7 +163,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
               <img
                 src={profile.logo_data_url}
                 alt={name}
-                className="mx-auto mb-3 max-h-20 max-w-[160px] object-contain"
+                className="receipt-logo mx-auto mb-3 max-h-32 max-w-[230px] object-contain"
               />
             ) : profile?.show_logo !== false ? (
               <div
