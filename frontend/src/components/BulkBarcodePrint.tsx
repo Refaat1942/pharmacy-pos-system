@@ -16,7 +16,7 @@ export interface BulkItem {
   defaultQty?: number
 }
 
-type LabelSize = 'sm' | 'md' | 'lg' | 'thermal'
+type LabelSize = 'sm' | 'md' | 'lg' | 'thermal' | 'zebra2x3'
 
 type SizeCfg = {
   cols: number
@@ -53,6 +53,22 @@ const SIZE_CSS: Record<LabelSize, SizeCfg> = {
     barcodeFontSize: 8,
     labelW: '38mm',
     labelH: '25mm',
+  },
+  /* Zebra LP 2824 (and similar) — 3.13in x 2.00in label, one sticker = one page */
+  zebra2x3: {
+    cols: 1,
+    cellPad: '2mm 3mm',
+    pharmacyFs: '11px',
+    nameFs: '12px',
+    priceFs: '13px',
+    expiryFs: '11px',
+    imgMaxW: '74mm',
+    imgMaxH: '26mm',
+    scale: 2,
+    height: 50,
+    barcodeFontSize: 14,
+    labelW: '3.13in',
+    labelH: '2in',
   },
 }
 
@@ -102,7 +118,7 @@ async function renderBarcodeDataUrl(
 }
 
 function buildPrintStyles(size: LabelSize, cfg: SizeCfg, pageMargin: string): string {
-  if (size === 'thermal' && cfg.labelW && cfg.labelH) {
+  if (cfg.labelW && cfg.labelH) {
     return `
       @page{size:${cfg.labelW} ${cfg.labelH};margin:0}
       body{margin:0;font-family:Arial Black,Arial,sans-serif;background:#fff;color:#000;font-weight:700}
@@ -246,7 +262,9 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     setBusy(true)
     try {
       const cfg = SIZE_CSS[size]
-      const isThermal = size === 'thermal'
+      // Any preset with explicit label dimensions prints one sticker per page
+      // (label/roll printers); the rest tile onto an A4 grid.
+      const isThermal = !!(cfg.labelW && cfg.labelH)
       const pageMargin = isThermal ? '0' : '3mm'
 
       const w = window.open('', 'PRINT_BULK', 'width=960,height=720,scrollbars=yes')
@@ -365,6 +383,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             {t('bulk_barcode.thermal_hint')}
           </div>
         )}
+        {size === 'zebra2x3' && (
+          <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900">
+            {t('bulk_barcode.zebra2x3_hint')}
+          </div>
+        )}
 
         <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="md:col-span-2">
@@ -372,6 +395,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             <select value={size} onChange={e => setSize(e.target.value as LabelSize)}
               className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1 font-medium">
               <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
+              <option value="zebra2x3">{t('bulk_barcode.size_zebra2x3')}</option>
               <option value="sm">{t('bulk_barcode.size_sm')}</option>
               <option value="md">{t('bulk_barcode.size_md')}</option>
               <option value="lg">{t('bulk_barcode.size_lg')}</option>
