@@ -5,6 +5,15 @@ import { X, Printer, Minus, Plus, Eye } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
+import {
+  ZebraDevice,
+  isBrowserPrintAvailable,
+  listPrinters,
+  getDefaultPrinter,
+  sendZpl,
+  readLabelSize,
+} from '../lib/zebraBrowserPrint'
+import { renderLabelCanvas, canvasToZpl } from '../lib/labelZpl'
 
 export interface BulkItem {
   id: number
@@ -281,10 +290,33 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT_W)
   const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT_H)
 
+  // Zebra Browser Print (direct-to-printer) state.
+  const [zebraReady, setZebraReady] = useState(false)
+  const [zebraDevices, setZebraDevices] = useState<ZebraDevice[]>([])
+  const [zebraDevice, setZebraDevice] = useState<ZebraDevice | null>(null)
+  const [zebraDirect, setZebraDirect] = useState(true)
+  const [zebraDpi, setZebraDpi] = useState(203)
+  const [zebraSizeNote, setZebraSizeNote] = useState('')
+
   // Persist the chosen label settings so they are auto-applied next time.
   useEffect(() => {
     saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH })
   }, [size, useQR, showName, showPrice, showExpiry, customW, customH])
+
+  // Detect a Zebra printer via Browser Print (fails soft if not installed).
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (!(await isBrowserPrintAvailable())) return
+      const [def, list] = await Promise.all([getDefaultPrinter(), listPrinters()])
+      if (cancelled) return
+      const devices = list.length ? list : def ? [def] : []
+      setZebraDevices(devices)
+      setZebraDevice(def || devices[0] || null)
+      setZebraReady(devices.length > 0 || !!def)
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
@@ -430,6 +462,71 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     }
   }
 
+  const readSizeFromPrinter = async () => {
+    if (!zebraDevice) return
+    setBusy(true)
+    try {
+      const r = await readLabelSize(zebraDevice)
+      if (r.dpi) setZebraDpi(r.dpi)
+      if (r.widthIn) setCustomW(r.widthIn)
+      if (r.heightIn) setCustomH(r.heightIn)
+      setZebraSizeNote(
+        t('bulk_barcode.zebra_size_read', {
+          w: r.widthIn ?? customW,
+          h: r.heightIn ?? customH,
+          dpi: r.dpi,
+        }) as string,
+      )
+    } catch {
+      setZebraSizeNote(t('bulk_barcode.zebra_size_unknown') as string)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const printDirectToZebra = async () => {
+    if (!zebraDevice || totalLabels === 0) return
+    setBusy(true)
+    try {
+      const wIn = customW || CUSTOM_DEFAULT_W
+      const hIn = customH || CUSTOM_DEFAULT_H
+      // High-resolution barcode so the rasterised label stays crisp/scannable.
+      const barCfg: SizeCfg = {
+        ...customCfg(wIn, hIn),
+        scale: 3,
+        height: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
+        barcodeFontSize: Math.max(10, Math.round(hIn * zebraDpi * 0.06)),
+      }
+      for (const it of printable) {
+        const n = qty[it.id] || 0
+        if (n <= 0) continue
+        const url = await renderBarcodeDataUrl(it.barcode!, useQR, barCfg, true)
+        if (!url) continue
+        const canvas = await renderLabelCanvas({
+          widthIn: wIn,
+          heightIn: hIn,
+          dpi: zebraDpi,
+          barcodeDataUrl: url,
+          pharmacy: showPharmacy && pharmacyName ? pharmacyName : undefined,
+          name: showName ? it.name : undefined,
+          expiry: showExpiry ? formatExpiryForLabel(it.expiryDate) : null,
+          price: showPrice && it.price != null
+            ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
+            : null,
+          isQR: useQR,
+        })
+        await sendZpl(zebraDevice, canvasToZpl(canvas, n))
+      }
+    } catch (e: any) {
+      alert(t('bulk_barcode.zebra_print_error', { msg: e?.message || '' }))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const useZebraDirect = zebraReady && zebraDirect && !!zebraDevice
+  const handlePrint = () => (useZebraDirect ? printDirectToZebra() : openPrintWindow(true))
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '90vh' }}>
@@ -473,6 +570,51 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
               <span className="text-emerald-700">{t('bulk_barcode.custom_unit')}</span>
             </div>
             <div>{t('bulk_barcode.custom_hint')}</div>
+          </div>
+        )}
+        {zebraReady && (
+          <div className="px-5 py-3 bg-sky-50 border-b border-sky-100 text-xs text-sky-900 space-y-2">
+            <div className="flex items-center gap-2">
+              <Printer size={14} />
+              <span className="font-semibold">{t('bulk_barcode.zebra_detected')}</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 font-medium">
+                <input type="checkbox" checked={zebraDirect} onChange={(e) => setZebraDirect(e.target.checked)} />
+                <span>{t('bulk_barcode.zebra_direct')}</span>
+              </label>
+              {zebraDevices.length > 1 ? (
+                <select
+                  value={zebraDevice?.uid || ''}
+                  onChange={(e) => setZebraDevice(zebraDevices.find((d) => d.uid === e.target.value) || null)}
+                  className="border border-sky-300 rounded px-2 py-1 text-sky-900"
+                >
+                  {zebraDevices.map((d) => <option key={d.uid} value={d.uid}>{d.name}</option>)}
+                </select>
+              ) : zebraDevice ? (
+                <span className="font-mono">{zebraDevice.name}</span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 font-medium">
+                {t('bulk_barcode.custom_w')}
+                <input type="number" min={0.5} max={8} step={0.01} value={customW}
+                  onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT_W)}
+                  className="w-16 border border-sky-300 rounded px-2 py-1 text-sky-900" />
+              </label>
+              <label className="flex items-center gap-1.5 font-medium">
+                {t('bulk_barcode.custom_h')}
+                <input type="number" min={0.5} max={8} step={0.01} value={customH}
+                  onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT_H)}
+                  className="w-16 border border-sky-300 rounded px-2 py-1 text-sky-900" />
+              </label>
+              <span className="text-sky-700">in</span>
+              <button type="button" onClick={readSizeFromPrinter}
+                className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
+                {t('bulk_barcode.zebra_read_size')}
+              </button>
+              {zebraSizeNote && <span className="text-sky-700">{zebraSizeNote}</span>}
+            </div>
           </div>
         )}
 
@@ -574,11 +716,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             </button>
             <button
               type="button"
-              onClick={() => openPrintWindow(true)}
+              onClick={handlePrint}
               disabled={busy || totalLabels === 0}
               className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1"
             >
-              <Printer size={14} /> {t('bulk_barcode.choose_printer', { n: totalLabels })}
+              <Printer size={14} />{' '}
+              {useZebraDirect
+                ? t('bulk_barcode.zebra_print_btn', { n: totalLabels })
+                : t('bulk_barcode.choose_printer', { n: totalLabels })}
             </button>
           </div>
         </div>
