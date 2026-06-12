@@ -72,6 +72,32 @@ const SIZE_CSS: Record<LabelSize, SizeCfg> = {
   },
 }
 
+// Remembered label-print preferences, so the right size/layout is applied
+// automatically next time without re-selecting (per browser/terminal).
+const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
+type LabelPrefs = {
+  size?: LabelSize
+  useQR?: boolean
+  showName?: boolean
+  showPrice?: boolean
+  showExpiry?: boolean
+}
+function loadLabelPrefs(): LabelPrefs {
+  try {
+    const raw = localStorage.getItem(LABEL_PREFS_KEY)
+    return raw ? (JSON.parse(raw) as LabelPrefs) : {}
+  } catch {
+    return {}
+  }
+}
+function saveLabelPrefs(prefs: LabelPrefs): void {
+  try {
+    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    /* ignore quota / privacy-mode errors */
+  }
+}
+
 function truncLabel(s: string, max: number): string {
   const t = s.trim()
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`
@@ -214,14 +240,20 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [qty, setQty] = useState<Record<number, number>>(() =>
     Object.fromEntries(printable.map((i) => [i.id, i.defaultQty ?? 1])),
   )
-  const [size, setSize] = useState<LabelSize>(defaultSize)
-  const [useQR, setUseQR] = useState(false)
-  const [showName, setShowName] = useState(true)
-  const [showPrice, setShowPrice] = useState(true)
-  const [showExpiry, setShowExpiry] = useState(true)
+  const savedPrefs = useMemo(loadLabelPrefs, [])
+  const [size, setSize] = useState<LabelSize>(savedPrefs.size ?? defaultSize)
+  const [useQR, setUseQR] = useState(savedPrefs.useQR ?? false)
+  const [showName, setShowName] = useState(savedPrefs.showName ?? true)
+  const [showPrice, setShowPrice] = useState(savedPrefs.showPrice ?? true)
+  const [showExpiry, setShowExpiry] = useState(savedPrefs.showExpiry ?? true)
   const [showPharmacy, setShowPharmacy] = useState(true)
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Persist the chosen label settings so they are auto-applied next time.
+  useEffect(() => {
+    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry })
+  }, [size, useQR, showName, showPrice, showExpiry])
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
