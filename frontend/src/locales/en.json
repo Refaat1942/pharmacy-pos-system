@@ -905,6 +905,7 @@
     "st_single_expiry": "Single expiry",
     "st_add_expiry": "Add expiry",
     "st_qty": "Qty",
+    "st_total": "Total",
     "st_from_lots": "from lots",
     "edit_stock_reason": "Stock updated via item edit",
     "st_apply": "Apply Stocktake",

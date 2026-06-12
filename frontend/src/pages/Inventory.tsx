@@ -2661,7 +2661,12 @@ function StocktakeTab() {
                     </td>
                     <td className="px-3 py-2.5 text-center align-top">
                       {isLots ? (
-                        <div className="space-y-1.5 min-w-[15rem] text-start">
+                        <div className="min-w-[17rem] text-start bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1.5">
+                          <div className="flex items-center gap-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            <span className="flex-1">{t('inventory.f_expiry')}</span>
+                            <span className="w-16 text-end">{t('inventory.st_qty')}</span>
+                            <span className="w-5" />
+                          </div>
                           {lots.map((lot, idx) => (
                             <div key={idx} className="flex items-center gap-1.5">
                               <DateInput
@@ -2674,20 +2679,20 @@ function StocktakeTab() {
                                 inputMode="numeric"
                                 value={lot.quantity}
                                 onChange={(e) => updateLot(it.id, idx, 'quantity', e.target.value)}
-                                placeholder={t('inventory.st_qty') as string}
-                                className="w-20 text-center border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
+                                placeholder="0"
+                                className="w-16 text-end font-mono tabular-nums border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-pharma-500"
                               />
                               <button
                                 type="button"
                                 onClick={() => removeLot(it.id, idx)}
-                                className="text-slate-400 hover:text-red-500 p-1"
+                                className="w-5 flex-shrink-0 text-slate-400 hover:text-red-500"
                                 title={t('common.remove') as string}
                               >
                                 <X size={14} />
                               </button>
                             </div>
                           ))}
-                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                          <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-1.5">
                             <button
                               type="button"
                               onClick={() => addLot(it.id)}
@@ -2695,13 +2700,27 @@ function StocktakeTab() {
                             >
                               <Plus size={12} /> {t('inventory.st_add_expiry')}
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => disableLots(it)}
-                              className="text-[11px] text-slate-400 hover:text-slate-600"
-                            >
-                              {t('inventory.st_single_expiry')}
-                            </button>
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className={`text-[11px] font-semibold tabular-nums ${
+                                  val === Number(it.stock)
+                                    ? 'text-slate-500'
+                                    : (val ?? 0) > Number(it.stock)
+                                      ? 'text-emerald-600'
+                                      : 'text-red-600'
+                                }`}
+                                title={`${t('inventory.st_system')}: ${it.stock}`}
+                              >
+                                {t('inventory.st_total')}: {val} / {it.stock}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => disableLots(it)}
+                                className="text-[11px] text-slate-400 hover:text-slate-600"
+                              >
+                                {t('inventory.st_single_expiry')}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ) : (

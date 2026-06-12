@@ -306,6 +306,7 @@
     "st_single_expiry": "تاريخ واحد",
     "st_add_expiry": "إضافة تاريخ",
     "st_qty": "كمية",
+    "st_total": "الإجمالي",
     "st_from_lots": "من الدفعات",
     "edit_stock_reason": "تحديث المخزون عبر تعديل الصنف",
     "st_apply": "تطبيق الجرد",
