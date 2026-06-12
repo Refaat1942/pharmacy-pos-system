@@ -884,6 +884,17 @@ export default function POS() {
                             <p className="text-[11px] text-slate-400 tabular-nums">
                               {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
                             </p>
+                            <p className={`text-[11px] font-semibold tabular-nums ${
+                              item.product.stock <= 0
+                                ? 'text-red-500'
+                                : item.product.stock <= (item.product.min_stock || 0)
+                                  ? 'text-amber-600'
+                                  : 'text-emerald-600'
+                            }`}>
+                              {item.product.stock <= 0
+                                ? t('pos.out_of_stock')
+                                : `${item.product.stock} ${t('pos.in_stock')}`}
+                            </p>
                             {(item.offer_discount || 0) > 0 && (
                               <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-wide text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
