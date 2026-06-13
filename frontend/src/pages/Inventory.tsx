@@ -584,7 +584,7 @@ export default function Inventory() {
         <BulkBarcodePrint
           items={items.filter(i => selected.has(i.id)).flatMap((i) => bulkItemsForProduct(i, isAr))}
           currency={t('pos.egp') as string}
-          defaultSize="thermal"
+          defaultSize="medium"
           onClose={() => setShowBulkPrint(false)}
         />
       )}
@@ -1733,7 +1733,7 @@ function BarcodeLabelsTab() {
         <BulkBarcodePrint
           items={printItems}
           currency={t('pos.egp') as string}
-          defaultSize="thermal"
+          defaultSize="medium"
           onClose={() => setShowPrint(false)}
         />
       )}

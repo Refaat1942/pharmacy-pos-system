@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import api from '../lib/api'
 import { useTranslation } from 'react-i18next'
-import { X, Printer, Minus, Plus, Eye } from 'lucide-react'
+import { X, Printer, Minus, Plus, Eye, RotateCcw } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
@@ -25,73 +25,75 @@ export interface BulkItem {
   defaultQty?: number
 }
 
-type LabelSize = 'sm' | 'md' | 'lg' | 'thermal' | 'zebra2x3' | 'custom'
+// ─── Label profiles ─────────────────────────────────────────────────────────
+// Every profile is one physical thermal label = one print page (single unit).
+type LabelSize = 'small' | 'medium' | 'large' | 'custom'
 
-type SizeCfg = {
-  cols: number
-  cellPad: string
-  pharmacyFs: string
-  nameFs: string
-  priceFs: string
-  expiryFs: string
-  imgMaxW: string
-  imgMaxH: string
-  scale: number
-  height: number
-  barcodeFontSize: number
-  labelW?: string
-  labelH?: string
+interface LabelDims {
+  wMm: number
+  hMm: number
 }
 
-const SIZE_CSS: Record<Exclude<LabelSize, 'custom'>, SizeCfg> = {
-  sm: { cols: 5, cellPad: '2mm', pharmacyFs: '7px', nameFs: '8px', priceFs: '8px', expiryFs: '7px', imgMaxW: '36mm', imgMaxH: 'none', scale: 1.5, height: 40, barcodeFontSize: 11 },
-  md: { cols: 3, cellPad: '4mm', pharmacyFs: '8px', nameFs: '10px', priceFs: '10px', expiryFs: '9px', imgMaxW: '58mm', imgMaxH: 'none', scale: 2, height: 60, barcodeFontSize: 12 },
-  lg: { cols: 2, cellPad: '5mm', pharmacyFs: '9px', nameFs: '12px', priceFs: '13px', expiryFs: '11px', imgMaxW: '90mm', imgMaxH: 'none', scale: 2.5, height: 80, barcodeFontSize: 13 },
-  /* XP-370B 38mm roll — one sticker = one print page (38×30mm), compact bold text */
-  thermal: {
-    cols: 1,
-    cellPad: '0.5mm 1mm',
-    pharmacyFs: '6px',
-    nameFs: '7px',
-    priceFs: '8px',
-    expiryFs: '6px',
-    imgMaxW: '34mm',
-    imgMaxH: '11mm',
-    scale: 1.05,
-    height: 22,
-    barcodeFontSize: 8,
-    labelW: '38mm',
-    labelH: '25mm',
-  },
-  /* Zebra LP 2824 (and similar) — 3.13in x 2.00in label, one sticker = one page */
-  zebra2x3: {
-    cols: 1,
-    cellPad: '2mm 3mm',
-    pharmacyFs: '11px',
-    nameFs: '12px',
-    priceFs: '13px',
-    expiryFs: '11px',
-    imgMaxW: '74mm',
-    imgMaxH: '26mm',
-    scale: 2,
-    height: 50,
-    barcodeFontSize: 14,
-    labelW: '3.13in',
-    labelH: '2in',
-  },
+const PROFILE_DIMS: Record<Exclude<LabelSize, 'custom'>, LabelDims> = {
+  small: { wMm: 40, hMm: 20 },
+  medium: { wMm: 50, hMm: 25 },
+  large: { wMm: 80, hMm: 50 },
 }
 
-// Remembered label-print preferences, so the right size/layout is applied
-// automatically next time without re-selecting (per browser/terminal).
+const CUSTOM_DEFAULT: LabelDims = { wMm: 50, hMm: 25 }
+
+interface LabelStyle {
+  /** Generated barcode bitmap height (px) */
+  barcodeHeight: number
+  /** Barcode module (bar) width — JsBarcode `width` */
+  barcodeScale: number
+  /** Text font size (px) */
+  fontSize: number
+  /** Label inner padding (mm) */
+  padding: number
+}
+
+function clampMm(v: number, fallback: number): number {
+  if (!Number.isFinite(v) || v <= 0) return fallback
+  return Math.min(200, Math.max(5, v))
+}
+
+function dimsFor(size: LabelSize, customW: number, customH: number): LabelDims {
+  if (size === 'custom') {
+    return { wMm: clampMm(customW, CUSTOM_DEFAULT.wMm), hMm: clampMm(customH, CUSTOM_DEFAULT.hMm) }
+  }
+  return PROFILE_DIMS[size]
+}
+
+/** Sensible barcode/text sizing derived from the label height (never oversized). */
+function defaultStyle({ hMm }: LabelDims): LabelStyle {
+  return {
+    barcodeHeight: Math.max(20, Math.round(hMm * 1.6)),
+    barcodeScale: hMm >= 40 ? 2.5 : hMm >= 24 ? 1.8 : 1.4,
+    fontSize: Math.max(6, Math.round(hMm * 0.34)),
+    padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
+  }
+}
+
+function normalizeSize(s?: string): LabelSize {
+  if (s === 'small' || s === 'medium' || s === 'large' || s === 'custom') return s
+  if (s === 'sm') return 'small'
+  if (s === 'lg' || s === 'zebra2x3') return 'large'
+  return 'medium' // md / thermal / undefined → sensible default
+}
+
+// Remembered label-print preferences (per browser/terminal) so the right size
+// and layout are applied automatically next time without re-selecting.
 const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
-type LabelPrefs = {
-  size?: LabelSize
+interface LabelPrefs {
+  size?: string
   useQR?: boolean
   showName?: boolean
   showPrice?: boolean
   showExpiry?: boolean
   customW?: number
   customH?: number
+  overrides?: Partial<LabelStyle>
 }
 function loadLabelPrefs(): LabelPrefs {
   try {
@@ -109,38 +111,6 @@ function saveLabelPrefs(prefs: LabelPrefs): void {
   }
 }
 
-const CUSTOM_DEFAULT_W = 3.13
-const CUSTOM_DEFAULT_H = 2.0
-
-/** Build a one-sticker-per-page config sized to an exact label (inches). */
-function customCfg(wIn: number, hIn: number): SizeCfg {
-  const w = Math.max(0.5, wIn || CUSTOM_DEFAULT_W)
-  const h = Math.max(0.5, hIn || CUSTOM_DEFAULT_H)
-  const hMm = h * 25.4
-  const wMm = w * 25.4
-  const big = hMm >= 38
-  return {
-    cols: 1,
-    cellPad: '1.5mm 2mm',
-    pharmacyFs: big ? '11px' : '8px',
-    nameFs: big ? '12px' : '9px',
-    priceFs: big ? '13px' : '9px',
-    expiryFs: big ? '11px' : '8px',
-    imgMaxW: `${Math.max(8, Math.round(wMm - 5))}mm`,
-    imgMaxH: `${Math.max(7, Math.round(hMm * 0.5))}mm`,
-    scale: 2,
-    height: big ? 55 : 32,
-    barcodeFontSize: big ? 14 : 10,
-    labelW: `${w}in`,
-    labelH: `${h}in`,
-  }
-}
-
-function truncLabel(s: string, max: number): string {
-  const t = s.trim()
-  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
-}
-
 function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
   const s = v.trim()
   if (/^\d{13}$/.test(s)) return 'EAN13'
@@ -153,25 +123,24 @@ function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
 async function renderBarcodeDataUrl(
   value: string,
   useQR: boolean,
-  cfg: SizeCfg,
-  thermal: boolean,
+  style: LabelStyle,
 ): Promise<string | null> {
   try {
     if (useQR) {
-      const qrScale = thermal ? 3 : Math.max(3, cfg.scale + 2)
-      return await QRCode.toDataURL(value, { margin: 0, scale: qrScale, errorCorrectionLevel: 'M' })
+      const scale = Math.max(3, Math.round(style.barcodeHeight / 12))
+      return await QRCode.toDataURL(value, { margin: 0, scale, errorCorrectionLevel: 'M' })
     }
     const c = document.createElement('canvas')
     JsBarcode(c, value, {
       format: detectType(value),
       displayValue: true,
-      width: cfg.scale,
-      height: cfg.height,
-      margin: thermal ? 0 : 2,
+      width: style.barcodeScale,
+      height: style.barcodeHeight,
+      margin: 0,
       font: 'Arial Black, Arial, sans-serif',
-      fontSize: cfg.barcodeFontSize,
+      fontSize: style.fontSize + 1,
       fontOptions: 'bold',
-      textMargin: thermal ? 0 : 2,
+      textMargin: 1,
       lineColor: '#000000',
       background: '#ffffff',
     })
@@ -181,79 +150,47 @@ async function renderBarcodeDataUrl(
   }
 }
 
-function buildPrintStyles(size: LabelSize, cfg: SizeCfg, pageMargin: string): string {
-  if (cfg.labelW && cfg.labelH) {
-    return `
-      @page{size:${cfg.labelW} ${cfg.labelH};margin:0}
-      body{margin:0;font-family:Arial Black,Arial,sans-serif;background:#fff;color:#000;font-weight:700}
-      #print-toolbar{
-        position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
-        border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
-      }
-      #print-toolbar strong{font-size:14px;color:#065f46;font-weight:700}
-      #print-toolbar button{
-        padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
-        border-radius:8px;cursor:pointer;font-size:14px
-      }
-      #print-toolbar span{font-size:12px;color:#047857}
-      .grid{display:block;padding:8px}
-      .cell{
-        width:${cfg.labelW};height:${cfg.labelH};max-width:${cfg.labelW};max-height:${cfg.labelH};
-        box-sizing:border-box;overflow:hidden;padding:${cfg.cellPad};
-        margin:0 auto 4px;border:1px dashed #ccc;
-        display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
-        text-align:center;page-break-after:always;page-break-inside:avoid;break-after:page
-      }
-      .pharmacy{
-        font-size:${cfg.pharmacyFs};font-weight:900;line-height:1;margin:0 0 0.5mm;
-        max-height:1.2em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%;
-        color:#000;text-transform:uppercase
-      }
-      .name{
-        font-size:${cfg.nameFs};font-weight:900;line-height:1.05;margin:0 0 0.5mm;
-        max-height:2.1em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-        width:100%;color:#000
-      }
-      .expiry{font-size:${cfg.expiryFs};font-weight:900;line-height:1;margin:0;color:#000}
-      .price{font-size:${cfg.priceFs};font-weight:900;line-height:1;margin:0;color:#000}
-      .row{display:flex;justify-content:space-between;width:100%;gap:2px;margin-top:0.5mm}
-      img{
-        max-width:${cfg.imgMaxW};max-height:${cfg.imgMaxH};width:auto;height:auto;
-        object-fit:contain;margin:0.5mm 0;flex-shrink:0
-      }
-      @media print{
-        #print-toolbar{display:none!important}
-        .grid{padding:0}
-        .cell{border:none;margin:0;page-break-after:always}
-        @page{size:${cfg.labelW} ${cfg.labelH};margin:0}
-      }
-    `
-  }
+/**
+ * One clean thermal layout for every profile: @page is exactly the label size
+ * with zero margin (kills browser headers/footers/page numbers), and each cell
+ * is a single, centred, overflow-clipped print unit.
+ */
+function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
+  const w = `${dims.wMm}mm`
+  const h = `${dims.hMm}mm`
+  const imgMaxH = `${Math.max(6, dims.hMm * 0.55).toFixed(1)}mm`
+  const metaFs = Math.max(6, style.fontSize - 1)
   return `
-    @page{margin:${pageMargin}}
-    body{margin:0;font-family:Arial,sans-serif;background:#fff;color:#000}
-    #print-toolbar{
-      position:sticky;top:0;z-index:99;padding:12px 16px;background:#ecfdf5;
-      border-bottom:2px solid #10b981;display:flex;align-items:center;gap:12px;flex-wrap:wrap
+    @page { size: ${w} ${h}; margin: 0; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-family: 'Arial Black', Arial, sans-serif; color: #000; font-weight: 700; }
+    #print-toolbar {
+      position: sticky; top: 0; z-index: 99; padding: 12px 16px; background: #ecfdf5;
+      border-bottom: 2px solid #10b981; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
-    #print-toolbar strong{font-size:14px;color:#065f46}
-    #print-toolbar button{
-      padding:10px 18px;background:#059669;color:#fff;font-weight:700;border:none;
-      border-radius:8px;cursor:pointer;font-size:14px
+    #print-toolbar strong { font-size: 14px; color: #065f46; }
+    #print-toolbar button { padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    #print-toolbar span { font-size: 12px; color: #047857; }
+    .sheet { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9; }
+    .cell {
+      width: ${w}; height: ${h}; box-sizing: border-box; overflow: hidden;
+      padding: ${style.padding}mm; background: #fff;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; gap: 1px;
+      page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;
+      border: 1px dashed #cbd5e1;
     }
-    #print-toolbar span{font-size:12px;color:#047857}
-    .grid{display:grid;grid-template-columns:repeat(${cfg.cols},1fr);gap:2mm;padding:8px}
-    .cell{border:1px solid #000;padding:${cfg.cellPad};text-align:center;page-break-inside:avoid;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    .pharmacy{font-size:${cfg.pharmacyFs};font-weight:800;margin-bottom:2px;line-height:1.1;max-height:2.2em;overflow:hidden;color:#000;text-transform:uppercase;letter-spacing:0.02em}
-    .name{font-size:${cfg.nameFs};margin-bottom:2px;font-weight:700;line-height:1.15;max-height:2.5em;overflow:hidden;color:#000}
-    .expiry{font-size:${cfg.expiryFs};font-weight:700;color:#000;margin-bottom:2px}
-    .price{font-size:${cfg.priceFs};margin-top:2px;font-weight:700;color:#000}
-    img{max-width:${cfg.imgMaxW};height:auto}
-    @media print{
-      #print-toolbar{display:none!important}
-      .grid{padding:0}
-      .cell{border-color:transparent}
-      @page{margin:${pageMargin}}
+    .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
+    .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    img { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
+    .row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 4px; }
+    .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; }
+    @media print {
+      #print-toolbar { display: none !important; }
+      .sheet { display: block; padding: 0; margin: 0; background: #fff; gap: 0; }
+      .cell { border: none !important; margin: 0; }
+      .cell:last-child { page-break-after: auto; break-after: auto; }
+      @page { size: ${w} ${h}; margin: 0; }
     }
   `
 }
@@ -261,7 +198,7 @@ function buildPrintStyles(size: LabelSize, cfg: SizeCfg, pageMargin: string): st
 interface Props {
   items: BulkItem[]
   currency?: string
-  defaultSize?: LabelSize
+  defaultSize?: LabelSize | string
   onClose: () => void
 }
 
@@ -271,7 +208,7 @@ type PharmacyProfile = {
   show_pharmacy_name_on_labels?: boolean
 }
 
-export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', onClose }: Props) {
+export default function BulkBarcodePrint({ items, currency, defaultSize = 'medium', onClose }: Props) {
   const { t, i18n } = useTranslation()
   const isAr = i18n.language === 'ar'
   const printable = items.filter(i => i.barcode && i.barcode.trim().length > 0)
@@ -279,7 +216,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     Object.fromEntries(printable.map((i) => [i.id, i.defaultQty ?? 1])),
   )
   const savedPrefs = useMemo(loadLabelPrefs, [])
-  const [size, setSize] = useState<LabelSize>(savedPrefs.size ?? defaultSize)
+  const [size, setSize] = useState<LabelSize>(normalizeSize(savedPrefs.size ?? defaultSize))
   const [useQR, setUseQR] = useState(savedPrefs.useQR ?? false)
   const [showName, setShowName] = useState(savedPrefs.showName ?? true)
   const [showPrice, setShowPrice] = useState(savedPrefs.showPrice ?? true)
@@ -287,8 +224,16 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [showPharmacy, setShowPharmacy] = useState(true)
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT_W)
-  const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT_H)
+  const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT.wMm)
+  const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT.hMm)
+  const [overrides, setOverrides] = useState<Partial<LabelStyle>>(savedPrefs.overrides ?? {})
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const dims = useMemo(() => dimsFor(size, customW, customH), [size, customW, customH])
+  const effectiveStyle = useMemo<LabelStyle>(
+    () => ({ ...defaultStyle(dims), ...overrides }),
+    [dims, overrides],
+  )
 
   // Zebra Browser Print (direct-to-printer) state.
   const [zebraReady, setZebraReady] = useState(false)
@@ -298,10 +243,21 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
   const [zebraDpi, setZebraDpi] = useState(203)
   const [zebraSizeNote, setZebraSizeNote] = useState('')
 
-  // Persist the chosen label settings so they are auto-applied next time.
+  // Persist chosen settings so they auto-apply next time.
   useEffect(() => {
-    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH })
-  }, [size, useQR, showName, showPrice, showExpiry, customW, customH])
+    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides })
+  }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides])
+
+  useEffect(() => {
+    api.get<PharmacyProfile>('/settings/profile')
+      .then((r) => {
+        const p = r.data
+        const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
+        setPharmacyName(nm.trim())
+        setShowPharmacy(p.show_pharmacy_name_on_labels !== false)
+      })
+      .catch(() => {})
+  }, [isAr])
 
   // Detect a Zebra printer via Browser Print (fails soft if not installed).
   useEffect(() => {
@@ -318,25 +274,17 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     return () => { cancelled = true }
   }, [])
 
-  useEffect(() => {
-    api.get<PharmacyProfile>('/settings/profile')
-      .then((r) => {
-        const p = r.data
-        const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
-        setPharmacyName(nm.trim())
-        setShowPharmacy(p.show_pharmacy_name_on_labels !== false)
-      })
-      .catch(() => {})
-  }, [isAr])
-
   const totalLabels = useMemo(() => printable.reduce((s, i) => s + (qty[i.id] || 0), 0), [qty, printable])
   const skipped = items.length - printable.length
 
   const bump = (id: number, delta: number) =>
     setQty(q => ({ ...q, [id]: Math.max(0, Math.min(500, (q[id] || 0) + delta)) }))
-
   const setQ = (id: number, v: number) =>
     setQty(q => ({ ...q, [id]: Math.max(0, Math.min(500, isNaN(v) ? 0 : v)) }))
+
+  const setOverride = (k: keyof LabelStyle, v: number) =>
+    setOverrides(o => ({ ...o, [k]: v }))
+  const resetStyle = () => setOverrides({})
 
   const waitForImages = (doc: Document) =>
     Promise.all(
@@ -356,21 +304,17 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     if (totalLabels === 0) return
     setBusy(true)
     try {
-      const cfg = size === 'custom' ? customCfg(customW, customH) : SIZE_CSS[size]
-      // Any preset with explicit label dimensions prints one sticker per page
-      // (label/roll printers); the rest tile onto an A4 grid.
-      const isThermal = !!(cfg.labelW && cfg.labelH)
-      const pageMargin = isThermal ? '0' : '3mm'
-
-      const w = window.open('', 'PRINT_BULK', 'width=960,height=720,scrollbars=yes')
+      const style = effectiveStyle
+      const w = window.open('', 'PRINT_LABELS', 'width=820,height=640,scrollbars=yes')
       if (!w) {
         alert(t('bulk_barcode.popup_blocked'))
         return
       }
-      w.document.title = `Barcodes (${totalLabels})`
-      const style = w.document.createElement('style')
-      style.textContent = buildPrintStyles(size, cfg, pageMargin)
-      w.document.head.appendChild(style)
+      // A single space title prevents the browser printing "Barcodes (N)" as a header.
+      w.document.title = ' '
+      const styleEl = w.document.createElement('style')
+      styleEl.textContent = buildLabelStyles(dims, style)
+      w.document.head.appendChild(styleEl)
 
       const toolbar = w.document.createElement('div')
       toolbar.id = 'print-toolbar'
@@ -379,23 +323,20 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
       const btn = w.document.createElement('button')
       btn.type = 'button'
       btn.textContent = t('bulk_barcode.print_toolbar_btn')
-      btn.onclick = () => {
-        w.focus()
-        w.print()
-      }
+      btn.onclick = () => { w.focus(); w.print() }
       const hint = w.document.createElement('span')
       hint.textContent = t('bulk_barcode.print_toolbar_hint')
       toolbar.append(title, btn, hint)
       w.document.body.appendChild(toolbar)
 
-      const grid = w.document.createElement('div')
-      grid.className = 'grid'
-      w.document.body.appendChild(grid)
+      const sheet = w.document.createElement('div')
+      sheet.className = 'sheet'
+      w.document.body.appendChild(sheet)
 
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
-        const url = await renderBarcodeDataUrl(it.barcode!, useQR, cfg, isThermal)
+        const url = await renderBarcodeDataUrl(it.barcode!, useQR, style)
         if (!url) continue
         for (let i = 0; i < n; i++) {
           const cell = w.document.createElement('div')
@@ -403,13 +344,13 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           if (showPharmacy && pharmacyName) {
             const ph = w.document.createElement('div')
             ph.className = 'pharmacy'
-            ph.textContent = isThermal ? truncLabel(pharmacyName, 26) : pharmacyName
+            ph.textContent = pharmacyName
             cell.appendChild(ph)
           }
           if (showName) {
             const nm = w.document.createElement('div')
             nm.className = 'name'
-            nm.textContent = isThermal ? truncLabel(it.name, 34) : it.name
+            nm.textContent = it.name
             cell.appendChild(nm)
           }
           const img = w.document.createElement('img')
@@ -417,46 +358,25 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           cell.appendChild(img)
           const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
           const hasPrice = showPrice && it.price != null
-          if (isThermal && (exp || hasPrice)) {
+          if (exp || hasPrice) {
             const row = w.document.createElement('div')
             row.className = 'row'
-            if (exp) {
-              const ex = w.document.createElement('span')
-              ex.className = 'expiry'
-              ex.textContent = `Exp ${exp}`
-              row.appendChild(ex)
-            }
-            if (hasPrice) {
-              const pr = w.document.createElement('span')
-              pr.className = 'price'
-              pr.textContent = `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
-              row.appendChild(pr)
-            }
+            const ex = w.document.createElement('span')
+            ex.className = 'meta'
+            ex.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
+            const pr = w.document.createElement('span')
+            pr.className = 'meta'
+            pr.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
+            row.append(ex, pr)
             cell.appendChild(row)
-          } else {
-            if (exp) {
-              const ex = w.document.createElement('div')
-              ex.className = 'expiry'
-              ex.textContent = `${t('barcode_studio.exp_label')} ${exp}`
-              cell.appendChild(ex)
-            }
-            if (hasPrice) {
-              const pr = w.document.createElement('div')
-              pr.className = 'price'
-              pr.textContent = `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
-              cell.appendChild(pr)
-            }
           }
-          grid.appendChild(cell)
+          sheet.appendChild(cell)
         }
       }
 
       await waitForImages(w.document)
       w.focus()
-      if (openPrinterDialog) {
-        // Opens the OS / browser printer picker (choose XP-370B, etc.)
-        w.print()
-      }
+      if (openPrinterDialog) w.print()
     } finally {
       setBusy(false)
     }
@@ -468,14 +388,17 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     try {
       const r = await readLabelSize(zebraDevice)
       if (r.dpi) setZebraDpi(r.dpi)
-      if (r.widthIn) setCustomW(r.widthIn)
-      if (r.heightIn) setCustomH(r.heightIn)
+      if (r.widthIn) setCustomW(Math.round(r.widthIn * 25.4))
+      if (r.heightIn) setCustomH(Math.round(r.heightIn * 25.4))
+      if (r.widthIn || r.heightIn) setSize('custom')
       setZebraSizeNote(
-        t('bulk_barcode.zebra_size_read', {
-          w: r.widthIn ?? customW,
-          h: r.heightIn ?? customH,
-          dpi: r.dpi,
-        }) as string,
+        r.widthIn || r.heightIn
+          ? (t('bulk_barcode.zebra_size_read', {
+              w: r.widthIn ? Math.round(r.widthIn * 25.4) : customW,
+              h: r.heightIn ? Math.round(r.heightIn * 25.4) : customH,
+              dpi: r.dpi,
+            }) as string)
+          : (t('bulk_barcode.zebra_size_unknown') as string),
       )
     } catch {
       setZebraSizeNote(t('bulk_barcode.zebra_size_unknown') as string)
@@ -488,19 +411,20 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
     if (!zebraDevice || totalLabels === 0) return
     setBusy(true)
     try {
-      const wIn = customW || CUSTOM_DEFAULT_W
-      const hIn = customH || CUSTOM_DEFAULT_H
-      // High-resolution barcode so the rasterised label stays crisp/scannable.
-      const barCfg: SizeCfg = {
-        ...customCfg(wIn, hIn),
-        scale: 3,
-        height: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
-        barcodeFontSize: Math.max(10, Math.round(hIn * zebraDpi * 0.06)),
+      const wIn = dims.wMm / 25.4
+      const hIn = dims.hMm / 25.4
+      const style = effectiveStyle
+      // High-resolution barcode bitmap so the rasterised ZPL label stays crisp.
+      const barStyle: LabelStyle = {
+        ...style,
+        barcodeScale: 3,
+        barcodeHeight: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
+        fontSize: Math.max(10, Math.round(hIn * zebraDpi * 0.05)),
       }
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
-        const url = await renderBarcodeDataUrl(it.barcode!, useQR, barCfg, true)
+        const url = await renderBarcodeDataUrl(it.barcode!, useQR, barStyle)
         if (!url) continue
         const canvas = await renderLabelCanvas({
           widthIn: wIn,
@@ -538,97 +462,19 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
 
-        {size === 'thermal' && (
-          <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900">
-            {t('bulk_barcode.thermal_hint')}
-          </div>
-        )}
-        {size === 'zebra2x3' && (
-          <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900">
-            {t('bulk_barcode.zebra2x3_hint')}
-          </div>
-        )}
-        {size === 'custom' && (
-          <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900 space-y-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 font-medium">
-                {t('bulk_barcode.custom_w')}
-                <input
-                  type="number" min={0.5} max={8} step={0.01} value={customW}
-                  onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT_W)}
-                  className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900"
-                />
-              </label>
-              <label className="flex items-center gap-1.5 font-medium">
-                {t('bulk_barcode.custom_h')}
-                <input
-                  type="number" min={0.5} max={8} step={0.01} value={customH}
-                  onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT_H)}
-                  className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900"
-                />
-              </label>
-              <span className="text-emerald-700">{t('bulk_barcode.custom_unit')}</span>
-            </div>
-            <div>{t('bulk_barcode.custom_hint')}</div>
-          </div>
-        )}
-        {zebraReady && (
-          <div className="px-5 py-3 bg-sky-50 border-b border-sky-100 text-xs text-sky-900 space-y-2">
-            <div className="flex items-center gap-2">
-              <Printer size={14} />
-              <span className="font-semibold">{t('bulk_barcode.zebra_detected')}</span>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 font-medium">
-                <input type="checkbox" checked={zebraDirect} onChange={(e) => setZebraDirect(e.target.checked)} />
-                <span>{t('bulk_barcode.zebra_direct')}</span>
-              </label>
-              {zebraDevices.length > 1 ? (
-                <select
-                  value={zebraDevice?.uid || ''}
-                  onChange={(e) => setZebraDevice(zebraDevices.find((d) => d.uid === e.target.value) || null)}
-                  className="border border-sky-300 rounded px-2 py-1 text-sky-900"
-                >
-                  {zebraDevices.map((d) => <option key={d.uid} value={d.uid}>{d.name}</option>)}
-                </select>
-              ) : zebraDevice ? (
-                <span className="font-mono">{zebraDevice.name}</span>
-              ) : null}
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 font-medium">
-                {t('bulk_barcode.custom_w')}
-                <input type="number" min={0.5} max={8} step={0.01} value={customW}
-                  onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT_W)}
-                  className="w-16 border border-sky-300 rounded px-2 py-1 text-sky-900" />
-              </label>
-              <label className="flex items-center gap-1.5 font-medium">
-                {t('bulk_barcode.custom_h')}
-                <input type="number" min={0.5} max={8} step={0.01} value={customH}
-                  onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT_H)}
-                  className="w-16 border border-sky-300 rounded px-2 py-1 text-sky-900" />
-              </label>
-              <span className="text-sky-700">in</span>
-              <button type="button" onClick={readSizeFromPrinter}
-                className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
-                {t('bulk_barcode.zebra_read_size')}
-              </button>
-              {zebraSizeNote && <span className="text-sky-700">{zebraSizeNote}</span>}
-            </div>
-          </div>
-        )}
+        <div className="px-5 py-2 bg-emerald-50 border-b border-emerald-100 text-xs text-emerald-900">
+          {t('bulk_barcode.label_hint', { w: dims.wMm, h: dims.hMm })}
+        </div>
 
         <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
           <div className="md:col-span-2">
             <label className="text-slate-600 font-medium">{t('bulk_barcode.size')}</label>
             <select value={size} onChange={e => setSize(e.target.value as LabelSize)}
               className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1 font-medium">
-              <option value="thermal">{t('bulk_barcode.size_thermal')}</option>
-              <option value="zebra2x3">{t('bulk_barcode.size_zebra2x3')}</option>
+              <option value="small">{t('bulk_barcode.size_small')}</option>
+              <option value="medium">{t('bulk_barcode.size_medium')}</option>
+              <option value="large">{t('bulk_barcode.size_large')}</option>
               <option value="custom">{t('bulk_barcode.size_custom')}</option>
-              <option value="sm">{t('bulk_barcode.size_sm')}</option>
-              <option value="md">{t('bulk_barcode.size_md')}</option>
-              <option value="lg">{t('bulk_barcode.size_lg')}</option>
             </select>
           </div>
           <div>
@@ -661,6 +507,94 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'md', 
             <span>{t('bulk_barcode.show_pharmacy', { name: pharmacyName || '—' })}</span>
           </label>
         </div>
+
+        {size === 'custom' && (
+          <div className="px-5 py-3 bg-emerald-50/60 border-b border-emerald-100 text-xs text-emerald-900 flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 font-medium">
+              {t('bulk_barcode.custom_w')}
+              <input type="number" min={5} max={200} step={1} value={customW}
+                onChange={(e) => setCustomW(parseInt(e.target.value, 10) || CUSTOM_DEFAULT.wMm)}
+                className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
+            </label>
+            <label className="flex items-center gap-1.5 font-medium">
+              {t('bulk_barcode.custom_h')}
+              <input type="number" min={5} max={200} step={1} value={customH}
+                onChange={(e) => setCustomH(parseInt(e.target.value, 10) || CUSTOM_DEFAULT.hMm)}
+                className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
+            </label>
+            <span className="text-emerald-700">{t('bulk_barcode.custom_unit_mm')}</span>
+          </div>
+        )}
+
+        <div className="px-5 py-2 border-b bg-slate-50/60 text-xs">
+          <button type="button" onClick={() => setShowAdvanced(v => !v)}
+            className="text-slate-600 hover:text-slate-800 font-medium inline-flex items-center gap-1">
+            {showAdvanced ? '▾' : '▸'} {t('bulk_barcode.advanced')}
+          </button>
+          {showAdvanced && (
+            <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_height')}</span>
+                <input type="number" min={10} max={300} value={effectiveStyle.barcodeHeight}
+                  onChange={e => setOverride('barcodeHeight', parseInt(e.target.value, 10) || 0)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_width')}</span>
+                <input type="number" min={1} max={5} step={0.1} value={effectiveStyle.barcodeScale}
+                  onChange={e => setOverride('barcodeScale', parseFloat(e.target.value) || 1)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_font')}</span>
+                <input type="number" min={4} max={40} value={effectiveStyle.fontSize}
+                  onChange={e => setOverride('fontSize', parseInt(e.target.value, 10) || 6)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_padding')}</span>
+                <input type="number" min={0} max={10} step={0.5} value={effectiveStyle.padding}
+                  onChange={e => setOverride('padding', parseFloat(e.target.value) || 0)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <button type="button" onClick={resetStyle}
+                className="col-span-2 md:col-span-4 inline-flex items-center gap-1 text-slate-500 hover:text-slate-700 w-fit">
+                <RotateCcw size={12} /> {t('bulk_barcode.bc_reset')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {zebraReady && (
+          <div className="px-5 py-3 bg-sky-50 border-b border-sky-100 text-xs text-sky-900 space-y-2">
+            <div className="flex items-center gap-2">
+              <Printer size={14} />
+              <span className="font-semibold">{t('bulk_barcode.zebra_detected')}</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 font-medium">
+                <input type="checkbox" checked={zebraDirect} onChange={(e) => setZebraDirect(e.target.checked)} />
+                <span>{t('bulk_barcode.zebra_direct')}</span>
+              </label>
+              {zebraDevices.length > 1 ? (
+                <select
+                  value={zebraDevice?.uid || ''}
+                  onChange={(e) => setZebraDevice(zebraDevices.find((d) => d.uid === e.target.value) || null)}
+                  className="border border-sky-300 rounded px-2 py-1 text-sky-900"
+                >
+                  {zebraDevices.map((d) => <option key={d.uid} value={d.uid}>{d.name}</option>)}
+                </select>
+              ) : zebraDevice ? (
+                <span className="font-mono">{zebraDevice.name}</span>
+              ) : null}
+              <button type="button" onClick={readSizeFromPrinter}
+                className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
+                {t('bulk_barcode.zebra_read_size')}
+              </button>
+              {zebraSizeNote && <span className="text-sky-700">{zebraSizeNote}</span>}
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-auto">
           <table className="w-full text-sm">
