@@ -184,7 +184,8 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
     }
     .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
     .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    img { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
+    img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
+    svg { shape-rendering: crispEdges; }
     .row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 4px; }
     .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; }
     @media print {
@@ -335,11 +336,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       sheet.className = 'sheet'
       w.document.body.appendChild(sheet)
 
+      const svgNS = 'http://www.w3.org/2000/svg'
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
-        const url = await renderBarcodeDataUrl(it.barcode!, useQR, style)
-        if (!url) continue
+        // QR is rasterised (high-res PNG); 1D barcodes are drawn as crisp
+        // vector SVG so the bars never become jagged when scaled to the label.
+        const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
+        if (useQR && !qrUrl) continue
         for (let i = 0; i < n; i++) {
           const cell = w.document.createElement('div')
           cell.className = 'cell'
@@ -355,9 +359,41 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             nm.textContent = it.name
             cell.appendChild(nm)
           }
-          const img = w.document.createElement('img')
-          img.src = url
-          cell.appendChild(img)
+          if (useQR) {
+            const img = w.document.createElement('img')
+            img.src = qrUrl as string
+            cell.appendChild(img)
+          } else {
+            const svg = w.document.createElementNS(svgNS, 'svg')
+            cell.appendChild(svg)
+            try {
+              JsBarcode(svg, it.barcode!, {
+                format: detectType(it.barcode!),
+                displayValue: true,
+                width: style.barcodeScale,
+                height: style.barcodeHeight,
+                margin: 0,
+                font: 'Arial Black, Arial, sans-serif',
+                fontSize: style.fontSize + 1,
+                fontOptions: 'bold',
+                textMargin: 1,
+                lineColor: '#000000',
+                background: '#ffffff',
+              })
+              // Convert intrinsic px size to a viewBox so CSS can scale the
+              // vector crisply within the label (no jagged raster scaling).
+              const vw = parseFloat(svg.getAttribute('width') || '0')
+              const vh = parseFloat(svg.getAttribute('height') || '0')
+              if (vw > 0 && vh > 0) {
+                svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+                svg.removeAttribute('width')
+                svg.removeAttribute('height')
+              }
+            } catch {
+              if (svg.parentNode === cell) cell.removeChild(svg)
+            }
+          }
           const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
           const hasPrice = showPrice && it.price != null
           if (exp || hasPrice) {
