@@ -278,7 +278,7 @@ export default function Purchases() {
       {poLabelsToPrint && (
         <BulkBarcodePrint
           items={poLabelsToPrint}
-          defaultSize="thermal"
+          defaultSize="medium"
           onClose={() => setPoLabelsToPrint(null)}
         />
       )}
