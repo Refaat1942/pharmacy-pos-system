@@ -70,6 +70,7 @@
     "bc_width": "Bar width",
     "bc_font": "Font size (px)",
     "bc_padding": "Padding (mm)",
+    "bc_offset": "Vertical nudge (mm)",
     "bc_reset": "Reset to profile defaults",
     "zebra_detected": "Zebra Browser Print detected — labels print directly to the printer at the exact size (no browser dialog, no driver offsets).",
     "zebra_direct": "Print directly to Zebra",

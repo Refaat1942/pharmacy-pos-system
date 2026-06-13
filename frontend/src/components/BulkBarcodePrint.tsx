@@ -52,6 +52,8 @@ interface LabelStyle {
   fontSize: number
   /** Label inner padding (mm) */
   padding: number
+  /** Vertical registration nudge (mm, +down / -up) to centre on the sticker */
+  offsetY: number
 }
 
 function clampMm(v: number, fallback: number): number {
@@ -73,6 +75,7 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
     barcodeScale: hMm >= 40 ? 2.5 : hMm >= 24 ? 1.8 : 1.4,
     fontSize: Math.max(6, Math.round(hMm * 0.34)),
     padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
+    offsetY: 0,
   }
 }
 
@@ -182,6 +185,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
       page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;
       border: 1px dashed #cbd5e1;
     }
+    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; transform: translateY(${style.offsetY}mm); }
     .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
     .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
@@ -347,25 +351,28 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         for (let i = 0; i < n; i++) {
           const cell = w.document.createElement('div')
           cell.className = 'cell'
+          const shift = w.document.createElement('div')
+          shift.className = 'shift'
+          cell.appendChild(shift)
           if (showPharmacy && pharmacyName) {
             const ph = w.document.createElement('div')
             ph.className = 'pharmacy'
             ph.textContent = pharmacyName
-            cell.appendChild(ph)
+            shift.appendChild(ph)
           }
           if (showName) {
             const nm = w.document.createElement('div')
             nm.className = 'name'
             nm.textContent = it.name
-            cell.appendChild(nm)
+            shift.appendChild(nm)
           }
           if (useQR) {
             const img = w.document.createElement('img')
             img.src = qrUrl as string
-            cell.appendChild(img)
+            shift.appendChild(img)
           } else {
             const svg = w.document.createElementNS(svgNS, 'svg')
-            cell.appendChild(svg)
+            shift.appendChild(svg)
             try {
               JsBarcode(svg, it.barcode!, {
                 format: detectType(it.barcode!),
@@ -391,7 +398,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 svg.removeAttribute('height')
               }
             } catch {
-              if (svg.parentNode === cell) cell.removeChild(svg)
+              if (svg.parentNode === shift) shift.removeChild(svg)
             }
           }
           const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
@@ -406,7 +413,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             pr.className = 'meta'
             pr.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
             row.append(ex, pr)
-            cell.appendChild(row)
+            shift.appendChild(row)
           }
           sheet.appendChild(cell)
         }
@@ -594,6 +601,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 <span className="text-slate-500">{t('bulk_barcode.bc_padding')}</span>
                 <input type="number" min={0} max={10} step={0.5} value={effectiveStyle.padding}
                   onChange={e => setOverride('padding', parseFloat(e.target.value) || 0)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_offset')}</span>
+                <input type="number" min={-15} max={15} step={0.5} value={effectiveStyle.offsetY}
+                  onChange={e => setOverride('offsetY', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <button type="button" onClick={resetStyle}
