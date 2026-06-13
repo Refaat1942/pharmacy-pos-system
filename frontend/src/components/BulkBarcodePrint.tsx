@@ -72,7 +72,8 @@ function dimsFor(size: LabelSize, customW: number, customH: number): LabelDims {
 function defaultStyle({ hMm }: LabelDims): LabelStyle {
   return {
     barcodeHeight: Math.max(20, Math.round(hMm * 1.6)),
-    barcodeScale: hMm >= 40 ? 2.5 : hMm >= 24 ? 1.8 : 1.4,
+    // Thicker bars (>= 2 dots wide @203dpi) so they print solid black, not faint.
+    barcodeScale: hMm >= 40 ? 3 : hMm >= 24 ? 2.5 : 2,
     fontSize: Math.max(6, Math.round(hMm * 0.34)),
     padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
     offsetY: 0,
