@@ -57,6 +57,7 @@
     "size": "Label size",
     "label_hint": "One sticker per label = {{w}} × {{h}} mm. In the print dialog set Margins = None and Scale = 100% (not 'fit to page'); headers/footers are removed automatically.",
     "show_pharmacy": "Show pharmacy name ({{name}})",
+    "size_strip38": "Barcode strip — 38 × 12 mm",
     "size_small": "Small — 40 × 20 mm",
     "size_medium": "Medium — 50 × 25 mm",
     "size_large": "Large — 80 × 50 mm",

@@ -27,7 +27,7 @@ export interface BulkItem {
 
 // ─── Label profiles ─────────────────────────────────────────────────────────
 // Every profile is one physical thermal label = one print page (single unit).
-type LabelSize = 'small' | 'medium' | 'large' | 'custom'
+type LabelSize = 'strip38' | 'small' | 'medium' | 'large' | 'custom'
 
 interface LabelDims {
   wMm: number
@@ -35,6 +35,7 @@ interface LabelDims {
 }
 
 const PROFILE_DIMS: Record<Exclude<LabelSize, 'custom'>, LabelDims> = {
+  strip38: { wMm: 38, hMm: 12 },
   small: { wMm: 40, hMm: 20 },
   medium: { wMm: 50, hMm: 25 },
   large: { wMm: 80, hMm: 50 },
@@ -76,10 +77,11 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
 }
 
 function normalizeSize(s?: string): LabelSize {
-  if (s === 'small' || s === 'medium' || s === 'large' || s === 'custom') return s
+  if (s === 'strip38' || s === 'small' || s === 'medium' || s === 'large' || s === 'custom') return s
   if (s === 'sm') return 'small'
   if (s === 'lg' || s === 'zebra2x3') return 'large'
-  return 'medium' // md / thermal / undefined → sensible default
+  if (s === 'thermal') return 'strip38'
+  return 'medium' // md / undefined → sensible default
 }
 
 // Remembered label-print preferences (per browser/terminal) so the right size
@@ -471,6 +473,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             <label className="text-slate-600 font-medium">{t('bulk_barcode.size')}</label>
             <select value={size} onChange={e => setSize(e.target.value as LabelSize)}
               className="w-full border border-slate-300 rounded px-2 py-1.5 mt-1 font-medium">
+              <option value="strip38">{t('bulk_barcode.size_strip38')}</option>
               <option value="small">{t('bulk_barcode.size_small')}</option>
               <option value="medium">{t('bulk_barcode.size_medium')}</option>
               <option value="large">{t('bulk_barcode.size_large')}</option>
