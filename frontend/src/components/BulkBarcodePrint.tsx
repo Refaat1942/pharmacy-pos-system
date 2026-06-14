@@ -72,12 +72,13 @@ function dimsFor(size: LabelSize, customW: number, customH: number): LabelDims {
 
 /** Sensible barcode/text sizing derived from the label height (never oversized). */
 function defaultStyle({ hMm }: LabelDims): LabelStyle {
+  const short = hMm < 16 // e.g. a 39x11.5mm strip — pack everything tightly
   return {
-    barcodeHeight: Math.max(20, Math.round(hMm * 1.6)),
+    barcodeHeight: short ? Math.max(14, Math.round(hMm * 1.4)) : Math.max(20, Math.round(hMm * 1.6)),
     // Thicker bars (>= 2 dots wide @203dpi) so they print solid black, not faint.
-    barcodeScale: hMm >= 40 ? 3 : hMm >= 24 ? 2.5 : 2,
-    fontSize: Math.max(6, Math.round(hMm * 0.34)),
-    padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
+    barcodeScale: hMm >= 40 ? 3 : hMm >= 24 ? 2.5 : short ? 1.8 : 2,
+    fontSize: short ? 5 : Math.max(6, Math.round(hMm * 0.34)),
+    padding: short ? 0.5 : hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
     offsetY: 0,
     offsetX: 0,
   }
@@ -107,6 +108,8 @@ interface LabelPrefs {
   columns?: number
   rowGap?: number
   colGap?: number
+  groupSize?: number
+  groupGap?: number
 }
 function loadLabelPrefs(): LabelPrefs {
   try {
@@ -173,6 +176,10 @@ interface GridOpts {
   columns: number
   rowGap: number
   colGap: number
+  /** Labels per group before inserting the group gap (0 = off). */
+  groupSize: number
+  /** Gap (mm) inserted after every `groupSize` labels (e.g. a paired roll). */
+  groupGap: number
 }
 
 function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): string {
@@ -225,6 +232,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
     svg { shape-rendering: crispEdges; }
+    .group-gap { width: 100%; height: ${grid.groupGap}mm; grid-column: 1 / -1; }
     .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 3px; }
     .b-left { flex: 1 1 0; text-align: left; text-transform: uppercase; }
     .b-mid { flex: 1 1 0; text-align: center; }
@@ -278,9 +286,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
   const [columns, setColumns] = useState<number>(savedPrefs.columns ?? 1)
   const [rowGap, setRowGap] = useState<number>(savedPrefs.rowGap ?? 2)
   const [colGap, setColGap] = useState<number>(savedPrefs.colGap ?? 2)
+  const [groupSize, setGroupSize] = useState<number>(savedPrefs.groupSize ?? 0)
+  const [groupGap, setGroupGap] = useState<number>(savedPrefs.groupGap ?? 5)
   const gridOpts = useMemo(
-    () => ({ layout, columns, rowGap, colGap }),
-    [layout, columns, rowGap, colGap],
+    () => ({ layout, columns, rowGap, colGap, groupSize, groupGap }),
+    [layout, columns, rowGap, colGap, groupSize, groupGap],
   )
 
   const dims = useMemo(() => dimsFor(size, customW, customH), [size, customW, customH])
@@ -299,8 +309,8 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
 
   // Persist chosen settings so they auto-apply next time.
   useEffect(() => {
-    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap })
-  }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap])
+    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap })
+  }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap])
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
@@ -388,6 +398,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       w.document.body.appendChild(sheet)
 
       const svgNS = 'http://www.w3.org/2000/svg'
+      let placed = 0 // global label counter (for group gaps)
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
@@ -396,6 +407,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
         if (useQR && !qrUrl) continue
         for (let i = 0; i < n; i++) {
+          // Insert the group gap (e.g. 5mm after every pair) for paired rolls.
+          if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && placed > 0 && placed % gridOpts.groupSize === 0) {
+            const gap = w.document.createElement('div')
+            gap.className = 'group-gap'
+            sheet.appendChild(gap)
+          }
           const cell = w.document.createElement('div')
           cell.className = 'cell'
           const shift = w.document.createElement('div')
@@ -466,6 +483,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           bottom.append(bLeft, bMid, bRight)
           shift.appendChild(bottom)
           sheet.appendChild(cell)
+          placed++
         }
       }
 
@@ -696,6 +714,18 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                       <span className="text-slate-500">{t('bulk_barcode.col_gap')}</span>
                       <input type="number" min={0} max={20} step={0.5} value={colGap}
                         onChange={e => setColGap(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.group_size')}</span>
+                      <input type="number" min={0} max={10} value={groupSize}
+                        onChange={e => setGroupSize(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.group_gap')}</span>
+                      <input type="number" min={0} max={20} step={0.5} value={groupGap}
+                        onChange={e => setGroupGap(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="border border-slate-300 rounded px-2 py-1" />
                     </label>
                   </>
