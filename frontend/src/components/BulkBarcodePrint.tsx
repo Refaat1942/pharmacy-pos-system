@@ -54,6 +54,8 @@ interface LabelStyle {
   padding: number
   /** Vertical registration nudge (mm, +down / -up) to centre on the sticker */
   offsetY: number
+  /** Horizontal registration nudge (mm, +right / -left) to centre on the sticker */
+  offsetX: number
 }
 
 function clampMm(v: number, fallback: number): number {
@@ -77,6 +79,7 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
     fontSize: Math.max(6, Math.round(hMm * 0.34)),
     padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
     offsetY: 0,
+    offsetX: 0,
   }
 }
 
@@ -183,15 +186,20 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
   const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
   const pageH = isGrid ? 'auto' : h
   const sheetScreen = isGrid
-    ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: start; padding: 16px; background: #f1f5f9;`
+    ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center; padding: 16px; background: #f1f5f9;`
     : `display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9;`
   const sheetPrint = isGrid
-    ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm;`
+    ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center;`
     : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
   // In page mode each label is its own page; in grid mode labels flow continuously.
   const cellBreak = isGrid
     ? 'page-break-inside: avoid; break-inside: avoid;'
     : 'page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;'
+  // Only transform when a nudge is set, so the default label is perfectly
+  // centered with no transform side-effects.
+  const shiftTransform = (style.offsetX || style.offsetY)
+    ? `transform: translate(${style.offsetX}mm, ${style.offsetY}mm);`
+    : ''
   return `
     @page { size: ${pageW} ${pageH}; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
@@ -206,15 +214,15 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     .sheet { ${sheetScreen} }
     .cell {
       width: ${w}; height: ${h}; box-sizing: border-box; overflow: hidden;
-      padding: ${style.padding}mm; background: #fff;
+      padding: ${style.padding}mm; margin: 0 auto; background: #fff;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       text-align: center; gap: 1px;
       ${cellBreak}
       border: 1px dashed #cbd5e1;
     }
-    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; transform: translateY(${style.offsetY}mm); }
-    .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
-    .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; max-width: 100%; ${shiftTransform} }
+    .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
+    .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
     svg { shape-rendering: crispEdges; }
     .row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 4px; }
@@ -644,6 +652,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 <span className="text-slate-500">{t('bulk_barcode.bc_offset')}</span>
                 <input type="number" min={-15} max={15} step={0.5} value={effectiveStyle.offsetY}
                   onChange={e => setOverride('offsetY', parseFloat(e.target.value) || 0)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_offset_x')}</span>
+                <input type="number" min={-20} max={20} step={0.5} value={effectiveStyle.offsetX}
+                  onChange={e => setOverride('offsetX', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <button type="button" onClick={resetStyle}
