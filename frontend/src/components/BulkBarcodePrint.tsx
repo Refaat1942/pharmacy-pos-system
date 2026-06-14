@@ -100,6 +100,10 @@ interface LabelPrefs {
   customW?: number
   customH?: number
   overrides?: Partial<LabelStyle>
+  layout?: 'page' | 'grid'
+  columns?: number
+  rowGap?: number
+  colGap?: number
 }
 function loadLabelPrefs(): LabelPrefs {
   try {
@@ -161,13 +165,35 @@ async function renderBarcodeDataUrl(
  * with zero margin (kills browser headers/footers/page numbers), and each cell
  * is a single, centred, overflow-clipped print unit.
  */
-function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
+interface GridOpts {
+  layout: 'page' | 'grid'
+  columns: number
+  rowGap: number
+  colGap: number
+}
+
+function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): string {
   const w = `${dims.wMm}mm`
   const h = `${dims.hMm}mm`
   const imgMaxH = `${Math.max(6, dims.hMm * 0.55).toFixed(1)}mm`
   const metaFs = Math.max(6, style.fontSize - 1)
+  const isGrid = grid.layout === 'grid'
+  const cols = Math.max(1, Math.round(grid.columns) || 1)
+  // Page width: a single label (page mode) or the full grid row (grid mode).
+  const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
+  const pageH = isGrid ? 'auto' : h
+  const sheetScreen = isGrid
+    ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: start; padding: 16px; background: #f1f5f9;`
+    : `display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9;`
+  const sheetPrint = isGrid
+    ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm;`
+    : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
+  // In page mode each label is its own page; in grid mode labels flow continuously.
+  const cellBreak = isGrid
+    ? 'page-break-inside: avoid; break-inside: avoid;'
+    : 'page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;'
   return `
-    @page { size: ${w} ${h}; margin: 0; }
+    @page { size: ${pageW} ${pageH}; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
     body { font-family: 'Arial Black', Arial, sans-serif; color: #000; font-weight: 700; }
     #print-toolbar {
@@ -177,13 +203,13 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
     #print-toolbar strong { font-size: 14px; color: #065f46; }
     #print-toolbar button { padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
     #print-toolbar span { font-size: 12px; color: #047857; }
-    .sheet { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9; }
+    .sheet { ${sheetScreen} }
     .cell {
       width: ${w}; height: ${h}; box-sizing: border-box; overflow: hidden;
       padding: ${style.padding}mm; background: #fff;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       text-align: center; gap: 1px;
-      page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;
+      ${cellBreak}
       border: 1px dashed #cbd5e1;
     }
     .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; transform: translateY(${style.offsetY}mm); }
@@ -195,10 +221,10 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle): string {
     .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; }
     @media print {
       #print-toolbar { display: none !important; }
-      .sheet { display: block; padding: 0; margin: 0; background: #fff; gap: 0; }
+      .sheet { ${sheetPrint} }
       .cell { border: none !important; margin: 0; }
       .cell:last-child { page-break-after: auto; break-after: auto; }
-      @page { size: ${w} ${h}; margin: 0; }
+      @page { size: ${pageW} ${pageH}; margin: 0; }
     }
   `
 }
@@ -236,6 +262,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
   const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT.hMm)
   const [overrides, setOverrides] = useState<Partial<LabelStyle>>(savedPrefs.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [layout, setLayout] = useState<'page' | 'grid'>(savedPrefs.layout ?? 'page')
+  const [columns, setColumns] = useState<number>(savedPrefs.columns ?? 1)
+  const [rowGap, setRowGap] = useState<number>(savedPrefs.rowGap ?? 2)
+  const [colGap, setColGap] = useState<number>(savedPrefs.colGap ?? 2)
+  const gridOpts = useMemo(
+    () => ({ layout, columns, rowGap, colGap }),
+    [layout, columns, rowGap, colGap],
+  )
 
   const dims = useMemo(() => dimsFor(size, customW, customH), [size, customW, customH])
   const effectiveStyle = useMemo<LabelStyle>(
@@ -253,8 +287,8 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
 
   // Persist chosen settings so they auto-apply next time.
   useEffect(() => {
-    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides })
-  }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides])
+    saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap })
+  }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap])
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
@@ -321,7 +355,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       // A single space title prevents the browser printing "Barcodes (N)" as a header.
       w.document.title = ' '
       const styleEl = w.document.createElement('style')
-      styleEl.textContent = buildLabelStyles(dims, style)
+      styleEl.textContent = buildLabelStyles(dims, style, gridOpts)
       w.document.head.appendChild(styleEl)
 
       const toolbar = w.document.createElement('div')
@@ -614,6 +648,38 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 className="col-span-2 md:col-span-4 inline-flex items-center gap-1 text-slate-500 hover:text-slate-700 w-fit">
                 <RotateCcw size={12} /> {t('bulk_barcode.bc_reset')}
               </button>
+              <div className="col-span-2 md:col-span-4 border-t border-slate-200 pt-2 mt-1 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-slate-500">{t('bulk_barcode.layout')}</span>
+                  <select value={layout} onChange={e => setLayout(e.target.value as 'page' | 'grid')}
+                    className="border border-slate-300 rounded px-2 py-1">
+                    <option value="page">{t('bulk_barcode.layout_page')}</option>
+                    <option value="grid">{t('bulk_barcode.layout_grid')}</option>
+                  </select>
+                </label>
+                {layout === 'grid' && (
+                  <>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.columns')}</span>
+                      <input type="number" min={1} max={8} value={columns}
+                        onChange={e => setColumns(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.row_gap')}</span>
+                      <input type="number" min={0} max={20} step={0.5} value={rowGap}
+                        onChange={e => setRowGap(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.col_gap')}</span>
+                      <input type="number" min={0} max={20} step={0.5} value={colGap}
+                        onChange={e => setColGap(Math.max(0, parseFloat(e.target.value) || 0))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
