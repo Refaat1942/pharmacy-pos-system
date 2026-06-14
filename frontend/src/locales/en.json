@@ -71,6 +71,7 @@
     "bc_font": "Font size (px)",
     "bc_padding": "Padding (mm)",
     "bc_offset": "Vertical nudge (mm)",
+    "bc_offset_x": "Horizontal nudge (mm)",
     "bc_reset": "Reset to profile defaults",
     "layout": "Layout",
     "layout_page": "One label per page (label printer)",

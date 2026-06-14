@@ -54,6 +54,8 @@ interface LabelStyle {
   padding: number
   /** Vertical registration nudge (mm, +down / -up) to centre on the sticker */
   offsetY: number
+  /** Horizontal registration nudge (mm, +right / -left) to centre on the sticker */
+  offsetX: number
 }
 
 function clampMm(v: number, fallback: number): number {
@@ -77,6 +79,7 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
     fontSize: Math.max(6, Math.round(hMm * 0.34)),
     padding: hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
     offsetY: 0,
+    offsetX: 0,
   }
 }
 
@@ -212,7 +215,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
       ${cellBreak}
       border: 1px dashed #cbd5e1;
     }
-    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; transform: translateY(${style.offsetY}mm); }
+    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; transform: translate(${style.offsetX}mm, ${style.offsetY}mm); }
     .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
     .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
@@ -644,6 +647,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 <span className="text-slate-500">{t('bulk_barcode.bc_offset')}</span>
                 <input type="number" min={-15} max={15} step={0.5} value={effectiveStyle.offsetY}
                   onChange={e => setOverride('offsetY', parseFloat(e.target.value) || 0)}
+                  className="border border-slate-300 rounded px-2 py-1" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-slate-500">{t('bulk_barcode.bc_offset_x')}</span>
+                <input type="number" min={-20} max={20} step={0.5} value={effectiveStyle.offsetX}
+                  onChange={e => setOverride('offsetX', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <button type="button" onClick={resetStyle}
