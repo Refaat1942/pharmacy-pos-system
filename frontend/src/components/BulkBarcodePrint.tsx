@@ -220,13 +220,17 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
       ${cellBreak}
       border: 1px dashed #cbd5e1;
     }
-    .shift { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; width: 100%; max-width: 100%; ${shiftTransform} }
-    .pharmacy { font-size: ${style.fontSize}px; font-weight: 900; line-height: 1.05; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
-    .name { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-    img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; margin: 1px auto; }
+    .shift { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 100%; height: 100%; max-width: 100%; ${shiftTransform} }
+    .name-top { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; text-align: left; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
+    img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
     svg { shape-rendering: crispEdges; }
-    .row { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 4px; }
-    .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; }
+    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 3px; }
+    .b-left { flex: 1 1 0; text-align: left; text-transform: uppercase; }
+    .b-mid { flex: 1 1 0; text-align: center; }
+    .b-right { flex: 1 1 0; text-align: right; }
+    .price-up { transform: translateY(-0.8mm); }
+    .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
@@ -397,27 +401,25 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           const shift = w.document.createElement('div')
           shift.className = 'shift'
           cell.appendChild(shift)
-          // All item data on one label (top → bottom): pharmacy name ·
-          // product name · barcode (with its number) · expiry + price row.
-          if (showPharmacy && pharmacyName) {
-            const ph = w.document.createElement('div')
-            ph.className = 'pharmacy'
-            ph.textContent = pharmacyName
-            shift.appendChild(ph)
-          }
-          if (showName) {
-            const nm = w.document.createElement('div')
-            nm.className = 'name'
-            nm.textContent = it.name
-            shift.appendChild(nm)
-          }
+          // Positioned layout: drug name top-left · barcode centered ·
+          // bottom row [ pharmacy (left) · expiry (center) · price (right) ].
+          // Drug name — upper left.
+          const nm = w.document.createElement('div')
+          nm.className = 'name-top'
+          nm.textContent = showName ? it.name : ''
+          shift.appendChild(nm)
+
+          // Barcode (with its number) — centered in the middle.
+          const bcWrap = w.document.createElement('div')
+          bcWrap.className = 'bc-wrap'
+          shift.appendChild(bcWrap)
           if (useQR) {
             const img = w.document.createElement('img')
             img.src = qrUrl as string
-            shift.appendChild(img)
+            bcWrap.appendChild(img)
           } else {
             const svg = w.document.createElementNS(svgNS, 'svg')
-            shift.appendChild(svg)
+            bcWrap.appendChild(svg)
             try {
               JsBarcode(svg, it.barcode!, {
                 format: detectType(it.barcode!),
@@ -443,23 +445,26 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 svg.removeAttribute('height')
               }
             } catch {
-              if (svg.parentNode === shift) shift.removeChild(svg)
+              if (svg.parentNode === bcWrap) bcWrap.removeChild(svg)
             }
           }
+
+          // Bottom row: pharmacy (left) · expiry (center) · price (right, lifted).
           const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
           const hasPrice = showPrice && it.price != null
-          if (exp || hasPrice) {
-            const row = w.document.createElement('div')
-            row.className = 'row'
-            const ex = w.document.createElement('span')
-            ex.className = 'meta'
-            ex.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
-            const pr = w.document.createElement('span')
-            pr.className = 'meta'
-            pr.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
-            row.append(ex, pr)
-            shift.appendChild(row)
-          }
+          const bottom = w.document.createElement('div')
+          bottom.className = 'bottom-row'
+          const bLeft = w.document.createElement('span')
+          bLeft.className = 'meta b-left'
+          bLeft.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
+          const bMid = w.document.createElement('span')
+          bMid.className = 'meta b-mid'
+          bMid.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
+          const bRight = w.document.createElement('span')
+          bRight.className = 'meta b-right price-up'
+          bRight.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
+          bottom.append(bLeft, bMid, bRight)
+          shift.appendChild(bottom)
           sheet.appendChild(cell)
         }
       }
