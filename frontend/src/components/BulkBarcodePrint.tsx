@@ -389,6 +389,8 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           const shift = w.document.createElement('div')
           shift.className = 'shift'
           cell.appendChild(shift)
+          // All item data on one label (top → bottom): pharmacy name ·
+          // product name · barcode (with its number) · expiry + price row.
           if (showPharmacy && pharmacyName) {
             const ph = w.document.createElement('div')
             ph.className = 'pharmacy'
