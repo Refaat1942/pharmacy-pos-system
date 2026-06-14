@@ -389,13 +389,19 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           const shift = w.document.createElement('div')
           shift.className = 'shift'
           cell.appendChild(shift)
-          // Layout (top → bottom): store name · barcode (no digits) ·
-          // code + price row · product name · optional expiry.
+          // All item data on one label (top → bottom): pharmacy name ·
+          // product name · barcode (with its number) · expiry + price row.
           if (showPharmacy && pharmacyName) {
             const ph = w.document.createElement('div')
             ph.className = 'pharmacy'
             ph.textContent = pharmacyName
             shift.appendChild(ph)
+          }
+          if (showName) {
+            const nm = w.document.createElement('div')
+            nm.className = 'name'
+            nm.textContent = it.name
+            shift.appendChild(nm)
           }
           if (useQR) {
             const img = w.document.createElement('img')
@@ -407,10 +413,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             try {
               JsBarcode(svg, it.barcode!, {
                 format: detectType(it.barcode!),
-                displayValue: false,
+                displayValue: true,
                 width: style.barcodeScale,
                 height: style.barcodeHeight,
                 margin: 0,
+                font: 'Arial Black, Arial, sans-serif',
+                fontSize: style.fontSize + 1,
+                fontOptions: 'bold',
+                textMargin: 1,
                 lineColor: '#000000',
                 background: '#ffffff',
               })
@@ -428,30 +438,19 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
               if (svg.parentNode === shift) shift.removeChild(svg)
             }
           }
-          // Code (left) + price (right), like the reference label.
-          const hasPrice = showPrice && it.price != null
-          const codeRow = w.document.createElement('div')
-          codeRow.className = 'row'
-          const codeSpan = w.document.createElement('span')
-          codeSpan.className = 'meta'
-          codeSpan.textContent = it.barcode || ''
-          const priceSpan = w.document.createElement('span')
-          priceSpan.className = 'meta'
-          priceSpan.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
-          codeRow.append(codeSpan, priceSpan)
-          shift.appendChild(codeRow)
-          if (showName) {
-            const nm = w.document.createElement('div')
-            nm.className = 'name'
-            nm.textContent = it.name
-            shift.appendChild(nm)
-          }
           const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
-          if (exp) {
-            const ex = w.document.createElement('div')
+          const hasPrice = showPrice && it.price != null
+          if (exp || hasPrice) {
+            const row = w.document.createElement('div')
+            row.className = 'row'
+            const ex = w.document.createElement('span')
             ex.className = 'meta'
-            ex.textContent = `${t('barcode_studio.exp_label')} ${exp}`
-            shift.appendChild(ex)
+            ex.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
+            const pr = w.document.createElement('span')
+            pr.className = 'meta'
+            pr.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
+            row.append(ex, pr)
+            shift.appendChild(row)
           }
           sheet.appendChild(cell)
         }
