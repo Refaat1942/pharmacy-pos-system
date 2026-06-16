@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, ScanLine } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api from '../lib/api'
@@ -2455,6 +2455,14 @@ function StocktakeTab() {
   const [applying, setApplying] = useState(false)
   const [report, setReport] = useState<StocktakeReport | null>(null)
   const [pastRuns, setPastRuns] = useState<StocktakeRunSummary[]>([])
+  // Cache of every product seen (loaded or scanned) so counts are never lost
+  // when the filtered list changes between scans.
+  const cacheRef = useRef<Record<number, any>>({})
+  useEffect(() => { items.forEach((it) => { cacheRef.current[it.id] = it }) }, [items])
+  const [scan, setScan] = useState('')
+  const [scanMsg, setScanMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const scanRef = useRef<HTMLInputElement | null>(null)
+  const focusScan = () => window.setTimeout(() => scanRef.current?.focus(), 30)
 
   const loadPastRuns = async () => {
     if (!branchId) { setPastRuns([]); return }
@@ -2535,7 +2543,68 @@ function StocktakeTab() {
     return [...set].sort((a, b) => a.localeCompare(b))
   }, [categories, items])
 
-  const toApply = items
+  // Increment a product's counted quantity by `by` (used by the scanner).
+  const bumpCount = (id: number, by = 1) =>
+    setCounted(prev => {
+      const base = parseInt(prev[id] ?? '', 10)
+      return { ...prev, [id]: String((Number.isFinite(base) ? base : 0) + by) }
+    })
+
+  const handleScan = async (raw: string) => {
+    const code = (raw || '').trim()
+    if (!code) return
+    setScan('')
+    const norm = (s: any) => String(s || '').trim().toLowerCase()
+    let prod: any = Object.values(cacheRef.current).find(
+      (p: any) => (p.barcode && norm(p.barcode) === norm(code)) ||
+        (p.international_barcode && norm(p.international_barcode) === norm(code)),
+    )
+    if (!prod) {
+      try {
+        const { data } = await api.get('/inventory/items', { params: { branch_id: branchId, q: code } })
+        const list = Array.isArray(data) ? data : []
+        prod = list.find((p: any) => norm(p.barcode) === norm(code) || norm(p.international_barcode) === norm(code)) || list[0]
+        if (prod) cacheRef.current[prod.id] = prod
+      } catch { /* ignore */ }
+    }
+    if (!prod) {
+      setScanMsg({ ok: false, text: (t('inventory.st_scan_notfound', { code }) as string) })
+      focusScan()
+      return
+    }
+    cacheRef.current[prod.id] = prod
+    const base = parseInt(counted[prod.id] ?? '', 10)
+    const newCount = (Number.isFinite(base) ? base : 0) + 1
+    bumpCount(prod.id, 1)
+    const nm = isAr ? prod.name_ar : prod.name_en
+    setScanMsg({ ok: true, text: `${nm} × ${newCount}` })
+    focusScan()
+  }
+
+  // Products that have any edit (counted/expiry/category/lots) — resolved from
+  // the cache so previously scanned items survive list/filter changes.
+  const applyPool = useMemo(() => {
+    const m = new Map<number, any>()
+    items.forEach((it) => m.set(it.id, it))
+    const ids = new Set<number>([
+      ...Object.keys(counted),
+      ...Object.keys(expiries),
+      ...Object.keys(categoriesEdits),
+      ...Object.keys(lotsEdits),
+    ].map(Number))
+    ids.forEach((id) => { if (!m.has(id) && cacheRef.current[id]) m.set(id, cacheRef.current[id]) })
+    return [...m.values()]
+  }, [items, counted, expiries, categoriesEdits, lotsEdits])
+
+  // Counted items summary (running tally), independent of the current filter.
+  const countedSummary = useMemo(() => {
+    return Object.keys(counted)
+      .filter((id) => counted[+id] !== '' && counted[+id] !== undefined)
+      .map((id) => cacheRef.current[+id])
+      .filter(Boolean)
+  }, [counted])
+
+  const toApply = applyPool
     .map(it => {
       const curCat = curCategory(it)
       const catChanged = curCat !== origCategory(it)
@@ -2617,8 +2686,11 @@ function StocktakeTab() {
       setExpiries({})
       setCategoriesEdits({})
       setLotsEdits({})
+      setScanMsg(null)
+      cacheRef.current = {}
       await load()
       await loadPastRuns()
+      focusScan()
     } catch (e: any) {
       alert(e?.response?.data?.detail || t('inventory.st_error'))
     } finally { setApplying(false) }
@@ -2629,7 +2701,7 @@ function StocktakeTab() {
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <select
           value={branchId}
-          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}); setExpiries({}); setLotsEdits({}) }}
+          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}); setExpiries({}); setLotsEdits({}); cacheRef.current = {}; setScanMsg(null) }}
           disabled={!isAdmin}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 disabled:bg-slate-50"
         >
@@ -2680,6 +2752,74 @@ function StocktakeTab() {
           {applying ? t('common.loading') : `${t('inventory.st_apply')}${toApply.length ? ` (${toApply.length})` : ''}`}
         </button>
       </div>
+
+      {branchId && (
+        <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-72 relative">
+            <ScanLine size={18} className="absolute top-1/2 -translate-y-1/2 start-3 text-pharma-600" />
+            <input
+              ref={scanRef}
+              type="text"
+              value={scan}
+              autoFocus
+              onChange={e => setScan(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(scan) } }}
+              placeholder={t('inventory.st_scan_ph') as string}
+              className="w-full ps-10 pe-3 py-2.5 border-2 border-pharma-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500"
+            />
+          </div>
+          {scanMsg && (
+            <span className={`text-sm font-semibold ${scanMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {scanMsg.ok ? '✓ ' : '✕ '}{scanMsg.text}
+            </span>
+          )}
+          <span className="text-xs text-slate-400">{t('inventory.st_scan_help')}</span>
+        </div>
+      )}
+
+      {countedSummary.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-800">{t('inventory.st_scanned_title')} ({countedSummary.length})</h3>
+            <button
+              onClick={() => { setCounted({}); setScanMsg(null); focusScan() }}
+              className="text-xs text-slate-400 hover:text-red-500 font-medium"
+            >
+              {t('inventory.st_clear_counts')}
+            </button>
+          </div>
+          <div className="max-h-52 overflow-auto divide-y divide-slate-100 text-sm">
+            {countedSummary.map(it => {
+              const pack = packSizeOf(it)
+              const cnum = parsePackStockInput(String(counted[it.id] ?? '0'), pack)
+              const diff = (cnum ?? 0) - Number(it.stock)
+              return (
+                <div key={it.id} className="px-4 py-2 flex items-center gap-3">
+                  <span className="flex-1 truncate text-slate-800">{isAr ? it.name_ar : it.name_en}</span>
+                  <span className="font-mono text-[11px] text-slate-400">{t('inventory.st_system')} {it.stock}</span>
+                  <span className={`font-mono text-[11px] ${diff === 0 ? 'text-slate-400' : diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {diff > 0 ? `+${diff}` : diff}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={counted[it.id] ?? ''}
+                    onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
+                    className="w-20 text-center border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-pharma-700 focus:ring-2 focus:ring-pharma-500"
+                  />
+                  <button
+                    onClick={() => setCounted(prev => { const n = { ...prev }; delete n[it.id]; return n })}
+                    className="text-slate-400 hover:text-red-500 p-1"
+                    title={t('common.remove') as string}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="text-xs text-slate-500 px-1">{t('inventory.st_hint')}</div>
 
