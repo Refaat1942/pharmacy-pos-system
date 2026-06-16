@@ -611,6 +611,9 @@ ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS offer_discount DECIMAL(10,2) 
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS pos_quick_items JSONB DEFAULT '[]'::jsonb;
 
+-- Shared barcode-label print settings (so every terminal prints identically)
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS label_print_settings JSONB;
+
 -- Loyalty program
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_enabled BOOLEAN DEFAULT false;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_points_per_egp DECIMAL(10,4) DEFAULT 1.0;

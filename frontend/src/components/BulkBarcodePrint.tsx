@@ -14,6 +14,7 @@ import {
   readLabelSize,
 } from '../lib/zebraBrowserPrint'
 import { renderLabelCanvas, canvasToZpl } from '../lib/labelZpl'
+import { useAuth } from '../lib/auth'
 
 export interface BulkItem {
   id: number
@@ -260,10 +261,12 @@ type PharmacyProfile = {
   name_ar?: string
   name_en?: string
   show_pharmacy_name_on_labels?: boolean
+  label_print_settings?: LabelPrefs | null
 }
 
 export default function BulkBarcodePrint({ items, currency, defaultSize = 'medium', onClose }: Props) {
   const { t, i18n } = useTranslation()
+  const { user } = useAuth()
   const isAr = i18n.language === 'ar'
   const printable = items.filter(i => i.barcode && i.barcode.trim().length > 0)
   const [qty, setQty] = useState<Record<number, number>>(() =>
@@ -312,6 +315,27 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
     saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap })
   }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap])
 
+  const [savingShared, setSavingShared] = useState(false)
+
+  // Apply a saved settings object (from the shared pharmacy profile) to state.
+  const applyPrefs = (p?: LabelPrefs | null) => {
+    if (!p || typeof p !== 'object') return
+    if (p.size) setSize(normalizeSize(p.size))
+    if (typeof p.useQR === 'boolean') setUseQR(p.useQR)
+    if (typeof p.showName === 'boolean') setShowName(p.showName)
+    if (typeof p.showPrice === 'boolean') setShowPrice(p.showPrice)
+    if (typeof p.showExpiry === 'boolean') setShowExpiry(p.showExpiry)
+    if (typeof p.customW === 'number') setCustomW(p.customW)
+    if (typeof p.customH === 'number') setCustomH(p.customH)
+    if (p.overrides && typeof p.overrides === 'object') setOverrides(p.overrides)
+    if (p.layout === 'page' || p.layout === 'grid') setLayout(p.layout)
+    if (typeof p.columns === 'number') setColumns(p.columns)
+    if (typeof p.rowGap === 'number') setRowGap(p.rowGap)
+    if (typeof p.colGap === 'number') setColGap(p.colGap)
+    if (typeof p.groupSize === 'number') setGroupSize(p.groupSize)
+    if (typeof p.groupGap === 'number') setGroupGap(p.groupGap)
+  }
+
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
       .then((r) => {
@@ -319,9 +343,31 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
         setPharmacyName(nm.trim())
         setShowPharmacy(p.show_pharmacy_name_on_labels !== false)
+        // Shared, server-saved label settings win over per-browser localStorage
+        // so every terminal of this pharmacy prints identically.
+        if (p.label_print_settings && Object.keys(p.label_print_settings).length) {
+          applyPrefs(p.label_print_settings)
+        }
       })
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAr])
+
+  const saveForAllTerminals = async () => {
+    setSavingShared(true)
+    try {
+      const prefs: LabelPrefs = {
+        size, useQR, showName, showPrice, showExpiry,
+        customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap,
+      }
+      await api.put('/settings/profile', { label_print_settings: prefs })
+      alert(t('bulk_barcode.saved_for_all'))
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || (t('common.error') as string))
+    } finally {
+      setSavingShared(false)
+    }
+  }
 
   // Detect a Zebra printer via Browser Print (fails soft if not installed).
   useEffect(() => {
@@ -803,8 +849,18 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         </div>
 
         <div className="px-5 py-3 border-t bg-slate-50 flex items-center justify-between gap-3">
-          <div className="text-xs text-slate-600">
+          <div className="text-xs text-slate-600 flex items-center gap-3">
             {skipped > 0 && <span className="text-amber-700">{t('bulk_barcode.skipped', { n: skipped })}</span>}
+            {user?.role === 'admin' && (
+              <button
+                type="button"
+                onClick={saveForAllTerminals}
+                disabled={savingShared}
+                className="text-pharma-700 hover:text-pharma-900 underline disabled:opacity-50"
+              >
+                {savingShared ? t('common.loading') : t('bulk_barcode.save_for_all')}
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-100">
