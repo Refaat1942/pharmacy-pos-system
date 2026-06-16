@@ -81,6 +81,7 @@
     "col_gap": "Column gap (mm)",
     "group_size": "Group size (labels)",
     "group_gap": "Group gap (mm)",
+    "labels_per_page": "Labels per page (2 for a paired roll)",
     "zebra_detected": "Zebra Browser Print detected — labels print directly to the printer at the exact size (no browser dialog, no driver offsets).",
     "zebra_direct": "Print directly to Zebra",
     "zebra_read_size": "Read size from printer",
