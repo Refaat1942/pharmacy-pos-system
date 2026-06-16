@@ -231,6 +231,7 @@ export default function Inventory() {
   const [showExcel, setShowExcel] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showBulkPrint, setShowBulkPrint] = useState(false)
+  const [showCategoryMgr, setShowCategoryMgr] = useState(false)
   const [showAllItems, setShowAllItems] = useState(false)
 
   const toggleOne = (id: number) => {
@@ -431,6 +432,15 @@ export default function Inventory() {
                 {STANDARD_CATEGORIES.map(c => <option key={c} value={c}>{t(`inventory.cat_${c}`, c)}</option>)}
                 {categories.filter(c => !(STANDARD_CATEGORIES as readonly string[]).includes(c)).map(c => <option key={c} value={c}>{c}</option>)}
               </select>
+              {user?.role === 'admin' && (
+                <button
+                  onClick={() => setShowCategoryMgr(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium"
+                >
+                  <Sliders size={15} />
+                  {t('inventory.manage_categories')}
+                </button>
+              )}
               <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer whitespace-nowrap px-2 py-2 border border-slate-200 rounded-lg bg-slate-50">
                 <input
                   type="checkbox"
@@ -580,6 +590,12 @@ export default function Inventory() {
       {adjustItem && <AdjustModal item={adjustItem} onClose={() => setAdjustItem(null)} onSaved={() => { setAdjustItem(null); loadItems() }} />}
       {historyItem && <HistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
       {showExcel && <ExcelUploadModal onClose={() => setShowExcel(false)} onDone={() => { setShowExcel(false); loadItems() }} />}
+      {showCategoryMgr && (
+        <CategoryManagerModal
+          onClose={() => setShowCategoryMgr(false)}
+          onChanged={() => { loadCategories(); loadItems() }}
+        />
+      )}
       {showBulkPrint && (
         <BulkBarcodePrint
           items={items.filter(i => selected.has(i.id)).flatMap((i) => bulkItemsForProduct(i, isAr))}
@@ -2296,6 +2312,121 @@ function BranchStockTab() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CategoryManagerModal({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
+  const { t } = useTranslation()
+  const [rows, setRows] = useState<{ name: string; product_count: number }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/inventory/categories/usage')
+      setRows(data)
+    } catch {
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { void load() }, [])
+
+  const saveRename = async (oldName: string) => {
+    const next = editValue.trim()
+    if (!next || next === oldName) { setEditing(null); return }
+    setBusy(true)
+    try {
+      await api.post('/inventory/categories/rename', { old_name: oldName, new_name: next })
+      setEditing(null)
+      await load()
+      onChanged()
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || t('common.error'))
+    } finally { setBusy(false) }
+  }
+
+  const remove = async (name: string) => {
+    const reassign = prompt(t('inventory.cat_delete_prompt', { name }) as string, '')
+    if (reassign === null) return // cancelled
+    if (!confirm((t('inventory.cat_delete_confirm', { name }) as string))) return
+    setBusy(true)
+    try {
+      await api.post('/inventory/categories/delete', { name, reassign_to: reassign.trim() || null })
+      await load()
+      onChanged()
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || t('common.error'))
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: '85vh' }}>
+        <div className="px-5 py-3 border-b flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">{t('inventory.manage_categories')}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-2 text-xs text-slate-500 border-b bg-slate-50">{t('inventory.cat_manager_hint')}</div>
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="text-center py-8 text-slate-400">{t('common.loading')}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-8 text-slate-400">{t('inventory.cat_none')}</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-600 text-xs uppercase sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-start">{t('inventory.col_category')}</th>
+                  <th className="px-4 py-2 text-center">{t('inventory.col_items')}</th>
+                  <th className="px-4 py-2 text-end">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.name} className="border-t border-slate-100">
+                    <td className="px-4 py-2">
+                      {editing === r.name ? (
+                        <input
+                          autoFocus
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') saveRename(r.name) }}
+                          className="w-full border border-slate-300 rounded px-2 py-1"
+                        />
+                      ) : (
+                        <span className="font-medium text-slate-800">{r.name}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-center font-mono text-slate-500">{r.product_count}</td>
+                    <td className="px-4 py-2 text-end whitespace-nowrap">
+                      {editing === r.name ? (
+                        <>
+                          <button disabled={busy} onClick={() => saveRename(r.name)} className="text-emerald-600 hover:text-emerald-800 font-medium me-3">{t('common.save')}</button>
+                          <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600">{t('common.cancel')}</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => { setEditing(r.name); setEditValue(r.name) }} className="text-pharma-600 hover:text-pharma-800 me-3"><Edit2 size={15} /></button>
+                          <button disabled={busy} onClick={() => remove(r.name)} className="text-red-500 hover:text-red-700"><Trash2 size={15} /></button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="px-5 py-3 border-t bg-slate-50 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 bg-white hover:bg-slate-100">{t('common.close')}</button>
         </div>
       </div>
     </div>
