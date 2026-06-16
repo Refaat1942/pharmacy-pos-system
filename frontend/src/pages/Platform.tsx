@@ -235,6 +235,10 @@ export default function Platform() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <a href="/Fratelanza_POS_Features.pdf" target="_blank" rel="noopener noreferrer"
+              className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
+              <FileText size={14} /> Features PDF
+            </a>
             <Link to="/platform/blueprint"
               className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
               <FileText size={14} /> Sales Blueprint
@@ -764,8 +768,10 @@ function CreateModal({ catalog, optionsCatalog, defaults, plans, onClose, onDone
     slug: '', name: '', plan: 'basic',
     contact_name: '', contact_email: '', contact_phone: '', notes: '',
     admin_username: 'admin', admin_password: '',
+    // New pharmacies default to a 2-day trial; use the quick buttons to convert
+    // to a paid period (+1 month / +1 year) for real customers.
     subscription_start: new Date().toISOString().slice(0, 10),
-    subscription_end: todayPlus(12),
+    subscription_end: todayPlusDays(2),
   })
   const [features, setFeatures] = useState<string[]>(defaults)
   const [featureOptions, setFeatureOptions] = useState<FeatureOptionsMap>(() =>
