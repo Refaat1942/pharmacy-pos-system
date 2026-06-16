@@ -2763,7 +2763,7 @@ function StocktakeTab() {
               value={scan}
               autoFocus
               onChange={e => setScan(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan(scan) } }}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleScan((e.target as HTMLInputElement).value) } }}
               placeholder={t('inventory.st_scan_ph') as string}
               className="w-full ps-10 pe-3 py-2.5 border-2 border-pharma-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500"
             />
