@@ -246,7 +246,22 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
-      .cell { border: none !important; margin: 0; }
+      /* Strictly clamp each label to its exact physical height so a few stray
+         pixels can't overflow and trigger a blank page between labels. */
+      .cell {
+        border: none !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        height: ${h} !important;
+        max-height: ${h} !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .cell:last-child { page-break-after: auto !important; break-after: auto !important; }
+      .shift { gap: 0 !important; }
+      img, svg { margin: 0 auto !important; }
+      html, body, .sheet { height: auto !important; }
       @page { size: ${pageW} ${pageH}; margin: 0; }
     }
   `
