@@ -24,6 +24,7 @@ PROFILE_FIELDS = [
     "shift_morning_start", "shift_evening_start", "shift_night_start",
     "dose_label_presets",
     "pos_quick_items",
+    "label_print_settings",
 ]
 
 
@@ -58,6 +59,7 @@ class ProfilePatch(BaseModel):
     shift_night_start:   Optional[str] = None
     dose_label_presets: Optional[List[dict]] = None
     pos_quick_items: Optional[List[int]] = None
+    label_print_settings: Optional[dict] = None
 
 
 def _ensure_profile_row(cur):
@@ -161,6 +163,10 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
                 seen.add(pid)
                 cleaned_ids.append(pid)
             values.append(psycopg2.extras.Json(cleaned_ids))
+        elif k == "label_print_settings":
+            if v is not None and not isinstance(v, dict):
+                raise HTTPException(400, "label_print_settings must be a JSON object")
+            values.append(psycopg2.extras.Json(v) if v is not None else None)
         else:
             values.append(v)
     fields.append("updated_at = NOW()")
