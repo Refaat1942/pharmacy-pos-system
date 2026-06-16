@@ -636,6 +636,74 @@ def list_categories(current_user=Depends(get_current_user)):
     return rows
 
 
+@router.get("/categories/usage")
+def categories_usage(current_user=Depends(get_current_user)):
+    """Category names with how many products use each (for the category manager)."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """SELECT category AS name, COUNT(*)::int AS product_count
+           FROM products
+           WHERE category IS NOT NULL AND category <> ''
+           GROUP BY category ORDER BY category"""
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+
+class CategoryRename(BaseModel):
+    old_name: str
+    new_name: str
+
+
+@router.post("/categories/rename")
+def rename_category(req: CategoryRename, current_user=Depends(get_current_user)):
+    """Rename/merge a category across all products (admin only). If new_name
+    already exists, the two categories are merged."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    old = (req.old_name or "").strip()
+    new = (req.new_name or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="Both old and new category names are required")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE products SET category=%s WHERE category=%s", (new, old))
+        affected = cur.rowcount
+        conn.commit()
+        return {"ok": True, "updated": affected}
+    finally:
+        conn.close()
+
+
+class CategoryDelete(BaseModel):
+    name: str
+    reassign_to: Optional[str] = None
+
+
+@router.post("/categories/delete")
+def delete_category(req: CategoryDelete, current_user=Depends(get_current_user)):
+    """Remove a category (admin only). Products keep existing but are either
+    moved to `reassign_to` or left uncategorized (category cleared)."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name is required")
+    target = (req.reassign_to or "").strip() or None
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE products SET category=%s WHERE category=%s", (target, name))
+        affected = cur.rowcount
+        conn.commit()
+        return {"ok": True, "updated": affected}
+    finally:
+        conn.close()
+
+
 # ─── BRANCHES ───────────────────────────────────────────────────────────────
 
 @router.get("/branches")

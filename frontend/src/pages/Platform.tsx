@@ -482,6 +482,14 @@ function todayPlus(months: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+function todayPlusDays(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const TODAY_ISO = () => new Date().toISOString().slice(0, 10)
+
 function FeaturesPicker({ catalog, value, onChange }: {
   catalog: FeatureDef[]; value: string[]; onChange: (v: string[]) => void
 }) {
@@ -883,7 +891,8 @@ function CreateModal({ catalog, optionsCatalog, defaults, plans, onClose, onDone
                 onChange={(v) => setForm({ ...form, subscription_end: v })} />
             </Field>
           </div>
-          <div className="flex gap-2 mt-2 text-xs">
+          <div className="flex gap-2 mt-2 text-xs flex-wrap">
+            <button type="button" onClick={() => setForm({ ...form, subscription_start: TODAY_ISO(), subscription_end: todayPlusDays(2) })} className="px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold">Trial — 2 days</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(1) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+1 month</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(3) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+3 months</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(6) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+6 months</button>
@@ -1038,6 +1047,7 @@ function EditModal({ tenant, catalog, optionsCatalog, plans, onClose, onDone }: 
             </Field>
           </div>
           <div className="flex gap-2 mt-2 text-xs flex-wrap">
+            <button type="button" onClick={() => setForm({ ...form, subscription_start: TODAY_ISO(), subscription_end: todayPlusDays(2) })} className="px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold">Start 2-day trial</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(1) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">Renew +1 month</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(3) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+3 months</button>
             <button type="button" onClick={() => setForm({ ...form, subscription_end: todayPlus(6) })} className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200">+6 months</button>
