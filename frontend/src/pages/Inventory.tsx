@@ -2640,7 +2640,17 @@ function StocktakeTab() {
     })
     .filter(r => r.countChanged || r.expChanged || r.catChanged || r.lotsChanged)
 
-  const stFilter = useQuickFilter(items, [
+  // Table shows the searched/loaded items PLUS any scanned/counted items
+  // (resolved from the cache) so scanned products appear in the full editable
+  // table even when nothing is searched.
+  const tableSource = useMemo(() => {
+    const m = new Map<number, any>()
+    countedSummary.forEach((it) => m.set(it.id, it))
+    items.forEach((it) => { if (!m.has(it.id)) m.set(it.id, it) })
+    return [...m.values()]
+  }, [items, countedSummary])
+
+  const stFilter = useQuickFilter(tableSource, [
     (it: any) => it.name_en,
     (it: any) => it.name_ar,
     (it: any) => it.barcode,
@@ -2773,51 +2783,19 @@ function StocktakeTab() {
               {scanMsg.ok ? '✓ ' : '✕ '}{scanMsg.text}
             </span>
           )}
-          <span className="text-xs text-slate-400">{t('inventory.st_scan_help')}</span>
-        </div>
-      )}
-
-      {countedSummary.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-800">{t('inventory.st_scanned_title')} ({countedSummary.length})</h3>
-            <button
-              onClick={() => { setCounted({}); setScanMsg(null); focusScan() }}
-              className="text-xs text-slate-400 hover:text-red-500 font-medium"
-            >
-              {t('inventory.st_clear_counts')}
-            </button>
-          </div>
-          <div className="max-h-52 overflow-auto divide-y divide-slate-100 text-sm">
-            {countedSummary.map(it => {
-              const pack = packSizeOf(it)
-              const cnum = parsePackStockInput(String(counted[it.id] ?? '0'), pack)
-              const diff = (cnum ?? 0) - Number(it.stock)
-              return (
-                <div key={it.id} className="px-4 py-2 flex items-center gap-3">
-                  <span className="flex-1 truncate text-slate-800">{isAr ? it.name_ar : it.name_en}</span>
-                  <span className="font-mono text-[11px] text-slate-400">{t('inventory.st_system')} {it.stock}</span>
-                  <span className={`font-mono text-[11px] ${diff === 0 ? 'text-slate-400' : diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {diff > 0 ? `+${diff}` : diff}
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={counted[it.id] ?? ''}
-                    onChange={e => setCounted(prev => ({ ...prev, [it.id]: e.target.value }))}
-                    className="w-20 text-center border border-slate-300 rounded-lg px-2 py-1 text-sm font-bold text-pharma-700 focus:ring-2 focus:ring-pharma-500"
-                  />
-                  <button
-                    onClick={() => setCounted(prev => { const n = { ...prev }; delete n[it.id]; return n })}
-                    className="text-slate-400 hover:text-red-500 p-1"
-                    title={t('common.remove') as string}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+          {countedSummary.length > 0 ? (
+            <span className="text-xs text-slate-600">
+              {t('inventory.st_scanned_title')}: <b>{countedSummary.length}</b>
+              <button
+                onClick={() => { setCounted({}); setScanMsg(null); focusScan() }}
+                className="ms-2 text-red-500 hover:text-red-700 font-medium"
+              >
+                {t('inventory.st_clear_counts')}
+              </button>
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">{t('inventory.st_scan_help')}</span>
+          )}
         </div>
       )}
 
