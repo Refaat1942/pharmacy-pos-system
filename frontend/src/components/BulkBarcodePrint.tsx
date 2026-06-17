@@ -433,127 +433,93 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
     setBusy(true)
     try {
       const style = effectiveStyle
-      const w = window.open('', 'PRINT_LABELS', 'width=820,height=640,scrollbars=yes')
-      if (!w) {
-        alert(t('bulk_barcode.popup_blocked'))
-        return
-      }
-      // A single space title prevents the browser printing "Barcodes (N)" as a header.
-      w.document.title = ' '
-      const styleEl = w.document.createElement('style')
-      styleEl.textContent = buildLabelStyles(dims, style, gridOpts)
-      w.document.head.appendChild(styleEl)
-
-      const toolbar = w.document.createElement('div')
-      toolbar.id = 'print-toolbar'
-      const title = w.document.createElement('strong')
-      title.textContent = t('bulk_barcode.print_toolbar_title')
-      const btn = w.document.createElement('button')
-      btn.type = 'button'
-      btn.textContent = t('bulk_barcode.print_toolbar_btn')
-      btn.onclick = () => { w.focus(); w.print() }
-      const hint = w.document.createElement('span')
-      hint.textContent = t('bulk_barcode.print_toolbar_hint')
-      toolbar.append(title, btn, hint)
-      w.document.body.appendChild(toolbar)
-
-      const sheet = w.document.createElement('div')
-      sheet.className = 'sheet'
-      w.document.body.appendChild(sheet)
-
       const svgNS = 'http://www.w3.org/2000/svg'
-      let placed = 0 // global label counter (for group gaps)
-      for (const it of printable) {
-        const n = qty[it.id] || 0
-        if (n <= 0) continue
-        // QR is rasterised (high-res PNG); 1D barcodes are drawn as crisp
-        // vector SVG so the bars never become jagged when scaled to the label.
-        const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
-        if (useQR && !qrUrl) continue
-        for (let i = 0; i < n; i++) {
-          // Insert the group gap (e.g. 5mm after every pair) for paired rolls.
-          if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && placed > 0 && placed % gridOpts.groupSize === 0) {
-            const gap = w.document.createElement('div')
-            gap.className = 'group-gap'
-            sheet.appendChild(gap)
-          }
-          const cell = w.document.createElement('div')
-          cell.className = 'cell'
-          const shift = w.document.createElement('div')
-          shift.className = 'shift'
-          cell.appendChild(shift)
-          // Positioned layout: drug name top-left · barcode centered ·
-          // bottom row [ pharmacy (left) · expiry (center) · price (right) ].
-          // Drug name — upper left.
-          const nm = w.document.createElement('div')
-          nm.className = 'name-top'
-          nm.textContent = showName ? it.name : ''
-          shift.appendChild(nm)
 
-          // Barcode (with its number) — centered in the middle.
-          const bcWrap = w.document.createElement('div')
-          bcWrap.className = 'bc-wrap'
-          shift.appendChild(bcWrap)
-          if (useQR) {
-            const img = w.document.createElement('img')
-            img.src = qrUrl as string
-            bcWrap.appendChild(img)
-          } else {
-            const svg = w.document.createElementNS(svgNS, 'svg')
-            bcWrap.appendChild(svg)
-            try {
-              JsBarcode(svg, it.barcode!, {
-                format: detectType(it.barcode!),
-                displayValue: true,
-                width: style.barcodeScale,
-                height: style.barcodeHeight,
-                margin: 0,
-                font: 'Arial Black, Arial, sans-serif',
-                fontSize: style.fontSize + 1,
-                fontOptions: 'bold',
-                textMargin: 1,
-                lineColor: '#000000',
-                background: '#ffffff',
-              })
-              // Convert intrinsic px size to a viewBox so CSS can scale the
-              // vector crisply within the label (no jagged raster scaling).
-              const vw = parseFloat(svg.getAttribute('width') || '0')
-              const vh = parseFloat(svg.getAttribute('height') || '0')
-              if (vw > 0 && vh > 0) {
-                svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
-                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
-                svg.removeAttribute('width')
-                svg.removeAttribute('height')
-              }
-            } catch {
-              if (svg.parentNode === bcWrap) bcWrap.removeChild(svg)
+      // Build all label cells into the given document's sheet element.
+      const fillSheet = async (doc: Document, sheet: HTMLElement) => {
+        let placed = 0
+        for (const it of printable) {
+          const n = qty[it.id] || 0
+          if (n <= 0) continue
+          const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
+          if (useQR && !qrUrl) continue
+          for (let i = 0; i < n; i++) {
+            if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && placed > 0 && placed % gridOpts.groupSize === 0) {
+              const gap = doc.createElement('div'); gap.className = 'group-gap'; sheet.appendChild(gap)
             }
+            const cell = doc.createElement('div'); cell.className = 'cell'
+            const shift = doc.createElement('div'); shift.className = 'shift'; cell.appendChild(shift)
+            const nm = doc.createElement('div'); nm.className = 'name-top'; nm.textContent = showName ? it.name : ''; shift.appendChild(nm)
+            const bcWrap = doc.createElement('div'); bcWrap.className = 'bc-wrap'; shift.appendChild(bcWrap)
+            if (useQR) {
+              const img = doc.createElement('img'); img.src = qrUrl as string; bcWrap.appendChild(img)
+            } else {
+              const svg = doc.createElementNS(svgNS, 'svg'); bcWrap.appendChild(svg)
+              try {
+                JsBarcode(svg, it.barcode!, {
+                  format: detectType(it.barcode!), displayValue: true,
+                  width: style.barcodeScale, height: style.barcodeHeight, margin: 0,
+                  font: 'Arial Black, Arial, sans-serif', fontSize: style.fontSize + 1,
+                  fontOptions: 'bold', textMargin: 1, lineColor: '#000000', background: '#ffffff',
+                })
+                const vw = parseFloat(svg.getAttribute('width') || '0')
+                const vh = parseFloat(svg.getAttribute('height') || '0')
+                if (vw > 0 && vh > 0) {
+                  svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+                  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+                  svg.removeAttribute('width'); svg.removeAttribute('height')
+                }
+              } catch { if (svg.parentNode === bcWrap) bcWrap.removeChild(svg) }
+            }
+            const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
+            const hasPrice = showPrice && it.price != null
+            const bottom = doc.createElement('div'); bottom.className = 'bottom-row'
+            const bLeft = doc.createElement('span'); bLeft.className = 'meta b-left'; bLeft.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
+            const bMid = doc.createElement('span'); bMid.className = 'meta b-mid'; bMid.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
+            const bRight = doc.createElement('span'); bRight.className = 'meta b-right price-up'; bRight.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
+            bottom.append(bLeft, bMid, bRight); shift.appendChild(bottom)
+            sheet.appendChild(cell)
+            placed++
           }
-
-          // Bottom row: pharmacy (left) · expiry (center) · price (right, lifted).
-          const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
-          const hasPrice = showPrice && it.price != null
-          const bottom = w.document.createElement('div')
-          bottom.className = 'bottom-row'
-          const bLeft = w.document.createElement('span')
-          bLeft.className = 'meta b-left'
-          bLeft.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
-          const bMid = w.document.createElement('span')
-          bMid.className = 'meta b-mid'
-          bMid.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
-          const bRight = w.document.createElement('span')
-          bRight.className = 'meta b-right price-up'
-          bRight.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
-          bottom.append(bLeft, bMid, bRight)
-          shift.appendChild(bottom)
-          sheet.appendChild(cell)
-          placed++
         }
       }
 
-      await waitForImages(w.document)
-      w.focus()
-      if (openPrinterDialog) w.print()
+      if (openPrinterDialog) {
+        // Print straight to the OS print dialog via a HIDDEN iframe — no visible
+        // Chrome window is opened.
+        const iframe = document.createElement('iframe')
+        iframe.setAttribute('aria-hidden', 'true')
+        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;'
+        document.body.appendChild(iframe)
+        const win = iframe.contentWindow
+        const doc = win?.document
+        if (!win || !doc) { document.body.removeChild(iframe); return }
+        doc.open(); doc.write('<!doctype html><html><head><title> </title></head><body></body></html>'); doc.close()
+        const styleEl = doc.createElement('style'); styleEl.textContent = buildLabelStyles(dims, style, gridOpts); doc.head.appendChild(styleEl)
+        const sheet = doc.createElement('div'); sheet.className = 'sheet'; doc.body.appendChild(sheet)
+        await fillSheet(doc, sheet)
+        await waitForImages(doc)
+        const cleanup = () => { try { if (iframe.parentNode) document.body.removeChild(iframe) } catch { /* ignore */ } }
+        win.onafterprint = cleanup
+        win.focus()
+        win.print()
+        setTimeout(cleanup, 60000)
+      } else {
+        // Preview in a visible window with a print toolbar.
+        const w = window.open('', 'PRINT_LABELS', 'width=820,height=640,scrollbars=yes')
+        if (!w) { alert(t('bulk_barcode.popup_blocked')); return }
+        w.document.title = ' '
+        const styleEl = w.document.createElement('style'); styleEl.textContent = buildLabelStyles(dims, style, gridOpts); w.document.head.appendChild(styleEl)
+        const toolbar = w.document.createElement('div'); toolbar.id = 'print-toolbar'
+        const title = w.document.createElement('strong'); title.textContent = t('bulk_barcode.print_toolbar_title')
+        const btn = w.document.createElement('button'); btn.type = 'button'; btn.textContent = t('bulk_barcode.print_toolbar_btn'); btn.onclick = () => { w.focus(); w.print() }
+        const hint = w.document.createElement('span'); hint.textContent = t('bulk_barcode.print_toolbar_hint')
+        toolbar.append(title, btn, hint); w.document.body.appendChild(toolbar)
+        const sheet = w.document.createElement('div'); sheet.className = 'sheet'; w.document.body.appendChild(sheet)
+        await fillSheet(w.document, sheet)
+        await waitForImages(w.document)
+        w.focus()
+      }
     } finally {
       setBusy(false)
     }
