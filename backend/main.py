@@ -689,6 +689,7 @@ class InvoiceItemInput(BaseModel):
     offer_discount: float = 0.0
     # "pack" (main unit, default) or "sub" (inner unit when pack_size > 1)
     unit_type: Optional[str] = "pack"
+    dose_text: Optional[str] = None
 
 
 class SaleRequest(BaseModel):
@@ -1063,12 +1064,12 @@ def create_sale(req: SaleRequest,
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
                     barcode, quantity, unit_price, discount, total, unit_label, pack_size,
-                    offer_id, offer_discount)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    offer_id, offer_discount, dose_text)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, line_discount,
                  item_total, unit_label, line_pack,
-                 item.offer_id, offer_disc),
+                 item.offer_id, offer_disc, (item.dose_text or "").strip() or None),
             )
             deduct_stock_fefo(cur, item.product_id, stock_used, today=today)
             new_stock = sync_product_from_batches(cur, item.product_id)

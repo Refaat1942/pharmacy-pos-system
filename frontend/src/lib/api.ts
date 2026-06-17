@@ -137,6 +137,7 @@ export interface CartItem {
   // 'pack' = sell as main unit (Box), 'sub' = sell as inner unit (Strip).
   // When pack_size <= 1 this is always 'pack'.
   unit_type?: 'pack' | 'sub'
+  dose_text?: string
 }
 
 export interface InvoiceItem {
@@ -156,6 +157,7 @@ export interface InvoiceItem {
   prod_unit?: string | null
   prod_sub_unit?: string | null
   returned_sub?: number
+  dose_text?: string | null
 }
 
 export interface Invoice {
@@ -289,6 +291,7 @@ export const salesAPI = {
       offer_id?: number
       offer_discount?: number
       unit_type?: string
+      dose_text?: string
     }[]
     discount: number
     offer_ids?: number[]

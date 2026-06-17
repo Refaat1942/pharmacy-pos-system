@@ -252,6 +252,7 @@ export default function PaymentModal({
           offer_id: item.offer_id,
           offer_discount: item.offer_discount || 0,
           unit_type: item.unit_type || 'pack',
+          dose_text: item.dose_text || undefined,
         })),
         discount: invoiceDiscount,
         offer_ids: offerIds?.length ? offerIds : undefined,

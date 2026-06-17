@@ -547,6 +547,12 @@ export default function POS() {
     }))
   }, [])
 
+  const setDoseText = useCallback((productId: number, doseText: string) => {
+    setCartItems((prev) => prev.map((i) =>
+      i.product.id === productId ? { ...i, dose_text: doseText } : i,
+    ))
+  }, [])
+
   const removeFromCart = useCallback((productId: number) => {
     setCartItems((prev) => prev.filter((i) => i.product.id !== productId))
   }, [])
@@ -910,6 +916,7 @@ export default function POS() {
                                 pharmacyName={pharmacyName}
                                 showPharmacyOnLabels={showPharmacyOnLabels}
                                 onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
+                                onDoseChange={(txt) => setDoseText(item.product.id, txt)}
                               />
                             )}
                             {hasSub && (
