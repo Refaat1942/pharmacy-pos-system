@@ -5,15 +5,6 @@ import { X, Printer, Minus, Plus, Eye, RotateCcw } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
-import {
-  ZebraDevice,
-  isBrowserPrintAvailable,
-  listPrinters,
-  getDefaultPrinter,
-  sendZpl,
-  readLabelSize,
-} from '../lib/zebraBrowserPrint'
-import { renderLabelCanvas, canvasToZpl } from '../lib/labelZpl'
 import { useAuth } from '../lib/auth'
 
 export interface BulkItem {
@@ -76,7 +67,6 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
   const short = hMm < 16 // e.g. a 39x11.5mm strip — pack everything tightly
   return {
     barcodeHeight: short ? Math.max(14, Math.round(hMm * 1.4)) : Math.max(20, Math.round(hMm * 1.6)),
-    // Thicker bars (>= 2 dots wide @203dpi) so they print solid black, not faint.
     barcodeScale: hMm >= 40 ? 3 : hMm >= 24 ? 2.5 : short ? 1.8 : 2,
     fontSize: short ? 5 : Math.max(6, Math.round(hMm * 0.34)),
     padding: short ? 0.5 : hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
@@ -90,11 +80,9 @@ function normalizeSize(s?: string): LabelSize {
   if (s === 'sm') return 'small'
   if (s === 'lg' || s === 'zebra2x3') return 'large'
   if (s === 'thermal') return 'strip38'
-  return 'medium' // md / undefined → sensible default
+  return 'medium' 
 }
 
-// Remembered label-print preferences (per browser/terminal) so the right size
-// and layout are applied automatically next time without re-selecting.
 const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
 interface LabelPrefs {
   size?: string
@@ -112,6 +100,7 @@ interface LabelPrefs {
   groupSize?: number
   groupGap?: number
 }
+
 function loadLabelPrefs(): LabelPrefs {
   try {
     const raw = localStorage.getItem(LABEL_PREFS_KEY)
@@ -120,6 +109,7 @@ function loadLabelPrefs(): LabelPrefs {
     return {}
   }
 }
+
 function saveLabelPrefs(prefs: LabelPrefs): void {
   try {
     localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(prefs))
@@ -167,19 +157,12 @@ async function renderBarcodeDataUrl(
   }
 }
 
-/**
- * One clean thermal layout for every profile: @page is exactly the label size
- * with zero margin (kills browser headers/footers/page numbers), and each cell
- * is a single, centred, overflow-clipped print unit.
- */
 interface GridOpts {
   layout: 'page' | 'grid'
   columns: number
   rowGap: number
   colGap: number
-  /** Labels per group before inserting the group gap (0 = off). */
   groupSize: number
-  /** Gap (mm) inserted after every `groupSize` labels (e.g. a paired roll). */
   groupGap: number
 }
 
@@ -190,12 +173,9 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
   const metaFs = Math.max(6, style.fontSize - 1)
   const isGrid = grid.layout === 'grid'
   const cols = Math.max(1, Math.round(grid.columns) || 1)
-  // Page mode = one label per @page. Page width/height = the physical label.
+  
   const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
   const pageH = isGrid ? 'auto' : h
-  // Safety margin: the label box is 1–2 mm SHORTER than the @page so sub-pixel
-  // rounding can never overflow into a blank sheet (the cause of the blank page
-  // between labels). Bigger labels get 2 mm, small strips get 1 mm.
   const safetyMm = isGrid ? 0 : (dims.hMm >= 20 ? 2 : 1)
   const cellH = `${Math.max(4, dims.hMm - safetyMm).toFixed(2)}mm`
   const sheetScreen = isGrid
@@ -205,8 +185,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center;`
     : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
   const cellBreak = 'page-break-inside: avoid; break-inside: avoid;'
-  // Only transform when a nudge is set, so the default label is perfectly
-  // centered with no transform side-effects.
+  
   const shiftTransform = (style.offsetX || style.offsetY)
     ? `transform: translate(${style.offsetX}mm, ${style.offsetY}mm);`
     : ''
@@ -245,8 +224,6 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
-      /* Strictly clamp each label to a box SHORTER than the page, with one
-         forced page break per label so each maps to exactly one physical gap. */
       .cell {
         box-sizing: border-box !important;
         overflow: hidden !important;
@@ -257,7 +234,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
         border: none !important;
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        ${isGrid ? '' : 'page-break-after: always !important; break-after: page !important;'}
+        ${isGrid ? '' : 'page-break-after: auto !important; break-after: auto !important;'}
       }
       ${isGrid ? '' : '.cell:last-child { page-break-after: auto !important; break-after: auto !important; }'}
       .shift { gap: 0 !important; height: 100% !important; }
@@ -299,8 +276,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
   const [showPharmacy, setShowPharmacy] = useState(true)
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
+  
+  // Custom Dimension State
   const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT.wMm)
   const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT.hMm)
+  
   const [overrides, setOverrides] = useState<Partial<LabelStyle>>(savedPrefs.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [layout, setLayout] = useState<'page' | 'grid'>(savedPrefs.layout ?? 'page')
@@ -320,14 +300,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
     [dims, overrides],
   )
 
-  // Zebra Browser Print (direct-to-printer) state.
-  const [zebraReady, setZebraReady] = useState(false)
-  const [zebraDevices, setZebraDevices] = useState<ZebraDevice[]>([])
-  const [zebraDevice, setZebraDevice] = useState<ZebraDevice | null>(null)
-  const [zebraDirect, setZebraDirect] = useState(true)
-  const [zebraDpi, setZebraDpi] = useState(203)
-  const [zebraSizeNote, setZebraSizeNote] = useState('')
-
   // Persist chosen settings so they auto-apply next time.
   useEffect(() => {
     saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap })
@@ -335,7 +307,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
 
   const [savingShared, setSavingShared] = useState(false)
 
-  // Apply a saved settings object (from the shared pharmacy profile) to state.
   const applyPrefs = (p?: LabelPrefs | null) => {
     if (!p || typeof p !== 'object') return
     if (p.size) setSize(normalizeSize(p.size))
@@ -361,14 +332,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
         setPharmacyName(nm.trim())
         setShowPharmacy(p.show_pharmacy_name_on_labels !== false)
-        // Shared, server-saved label settings win over per-browser localStorage
-        // so every terminal of this pharmacy prints identically.
         if (p.label_print_settings && Object.keys(p.label_print_settings).length) {
           applyPrefs(p.label_print_settings)
         }
       })
       .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAr])
 
   const saveForAllTerminals = async () => {
@@ -386,21 +354,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       setSavingShared(false)
     }
   }
-
-  // Detect a Zebra printer via Browser Print (fails soft if not installed).
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      if (!(await isBrowserPrintAvailable())) return
-      const [def, list] = await Promise.all([getDefaultPrinter(), listPrinters()])
-      if (cancelled) return
-      const devices = list.length ? list : def ? [def] : []
-      setZebraDevices(devices)
-      setZebraDevice(def || devices[0] || null)
-      setZebraReady(devices.length > 0 || !!def)
-    })()
-    return () => { cancelled = true }
-  }, [])
 
   const totalLabels = useMemo(() => printable.reduce((s, i) => s + (qty[i.id] || 0), 0), [qty, printable])
   const skipped = items.length - printable.length
@@ -435,7 +388,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       const style = effectiveStyle
       const svgNS = 'http://www.w3.org/2000/svg'
 
-      // Build all label cells into the given document's sheet element.
       const fillSheet = async (doc: Document, sheet: HTMLElement) => {
         let placed = 0
         for (const it of printable) {
@@ -485,8 +437,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       }
 
       if (openPrinterDialog) {
-        // Print straight to the OS print dialog via a HIDDEN iframe — no visible
-        // Chrome window is opened.
         const iframe = document.createElement('iframe')
         iframe.setAttribute('aria-hidden', 'true')
         iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;'
@@ -505,7 +455,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         win.print()
         setTimeout(cleanup, 60000)
       } else {
-        // Preview in a visible window with a print toolbar.
         const w = window.open('', 'PRINT_LABELS', 'width=820,height=640,scrollbars=yes')
         if (!w) { alert(t('bulk_barcode.popup_blocked')); return }
         w.document.title = ' '
@@ -524,75 +473,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       setBusy(false)
     }
   }
-
-  const readSizeFromPrinter = async () => {
-    if (!zebraDevice) return
-    setBusy(true)
-    try {
-      const r = await readLabelSize(zebraDevice)
-      if (r.dpi) setZebraDpi(r.dpi)
-      if (r.widthIn) setCustomW(Math.round(r.widthIn * 25.4))
-      if (r.heightIn) setCustomH(Math.round(r.heightIn * 25.4))
-      if (r.widthIn || r.heightIn) setSize('custom')
-      setZebraSizeNote(
-        r.widthIn || r.heightIn
-          ? (t('bulk_barcode.zebra_size_read', {
-              w: r.widthIn ? Math.round(r.widthIn * 25.4) : customW,
-              h: r.heightIn ? Math.round(r.heightIn * 25.4) : customH,
-              dpi: r.dpi,
-            }) as string)
-          : (t('bulk_barcode.zebra_size_unknown') as string),
-      )
-    } catch {
-      setZebraSizeNote(t('bulk_barcode.zebra_size_unknown') as string)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const printDirectToZebra = async () => {
-    if (!zebraDevice || totalLabels === 0) return
-    setBusy(true)
-    try {
-      const wIn = dims.wMm / 25.4
-      const hIn = dims.hMm / 25.4
-      const style = effectiveStyle
-      // High-resolution barcode bitmap so the rasterised ZPL label stays crisp.
-      const barStyle: LabelStyle = {
-        ...style,
-        barcodeScale: 3,
-        barcodeHeight: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
-        fontSize: Math.max(10, Math.round(hIn * zebraDpi * 0.05)),
-      }
-      for (const it of printable) {
-        const n = qty[it.id] || 0
-        if (n <= 0) continue
-        const url = await renderBarcodeDataUrl(it.barcode!, useQR, barStyle)
-        if (!url) continue
-        const canvas = await renderLabelCanvas({
-          widthIn: wIn,
-          heightIn: hIn,
-          dpi: zebraDpi,
-          barcodeDataUrl: url,
-          pharmacy: showPharmacy && pharmacyName ? pharmacyName : undefined,
-          name: showName ? it.name : undefined,
-          expiry: showExpiry ? formatExpiryForLabel(it.expiryDate) : null,
-          price: showPrice && it.price != null
-            ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}`
-            : null,
-          isQR: useQR,
-        })
-        await sendZpl(zebraDevice, canvasToZpl(canvas, n))
-      }
-    } catch (e: any) {
-      alert(t('bulk_barcode.zebra_print_error', { msg: e?.message || '' }))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const useZebraDirect = zebraReady && zebraDirect && !!zebraDevice
-  const handlePrint = () => (useZebraDirect ? printDirectToZebra() : openPrintWindow(true))
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -656,14 +536,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           <div className="px-5 py-3 bg-emerald-50/60 border-b border-emerald-100 text-xs text-emerald-900 flex items-center gap-3 flex-wrap">
             <label className="flex items-center gap-1.5 font-medium">
               {t('bulk_barcode.custom_w')}
-              <input type="number" min={5} max={200} step={1} value={customW}
-                onChange={(e) => setCustomW(parseInt(e.target.value, 10) || CUSTOM_DEFAULT.wMm)}
+              <input type="number" min={5} max={200} step={0.5} value={customW}
+                onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT.wMm)}
                 className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
             </label>
             <label className="flex items-center gap-1.5 font-medium">
               {t('bulk_barcode.custom_h')}
-              <input type="number" min={5} max={200} step={1} value={customH}
-                onChange={(e) => setCustomH(parseInt(e.target.value, 10) || CUSTOM_DEFAULT.hMm)}
+              <input type="number" min={5} max={200} step={0.5} value={customH}
+                onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT.hMm)}
                 className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
             </label>
             <span className="text-emerald-700">{t('bulk_barcode.custom_unit_mm')}</span>
@@ -765,37 +645,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           )}
         </div>
 
-        {zebraReady && (
-          <div className="px-5 py-3 bg-sky-50 border-b border-sky-100 text-xs text-sky-900 space-y-2">
-            <div className="flex items-center gap-2">
-              <Printer size={14} />
-              <span className="font-semibold">{t('bulk_barcode.zebra_detected')}</span>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 font-medium">
-                <input type="checkbox" checked={zebraDirect} onChange={(e) => setZebraDirect(e.target.checked)} />
-                <span>{t('bulk_barcode.zebra_direct')}</span>
-              </label>
-              {zebraDevices.length > 1 ? (
-                <select
-                  value={zebraDevice?.uid || ''}
-                  onChange={(e) => setZebraDevice(zebraDevices.find((d) => d.uid === e.target.value) || null)}
-                  className="border border-sky-300 rounded px-2 py-1 text-sky-900"
-                >
-                  {zebraDevices.map((d) => <option key={d.uid} value={d.uid}>{d.name}</option>)}
-                </select>
-              ) : zebraDevice ? (
-                <span className="font-mono">{zebraDevice.name}</span>
-              ) : null}
-              <button type="button" onClick={readSizeFromPrinter}
-                className="px-2 py-1 rounded bg-sky-600 hover:bg-sky-700 text-white font-medium">
-                {t('bulk_barcode.zebra_read_size')}
-              </button>
-              {zebraSizeNote && <span className="text-sky-700">{zebraSizeNote}</span>}
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase sticky top-0">
@@ -860,14 +709,12 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             </button>
             <button
               type="button"
-              onClick={handlePrint}
+              onClick={() => openPrintWindow(true)}
               disabled={busy || totalLabels === 0}
               className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1"
             >
               <Printer size={14} />{' '}
-              {useZebraDirect
-                ? t('bulk_barcode.zebra_print_btn', { n: totalLabels })
-                : t('bulk_barcode.choose_printer', { n: totalLabels })}
+              {t('bulk_barcode.choose_printer', { n: totalLabels })}
             </button>
           </div>
         </div>
