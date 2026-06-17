@@ -220,7 +220,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     .shift { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 100%; height: 100%; max-width: 100%; ${shiftTransform} }
     
     .top-row { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 1mm; }
-    .t-left { text-align: left; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 1; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .t-left { text-align: left; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 0.8; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transform: translateY(-0.8mm); }
     .t-right { text-align: right; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 1; white-space: nowrap; margin-left: auto; padding-left: 1mm; }
     
     .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
@@ -418,7 +418,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'custo
           if (n <= 0) continue
           
           // CRITICAL: If Paired Roll layout is chosen, force an even quantity
-          // So if user types 1, it becomes 2. If 11, it becomes 12.
           if (gridOpts.layout === 'paired' && n % 2 !== 0) {
              n += 1
           }
