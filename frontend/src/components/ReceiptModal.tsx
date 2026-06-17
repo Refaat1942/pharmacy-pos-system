@@ -273,6 +273,11 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                         {tr('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
                         {unitDisplay ? ` ${unitDisplay}` : ''}
                       </p>
+                      {item.dose_text && (
+                        <p className="text-[11px] text-gray-600 font-medium leading-tight mt-0.5">
+                          {item.dose_text}
+                        </p>
+                      )}
                     </td>
                     <td className="py-2.5 text-center text-gray-700 font-medium">
                       <span className="tabular-nums">{item.quantity}</span>

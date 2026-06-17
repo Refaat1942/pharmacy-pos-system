@@ -458,6 +458,8 @@ ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100)
 
 -- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
+-- Per-line dose/directions text (shown on the receipt).
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS dose_text TEXT;
 
 -- Backfill per-line pack_size on invoice/return items (requires products.pack_size + unit_label).
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS pack_size INTEGER;

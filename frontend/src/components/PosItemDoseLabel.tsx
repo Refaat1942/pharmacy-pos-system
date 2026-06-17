@@ -19,6 +19,7 @@ interface Props {
   pharmacyName?: string
   showPharmacyOnLabels?: boolean
   onOpenFullEditor: (doseText: string) => void
+  onDoseChange?: (doseText: string) => void
 }
 
 const QUICK_PRESET_IDS = [
@@ -40,6 +41,7 @@ export default function PosItemDoseLabel({
   pharmacyName = '',
   showPharmacyOnLabels = true,
   onOpenFullEditor,
+  onDoseChange,
 }: Props) {
   const { t } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
@@ -71,6 +73,12 @@ export default function PosItemDoseLabel({
   useEffect(() => {
     setQty(defaultQty)
   }, [defaultQty, productId])
+
+  // Report the chosen dose text up so it can be saved on the sale line / receipt.
+  useEffect(() => {
+    onDoseChange?.(activeDoseText)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDoseText])
 
   useEffect(() => {
     if (!open) return
