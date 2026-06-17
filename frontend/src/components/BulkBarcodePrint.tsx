@@ -31,7 +31,7 @@ const PROFILE_DIMS: Record<Exclude<LabelSize, 'custom'>, LabelDims> = {
   large: { wMm: 80, hMm: 50 },
 }
 
-const CUSTOM_DEFAULT: LabelDims = { wMm: 38, hMm: 11.5 }
+const CUSTOM_DEFAULT: LabelDims = { wMm: 38, hMm: 11 }
 
 interface LabelStyle {
   barcodeHeightMm: number
@@ -60,7 +60,7 @@ function defaultStyle({ hMm }: LabelDims): LabelStyle {
     barcodeHeightMm: short ? 5 : 10,
     barcodeScaleMm: short ? 0.3 : 0.5,
     fontSizeMm: short ? 1.5 : 2.5,
-    paddingMm: short ? 0.5 : 1.5,
+    paddingMm: short ? 0 : 1.5,
     offsetYMm: 0,
     offsetXMm: 0,
   }
@@ -71,7 +71,7 @@ function normalizeSize(s?: string): LabelSize {
   if (s === 'sm') return 'small'
   if (s === 'lg' || s === 'zebra2x3') return 'large'
   if (s === 'thermal') return 'strip38'
-  return 'medium'
+  return 'custom'
 }
 
 const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
@@ -84,7 +84,7 @@ interface LabelPrefs {
   customW?: number
   customH?: number
   overrides?: Partial<LabelStyle>
-  layout?: 'page' | 'grid'
+  layout?: 'page' | 'grid' | 'paired'
   columns?: number
   rowGap?: number
   colGap?: number
@@ -149,7 +149,7 @@ async function renderBarcodeDataUrl(
 }
 
 interface GridOpts {
-  layout: 'page' | 'grid'
+  layout: 'page' | 'grid' | 'paired'
   columns: number
   rowGap: number
   colGap: number
@@ -162,12 +162,15 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
   const h = `${dims.hMm}mm`
   const imgMaxH = `${Math.max(4, dims.hMm * 0.55).toFixed(1)}mm`
   const isGrid = grid.layout === 'grid'
+  const isPaired = grid.layout === 'paired'
   const cols = Math.max(1, Math.round(grid.columns) || 1)
   
+  // Define physical page size based on layout
   const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
-  const pageH = isGrid ? 'auto' : h
-  const safetyMm = isGrid ? 0 : (dims.hMm >= 20 ? 2 : 0.5)
-  const cellH = `${Math.max(4, dims.hMm - safetyMm).toFixed(2)}mm`
+  const pageH = isPaired ? `25mm` : (isGrid ? 'auto' : h)
+  
+  // Define cell height (for paired, it's exactly 12.5mm to fit 2 in 25mm)
+  const cellH = isPaired ? '12.5mm' : `${Math.max(4, dims.hMm).toFixed(2)}mm`
   
   const sheetScreen = isGrid
     ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center; padding: 16px; background: #f1f5f9;`
@@ -191,13 +194,27 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     }
     #print-toolbar button { padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
     .sheet { ${sheetScreen} }
+    
+    .paired-page {
+      width: ${pageW};
+      height: ${pageH};
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      padding: 0;
+      page-break-after: always;
+      break-after: page;
+      overflow: hidden;
+    }
+    
     .cell {
-      direction: ltr; /* يجبر العناصر على الترتيب من اليسار لليمين دائماً */
+      direction: ltr;
       width: ${w}; height: ${cellH}; box-sizing: border-box; overflow: hidden;
       padding: ${style.paddingMm}mm; margin: 0 auto; background: #fff;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 0.5mm;
-      ${cellBreak}
+      ${isPaired ? '' : cellBreak}
       border: 1px dashed #cbd5e1;
     }
     .shift { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 100%; height: 100%; max-width: 100%; ${shiftTransform} }
@@ -219,6 +236,13 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
+      
+      .paired-page {
+        page-break-after: always !important;
+        break-after: page !important;
+        border: none !important;
+      }
+      
       .cell {
         box-sizing: border-box !important;
         overflow: hidden !important;
@@ -229,9 +253,9 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
         border: none !important;
         page-break-inside: avoid !important;
         break-inside: avoid !important;
-        ${isGrid ? '' : 'page-break-after: auto !important; break-after: auto !important;'}
+        ${isGrid || isPaired ? '' : 'page-break-after: auto !important; break-after: auto !important;'}
       }
-      ${isGrid ? '' : '.cell:last-child { page-break-after: auto !important; break-after: auto !important; }'}
+      ${isGrid || isPaired ? '' : '.cell:last-child { page-break-after: auto !important; break-after: auto !important; }'}
       .shift { gap: 0 !important; height: 100% !important; }
       img, svg { margin: 0 auto !important; }
       html, body { margin: 0 !important; padding: 0 !important; }
@@ -254,7 +278,7 @@ type PharmacyProfile = {
   label_print_settings?: LabelPrefs | null
 }
 
-export default function BulkBarcodePrint({ items, currency, defaultSize = 'medium', onClose }: Props) {
+export default function BulkBarcodePrint({ items, currency, defaultSize = 'custom', onClose }: Props) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const isAr = i18n.language === 'ar'
@@ -278,12 +302,15 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
   
   const [overrides, setOverrides] = useState<Partial<LabelStyle>>(savedPrefs.overrides ?? {})
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [layout, setLayout] = useState<'page' | 'grid'>(savedPrefs.layout ?? 'page')
+  
+  // Default layout changed to "paired" (2-in-1 Roll)
+  const [layout, setLayout] = useState<'page' | 'grid' | 'paired'>(savedPrefs.layout ?? 'paired')
   const [columns, setColumns] = useState<number>(savedPrefs.columns ?? 1)
-  const [rowGap, setRowGap] = useState<number>(savedPrefs.rowGap ?? 2)
-  const [colGap, setColGap] = useState<number>(savedPrefs.colGap ?? 2)
+  const [rowGap, setRowGap] = useState<number>(savedPrefs.rowGap ?? 0)
+  const [colGap, setColGap] = useState<number>(savedPrefs.colGap ?? 0)
   const [groupSize, setGroupSize] = useState<number>(savedPrefs.groupSize ?? 0)
-  const [groupGap, setGroupGap] = useState<number>(savedPrefs.groupGap ?? 5)
+  const [groupGap, setGroupGap] = useState<number>(savedPrefs.groupGap ?? 0)
+  
   const gridOpts = useMemo(
     () => ({ layout, columns, rowGap, colGap, groupSize, groupGap }),
     [layout, columns, rowGap, colGap, groupSize, groupGap],
@@ -311,7 +338,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
     if (typeof p.customW === 'number') setCustomW(p.customW)
     if (typeof p.customH === 'number') setCustomH(p.customH)
     if (p.overrides && typeof p.overrides === 'object') setOverrides(p.overrides)
-    if (p.layout === 'page' || p.layout === 'grid') setLayout(p.layout)
+    if (p.layout === 'page' || p.layout === 'grid' || p.layout === 'paired') setLayout(p.layout)
     if (typeof p.columns === 'number') setColumns(p.columns)
     if (typeof p.rowGap === 'number') setRowGap(p.rowGap)
     if (typeof p.colGap === 'number') setColGap(p.colGap)
@@ -383,75 +410,103 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       const svgNS = 'http://www.w3.org/2000/svg'
 
       const fillSheet = async (doc: Document, sheet: HTMLElement) => {
-        let placed = 0
+        const printList: BulkItem[] = []
+        
+        // 1. Expand the items based on quantity and layout rules
         for (const it of printable) {
-          const n = qty[it.id] || 0
+          let n = qty[it.id] || 0
           if (n <= 0) continue
-          const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
-          if (useQR && !qrUrl) continue
-          for (let i = 0; i < n; i++) {
-            if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && placed > 0 && placed % gridOpts.groupSize === 0) {
+          
+          // CRITICAL: If Paired Roll layout is chosen, force an even quantity
+          // So if user types 1, it becomes 2. If 11, it becomes 12.
+          if (gridOpts.layout === 'paired' && n % 2 !== 0) {
+             n += 1
+          }
+          
+          for (let i = 0; i < n; i++) printList.push(it)
+        }
+
+        // 2. Render each label
+        for (let i = 0; i < printList.length; i++) {
+          const it = printList[i]
+          
+          let container = sheet
+          
+          // If Paired layout, wrap every 2 labels in a specific physical 25mm page container
+          if (gridOpts.layout === 'paired') {
+            if (i % 2 === 0) {
+              const pageWrap = doc.createElement('div')
+              pageWrap.className = 'paired-page'
+              sheet.appendChild(pageWrap)
+            }
+            container = sheet.lastElementChild as HTMLElement
+          } else {
+            // Original grid grouping logic
+            if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && i > 0 && i % gridOpts.groupSize === 0) {
               const gap = doc.createElement('div'); gap.className = 'group-gap'; sheet.appendChild(gap)
             }
-            const cell = doc.createElement('div'); cell.className = 'cell'
-            const shift = doc.createElement('div'); shift.className = 'shift'; cell.appendChild(shift)
-            
-            const hasPrice = showPrice && it.price != null
-            
-            // Format Expiry explicitly to MM/YY without any text prefix
-            let expStr = '';
-            if (showExpiry && it.expiryDate) {
-              const d = new Date(it.expiryDate);
-              if (!isNaN(d.valueOf())) {
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const yy = String(d.getFullYear()).slice(-2);
-                expStr = `${mm}/${yy}`;
-              } else {
-                expStr = String(it.expiryDate).replace(/exp/i, '').trim();
-              }
-            }
-
-            // Top Row: Name (Left) and Price (Right)
-            const top = doc.createElement('div'); top.className = 'top-row'
-            const tLeft = doc.createElement('span'); tLeft.className = 't-left'; tLeft.textContent = showName ? it.name : ''
-            const tRight = doc.createElement('span'); tRight.className = 't-right'; tRight.textContent = hasPrice ? Number(it.price).toFixed(2) : ''
-            top.append(tLeft, tRight); shift.appendChild(top)
-
-            // Barcode (Center)
-            const bcWrap = doc.createElement('div'); bcWrap.className = 'bc-wrap'; shift.appendChild(bcWrap)
-            if (useQR) {
-              const img = doc.createElement('img'); img.src = qrUrl as string; bcWrap.appendChild(img)
-            } else {
-              const svg = doc.createElementNS(svgNS, 'svg'); bcWrap.appendChild(svg)
-              try {
-                JsBarcode(svg, it.barcode!, {
-                  format: detectType(it.barcode!), displayValue: true,
-                  width: Math.max(1, style.barcodeScaleMm * 3.8), 
-                  height: Math.max(10, style.barcodeHeightMm * 3.8), 
-                  margin: 0,
-                  font: 'Arial Black, Arial, sans-serif', 
-                  fontSize: Math.max(6, style.fontSizeMm * 3.8),
-                  fontOptions: 'bold', textMargin: 1, lineColor: '#000000', background: '#ffffff',
-                })
-                const vw = parseFloat(svg.getAttribute('width') || '0')
-                const vh = parseFloat(svg.getAttribute('height') || '0')
-                if (vw > 0 && vh > 0) {
-                  svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
-                  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
-                  svg.removeAttribute('width'); svg.removeAttribute('height')
-                }
-              } catch { if (svg.parentNode === bcWrap) bcWrap.removeChild(svg) }
-            }
-
-            // Bottom Row: Expiry (Left) and Pharmacy (Right)
-            const bottom = doc.createElement('div'); bottom.className = 'bottom-row'
-            const bLeft = doc.createElement('span'); bLeft.className = 'b-left'; bLeft.textContent = expStr
-            const bRight = doc.createElement('span'); bRight.className = 'b-right'; bRight.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
-            bottom.append(bLeft, bRight); shift.appendChild(bottom)
-
-            sheet.appendChild(cell)
-            placed++
           }
+
+          const cell = doc.createElement('div'); cell.className = 'cell'
+          const shift = doc.createElement('div'); shift.className = 'shift'; cell.appendChild(shift)
+          
+          const hasPrice = showPrice && it.price != null
+          
+          // Format Expiry explicitly to MM/YY without any text prefix
+          let expStr = '';
+          if (showExpiry && it.expiryDate) {
+            const d = new Date(it.expiryDate);
+            if (!isNaN(d.valueOf())) {
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
+              const yy = String(d.getFullYear()).slice(-2);
+              expStr = `${mm}/${yy}`;
+            } else {
+              expStr = String(it.expiryDate).replace(/exp/i, '').trim();
+            }
+          }
+
+          // Top Row: Name (Left) and Price (Right)
+          const top = doc.createElement('div'); top.className = 'top-row'
+          const tLeft = doc.createElement('span'); tLeft.className = 't-left'; tLeft.textContent = showName ? it.name : ''
+          const tRight = doc.createElement('span'); tRight.className = 't-right'; tRight.textContent = hasPrice ? Number(it.price).toFixed(2) : ''
+          top.append(tLeft, tRight); shift.appendChild(top)
+
+          // Barcode (Center)
+          const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode!, true, style) : null
+          if (useQR && !qrUrl) continue
+
+          const bcWrap = doc.createElement('div'); bcWrap.className = 'bc-wrap'; shift.appendChild(bcWrap)
+          if (useQR) {
+            const img = doc.createElement('img'); img.src = qrUrl as string; bcWrap.appendChild(img)
+          } else {
+            const svg = doc.createElementNS(svgNS, 'svg'); bcWrap.appendChild(svg)
+            try {
+              JsBarcode(svg, it.barcode!, {
+                format: detectType(it.barcode!), displayValue: true,
+                width: Math.max(1, style.barcodeScaleMm * 3.8), 
+                height: Math.max(10, style.barcodeHeightMm * 3.8), 
+                margin: 0,
+                font: 'Arial Black, Arial, sans-serif', 
+                fontSize: Math.max(6, style.fontSizeMm * 3.8),
+                fontOptions: 'bold', textMargin: 1, lineColor: '#000000', background: '#ffffff',
+              })
+              const vw = parseFloat(svg.getAttribute('width') || '0')
+              const vh = parseFloat(svg.getAttribute('height') || '0')
+              if (vw > 0 && vh > 0) {
+                svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
+                svg.removeAttribute('width'); svg.removeAttribute('height')
+              }
+            } catch { if (svg.parentNode === bcWrap) bcWrap.removeChild(svg) }
+          }
+
+          // Bottom Row: Expiry (Left) and Pharmacy (Right)
+          const bottom = doc.createElement('div'); bottom.className = 'bottom-row'
+          const bLeft = doc.createElement('span'); bLeft.className = 'b-left'; bLeft.textContent = expStr
+          const bRight = doc.createElement('span'); bRight.className = 'b-right'; bRight.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
+          bottom.append(bLeft, bRight); shift.appendChild(bottom)
+
+          container.appendChild(cell)
         }
       }
 
@@ -616,10 +671,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
               <div className="col-span-2 md:col-span-4 border-t border-slate-200 pt-2 mt-1 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <label className="flex flex-col gap-1">
                   <span className="text-slate-500">{t('bulk_barcode.layout')}</span>
-                  <select value={layout} onChange={e => setLayout(e.target.value as 'page' | 'grid')}
-                    className="border border-slate-300 rounded px-2 py-1">
-                    <option value="page">{t('bulk_barcode.layout_page')}</option>
-                    <option value="grid">{t('bulk_barcode.layout_grid')}</option>
+                  <select value={layout} onChange={e => setLayout(e.target.value as 'page' | 'grid' | 'paired')}
+                    className="border border-slate-300 rounded px-2 py-1 font-bold text-emerald-700">
+                    <option value="paired">2-in-1 Roll (38x25mm)</option>
+                    <option value="page">One label per page</option>
+                    <option value="grid">Grid / Sheet</option>
                   </select>
                 </label>
                 {layout === 'grid' && (
