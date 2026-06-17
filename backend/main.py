@@ -1334,6 +1334,51 @@ def _assert_invoice_branch_access(cur, invoice_id: int, current_user):
         raise HTTPException(status_code=404, detail="Invoice not found")
 
 
+@app.get("/api/sales/search")
+def search_sales(q: str = "", limit: int = 50,
+                 current_user=Depends(get_current_user),
+                 active_branch=Depends(get_active_branch_id)):
+    """Find invoices by receipt/invoice number OR by an item they contain
+    (barcode or product name). Used for refund recall when the customer has
+    no receipt — returns every transaction containing that item."""
+    q = (q or "").strip()
+    if not q:
+        return []
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    like = f"%{q}%"
+    conds: list = []
+    params: list = []
+    if active_branch is not None:
+        conds.append("i.branch_id = %s")
+        params.append(active_branch)
+    conds.append(
+        "(i.invoice_number ILIKE %s OR EXISTS ("
+        " SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id"
+        " AND (ii.barcode ILIKE %s OR ii.product_name_en ILIKE %s OR ii.product_name_ar ILIKE %s)))"
+    )
+    params += [like, like, like, like]
+    where = " WHERE " + " AND ".join(conds)
+    params.append(max(1, min(limit, 200)))
+    cur.execute(
+        f"""SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                   c.name AS customer_name, cl.name AS clinic_name,
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                   b.address AS branch_address, b.phone AS branch_phone
+            FROM invoices i
+            LEFT JOIN users u ON i.seller_id = u.id
+            LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN clinics cl ON i.clinic_id = cl.id
+            LEFT JOIN branches b ON i.branch_id = b.id
+            {where}
+            ORDER BY i.created_at DESC LIMIT %s""",
+        params,
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/sales/{invoice_id}")
 def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
     conn = get_db_connection()
