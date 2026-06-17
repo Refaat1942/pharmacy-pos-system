@@ -13,12 +13,10 @@ export interface BulkItem {
   name: string
   price?: number | null
   expiryDate?: string | null
-  /** Default label count (e.g. batch quantity) */
   defaultQty?: number
 }
 
 // ─── Label profiles ─────────────────────────────────────────────────────────
-// Every profile is one physical thermal label = one print page (single unit).
 type LabelSize = 'strip38' | 'small' | 'medium' | 'large' | 'custom'
 
 interface LabelDims {
@@ -33,21 +31,15 @@ const PROFILE_DIMS: Record<Exclude<LabelSize, 'custom'>, LabelDims> = {
   large: { wMm: 80, hMm: 50 },
 }
 
-const CUSTOM_DEFAULT: LabelDims = { wMm: 50, hMm: 25 }
+const CUSTOM_DEFAULT: LabelDims = { wMm: 38, hMm: 11.5 }
 
 interface LabelStyle {
-  /** Generated barcode bitmap height (px) */
-  barcodeHeight: number
-  /** Barcode module (bar) width — JsBarcode `width` */
-  barcodeScale: number
-  /** Text font size (px) */
-  fontSize: number
-  /** Label inner padding (mm) */
-  padding: number
-  /** Vertical registration nudge (mm, +down / -up) to centre on the sticker */
-  offsetY: number
-  /** Horizontal registration nudge (mm, +right / -left) to centre on the sticker */
-  offsetX: number
+  barcodeHeightMm: number
+  barcodeScaleMm: number
+  fontSizeMm: number
+  paddingMm: number
+  offsetYMm: number
+  offsetXMm: number
 }
 
 function clampMm(v: number, fallback: number): number {
@@ -62,16 +54,15 @@ function dimsFor(size: LabelSize, customW: number, customH: number): LabelDims {
   return PROFILE_DIMS[size]
 }
 
-/** Sensible barcode/text sizing derived from the label height (never oversized). */
 function defaultStyle({ hMm }: LabelDims): LabelStyle {
-  const short = hMm < 16 // e.g. a 39x11.5mm strip — pack everything tightly
+  const short = hMm < 16 
   return {
-    barcodeHeight: short ? Math.max(14, Math.round(hMm * 1.4)) : Math.max(20, Math.round(hMm * 1.6)),
-    barcodeScale: hMm >= 40 ? 3 : hMm >= 24 ? 2.5 : short ? 1.8 : 2,
-    fontSize: short ? 5 : Math.max(6, Math.round(hMm * 0.34)),
-    padding: short ? 0.5 : hMm >= 40 ? 3 : hMm >= 24 ? 1.5 : 1,
-    offsetY: 0,
-    offsetX: 0,
+    barcodeHeightMm: short ? 5 : 10,
+    barcodeScaleMm: short ? 0.3 : 0.5,
+    fontSizeMm: short ? 1.5 : 2.5,
+    paddingMm: short ? 0.5 : 1.5,
+    offsetYMm: 0,
+    offsetXMm: 0,
   }
 }
 
@@ -80,7 +71,7 @@ function normalizeSize(s?: string): LabelSize {
   if (s === 'sm') return 'small'
   if (s === 'lg' || s === 'zebra2x3') return 'large'
   if (s === 'thermal') return 'strip38'
-  return 'medium' 
+  return 'medium'
 }
 
 const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
@@ -134,18 +125,18 @@ async function renderBarcodeDataUrl(
 ): Promise<string | null> {
   try {
     if (useQR) {
-      const scale = Math.max(3, Math.round(style.barcodeHeight / 12))
+      const scale = Math.max(3, Math.round((style.barcodeHeightMm * 3.8) / 12))
       return await QRCode.toDataURL(value, { margin: 0, scale, errorCorrectionLevel: 'M' })
     }
     const c = document.createElement('canvas')
     JsBarcode(c, value, {
       format: detectType(value),
       displayValue: true,
-      width: style.barcodeScale,
-      height: style.barcodeHeight,
+      width: Math.max(1, style.barcodeScaleMm * 3.8),
+      height: Math.max(10, style.barcodeHeightMm * 3.8),
       margin: 0,
       font: 'Arial Black, Arial, sans-serif',
-      fontSize: style.fontSize + 1,
+      fontSize: Math.max(6, style.fontSizeMm * 3.8),
       fontOptions: 'bold',
       textMargin: 1,
       lineColor: '#000000',
@@ -169,26 +160,27 @@ interface GridOpts {
 function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): string {
   const w = `${dims.wMm}mm`
   const h = `${dims.hMm}mm`
-  const imgMaxH = `${Math.max(6, dims.hMm * 0.55).toFixed(1)}mm`
-  const metaFs = Math.max(6, style.fontSize - 1)
+  const imgMaxH = `${Math.max(4, dims.hMm * 0.55).toFixed(1)}mm`
   const isGrid = grid.layout === 'grid'
   const cols = Math.max(1, Math.round(grid.columns) || 1)
   
   const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
   const pageH = isGrid ? 'auto' : h
-  const safetyMm = isGrid ? 0 : (dims.hMm >= 20 ? 2 : 1)
+  const safetyMm = isGrid ? 0 : (dims.hMm >= 20 ? 2 : 0.5)
   const cellH = `${Math.max(4, dims.hMm - safetyMm).toFixed(2)}mm`
+  
   const sheetScreen = isGrid
     ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center; padding: 16px; background: #f1f5f9;`
     : `display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9;`
   const sheetPrint = isGrid
     ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center;`
     : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
-  const cellBreak = 'page-break-inside: avoid; break-inside: avoid;'
   
-  const shiftTransform = (style.offsetX || style.offsetY)
-    ? `transform: translate(${style.offsetX}mm, ${style.offsetY}mm);`
+  const cellBreak = 'page-break-inside: avoid; break-inside: avoid;'
+  const shiftTransform = (style.offsetXMm || style.offsetYMm)
+    ? `transform: translate(${style.offsetXMm}mm, ${style.offsetYMm}mm);`
     : ''
+
   return `
     @page { size: ${pageW} ${pageH}; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
@@ -197,30 +189,33 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
       position: sticky; top: 0; z-index: 99; padding: 12px 16px; background: #ecfdf5;
       border-bottom: 2px solid #10b981; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
-    #print-toolbar strong { font-size: 14px; color: #065f46; }
     #print-toolbar button { padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    #print-toolbar span { font-size: 12px; color: #047857; }
     .sheet { ${sheetScreen} }
     .cell {
+      direction: ltr; /* يجبر العناصر على الترتيب من اليسار لليمين دائماً */
       width: ${w}; height: ${cellH}; box-sizing: border-box; overflow: hidden;
-      padding: ${style.padding}mm; margin: 0 auto; background: #fff;
+      padding: ${style.paddingMm}mm; margin: 0 auto; background: #fff;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      text-align: center; gap: 1px;
+      gap: 0.5mm;
       ${cellBreak}
       border: 1px dashed #cbd5e1;
     }
     .shift { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 100%; height: 100%; max-width: 100%; ${shiftTransform} }
-    .name-top { font-size: ${style.fontSize + 1}px; font-weight: 900; line-height: 1.05; text-align: left; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    
+    .top-row { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 1mm; }
+    .t-left { text-align: left; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 1; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .t-right { text-align: right; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 1; white-space: nowrap; margin-left: auto; padding-left: 1mm; }
+    
     .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
     svg { shape-rendering: crispEdges; }
+    
+    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 1mm; }
+    .b-left { text-align: left; font-size: ${Math.max(1, style.fontSizeMm - 0.3)}mm; font-weight: 900; line-height: 1; white-space: nowrap; margin-right: auto; padding-right: 1mm; }
+    .b-right { text-align: right; text-transform: uppercase; font-size: ${Math.max(1, style.fontSizeMm - 0.3)}mm; font-weight: 900; line-height: 1; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    
     .group-gap { width: 100%; height: ${grid.groupGap}mm; grid-column: 1 / -1; }
-    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 3px; }
-    .b-left { flex: 1 1 0; text-align: left; text-transform: uppercase; }
-    .b-mid { flex: 1 1 0; text-align: center; }
-    .b-right { flex: 1 1 0; text-align: right; }
-    .price-up { transform: translateY(-0.8mm); }
-    .meta { font-size: ${metaFs}px; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
@@ -277,7 +272,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
   
-  // Custom Dimension State
+  // Custom Dimension State (mm)
   const [customW, setCustomW] = useState<number>(savedPrefs.customW ?? CUSTOM_DEFAULT.wMm)
   const [customH, setCustomH] = useState<number>(savedPrefs.customH ?? CUSTOM_DEFAULT.hMm)
   
@@ -300,7 +295,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
     [dims, overrides],
   )
 
-  // Persist chosen settings so they auto-apply next time.
   useEffect(() => {
     saveLabelPrefs({ size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap })
   }, [size, useQR, showName, showPrice, showExpiry, customW, customH, overrides, layout, columns, rowGap, colGap, groupSize, groupGap])
@@ -401,7 +395,29 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
             }
             const cell = doc.createElement('div'); cell.className = 'cell'
             const shift = doc.createElement('div'); shift.className = 'shift'; cell.appendChild(shift)
-            const nm = doc.createElement('div'); nm.className = 'name-top'; nm.textContent = showName ? it.name : ''; shift.appendChild(nm)
+            
+            const hasPrice = showPrice && it.price != null
+            
+            // Format Expiry explicitly to MM/YY without any text prefix
+            let expStr = '';
+            if (showExpiry && it.expiryDate) {
+              const d = new Date(it.expiryDate);
+              if (!isNaN(d.valueOf())) {
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yy = String(d.getFullYear()).slice(-2);
+                expStr = `${mm}/${yy}`;
+              } else {
+                expStr = String(it.expiryDate).replace(/exp/i, '').trim();
+              }
+            }
+
+            // Top Row: Name (Left) and Price (Right)
+            const top = doc.createElement('div'); top.className = 'top-row'
+            const tLeft = doc.createElement('span'); tLeft.className = 't-left'; tLeft.textContent = showName ? it.name : ''
+            const tRight = doc.createElement('span'); tRight.className = 't-right'; tRight.textContent = hasPrice ? Number(it.price).toFixed(2) : ''
+            top.append(tLeft, tRight); shift.appendChild(top)
+
+            // Barcode (Center)
             const bcWrap = doc.createElement('div'); bcWrap.className = 'bc-wrap'; shift.appendChild(bcWrap)
             if (useQR) {
               const img = doc.createElement('img'); img.src = qrUrl as string; bcWrap.appendChild(img)
@@ -410,8 +426,11 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
               try {
                 JsBarcode(svg, it.barcode!, {
                   format: detectType(it.barcode!), displayValue: true,
-                  width: style.barcodeScale, height: style.barcodeHeight, margin: 0,
-                  font: 'Arial Black, Arial, sans-serif', fontSize: style.fontSize + 1,
+                  width: Math.max(1, style.barcodeScaleMm * 3.8), 
+                  height: Math.max(10, style.barcodeHeightMm * 3.8), 
+                  margin: 0,
+                  font: 'Arial Black, Arial, sans-serif', 
+                  fontSize: Math.max(6, style.fontSizeMm * 3.8),
                   fontOptions: 'bold', textMargin: 1, lineColor: '#000000', background: '#ffffff',
                 })
                 const vw = parseFloat(svg.getAttribute('width') || '0')
@@ -423,13 +442,13 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                 }
               } catch { if (svg.parentNode === bcWrap) bcWrap.removeChild(svg) }
             }
-            const exp = showExpiry ? formatExpiryForLabel(it.expiryDate) : null
-            const hasPrice = showPrice && it.price != null
+
+            // Bottom Row: Expiry (Left) and Pharmacy (Right)
             const bottom = doc.createElement('div'); bottom.className = 'bottom-row'
-            const bLeft = doc.createElement('span'); bLeft.className = 'meta b-left'; bLeft.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
-            const bMid = doc.createElement('span'); bMid.className = 'meta b-mid'; bMid.textContent = exp ? `${t('barcode_studio.exp_label')} ${exp}` : ''
-            const bRight = doc.createElement('span'); bRight.className = 'meta b-right price-up'; bRight.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
-            bottom.append(bLeft, bMid, bRight); shift.appendChild(bottom)
+            const bLeft = doc.createElement('span'); bLeft.className = 'b-left'; bLeft.textContent = expStr
+            const bRight = doc.createElement('span'); bRight.className = 'b-right'; bRight.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
+            bottom.append(bLeft, bRight); shift.appendChild(bottom)
+
             sheet.appendChild(cell)
             placed++
           }
@@ -460,10 +479,8 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         w.document.title = ' '
         const styleEl = w.document.createElement('style'); styleEl.textContent = buildLabelStyles(dims, style, gridOpts); w.document.head.appendChild(styleEl)
         const toolbar = w.document.createElement('div'); toolbar.id = 'print-toolbar'
-        const title = w.document.createElement('strong'); title.textContent = t('bulk_barcode.print_toolbar_title')
         const btn = w.document.createElement('button'); btn.type = 'button'; btn.textContent = t('bulk_barcode.print_toolbar_btn'); btn.onclick = () => { w.focus(); w.print() }
-        const hint = w.document.createElement('span'); hint.textContent = t('bulk_barcode.print_toolbar_hint')
-        toolbar.append(title, btn, hint); w.document.body.appendChild(toolbar)
+        toolbar.append(btn); w.document.body.appendChild(toolbar)
         const sheet = w.document.createElement('div'); sheet.className = 'sheet'; w.document.body.appendChild(sheet)
         await fillSheet(w.document, sheet)
         await waitForImages(w.document)
@@ -535,18 +552,17 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
         {size === 'custom' && (
           <div className="px-5 py-3 bg-emerald-50/60 border-b border-emerald-100 text-xs text-emerald-900 flex items-center gap-3 flex-wrap">
             <label className="flex items-center gap-1.5 font-medium">
-              {t('bulk_barcode.custom_w')}
+              {t('bulk_barcode.custom_w')} (mm)
               <input type="number" min={5} max={200} step={0.5} value={customW}
                 onChange={(e) => setCustomW(parseFloat(e.target.value) || CUSTOM_DEFAULT.wMm)}
                 className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
             </label>
             <label className="flex items-center gap-1.5 font-medium">
-              {t('bulk_barcode.custom_h')}
+              {t('bulk_barcode.custom_h')} (mm)
               <input type="number" min={5} max={200} step={0.5} value={customH}
                 onChange={(e) => setCustomH(parseFloat(e.target.value) || CUSTOM_DEFAULT.hMm)}
                 className="w-20 border border-emerald-300 rounded px-2 py-1 text-emerald-900" />
             </label>
-            <span className="text-emerald-700">{t('bulk_barcode.custom_unit_mm')}</span>
           </div>
         )}
 
@@ -558,39 +574,39 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           {showAdvanced && (
             <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-3">
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_height')}</span>
-                <input type="number" min={10} max={300} value={effectiveStyle.barcodeHeight}
-                  onChange={e => setOverride('barcodeHeight', parseInt(e.target.value, 10) || 0)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_height')} (mm)</span>
+                <input type="number" min={2} max={50} step={0.5} value={effectiveStyle.barcodeHeightMm}
+                  onChange={e => setOverride('barcodeHeightMm', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_width')}</span>
-                <input type="number" min={1} max={5} step={0.1} value={effectiveStyle.barcodeScale}
-                  onChange={e => setOverride('barcodeScale', parseFloat(e.target.value) || 1)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_width')} (mm)</span>
+                <input type="number" min={0.1} max={5} step={0.1} value={effectiveStyle.barcodeScaleMm}
+                  onChange={e => setOverride('barcodeScaleMm', parseFloat(e.target.value) || 0.5)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_font')}</span>
-                <input type="number" min={4} max={40} value={effectiveStyle.fontSize}
-                  onChange={e => setOverride('fontSize', parseInt(e.target.value, 10) || 6)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_font')} (mm)</span>
+                <input type="number" min={1} max={20} step={0.5} value={effectiveStyle.fontSizeMm}
+                  onChange={e => setOverride('fontSizeMm', parseFloat(e.target.value) || 2)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_padding')}</span>
-                <input type="number" min={0} max={10} step={0.5} value={effectiveStyle.padding}
-                  onChange={e => setOverride('padding', parseFloat(e.target.value) || 0)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_padding')} (mm)</span>
+                <input type="number" min={0} max={10} step={0.5} value={effectiveStyle.paddingMm}
+                  onChange={e => setOverride('paddingMm', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_offset')}</span>
-                <input type="number" min={-15} max={15} step={0.5} value={effectiveStyle.offsetY}
-                  onChange={e => setOverride('offsetY', parseFloat(e.target.value) || 0)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_offset')} (mm)</span>
+                <input type="number" min={-15} max={15} step={0.5} value={effectiveStyle.offsetYMm}
+                  onChange={e => setOverride('offsetYMm', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-slate-500">{t('bulk_barcode.bc_offset_x')}</span>
-                <input type="number" min={-20} max={20} step={0.5} value={effectiveStyle.offsetX}
-                  onChange={e => setOverride('offsetX', parseFloat(e.target.value) || 0)}
+                <span className="text-slate-500">{t('bulk_barcode.bc_offset_x')} (mm)</span>
+                <input type="number" min={-20} max={20} step={0.5} value={effectiveStyle.offsetXMm}
+                  onChange={e => setOverride('offsetXMm', parseFloat(e.target.value) || 0)}
                   className="border border-slate-300 rounded px-2 py-1" />
               </label>
               <button type="button" onClick={resetStyle}
@@ -615,19 +631,19 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                         className="border border-slate-300 rounded px-2 py-1" />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-slate-500">{t('bulk_barcode.row_gap')}</span>
+                      <span className="text-slate-500">{t('bulk_barcode.row_gap')} (mm)</span>
                       <input type="number" min={0} max={20} step={0.5} value={rowGap}
                         onChange={e => setRowGap(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="border border-slate-300 rounded px-2 py-1" />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-slate-500">{t('bulk_barcode.col_gap')}</span>
+                      <span className="text-slate-500">{t('bulk_barcode.col_gap')} (mm)</span>
                       <input type="number" min={0} max={20} step={0.5} value={colGap}
                         onChange={e => setColGap(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="border border-slate-300 rounded px-2 py-1" />
                     </label>
                     <label className="flex flex-col gap-1">
-                      <span className="text-slate-500">{t('bulk_barcode.group_gap')}</span>
+                      <span className="text-slate-500">{t('bulk_barcode.group_gap')} (mm)</span>
                       <input type="number" min={0} max={20} step={0.5} value={groupGap}
                         onChange={e => setGroupGap(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="border border-slate-300 rounded px-2 py-1" />
