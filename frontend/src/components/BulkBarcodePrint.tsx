@@ -190,23 +190,21 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
   const metaFs = Math.max(6, style.fontSize - 1)
   const isGrid = grid.layout === 'grid'
   const cols = Math.max(1, Math.round(grid.columns) || 1)
-  // Page mode: how many physical labels make one printer "page" (= one gap
-  // feed). For a 2-up die-cut roll set this to 2 so each print page is the pair.
-  const pageN = !isGrid ? Math.max(1, Math.round(grid.groupSize) || 1) : 1
-  // Page width: a single label (page mode) or the full grid row (grid mode).
+  // Page mode = one label per @page. Page width/height = the physical label.
   const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
-  const pageH = isGrid ? 'auto' : `${(dims.hMm * pageN).toFixed(2)}mm`
+  const pageH = isGrid ? 'auto' : h
+  // Safety margin: the label box is 1–2 mm SHORTER than the @page so sub-pixel
+  // rounding can never overflow into a blank sheet (the cause of the blank page
+  // between labels). Bigger labels get 2 mm, small strips get 1 mm.
+  const safetyMm = isGrid ? 0 : (dims.hMm >= 20 ? 2 : 1)
+  const cellH = `${Math.max(4, dims.hMm - safetyMm).toFixed(2)}mm`
   const sheetScreen = isGrid
     ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center; padding: 16px; background: #f1f5f9;`
     : `display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9;`
   const sheetPrint = isGrid
     ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center;`
     : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
-  // Page mode: one page per label (pageN=1) or per group of labels (pageN>1,
-  // breaks added on .page-end cells). Grid mode flows continuously.
-  const cellBreak = isGrid || pageN > 1
-    ? 'page-break-inside: avoid; break-inside: avoid;'
-    : 'page-break-after: always; page-break-inside: avoid; break-inside: avoid; break-after: page;'
+  const cellBreak = 'page-break-inside: avoid; break-inside: avoid;'
   // Only transform when a nudge is set, so the default label is perfectly
   // centered with no transform side-effects.
   const shiftTransform = (style.offsetX || style.offsetY)
@@ -225,7 +223,7 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     #print-toolbar span { font-size: 12px; color: #047857; }
     .sheet { ${sheetScreen} }
     .cell {
-      width: ${w}; height: ${h}; box-sizing: border-box; overflow: hidden;
+      width: ${w}; height: ${cellH}; box-sizing: border-box; overflow: hidden;
       padding: ${style.padding}mm; margin: 0 auto; background: #fff;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       text-align: center; gap: 1px;
@@ -238,7 +236,6 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
     svg { shape-rendering: crispEdges; }
     .group-gap { width: 100%; height: ${grid.groupGap}mm; grid-column: 1 / -1; }
-    .page-end { page-break-after: always !important; break-after: page !important; }
     .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 3px; }
     .b-left { flex: 1 1 0; text-align: left; text-transform: uppercase; }
     .b-mid { flex: 1 1 0; text-align: center; }
@@ -248,8 +245,24 @@ function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): s
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { ${sheetPrint} }
-      .cell { border: none !important; margin: 0; }
-      .cell:last-child { page-break-after: auto; break-after: auto; }
+      /* Strictly clamp each label to a box SHORTER than the page, with one
+         forced page break per label so each maps to exactly one physical gap. */
+      .cell {
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        width: ${w} !important;
+        height: ${cellH} !important;
+        max-height: ${cellH} !important;
+        margin: 0 !important;
+        border: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        ${isGrid ? '' : 'page-break-after: always !important; break-after: page !important;'}
+      }
+      ${isGrid ? '' : '.cell:last-child { page-break-after: auto !important; break-after: auto !important; }'}
+      .shift { gap: 0 !important; height: 100% !important; }
+      img, svg { margin: 0 auto !important; }
+      html, body { margin: 0 !important; padding: 0 !important; }
       @page { size: ${pageW} ${pageH}; margin: 0; }
     }
   `
@@ -449,9 +462,7 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
       w.document.body.appendChild(sheet)
 
       const svgNS = 'http://www.w3.org/2000/svg'
-      let placed = 0 // global label counter (for group gaps / page breaks)
-      // Page mode: labels per printer page (e.g. 2 for a 2-up die-cut roll).
-      const pageN = gridOpts.layout === 'page' ? Math.max(1, Math.round(gridOpts.groupSize) || 1) : 1
+      let placed = 0 // global label counter (for group gaps)
       for (const it of printable) {
         const n = qty[it.id] || 0
         if (n <= 0) continue
@@ -535,7 +546,6 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
           bRight.textContent = hasPrice ? `${Number(it.price).toFixed(2)}${currency ? ' ' + currency : ''}` : ''
           bottom.append(bLeft, bMid, bRight)
           shift.appendChild(bottom)
-          if (pageN > 1 && (placed + 1) % pageN === 0) cell.classList.add('page-end')
           sheet.appendChild(cell)
           placed++
         }
@@ -776,14 +786,14 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'mediu
                         onChange={e => setGroupGap(Math.max(0, parseFloat(e.target.value) || 0))}
                         className="border border-slate-300 rounded px-2 py-1" />
                     </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-slate-500">{t('bulk_barcode.group_size')}</span>
+                      <input type="number" min={0} max={10} value={groupSize}
+                        onChange={e => setGroupSize(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                        className="border border-slate-300 rounded px-2 py-1" />
+                    </label>
                   </>
                 )}
-                <label className="flex flex-col gap-1">
-                  <span className="text-slate-500">{layout === 'page' ? t('bulk_barcode.labels_per_page') : t('bulk_barcode.group_size')}</span>
-                  <input type="number" min={layout === 'page' ? 1 : 0} max={10} value={groupSize}
-                    onChange={e => setGroupSize(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                    className="border border-slate-300 rounded px-2 py-1" />
-                </label>
               </div>
             </div>
           )}
