@@ -160,8 +160,16 @@ def deduct_stock_fefo(
     *,
     today: Optional[date] = None,
     sellable_only: bool = True,
+    allow_negative: bool = False,
 ) -> None:
-    """Deduct stock from batches (FEFO). When sellable_only, skip expired lots."""
+    """Deduct stock from batches (FEFO). When sellable_only, skip expired lots.
+
+    When allow_negative is True (POS sales), overselling is permitted: all
+    available (unexpired) stock is consumed instead of refusing the sale with
+    "Insufficient stock". Batch quantities are constrained to be >= 0, so any
+    shortfall beyond what is in stock is not deducted and stock floors at the
+    available quantity.
+    """
     if qty <= 0:
         return
     ensure_batches_migrated(cur, product_id)
@@ -186,7 +194,7 @@ def deduct_stock_fefo(
         )
     batches = cur.fetchall()
     available = sum(int(b["quantity"]) for b in batches)
-    if available < qty:
+    if available < qty and not allow_negative:
         if sellable_only:
             cur.execute(
                 """SELECT 1 FROM product_batches
@@ -214,6 +222,9 @@ def deduct_stock_fefo(
                 (new_q, b["id"]),
             )
         remaining -= take
+    # When allow_negative (POS sales) and stock was short, any remaining shortfall is
+    # simply not deducted from batches (quantities are constrained to be >= 0). The sale
+    # still completes; product stock lands at the available floor instead of being refused.
     sync_product_from_batches(cur, product_id)
 
 
