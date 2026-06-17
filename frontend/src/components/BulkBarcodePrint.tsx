@@ -599,9 +599,9 @@ export default function BulkBarcodePrint({ items, currency, defaultSize = 'custo
       const style = effectiveStyle
       const barStyle: LabelStyle = {
         ...style,
-        barcodeScale: 3,
-        barcodeHeight: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
-        fontSize: Math.max(10, Math.round(hIn * zebraDpi * 0.05)),
+        barcodeScaleMm: 3,
+        barcodeHeightMm: Math.max(40, Math.round(hIn * zebraDpi * 0.38)),
+        fontSizeMm: Math.max(10, Math.round(hIn * zebraDpi * 0.05)),
       }
       for (const it of printable) {
         const n = qty[it.id] || 0
