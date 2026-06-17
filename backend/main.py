@@ -1071,7 +1071,8 @@ def create_sale(req: SaleRequest,
                  item_total, unit_label, line_pack,
                  item.offer_id, offer_disc, (item.dose_text or "").strip() or None),
             )
-            deduct_stock_fefo(cur, item.product_id, stock_used, today=today)
+            # POS allows overselling (stock may go negative; replenishment nets it out).
+            deduct_stock_fefo(cur, item.product_id, stock_used, today=today, allow_negative=True)
             new_stock = sync_product_from_batches(cur, item.product_id)
             log_movement(
                 cur, item.product_id, prod["branch_id"] or branch_id, "sale",

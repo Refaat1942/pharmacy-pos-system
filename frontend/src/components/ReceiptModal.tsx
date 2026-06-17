@@ -85,7 +85,20 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
     ? (profile?.receipt_footer_ar || i18n.getFixedT('ar')('receipt.thank_you'))
     : (profile?.receipt_footer_en || i18n.getFixedT('en')('receipt.thank_you'))
 
-  const handlePrint = () => window.print()
+  const handlePrint = () => {
+    // Blank the document title during printing so the browser doesn't stamp
+    // "Fratelanza ERP… / <date>" into the printed page header/footer.
+    const prevTitle = document.title
+    const restore = () => {
+      document.title = prevTitle
+      window.removeEventListener('afterprint', restore)
+    }
+    window.addEventListener('afterprint', restore)
+    document.title = ' '
+    window.print()
+    // Fallback restore in case afterprint doesn't fire on some browsers.
+    setTimeout(restore, 1000)
+  }
 
   const localeId = lang === 'ar' ? 'ar-EG' : 'en-US'
   const formatDateOnly = (s: string) => formatDate(s)
@@ -127,10 +140,10 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
       JsBarcode(barcodeRef.current, invoice.invoice_number, {
         format: 'CODE128',
         displayValue: true,
-        fontSize: 13,
+        fontSize: 11,
         fontOptions: 'bold',
-        height: 44,
-        width: 2,
+        height: 34,
+        width: 1.6,
         margin: 0,
         background: '#ffffff',
         lineColor: '#000000',
