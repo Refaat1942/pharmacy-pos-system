@@ -333,6 +333,7 @@ export const salesAPI = {
   } = {}) => api.get<{ count: number; gross: number; discount: number; net: number }>(
     '/sales/aggregate', { params }),
   get: (id: number) => api.get<SaleResponse>(`/sales/${id}`),
+  search: (q: string, limit = 50) => api.get<Invoice[]>('/sales/search', { params: { q, limit } }),
   processReturn: (
     invoiceId: number,
     items: { invoice_item_id: number; sub_quantity: number }[],

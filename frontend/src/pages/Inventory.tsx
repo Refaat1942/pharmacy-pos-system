@@ -3059,6 +3059,8 @@ type StocktakeReportLine = {
   old_stock: number
   new_stock: number
   delta: number
+  cost?: number
+  cost_value?: number
   variance_major: number
   variance_sub_fraction: number
   old_category?: string | null
@@ -3083,6 +3085,9 @@ type StocktakeReport = {
     other_count: number
     shortage_units: number
     increase_units: number
+    shortage_cost?: number
+    increase_cost?: number
+    net_cost?: number
   }
   shortages: StocktakeReportLine[]
   increases: StocktakeReportLine[]
@@ -3125,6 +3130,7 @@ function StocktakeReportModal({ report, onClose }: { report: StocktakeReport; on
                 <th className="px-2 py-2 text-end">{t('inventory.st_counted')}</th>
                 <th className="px-2 py-2 text-center">{t('inventory.st_variance_major')}</th>
                 <th className="px-2 py-2 text-center">{t('inventory.st_variance_sub')}</th>
+                <th className="px-2 py-2 text-end">{t('inventory.st_report_cost')}</th>
               </tr>
             </thead>
             <tbody>
@@ -3157,6 +3163,9 @@ function StocktakeReportModal({ report, onClose }: { report: StocktakeReport; on
                           {ln.variance_sub_fraction !== 0 && <span className="text-slate-400 font-normal ms-0.5">{subLabel}</span>}
                         </>
                       )}
+                    </td>
+                    <td className={`px-2 py-2 text-end font-mono font-semibold ${(ln.cost_value || 0) < 0 ? 'text-red-600' : (ln.cost_value || 0) > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                      {ln.cost_value ? formatMoney(ln.cost_value) : '—'}
                     </td>
                   </tr>
                 )
@@ -3192,12 +3201,12 @@ function StocktakeReportModal({ report, onClose }: { report: StocktakeReport; on
             <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-center">
               <p className="text-[10px] uppercase text-red-600 font-semibold">{t('inventory.st_report_shortages')}</p>
               <p className="text-2xl font-bold text-red-700 tabular-nums">{report.summary.shortages_count}</p>
-              <p className="text-[10px] text-red-600/80">{t('inventory.st_report_deficit')}</p>
+              <p className="text-[10px] text-red-600/80">{t('inventory.st_report_cost')}: {formatMoney(report.summary.shortage_cost || 0)}</p>
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-center">
               <p className="text-[10px] uppercase text-emerald-600 font-semibold">{t('inventory.st_report_increases')}</p>
               <p className="text-2xl font-bold text-emerald-700 tabular-nums">{report.summary.increases_count}</p>
-              <p className="text-[10px] text-emerald-600/80">{t('inventory.st_report_surplus')}</p>
+              <p className="text-[10px] text-emerald-600/80">{t('inventory.st_report_cost')}: {formatMoney(report.summary.increase_cost || 0)}</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
               <p className="text-[10px] uppercase text-slate-500 font-semibold">{t('inventory.st_report_total')}</p>
@@ -3208,6 +3217,12 @@ function StocktakeReportModal({ report, onClose }: { report: StocktakeReport; on
               <p className="text-2xl font-bold text-amber-800 tabular-nums">{report.summary.other_count}</p>
               <p className="text-[10px] text-amber-700/80">{t('inventory.st_report_other_hint')}</p>
             </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-700">{t('inventory.st_report_net_cost')}</span>
+            <span className={`text-lg font-bold tabular-nums ${(report.summary.net_cost || 0) < 0 ? 'text-red-700' : (report.summary.net_cost || 0) > 0 ? 'text-emerald-700' : 'text-slate-700'}`}>
+              {formatMoney(report.summary.net_cost || 0)}
+            </span>
           </div>
           {renderSection(t('inventory.st_report_shortages'), report.shortages, 'red')}
           {renderSection(t('inventory.st_report_increases'), report.increases, 'green')}

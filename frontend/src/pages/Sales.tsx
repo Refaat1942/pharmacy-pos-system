@@ -77,11 +77,26 @@ export default function Sales() {
   const [paymentFilter, setPaymentFilter] = useState('')
   const [digitalPlatformFilter, setDigitalPlatformFilter] = useState('')
   const [invoiceSearch, setInvoiceSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<SalesRow[] | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
   const [clinics, setClinics] = useState<Clinic[]>([])
   const [searchParams, setSearchParams] = useSearchParams()
   const refundMode = searchParams.get('refund') === '1'
   const refundFocusRef = useRef<HTMLInputElement>(null)
+
+  // Server-side search: by receipt/invoice number OR by item barcode/name, so a
+  // scanned receipt barcode recalls the invoice and (no receipt) any item finds
+  // all transactions containing it — not limited to the loaded page.
+  useEffect(() => {
+    const q = invoiceSearch.trim()
+    if (!q) { setSearchResults(null); return }
+    const id = setTimeout(() => {
+      salesAPI.search(q, 100)
+        .then((r) => setSearchResults(r.data as unknown as SalesRow[]))
+        .catch(() => setSearchResults(null))
+    }, 300)
+    return () => clearTimeout(id)
+  }, [invoiceSearch])
 
   const returnToRow = (r: ReturnRow): SalesRow => ({
     id: r.id,
@@ -316,7 +331,7 @@ export default function Sales() {
   const totalGross = completed.reduce((sum, i) => sum + (i.subtotal || 0), 0)
 
   const visibleInvoices = invoiceSearch.trim()
-    ? invoices.filter((i) => (i.invoice_number || '').toLowerCase().includes(invoiceSearch.trim().toLowerCase()))
+    ? (searchResults ?? invoices.filter((i) => (i.invoice_number || '').toLowerCase().includes(invoiceSearch.trim().toLowerCase())))
     : invoices
 
   const quick = useQuickFilter(visibleInvoices, [
@@ -966,6 +981,19 @@ export default function Sales() {
                       placeholder="Optional..."
                     />
                   </div>
+                  {(() => {
+                    const refundTotal = (selectedSale?.items || []).reduce((s, item) => {
+                      const linePack = item.pack_size && item.pack_size > 1 ? item.pack_size : 1
+                      const pricePerSub = (item.unit_price || 0) / linePack
+                      return s + (returnItems[item.id] || 0) * pricePerSub
+                    }, 0)
+                    return (
+                      <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                        <span className="text-sm font-semibold text-amber-800">{t('sales.refund_amount')}</span>
+                        <span className="text-lg font-extrabold text-amber-700 tabular-nums">{t('sales.egp')} {refundTotal.toFixed(2)}</span>
+                      </div>
+                    )
+                  })()}
                   <div className="flex gap-3">
                     <button
                       onClick={() => setShowReturn(false)}

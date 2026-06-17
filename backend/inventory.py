@@ -108,6 +108,10 @@ def _format_stocktake_line(row: dict) -> dict:
         pack = 1
     delta = int(row["delta"])
     major, sub_frac = _variance_split(delta, pack)
+    cost = float(row.get("cost") or 0)
+    # Cost value of the variance (sub-unit cost × delta). Negative = shortage loss.
+    sub_cost = (cost / pack) if pack > 1 else cost
+    cost_value = round(sub_cost * delta, 2)
     out = {
         "product_id": row["product_id"],
         "name_en": row.get("name_en"),
@@ -120,6 +124,8 @@ def _format_stocktake_line(row: dict) -> dict:
         "old_stock": int(row["old_stock"]),
         "new_stock": int(row["new_stock"]),
         "delta": delta,
+        "cost": round(cost, 2),
+        "cost_value": cost_value,
         "variance_major": major,
         "variance_sub_fraction": sub_frac,
         "old_category": row.get("old_category"),
@@ -155,7 +161,7 @@ def _build_stocktake_report(cur, run_id: int) -> dict:
         """
         SELECT l.*,
                p.name_en, p.name_ar, p.barcode, p.category,
-               p.pack_size, p.unit, p.sub_unit
+               p.pack_size, p.unit, p.sub_unit, p.cost
         FROM stocktake_lines l
         JOIN products p ON p.id = l.product_id
         WHERE l.run_id = %s
@@ -177,6 +183,9 @@ def _build_stocktake_report(cur, run_id: int) -> dict:
             "other_count": len(other),
             "shortage_units": sum(ln["delta"] for ln in shortages),
             "increase_units": sum(ln["delta"] for ln in increases),
+            "shortage_cost": round(sum(ln["cost_value"] for ln in shortages), 2),
+            "increase_cost": round(sum(ln["cost_value"] for ln in increases), 2),
+            "net_cost": round(sum(ln["cost_value"] for ln in lines), 2),
         },
         "shortages": shortages,
         "increases": increases,

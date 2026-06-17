@@ -231,10 +231,10 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 </span>
               </div>
             )}
-            {profile?.show_customer !== false && invoice.customer_name && (
+            {profile?.show_customer !== false && (invoice.customer_name || invoice.delivery_customer_name) && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{tr('receipt.customer')}</span>
-                <span className="text-gray-700">{invoice.customer_name}</span>
+                <span className="text-gray-700">{invoice.customer_name || invoice.delivery_customer_name}</span>
               </div>
             )}
             {invoice.delivery_person_name && (
