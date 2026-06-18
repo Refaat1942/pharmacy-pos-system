@@ -479,6 +479,9 @@ WHERE ri.invoice_item_id = ii.id AND ri.sub_quantity IS NULL;
 
 -- Snapshot unit on transfer items (so detail view stays correct even if product unit changes).
 ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS unit_label VARCHAR(30);
+-- Conversion factor used at transfer time: 1 when sent in sub-units, else the box pack_size.
+-- Lets the detail/slip render the quantity (stored in sub-units) back in the entered unit.
+ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
 
 -- Optional preferred supplier per product (used by auto-replenishment PO).
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;

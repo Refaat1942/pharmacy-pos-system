@@ -83,9 +83,14 @@ def profit_and_loss(
         """, [df, dt] + bp)
         sales = dict(cur.fetchone())
 
-        # COGS via invoice_items joined to products
+        # COGS via invoice_items joined to products.
+        # ii.quantity is in the sold unit; ii.pack_size converts it to sub-units, and
+        # p.cost is per main unit → divide by the product pack_size to get unit-correct cost.
         cur.execute(f"""
-            SELECT COALESCE(SUM(ii.quantity * COALESCE(p.cost, 0)), 0)::float AS cogs
+            SELECT COALESCE(SUM(
+                ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)
+            ), 0)::float AS cogs
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
             LEFT JOIN products p ON p.id = ii.product_id
@@ -146,8 +151,10 @@ def sales_by_category(
               COALESCE(p.category, 'Uncategorized') AS category,
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
-              SUM(ii.quantity * COALESCE(p.cost, 0))::float AS cost,
-              (SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0)))::float AS profit
+              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))::float AS cost,
+              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)))::float AS profit
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
             LEFT JOIN products p ON p.id = ii.product_id
@@ -320,10 +327,13 @@ def product_profitability(
               COALESCE(p.category, 'Uncategorized') AS category,
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
-              SUM(ii.quantity * COALESCE(p.cost, 0))::float AS cost,
-              (SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0)))::float AS profit,
+              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))::float AS cost,
+              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)))::float AS profit,
               CASE WHEN SUM(ii.total) > 0
-                   THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(p.cost, 0))) / SUM(ii.total) * 100)::float
+                   THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                          / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))) / SUM(ii.total) * 100)::float
                    ELSE 0 END AS margin_pct
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
@@ -645,7 +655,8 @@ def monthly_trend(
             ),
             cogs_cte AS (
                 SELECT DATE_TRUNC('month', i.created_at)::date AS month_start,
-                       SUM(ii.quantity * COALESCE(p.cost, 0)) AS cogs
+                       SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                           / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)) AS cogs
                 FROM invoice_items ii
                 JOIN invoices i ON i.id = ii.invoice_id
                 LEFT JOIN products p ON p.id = ii.product_id, bounds b

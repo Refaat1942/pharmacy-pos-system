@@ -91,6 +91,40 @@ export function packSizeOf(item: { pack_size?: number | null } | null | undefine
   return p && p > 1 ? p : 1
 }
 
+/**
+ * Compact stock label used across Inventory, Expiry, Branch Stock and POS so every
+ * surface shows the SAME quantity. Primary value is decimal boxes; when there is a
+ * loose remainder it is appended in sub-units, e.g. "9.5 Box (9 Box + 1 Strip)".
+ * When pack_size <= 1 it just returns the integer count (optionally with the unit).
+ */
+export function formatStockDisplay(
+  stockSubUnits: number,
+  packSize?: number | null,
+  unit?: string | null,
+  subUnit?: string | null,
+): string {
+  const pack = packSize && packSize > 1 ? packSize : 1
+  const n = Math.max(0, Math.round(stockSubUnits))
+  if (pack <= 1) return unit ? `${n} ${unit}` : String(n)
+  if (unit && subUnit) return formatPackStockLabel(n, pack, unit, subUnit)
+  return formatDecimalBoxes(n, pack)
+}
+
+/** Tooltip with the full breakdown (boxes + loose sub-units + raw sub-unit total). */
+export function stockBreakdownTitle(
+  stockSubUnits: number,
+  packSize?: number | null,
+  unit?: string | null,
+  subUnit?: string | null,
+): string {
+  const pack = packSize && packSize > 1 ? packSize : 1
+  const n = Math.max(0, Math.round(stockSubUnits))
+  if (pack <= 1) return unit ? `${n} ${unit}` : String(n)
+  const label = unit && subUnit ? formatPackStockLabel(n, pack, unit, subUnit) : formatDecimalBoxes(n, pack)
+  const sub = subUnit || 'sub-units'
+  return `${label} — ${n} ${sub} total`
+}
+
 /** Sub-units from a decimal box string (for live preview in forms). */
 export function subUnitsFromBoxInput(raw: string, packSize: number): number | null {
   return parsePackStockInput(raw, packSize)

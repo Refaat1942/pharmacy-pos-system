@@ -212,21 +212,25 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     inventory_cost = _inventory_unit_cost(paid_qty, bonus_qty, eff_cost)
 
     pid = it["product_id"]
+    pack_size = 1
     if pid:
-        cur.execute("SELECT id, stock, branch_id FROM products WHERE id=%s FOR UPDATE", (pid,))
+        cur.execute("SELECT id, stock, branch_id, pack_size FROM products WHERE id=%s FOR UPDATE", (pid,))
         p = cur.fetchone()
         if not p:
             raise HTTPException(status_code=400, detail=f"Product id {pid} no longer exists")
         if p["branch_id"] != branch_id:
             pid = None
+        else:
+            pack_size = max(1, int(p.get("pack_size") or 1))
     if not pid and it["barcode"]:
         cur.execute(
-            "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+            "SELECT id, stock, pack_size FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
             (it["barcode"], branch_id),
         )
         p = cur.fetchone()
         if p:
             pid = p["id"]
+            pack_size = max(1, int(p.get("pack_size") or 1))
     if not pid:
         cur.execute(
             """INSERT INTO products
@@ -243,7 +247,7 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
         p = cur.fetchone()
         if not p and it["barcode"]:
             cur.execute(
-                "SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
+                "SELECT id, stock, pack_size FROM products WHERE barcode=%s AND branch_id=%s FOR UPDATE",
                 (it["barcode"], branch_id),
             )
             p = cur.fetchone()
@@ -253,8 +257,12 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
                 detail=f"Could not create/find product for '{it.get('product_name_en') or it.get('barcode')}' — barcode required for new items",
             )
         pid = p["id"]
+        pack_size = max(1, int(p.get("pack_size") or 1))
 
-    add_batch_stock(cur, pid, branch_id, stock_qty, it["expiry_date"])
+    # PO quantity & unit_cost are expressed in the main unit (box). Stock is tracked in
+    # sub-units when pack_size > 1, so convert received boxes → sub-units before adding.
+    stock_qty_sub = stock_qty * pack_size
+    add_batch_stock(cur, pid, branch_id, stock_qty_sub, it["expiry_date"])
     new_stock = sync_product_from_batches(cur, pid)
     sets = ["cost=%s"]
     params: list = [inventory_cost]
@@ -266,7 +274,7 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s", (pid, it["id"]))
     log_movement(
         cur, pid, branch_id, "purchase",
-        stock_qty, new_stock,
+        stock_qty_sub, new_stock,
         reference_type="po", reference_id=po["id"],
         reason=f"PO {po['po_number']} received"
         + (f" ({paid_qty}+{bonus_qty} bonus)" if bonus_qty else ""),
@@ -712,15 +720,16 @@ def replenishment_list(
     rows = []
     for r in cur.fetchall():
         d = dict(r)
+        pack = max(1, int(d.get("pack_size") or 1))
         # Suggested order qty = bring stock back to 2× min_stock, with a sane floor.
         target = max(int(d.get("min_stock") or 0) * 2, int(d.get("min_stock") or 0) + 1, 1)
-        suggested = max(target - int(d.get("stock") or 0), 1)
-        d["suggested_quantity"] = suggested
+        suggested_sub = max(target - int(d.get("stock") or 0), 1)
+        # PO quantities are expressed in the main unit (box). Convert the sub-unit gap to
+        # whole boxes (round up so we never under-order).
+        d["suggested_quantity"] = -(-suggested_sub // pack) if pack > 1 else suggested_sub
         d["needs_replenish"] = int(d.get("stock") or 0) <= int(d.get("min_stock") or 0)
-        d["unit_label"] = (
-            d.get("sub_unit") if (d.get("pack_size") or 1) > 1 and d.get("sub_unit")
-            else (d.get("unit") or "unit")
-        )
+        # PO is ordered in the main unit; label accordingly.
+        d["unit_label"] = d.get("unit") or "unit"
         rows.append(d)
     conn.close()
     return rows
@@ -893,8 +902,8 @@ def replenishment_export(req: ReplenishExportIn,
         p = by_id.get(int(it.product_id))
         if not p:
             raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
-        unit_label = (p.get("sub_unit") if (p.get("pack_size") or 1) > 1 and p.get("sub_unit")
-                      else (p.get("unit") or "unit"))
+        # PO/order quantities are in the main unit (box); unit_cost is per box.
+        unit_label = p.get("unit") or "unit"
         line_total = round(it.quantity * it.unit_cost, 2)
         grand_total += line_total
         values = [idx, _safe(p.get("barcode")), _safe(p.get("name_en")), _safe(p.get("name_ar")),

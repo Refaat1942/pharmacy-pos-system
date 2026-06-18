@@ -14,8 +14,10 @@ import {
 import { downloadApiExcel } from '../lib/downloadExcel'
 import { formatInt, formatMoney } from '../lib/formatNumber'
 import {
+  formatDecimalBoxes,
   formatPackStockInput,
   formatPackStockLabel,
+  formatStockDisplay,
   formatVarianceMajorUnits,
   formatVarianceSubFraction,
   packSizeOf,
@@ -134,11 +136,15 @@ function bulkItemsForProduct(it: Product, isAr: boolean): BulkItem[] {
 
 function formatExpiryLots(it: Product): string {
   const batches = Array.isArray(it.batches) ? it.batches : []
+  const pack = it.pack_size && it.pack_size > 1 ? it.pack_size : 1
   if (batches.length > 0) {
     return batches
       .map((b) => {
         const d = b.expiry_date ? String(b.expiry_date).slice(0, 10) : '—'
-        return `${b.quantity}× ${d}`
+        // Batch quantities are stored in sub-units; show the same decimal-box value
+        // used by the Stock column so the two columns never disagree (e.g. 9.5 vs 19).
+        const qty = pack > 1 ? formatDecimalBoxes(b.quantity, pack) : String(b.quantity)
+        return `${qty}× ${d}`
       })
       .join(' · ')
   }
@@ -169,6 +175,8 @@ type BranchStockRow = {
   name_ar: string
   category: string | null
   unit: string
+  sub_unit?: string | null
+  pack_size?: number | null
   total_stock: number
   total_min: number
   branches: { branch_id: number; branch_name_en: string; branch_name_ar: string; stock: number; min_stock: number; product_id: number | null }[]
@@ -248,14 +256,14 @@ export default function Inventory() {
     })
   }
 
-  const loadItems = async () => {
+  const loadItems = async (silent = false) => {
     const searchQ = q.trim()
     if (!showAllItems && !searchQ) {
       setItems([])
       setItemStats(null)
       return
     }
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const params: Record<string, string> = {}
       if (searchQ) params.q = searchQ
@@ -279,7 +287,7 @@ export default function Inventory() {
         stock_value: sumRes.data.stock_value,
       })
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -304,6 +312,14 @@ export default function Inventory() {
     if (tab !== 'items') return
     const id = setTimeout(loadItems, 300)
     return () => clearTimeout(id)
+  }, [tab, q, stockFilter, categoryFilter, showAllItems])
+
+  // Soft auto-refresh every 120s: silently re-fetch the current view without a spinner.
+  useEffect(() => {
+    if (tab !== 'items') return
+    const id = setInterval(() => loadItems(true), 120_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, q, stockFilter, categoryFilter, showAllItems])
 
   const stats = useMemo(() => {
@@ -2053,11 +2069,12 @@ function BranchStockTab() {
     summary: { total_count: 0, shown_count: 0, low_stock: 0, out_of_stock: 0, truncated: false },
   })
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const searchQ = activeQ.trim()
       if (!searchQ && !showAllItems) {
+        if (silent) return
         setData(emptyBranchData())
         setPickedKeys(new Set())
         setShowAllStockInTable(false)
@@ -2067,14 +2084,18 @@ function BranchStockTab() {
       if (!searchQ && showAllItems) {
         const res = await loadCatalog()
         setData(res)
-        setPickedKeys(new Set())
-        setShowAllStockInTable(true)
-        lastAutoPickQ.current = ''
+        if (!silent) {
+          setPickedKeys(new Set())
+          setShowAllStockInTable(true)
+          lastAutoPickQ.current = ''
+        }
         return
       }
       const params: Record<string, string | number> = { ...branchParams(), q: searchQ }
       const { data: res } = await api.get('/inventory/branch-stock', { params })
       setData(res)
+      // On a silent refresh only the numbers update; never disturb the user's pick state.
+      if (silent) return
       if (multiPick) {
         if (lastAutoPickQ.current !== searchQ) {
           lastAutoPickQ.current = searchQ
@@ -2087,7 +2108,7 @@ function BranchStockTab() {
         lastAutoPickQ.current = ''
       }
       if (catalog.items.length === 0) await loadCatalog()
-    } finally { setLoading(false) }
+    } finally { if (!silent) setLoading(false) }
   }
 
   const applySearch = () => setActiveQ(q.trim())
@@ -2100,6 +2121,8 @@ function BranchStockTab() {
 
   useEffect(() => {
     load()
+    const id = setInterval(() => load(true), 120_000)
+    return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQ, branchFilter, showAllItems, isAdmin])
 
@@ -2294,6 +2317,7 @@ function BranchStockTab() {
                     const stock = cell?.stock ?? 0
                     const min = cell?.min_stock ?? 0
                     const missing = cell?.product_id == null
+                    const pack = row.pack_size && row.pack_size > 1 ? row.pack_size : 1
                     const cls = missing
                       ? 'text-slate-300'
                       : stock <= 0
@@ -2302,12 +2326,23 @@ function BranchStockTab() {
                           ? 'text-amber-600 font-semibold'
                           : 'text-slate-700'
                     return (
-                      <td key={b.id} className={`px-3 py-2.5 text-center font-mono ${cls}`}>
-                        {missing ? '—' : stock}
+                      <td
+                        key={b.id}
+                        className={`px-3 py-2.5 text-center font-mono ${cls}`}
+                        title={missing ? '' : formatStockDisplay(stock, pack, row.unit, row.sub_unit)}
+                      >
+                        {missing ? '—' : (pack > 1 ? formatDecimalBoxes(stock, pack) : stock)}
                       </td>
                     )
                   })}
-                  <td className="px-3 py-2.5 text-center font-mono font-bold bg-slate-50">{row.total_stock}</td>
+                  <td
+                    className="px-3 py-2.5 text-center font-mono font-bold bg-slate-50"
+                    title={formatStockDisplay(row.total_stock, row.pack_size, row.unit, row.sub_unit)}
+                  >
+                    {row.pack_size && row.pack_size > 1
+                      ? formatDecimalBoxes(row.total_stock, row.pack_size)
+                      : row.total_stock}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -10,6 +10,9 @@ import i18n from '../lib/i18n'
 import { formatDateTime } from '../lib/formatDate'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner, TableLoadingRow } from '../components/LoadingSpinner'
+import { formatDecimalBoxes, formatStockDisplay } from '../lib/packStock'
+
+const POLL_MS = 120_000
 
 type StatusFilter = '' | 'in_transit' | 'completed' | 'cancelled'
 
@@ -23,19 +26,24 @@ export default function Transfers() {
   const [showCreate, setShowCreate] = useState(false)
   const [viewing, setViewing] = useState<Transfer | null>(null)
 
-  const load = () => {
-    setLoading(true)
+  const load = (showSpinner = true) => {
+    if (showSpinner) setLoading(true)
     transfersAPI
       .list(statusFilter || undefined)
       .then((r) => setTransfers(r.data))
-      .catch(() => setTransfers([]))
-      .finally(() => setLoading(false))
+      .catch(() => { if (showSpinner) setTransfers([]) })
+      .finally(() => { if (showSpinner) setLoading(false) })
   }
 
   useEffect(() => {
     branchesAPI.list().then((r) => setBranches(r.data)).catch(() => {})
   }, [])
-  useEffect(load, [statusFilter])
+  useEffect(() => {
+    load()
+    const id = setInterval(() => load(false), POLL_MS)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter])
 
   const branchName = (b?: Branch | null) =>
     b ? (i18n.language === 'ar' ? b.name_ar : b.name_en) : '—'
@@ -219,15 +227,43 @@ interface CartLine {
   name_ar: string
   barcode: string
   international_barcode?: string | null
-  stock: number
-  quantity: number
+  stock: number              // available stock in sub-units
+  quantity: number           // entered quantity in the chosen unit_type
+  unit_type: 'pack' | 'sub'  // box vs strip
   unit: string
   sub_unit?: string | null
   pack_size?: number | null
 }
 
-function unitLabel(l: { unit: string; sub_unit?: string | null; pack_size?: number | null }) {
-  return (l.pack_size && l.pack_size > 1 && l.sub_unit) ? l.sub_unit : (l.unit || 'unit')
+/** Pack size as a usable factor (>=1). */
+function packOf(l: { pack_size?: number | null }) {
+  return l.pack_size && l.pack_size > 1 ? l.pack_size : 1
+}
+
+/** Whether the item can be transferred in two units (box + strip). */
+function hasSubUnit(l: { sub_unit?: string | null; pack_size?: number | null }) {
+  return packOf(l) > 1 && !!l.sub_unit
+}
+
+/** Label of the currently selected transfer unit for a line. */
+function lineUnitLabel(l: CartLine) {
+  return l.unit_type === 'sub' ? (l.sub_unit || 'unit') : (l.unit || 'unit')
+}
+
+/** Max quantity in the chosen unit (stock is stored in sub-units). */
+function maxInUnit(l: CartLine) {
+  const pack = packOf(l)
+  return l.unit_type === 'sub' ? l.stock : Math.floor(l.stock / pack)
+}
+
+/**
+ * Transfer-item quantity rendered in the unit it was entered in.
+ * `quantity` is stored in sub-units; `pack_size` is the conversion used at entry
+ * (1 → entered as sub-units, >1 → entered as boxes).
+ */
+function transferItemQty(it: TransferItem): string {
+  const pack = it.pack_size && it.pack_size > 1 ? it.pack_size : 1
+  return pack > 1 ? formatDecimalBoxes(Number(it.quantity), pack) : String(it.quantity)
 }
 
 function CreateTransferModal({
@@ -283,9 +319,15 @@ function CreateTransferModal({
     setLines((prev) => {
       const existing = prev.find((l) => l.product_id === p.id)
       if (existing) {
-        const next = Math.min(p.stock, existing.quantity + qty)
-        return prev.map((l) => l.product_id === p.id ? { ...l, quantity: next } : l)
+        const cap = maxInUnit(existing)
+        const next = Math.min(cap, existing.quantity + qty)
+        return prev.map((l) => l.product_id === p.id ? { ...l, quantity: Math.max(1, next) } : l)
       }
+      const pack = p.pack_size && p.pack_size > 1 ? p.pack_size : 1
+      // Default to whole boxes; fall back to sub-units when less than one full box is available.
+      const canBox = Math.floor((p.stock || 0) / pack) >= 1
+      const unit_type: 'pack' | 'sub' = pack > 1 && p.sub_unit && !canBox ? 'sub' : 'pack'
+      const cap = unit_type === 'sub' ? p.stock : Math.floor((p.stock || 0) / pack)
       return [...prev, {
         product_id: p.id,
         name_en: p.name_en,
@@ -293,7 +335,8 @@ function CreateTransferModal({
         barcode: p.barcode,
         international_barcode: p.international_barcode,
         stock: p.stock,
-        quantity: Math.min(p.stock, qty) || 1,
+        quantity: Math.min(cap, qty) || 1,
+        unit_type,
         unit: p.unit,
         sub_unit: p.sub_unit,
         pack_size: p.pack_size,
@@ -301,7 +344,15 @@ function CreateTransferModal({
     })
   }
   const updateQty = (pid: number, qty: number) =>
-    setLines(lines.map((l) => l.product_id === pid ? { ...l, quantity: qty } : l))
+    setLines(lines.map((l) => l.product_id === pid
+      ? { ...l, quantity: Math.max(1, Math.min(maxInUnit(l), qty)) }
+      : l))
+  const updateUnitType = (pid: number, unit_type: 'pack' | 'sub') =>
+    setLines(lines.map((l) => {
+      if (l.product_id !== pid) return l
+      const next = { ...l, unit_type }
+      return { ...next, quantity: Math.max(1, Math.min(maxInUnit(next), next.quantity)) }
+    }))
   const removeLine = (pid: number) => setLines(lines.filter((l) => l.product_id !== pid))
 
   const handleScan = async (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -346,7 +397,7 @@ function CreateTransferModal({
       await transfersAPI.create({
         from_branch_id: Number(fromBranch),
         to_branch_id: Number(toBranch),
-        items: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity })),
+        items: lines.map((l) => ({ product_id: l.product_id, quantity: l.quantity, unit_type: l.unit_type })),
         notes: notes || undefined,
       })
       onSaved()
@@ -466,7 +517,7 @@ function CreateTransferModal({
                         {p.barcode}
                         {p.international_barcode ? ` · ${p.international_barcode}` : ''}
                       </span>
-                      <span className="text-xs text-slate-500 shrink-0">{t('transfers.stock')}: {p.stock} {unitLabel(p)}</span>
+                      <span className="text-xs text-slate-500 shrink-0">{t('transfers.stock')}: {formatStockDisplay(p.stock, p.pack_size, p.unit, p.sub_unit)}</span>
                     </div>
                   </button>
                 ))}
@@ -485,19 +536,31 @@ function CreateTransferModal({
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
                   <div className="text-xs text-slate-500">
-                    <span className="font-mono text-slate-600 tabular-nums">{l.barcode}{l.international_barcode ? ` · ${l.international_barcode}` : ''}</span> · {t('transfers.stock')}: {l.stock} {unitLabel(l)}
+                    <span className="font-mono text-slate-600 tabular-nums">{l.barcode}{l.international_barcode ? ` · ${l.international_barcode}` : ''}</span> · {t('transfers.stock')}: {formatStockDisplay(l.stock, l.pack_size, l.unit, l.sub_unit)}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <input
                     type="number"
                     min={1}
-                    max={l.stock}
+                    max={maxInUnit(l)}
                     value={l.quantity}
-                    onChange={(e) => updateQty(l.product_id, Math.max(1, Math.min(l.stock, Number(e.target.value))))}
+                    onChange={(e) => updateQty(l.product_id, Number(e.target.value))}
                     className="input w-20 text-end"
                   />
-                  <span className="text-xs text-slate-500 w-12">{unitLabel(l)}</span>
+                  {hasSubUnit(l) ? (
+                    <select
+                      value={l.unit_type}
+                      onChange={(e) => updateUnitType(l.product_id, e.target.value as 'pack' | 'sub')}
+                      className="input w-24 text-xs py-1"
+                      title={t('transfers.unit') as string}
+                    >
+                      <option value="pack">{l.unit}</option>
+                      <option value="sub">{l.sub_unit}</option>
+                    </select>
+                  ) : (
+                    <span className="text-xs text-slate-500 w-12">{lineUnitLabel(l)}</span>
+                  )}
                 </div>
                 <button onClick={() => removeLine(l.product_id)} className="p-1.5 hover:bg-red-100 rounded text-red-600">
                   <Trash2 size={14} />
@@ -592,7 +655,7 @@ function TransferDetailModal({
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 text-xs font-mono">{it.barcode || '—'}</td>
                   <td className="px-3 py-2 text-end font-semibold">
-                    {it.quantity} <span className="text-xs font-normal text-slate-500">{it.unit_label || ''}</span>
+                    {transferItemQty(it)} <span className="text-xs font-normal text-slate-500">{it.unit_label || ''}</span>
                   </td>
                 </tr>
               ))}
@@ -644,7 +707,7 @@ function TransferDetailModal({
                   {it.barcode && <div style={{ fontFamily: 'monospace', fontSize: '10px', color: '#444' }}>{it.barcode}</div>}
                 </td>
                 <td style={{ textAlign: 'end', padding: '3px 0', whiteSpace: 'nowrap', fontWeight: 700 }}>
-                  {it.quantity} <span style={{ fontWeight: 400, fontSize: '10px' }}>{it.unit_label || ''}</span>
+                  {transferItemQty(it)} <span style={{ fontWeight: 400, fontSize: '10px' }}>{it.unit_label || ''}</span>
                 </td>
               </tr>
             ))}

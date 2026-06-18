@@ -1793,7 +1793,8 @@ def export_reallocation_suggestions(
 
 class TransferItemIn(BaseModel):
     product_id: int
-    quantity: int
+    quantity: int                       # in the unit named by unit_type
+    unit_type: Optional[str] = "pack"   # "pack" (main unit / box) or "sub" (sub-unit / strip)
 
 
 class TransferRequest(BaseModel):
@@ -1855,25 +1856,33 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
                     status_code=400,
                     detail=f"Product {p['name_en']} is not in source branch {req.from_branch_id}",
                 )
-            if int(p["stock"]) < it.quantity:
+            # Convert the requested quantity into stock units (sub-units when pack_size > 1).
+            pack_size = max(1, int(p.get("pack_size") or 1))
+            unit_type = (it.unit_type or "pack").lower()
+            if unit_type == "sub" and pack_size > 1:
+                sub_qty = it.quantity
+                unit_label = p.get("sub_unit") or "unit"
+                line_pack = 1
+            else:
+                sub_qty = it.quantity * pack_size
+                unit_label = p.get("unit") or "unit"
+                line_pack = pack_size
+            if int(p["stock"]) < sub_qty:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Insufficient stock for {p['name_en']} (have {p['stock']}, need {it.quantity})",
+                    detail=f"Insufficient stock for {p['name_en']} (have {p['stock']}, need {sub_qty})",
                 )
-            deduct_stock_fefo(cur, p["id"], it.quantity, sellable_only=False)
+            deduct_stock_fefo(cur, p["id"], sub_qty, sellable_only=False)
             new_stock = sync_product_from_batches(cur, p["id"])
-            # Use sub_unit when pack_size > 1 (stock is tracked in sub-units), else main unit.
-            unit_label = (p.get("sub_unit") if (p.get("pack_size") or 1) > 1 and p.get("sub_unit")
-                          else p.get("unit") or "unit")
             cur.execute(
                 """INSERT INTO stock_transfer_items
-                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity, unit_label)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], it.quantity, unit_label),
+                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity, unit_label, pack_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], sub_qty, unit_label, line_pack),
             )
             log_movement(
                 cur, p["id"], req.from_branch_id, "transfer_out",
-                -it.quantity, new_stock,
+                -sub_qty, new_stock,
                 reference_type="transfer", reference_id=transfer_id,
                 reason=f"Transfer {transfer_number} → branch {req.to_branch_id}",
                 user_id=current_user.get("user_id"),
@@ -1986,13 +1995,14 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
             if not dest:
                 cur.execute(
                     """INSERT INTO products
-                       (barcode, name_ar, name_en, category, unit, price, cost,
-                        stock, min_stock, expiry_date, branch_id, active)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
+                       (barcode, name_ar, name_en, category, unit, sub_unit, pack_size, sub_price,
+                        price, cost, stock, min_stock, expiry_date, branch_id, active)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
                        ON CONFLICT (barcode, branch_id) DO NOTHING
                        RETURNING id, stock""",
                     (src["barcode"], src["name_ar"], src["name_en"], src["category"],
-                     src["unit"], src["price"], src["cost"],
+                     src["unit"], src.get("sub_unit"), src.get("pack_size") or 1, src.get("sub_price"),
+                     src["price"], src["cost"],
                      src["min_stock"], src["expiry_date"], to_branch),
                 )
                 dest = cur.fetchone()
@@ -2121,11 +2131,14 @@ def expiry_report(
 
     w = " AND ".join(where)
     sql = f"""SELECT p.id, p.barcode, p.name_ar, p.name_en, p.category, p.unit,
+                     p.sub_unit, COALESCE(NULLIF(p.pack_size, 0), 1) AS pack_size,
                      pb.quantity AS stock, p.price, p.cost, pb.expiry_date, p.branch_id,
                      pb.id AS batch_id,
                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
                      (pb.expiry_date - CURRENT_DATE) AS days_left,
-                     (pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0)) AS loss_value
+                     -- quantity is sub-units; cost/price are per main unit → divide by pack_size.
+                     (pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0)
+                        / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)) AS loss_value
               FROM product_batches pb
               JOIN products p ON p.id = pb.product_id
               LEFT JOIN branches b ON p.branch_id = b.id
@@ -2172,10 +2185,12 @@ def expiry_summary(days: int = 30,
     cur.execute(
         f"""SELECT
               COUNT(*) FILTER (WHERE pb.expiry_date < %s) AS expired_count,
-              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0))
+              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))
                 FILTER (WHERE pb.expiry_date < %s), 0) AS expired_value,
               COUNT(*) FILTER (WHERE pb.expiry_date >= %s AND pb.expiry_date <= %s) AS near_count,
-              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0))
+              COALESCE(SUM(pb.quantity * COALESCE(NULLIF(p.cost, 0), p.price, 0)
+                  / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))
                 FILTER (WHERE pb.expiry_date >= %s AND pb.expiry_date <= %s), 0) AS near_value
             FROM product_batches pb
             JOIN products p ON p.id = pb.product_id AND p.active = true
@@ -2273,7 +2288,9 @@ def _branch_stock_data(
                     MAX(p.name_en)          AS name_en,
                     MAX(p.name_ar)          AS name_ar,
                     MAX(p.category)         AS category,
-                    MAX(p.unit)             AS unit
+                    MAX(p.unit)             AS unit,
+                    MAX(p.sub_unit)         AS sub_unit,
+                    MAX(COALESCE(NULLIF(p.pack_size, 0), 1)) AS pack_size
                   FROM products p
                   WHERE {where_sql}
                   GROUP BY key, p.branch_id
@@ -2305,6 +2322,8 @@ def _branch_stock_data(
                   MAX(name_ar)   AS name_ar,
                   MAX(category)  AS category,
                   MAX(unit)      AS unit,
+                  MAX(sub_unit)  AS sub_unit,
+                  MAX(pack_size) AS pack_size,
                   SUM(branch_stock)::int AS total_stock,
                   SUM(branch_min)::int   AS total_min,
                   json_agg(json_build_object(

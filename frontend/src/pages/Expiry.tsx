@@ -5,6 +5,15 @@ import Layout from '../components/Layout'
 import { expiryAPI, ExpiryItem, ExpirySummary } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import { formatDecimalBoxes, formatStockDisplay } from '../lib/packStock'
+
+const POLL_MS = 120_000
+
+/** Decimal-box value shown in the Stock column (batch quantity is stored in sub-units). */
+function expiryStockValue(it: ExpiryItem): string {
+  const pack = it.pack_size && it.pack_size > 1 ? it.pack_size : 1
+  return pack > 1 ? formatDecimalBoxes(Number(it.stock), pack) : String(it.stock)
+}
 
 type Tab = 'near' | 'expired'
 
@@ -18,25 +27,31 @@ export default function Expiry() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    Promise.all([
-      expiryAPI.list({ status: tab, days }),
-      expiryAPI.summary({ days }),
-    ])
-      .then(([list, sum]) => {
-        if (cancelled) return
-        const payload = list.data
-        setItems(Array.isArray(payload) ? payload : payload.items)
-        setSummary(sum.data)
-      })
-      .catch(() => {
-        if (!cancelled) setItems([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    // Soft refresh: only show the spinner on the first load, not on background polls.
+    const fetchData = (showSpinner: boolean) => {
+      if (showSpinner) setLoading(true)
+      Promise.all([
+        expiryAPI.list({ status: tab, days }),
+        expiryAPI.summary({ days }),
+      ])
+        .then(([list, sum]) => {
+          if (cancelled) return
+          const payload = list.data
+          setItems(Array.isArray(payload) ? payload : payload.items)
+          setSummary(sum.data)
+        })
+        .catch(() => {
+          if (!cancelled && showSpinner) setItems([])
+        })
+        .finally(() => {
+          if (!cancelled && showSpinner) setLoading(false)
+        })
+    }
+    fetchData(true)
+    const id = setInterval(() => fetchData(false), POLL_MS)
     return () => {
       cancelled = true
+      clearInterval(id)
     }
   }, [tab, days])
 
@@ -58,7 +73,7 @@ export default function Expiry() {
         i18n.language === 'ar' ? i.name_ar : i.name_en,
         i.category || '',
         (i18n.language === 'ar' ? i.branch_name_ar : i.branch_name_en) || '',
-        i.stock,
+        expiryStockValue(i),
         i.cost ?? '',
         i.expiry_date,
         i.days_left,
@@ -217,7 +232,12 @@ export default function Expiry() {
                   <td className="px-3 py-2 font-medium">{i18n.language === 'ar' ? it.name_ar : it.name_en}</td>
                   <td className="px-3 py-2 text-slate-600">{it.category || '—'}</td>
                   <td className="px-3 py-2 text-slate-600">{(i18n.language === 'ar' ? it.branch_name_ar : it.branch_name_en) || '—'}</td>
-                  <td className="px-3 py-2 text-end">{it.stock}</td>
+                  <td
+                    className="px-3 py-2 text-end"
+                    title={formatStockDisplay(Number(it.stock), it.pack_size, it.unit, it.sub_unit)}
+                  >
+                    {expiryStockValue(it)}
+                  </td>
                   <td className="px-3 py-2 text-xs">{it.expiry_date}</td>
                   <td className={`px-3 py-2 text-end font-semibold ${Number(it.days_left) < 0 ? 'text-red-700' : Number(it.days_left) <= 7 ? 'text-red-600' : Number(it.days_left) <= 30 ? 'text-amber-700' : 'text-slate-700'}`}>
                     {Number(it.days_left) < 0

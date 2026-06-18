@@ -496,6 +496,7 @@ export interface TransferItem {
   product_name_en: string | null
   quantity: number
   unit_label?: string | null
+  pack_size?: number | null
 }
 
 export interface Transfer {
@@ -526,6 +527,8 @@ export interface ExpiryItem {
   name_en: string
   category: string | null
   unit: string | null
+  sub_unit?: string | null
+  pack_size?: number | null
   stock: number
   price: number
   cost: number | null
@@ -677,7 +680,7 @@ export const transfersAPI = {
   create: (data: {
     from_branch_id: number
     to_branch_id: number
-    items: { product_id: number; quantity: number }[]
+    items: { product_id: number; quantity: number; unit_type?: 'pack' | 'sub' }[]
     notes?: string
   }) => api.post<{ ok: boolean; transfer_id: number; transfer_number: string }>(
     '/inventory/transfers', data,
