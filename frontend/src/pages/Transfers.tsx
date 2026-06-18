@@ -10,7 +10,7 @@ import i18n from '../lib/i18n'
 import { formatDateTime } from '../lib/formatDate'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner, TableLoadingRow } from '../components/LoadingSpinner'
-import { formatDecimalBoxes, formatStockDisplay } from '../lib/packStock'
+import { formatDecimalBoxes, formatStockInline } from '../lib/packStock'
 
 const POLL_MS = 120_000
 
@@ -517,7 +517,7 @@ function CreateTransferModal({
                         {p.barcode}
                         {p.international_barcode ? ` · ${p.international_barcode}` : ''}
                       </span>
-                      <span className="text-xs text-slate-500 shrink-0">{t('transfers.stock')}: {formatStockDisplay(p.stock, p.pack_size, p.unit, p.sub_unit)}</span>
+                      <span className="text-xs text-slate-500 shrink-0">{t('transfers.stock')}: {formatStockInline(p.stock, p.pack_size, p.unit, p.sub_unit)}</span>
                     </div>
                   </button>
                 ))}
@@ -536,7 +536,7 @@ function CreateTransferModal({
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{i18n.language === 'ar' ? l.name_ar : l.name_en}</div>
                   <div className="text-xs text-slate-500">
-                    <span className="font-mono text-slate-600 tabular-nums">{l.barcode}{l.international_barcode ? ` · ${l.international_barcode}` : ''}</span> · {t('transfers.stock')}: {formatStockDisplay(l.stock, l.pack_size, l.unit, l.sub_unit)}
+                    <span className="font-mono text-slate-600 tabular-nums">{l.barcode}{l.international_barcode ? ` · ${l.international_barcode}` : ''}</span> · {t('transfers.stock')}: {formatStockInline(l.stock, l.pack_size, l.unit, l.sub_unit)}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">

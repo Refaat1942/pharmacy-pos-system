@@ -15,9 +15,9 @@ import { downloadApiExcel } from '../lib/downloadExcel'
 import { formatInt, formatMoney } from '../lib/formatNumber'
 import {
   formatDecimalBoxes,
+  formatMajorSubLabel,
   formatPackStockInput,
   formatPackStockLabel,
-  formatStockDisplay,
   formatVarianceMajorUnits,
   formatVarianceSubFraction,
   packSizeOf,
@@ -561,7 +561,7 @@ export default function Inventory() {
                             </span>
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (
                               <div className="text-[10px] text-slate-500 mt-0.5">
-                                {formatPackStockLabel(
+                                {formatMajorSubLabel(
                                   it.stock,
                                   it.pack_size,
                                   it.unit,
@@ -2329,19 +2329,25 @@ function BranchStockTab() {
                       <td
                         key={b.id}
                         className={`px-3 py-2.5 text-center font-mono ${cls}`}
-                        title={missing ? '' : formatStockDisplay(stock, pack, row.unit, row.sub_unit)}
                       >
                         {missing ? '—' : (pack > 1 ? formatDecimalBoxes(stock, pack) : stock)}
+                        {!missing && pack > 1 && (
+                          <div className="text-[10px] text-slate-400 font-sans">
+                            {formatMajorSubLabel(stock, pack, row.unit, row.sub_unit)}
+                          </div>
+                        )}
                       </td>
                     )
                   })}
-                  <td
-                    className="px-3 py-2.5 text-center font-mono font-bold bg-slate-50"
-                    title={formatStockDisplay(row.total_stock, row.pack_size, row.unit, row.sub_unit)}
-                  >
+                  <td className="px-3 py-2.5 text-center font-mono font-bold bg-slate-50">
                     {row.pack_size && row.pack_size > 1
                       ? formatDecimalBoxes(row.total_stock, row.pack_size)
                       : row.total_stock}
+                    {row.pack_size && row.pack_size > 1 && (
+                      <div className="text-[10px] text-slate-400 font-sans font-normal">
+                        {formatMajorSubLabel(row.total_stock, row.pack_size, row.unit, row.sub_unit)}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

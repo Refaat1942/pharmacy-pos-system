@@ -31,7 +31,7 @@ import api from '../lib/api'
 import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
-import { formatStockDisplay } from '../lib/packStock'
+import { formatStockInline } from '../lib/packStock'
 import {
   barcodeSearchQueries,
   looksLikeScannerInput,
@@ -811,7 +811,7 @@ export default function POS() {
                               >
                                 {isOut
                                   ? t('pos.out_of_stock')
-                                  : `${formatStockDisplay(p.stock, p.pack_size, p.unit, p.sub_unit)} ${t('pos.in_stock')}`}
+                                  : `${formatStockInline(p.stock, p.pack_size, p.unit, p.sub_unit)} ${t('pos.in_stock')}`}
                               </span>
                             </div>
                           </div>
@@ -900,7 +900,7 @@ export default function POS() {
                             }`}>
                               {item.product.stock <= 0
                                 ? t('pos.out_of_stock')
-                                : `${formatStockDisplay(item.product.stock, item.product.pack_size, item.product.unit, item.product.sub_unit)} ${t('pos.in_stock')}`}
+                                : `${formatStockInline(item.product.stock, item.product.pack_size, item.product.unit, item.product.sub_unit)} ${t('pos.in_stock')}`}
                             </p>
                             {(item.offer_discount || 0) > 0 && (
                               <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-wide text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">

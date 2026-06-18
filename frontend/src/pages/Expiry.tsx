@@ -5,7 +5,7 @@ import Layout from '../components/Layout'
 import { expiryAPI, ExpiryItem, ExpirySummary } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
-import { formatDecimalBoxes, formatStockDisplay } from '../lib/packStock'
+import { formatDecimalBoxes, formatMajorSubLabel } from '../lib/packStock'
 
 const POLL_MS = 120_000
 
@@ -232,11 +232,13 @@ export default function Expiry() {
                   <td className="px-3 py-2 font-medium">{i18n.language === 'ar' ? it.name_ar : it.name_en}</td>
                   <td className="px-3 py-2 text-slate-600">{it.category || '—'}</td>
                   <td className="px-3 py-2 text-slate-600">{(i18n.language === 'ar' ? it.branch_name_ar : it.branch_name_en) || '—'}</td>
-                  <td
-                    className="px-3 py-2 text-end"
-                    title={formatStockDisplay(Number(it.stock), it.pack_size, it.unit, it.sub_unit)}
-                  >
+                  <td className="px-3 py-2 text-end">
                     {expiryStockValue(it)}
+                    {it.pack_size && it.pack_size > 1 && (
+                      <div className="text-[10px] text-slate-500">
+                        {formatMajorSubLabel(Number(it.stock), it.pack_size, it.unit, it.sub_unit)}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs">{it.expiry_date}</td>
                   <td className={`px-3 py-2 text-end font-semibold ${Number(it.days_left) < 0 ? 'text-red-700' : Number(it.days_left) <= 7 ? 'text-red-600' : Number(it.days_left) <= 30 ? 'text-amber-700' : 'text-slate-700'}`}>

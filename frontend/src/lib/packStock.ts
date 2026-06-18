@@ -92,6 +92,46 @@ export function packSizeOf(item: { pack_size?: number | null } | null | undefine
 }
 
 /**
+ * Major + sub breakdown ONLY (no leading decimal), e.g. "9 Box + 1 Strip".
+ * Meant to be shown in small font under the decimal value.
+ * Returns '' when pack_size <= 1 (nothing useful to add).
+ */
+export function formatMajorSubLabel(
+  stockSubUnits: number,
+  packSize?: number | null,
+  unit?: string | null,
+  subUnit?: string | null,
+): string {
+  const pack = packSize && packSize > 1 ? packSize : 1
+  if (pack <= 1) return ''
+  const n = Math.max(0, Math.round(stockSubUnits))
+  const u = unit || 'box'
+  const su = subUnit || 'unit'
+  const fullBoxes = Math.floor(n / pack)
+  const loose = n % pack
+  if (fullBoxes > 0 && loose > 0) return `${fullBoxes} ${u} + ${loose} ${su}`
+  if (fullBoxes > 0) return `${fullBoxes} ${u}`
+  return `${loose} ${su}`
+}
+
+/**
+ * Inline one-line stock label: decimal value + major/sub breakdown in parentheses,
+ * e.g. "9.5 (9 Box + 1 Strip)". Used where a two-line layout doesn't fit (POS rows).
+ */
+export function formatStockInline(
+  stockSubUnits: number,
+  packSize?: number | null,
+  unit?: string | null,
+  subUnit?: string | null,
+): string {
+  const pack = packSize && packSize > 1 ? packSize : 1
+  const n = Math.max(0, Math.round(stockSubUnits))
+  if (pack <= 1) return String(n)
+  const breakdown = formatMajorSubLabel(n, pack, unit, subUnit)
+  return `${formatDecimalBoxes(n, pack)} (${breakdown})`
+}
+
+/**
  * Compact stock label used across Inventory, Expiry, Branch Stock and POS so every
  * surface shows the SAME quantity. Primary value is decimal boxes; when there is a
  * loose remainder it is appended in sub-units, e.g. "9.5 Box (9 Box + 1 Strip)".
