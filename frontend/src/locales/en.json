@@ -949,6 +949,8 @@
     "auto_categories": "{{count}} auto-assigned categories",
     "download_template": "Download blank template",
     "upload": "Upload",
+    "upload_failed": "Upload failed — check branch is selected and the file matches the template headers",
+    "excel_help_optional_ar": "Name (Arabic) is optional. Your supplier file (Code, Material Name, Stock, Unit, …) works as-is.",
     "imported": "imported",
     "updated_count": "updated",
     "errors": "errors",

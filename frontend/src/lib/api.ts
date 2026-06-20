@@ -10,6 +10,10 @@ api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`
   const activeBranch = localStorage.getItem('pharma_active_branch')
   if (activeBranch) config.headers['X-Active-Branch'] = activeBranch
+  // Let the browser set multipart boundary — never force bare multipart/form-data
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type']
+  }
   return config
 })
 
@@ -26,6 +30,21 @@ api.interceptors.response.use(
 )
 
 export default api
+
+/** Turn FastAPI / axios errors into a user-visible string. */
+export function formatApiError(err: unknown, fallback = 'Error'): string {
+  const e = err as { response?: { data?: { detail?: unknown } }; message?: string }
+  const detail = e?.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (typeof item === 'string' ? item : (item as { msg?: string })?.msg || JSON.stringify(item)))
+      .join('; ')
+  }
+  if (detail && typeof detail === 'object') return JSON.stringify(detail)
+  if (e?.message) return e.message
+  return fallback
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 

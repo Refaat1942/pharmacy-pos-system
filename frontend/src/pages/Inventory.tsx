@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, ScanLine } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
-import api from '../lib/api'
+import api, { formatApiError } from '../lib/api'
 import {
   autoPickKeysPerTerm,
   isMultiTermSearch,
@@ -1966,12 +1966,10 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const { data } = await api.post('/inventory/bulk-upload', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const { data } = await api.post('/inventory/bulk-upload', fd)
       setResult(data)
     } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Error')
+      setError(formatApiError(e, t('inventory.upload_failed') as string))
     } finally { setUploading(false) }
   }
 
@@ -1999,15 +1997,16 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <div>{t('inventory.excel_help_cols')}</div>
           <div className="text-xs mt-1 text-slate-600">{t('inventory.excel_help_auto')}</div>
           <code className="block mt-2 text-xs bg-white p-3 rounded border border-slate-200 leading-relaxed">
-            Code, Material Name, Name (Arabic), International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
+            Code, Material Name, [Name (Arabic)], International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
+          <p className="text-[11px] text-slate-500 mt-1">{t('inventory.excel_help_optional_ar')}</p>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}
           </button>
         </div>
         <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)}
           className="w-full p-2 border border-dashed border-slate-300 rounded-lg" />
-        {error && <div className="text-red-600">{error}</div>}
+        {error && <div className="text-red-600 text-sm whitespace-pre-wrap">{error}</div>}
         {result && (
           <div className="p-3 bg-emerald-50 rounded-lg text-emerald-800">
             ✅ {result.inserted} {t('inventory.imported')}, {result.updated} {t('inventory.updated_count')}, {result.errors} {t('inventory.errors')}

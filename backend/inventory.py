@@ -1360,11 +1360,32 @@ _NAME_CATEGORY_RULES = [
 ]
 
 
+def _clean_cell_str(val) -> str:
+    """Normalize Excel/CSV cell values to plain strings (handles 3005340.0 → 3005340)."""
+    if val is None:
+        return ""
+    if isinstance(val, float) and val.is_integer():
+        return str(int(val))
+    if isinstance(val, int):
+        return str(val)
+    s = str(val).strip()
+    if re.fullmatch(r"\d+\.0+", s):
+        return s.split(".", 1)[0]
+    return s
+
+
+def _clean_barcode(val) -> Optional[str]:
+    s = _clean_cell_str(val)
+    return s or None
+
+
 def _normalize_bulk_key(barcode, intl_barcode, name_en):
-    if barcode:
-        return f"bc:{str(barcode).strip().lower()}"
-    if intl_barcode:
-        return f"intl:{str(intl_barcode).strip()}"
+    bc = _clean_barcode(barcode)
+    ib = _clean_barcode(intl_barcode)
+    if bc:
+        return f"bc:{bc.lower()}"
+    if ib:
+        return f"intl:{ib}"
     return f"name:{re.sub(r'\s+', ' ', str(name_en).strip().lower())}"
 
 
@@ -1410,14 +1431,15 @@ def _guess_category_from_name(name_en: str, name_ar: str) -> str:
     return "Other"
 
 
-def _resolve_bulk_category(category, name_en, name_ar, intl_barcode) -> Optional[str]:
-    cat = str(category or "").strip()
+def _resolve_bulk_category(category, name_en, name_ar, intl_barcode, *, online: bool = True) -> Optional[str]:
+    cat = _clean_cell_str(category)
     if cat:
         return cat
-    if intl_barcode:
-        online = _lookup_category_online(intl_barcode)
-        if online:
-            return online
+    ib = _clean_barcode(intl_barcode)
+    if online and ib:
+        online_cat = _lookup_category_online(ib)
+        if online_cat:
+            return online_cat
     return _guess_category_from_name(name_en, name_ar)
 
 
@@ -1444,19 +1466,24 @@ def _next_auto_barcode(cur, branch_id) -> str:
 def _parse_bulk_row(r: dict, idx: int) -> dict:
     from datetime import datetime as _dt, date as _date
 
-    name_en = str(_row_get(r, "name_en", "name", "material name", "item name") or "").strip()
-    name_ar = str(_row_get(r, "name_ar", "arabic name", "name (arabic)") or "").strip() or name_en
-    barcode = str(_row_get(r, "barcode", "code", "material code", "item code") or "").strip() or None
-    intl_barcode = str(_row_get(r, "international barcode", "international_barcode",
-                                "intl barcode", "global barcode", "gtin", "ean") or "").strip() or None
-    category = str(_row_get(r, "category") or "").strip() or None
-    unit = str(_row_get(r, "unit", "material unit", "big unit", "main unit") or "box").strip()
-    price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
+    name_en = _clean_cell_str(_row_get(r, "name_en", "name", "material name", "item name"))
+    name_ar = _clean_cell_str(_row_get(r, "name_ar", "arabic name", "name (arabic)")) or name_en
+    barcode = _clean_barcode(_row_get(r, "barcode", "code", "material code", "item code"))
+    intl_barcode = _clean_barcode(_row_get(
+        r, "international barcode", "international_barcode",
+        "intl barcode", "global barcode", "gtin", "ean",
+    ))
+    category_raw = _row_get(r, "category")
+    category = _clean_cell_str(category_raw) or None
+    unit = _clean_cell_str(_row_get(r, "unit", "material unit", "big unit", "main unit")) or "box"
+    price_raw = _row_get(r, "price", "sales price", "selling price", "material price")
+    price = float(price_raw) if price_raw not in (None, "") else 0.0
     cost_val = _row_get(r, "cost", "cost price", "purchase price")
     cost = float(cost_val) if cost_val not in (None, "") else None
     if cost is None and price > 0:
         cost = price
-    min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
+    min_raw = _row_get(r, "min_stock", "min stock", "minimum stock")
+    min_stock = int(float(min_raw)) if min_raw not in (None, "") else 5
 
     pack_raw = _row_get(r, "pack_size", "pack size",
                         "subunit quantity", "sub unit quantity", "subunit qty", "sub unit qty",
@@ -1638,152 +1665,173 @@ async def bulk_upload(file: UploadFile = File(...),
                       active_branch=Depends(get_active_branch_id)):
     """Bulk import items from Excel/CSV. Duplicates in the file are merged (highest price wins)."""
     from openpyxl import load_workbook
-    content = await file.read()
-    name = (file.filename or "").lower()
 
-    raw_rows = []
-    if name.endswith(".csv"):
-        import csv
-        text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        raw_rows = list(reader)
-    else:
-        wb = load_workbook(io.BytesIO(content), data_only=True)
-        ws = wb.active
-        headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
-        for r in ws.iter_rows(min_row=2, values_only=True):
-            if not any(r):
-                continue
-            row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
-            raw_rows.append(row)
-
-    raw_rows = [{(str(k).strip().lower() if k is not None else ""): v
-                  for k, v in row.items()} for row in raw_rows]
-
-    parsed = []
-    parse_errors = []
-    for idx, r in enumerate(raw_rows, start=2):
-        try:
-            row = _parse_bulk_row(r, idx)
-            if not row["name_en"]:
-                raise ValueError("Material Name is required")
-            parsed.append(row)
-        except Exception as e:
-            parse_errors.append(f"Row {idx}: {e}")
-
-    merged_rows = _merge_bulk_rows(parsed)
-
-    inserted = updated = errors = len(parse_errors)
-    error_details = list(parse_errors)
-    auto_codes = 0
-    auto_categories = 0
-    conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
     if branch_id is None:
-        conn.close()
-        raise HTTPException(status_code=400, detail="Select a specific branch before uploading items")
-    user_id = current_user.get("user_id")
+        raise HTTPException(
+            status_code=400,
+            detail="Select a specific branch before uploading items (use the branch selector in the top bar).",
+        )
 
-    for row in merged_rows:
-        cur.execute("SAVEPOINT row_sp")
-        try:
-            name_en = row["name_en"]
-            name_ar = row["name_ar"]
-            barcode = row["barcode"]
-            intl_barcode = row["intl_barcode"]
-            category = _resolve_bulk_category(row["category"], name_en, name_ar, intl_barcode)
-            if not row["category"] and category:
-                auto_categories += 1
-            unit = row["unit"]
-            price = row["price"]
-            cost = row["cost"]
-            min_stock = row["min_stock"]
-            pack_size = row["pack_size"]
-            sub_unit = row["sub_unit"]
-            sub_price = row["sub_price"]
-            stock = row["stock"]
-            qty_provided = row["qty_provided"]
-            expiry_date = row["expiry_date"]
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        name = (file.filename or "").lower()
 
-            if not barcode:
-                barcode = _next_auto_barcode(cur, branch_id)
-                auto_codes += 1
+        raw_rows = []
+        if name.endswith(".csv"):
+            import csv
+            text = content.decode("utf-8-sig", errors="replace")
+            reader = csv.DictReader(io.StringIO(text))
+            raw_rows = list(reader)
+        else:
+            try:
+                wb = load_workbook(io.BytesIO(content), data_only=True)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Could not read Excel file: {e}") from e
+            ws = wb.active
+            headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+            if not any(headers):
+                raise HTTPException(status_code=400, detail="First row must contain column headers")
+            for r in ws.iter_rows(min_row=2, values_only=True):
+                if not any(v not in (None, "") for v in r):
+                    continue
+                row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
+                raw_rows.append(row)
 
-            existing = _find_existing_product(cur, branch_id, barcode, intl_barcode)
+        raw_rows = [{(str(k).strip().lower() if k is not None else ""): v
+                      for k, v in row.items()} for row in raw_rows]
 
-            if existing:
-                cur.execute(
-                    """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
-                       price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-                       sub_price=%s, active=true,
-                       international_barcode=COALESCE(%s, international_barcode)
-                       WHERE id=%s""",
-                    (name_en, name_ar, category, unit, price, cost, min_stock,
-                     pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
+        if not raw_rows:
+            raise HTTPException(status_code=400, detail="No data rows found below the header row")
+
+        parsed = []
+        parse_errors = []
+        for idx, r in enumerate(raw_rows, start=2):
+            try:
+                row = _parse_bulk_row(r, idx)
+                if not row["name_en"]:
+                    raise ValueError("Material Name is required")
+                parsed.append(row)
+            except Exception as e:
+                parse_errors.append(f"Row {idx}: {e}")
+
+        merged_rows = _merge_bulk_rows(parsed)
+
+        inserted = updated = errors = len(parse_errors)
+        error_details = list(parse_errors)
+        auto_codes = 0
+        auto_categories = 0
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        user_id = current_user.get("user_id")
+
+        for row in merged_rows:
+            cur.execute("SAVEPOINT row_sp")
+            try:
+                name_en = row["name_en"]
+                name_ar = row["name_ar"]
+                barcode = row["barcode"]
+                intl_barcode = row["intl_barcode"]
+                category = _resolve_bulk_category(
+                    row["category"], name_en, name_ar, intl_barcode, online=False,
                 )
-                if qty_provided:
-                    old_q = int(existing["stock"])
-                    delta = stock - old_q
-                    if delta > 0:
-                        add_batch_stock(cur, existing["id"], branch_id, delta, expiry_date)
-                    elif delta < 0:
-                        deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
+                if not row["category"] and category:
+                    auto_categories += 1
+                unit = row["unit"]
+                price = row["price"]
+                cost = row["cost"]
+                min_stock = row["min_stock"]
+                pack_size = row["pack_size"]
+                sub_unit = row["sub_unit"]
+                sub_price = row["sub_price"]
+                stock = row["stock"]
+                qty_provided = row["qty_provided"]
+                expiry_date = row["expiry_date"]
+
+                if not barcode:
+                    barcode = _next_auto_barcode(cur, branch_id)
+                    auto_codes += 1
+
+                existing = _find_existing_product(cur, branch_id, barcode, intl_barcode)
+
+                if existing:
+                    cur.execute(
+                        """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
+                           price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
+                           sub_price=%s, active=true,
+                           international_barcode=COALESCE(%s, international_barcode)
+                           WHERE id=%s""",
+                        (name_en, name_ar, category, unit, price, cost, min_stock,
+                         pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
+                    )
+                    if qty_provided:
+                        old_q = int(existing["stock"])
+                        delta = stock - old_q
+                        if delta > 0:
+                            add_batch_stock(cur, existing["id"], branch_id, delta, expiry_date)
+                        elif delta < 0:
+                            deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
+                        elif expiry_date is not None:
+                            cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
+                            if stock > 0:
+                                add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
+                            else:
+                                sync_product_from_batches(cur, existing["id"])
+                        if delta != 0:
+                            log_movement(
+                                cur, existing["id"], branch_id, "adjustment",
+                                delta, stock,
+                                reference_type="bulk_upload", reason="Bulk upload sync",
+                                user_id=user_id,
+                            )
                     elif expiry_date is not None:
-                        cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
-                        if stock > 0:
-                            add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
-                        else:
-                            sync_product_from_batches(cur, existing["id"])
-                    if delta != 0:
+                        cur.execute(
+                            "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
+                            (expiry_date, existing["id"]),
+                        )
+                    updated += 1
+                else:
+                    cur.execute(
+                        """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
+                           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                        (barcode, intl_barcode, name_ar, name_en, category, unit,
+                         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
+                    )
+                    new_id = cur.fetchone()["id"]
+                    if qty_provided and stock > 0:
+                        add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
                         log_movement(
-                            cur, existing["id"], branch_id, "adjustment",
-                            delta, stock,
-                            reference_type="bulk_upload", reason="Bulk upload sync",
+                            cur, new_id, branch_id, "initial",
+                            stock, stock,
+                            reference_type="bulk_upload", reason="Bulk upload",
                             user_id=user_id,
                         )
-                elif expiry_date is not None:
-                    cur.execute(
-                        "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
-                        (expiry_date, existing["id"]),
-                    )
-                updated += 1
-            else:
-                cur.execute(
-                    """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
-                       price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                    (barcode, intl_barcode, name_ar, name_en, category, unit,
-                     price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
-                )
-                new_id = cur.fetchone()["id"]
-                if qty_provided and stock > 0:
-                    add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
-                    log_movement(
-                        cur, new_id, branch_id, "initial",
-                        stock, stock,
-                        reference_type="bulk_upload", reason="Bulk upload",
-                        user_id=user_id,
-                    )
-                inserted += 1
-            cur.execute("RELEASE SAVEPOINT row_sp")
-        except Exception as e:
-            cur.execute("ROLLBACK TO SAVEPOINT row_sp")
-            errors += 1
-            src = row.get("source_rows") or ["?"]
-            error_details.append(f"Rows {','.join(map(str, src))}: {e}")
+                    inserted += 1
+                cur.execute("RELEASE SAVEPOINT row_sp")
+            except Exception as e:
+                cur.execute("ROLLBACK TO SAVEPOINT row_sp")
+                errors += 1
+                src = row.get("source_rows") or ["?"]
+                error_details.append(f"Rows {','.join(map(str, src))}: {e}")
 
-    conn.commit()
-    conn.close()
-    return {
-        "inserted": inserted,
-        "updated": updated,
-        "errors": errors,
-        "auto_codes": auto_codes,
-        "auto_categories": auto_categories,
-        "merged_rows": len(merged_rows),
-        "error_details": error_details[:50],
-    }
+        conn.commit()
+        conn.close()
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "errors": errors,
+            "auto_codes": auto_codes,
+            "auto_categories": auto_categories,
+            "merged_rows": len(merged_rows),
+            "error_details": error_details[:50],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk upload failed: {e}") from e
 
 
 @router.get("/consumption-alerts")
