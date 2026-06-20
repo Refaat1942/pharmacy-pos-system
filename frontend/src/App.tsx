@@ -60,6 +60,21 @@ function ProtectedRoute({
   return <>{children}</>
 }
 
+/**
+ * The Clock screen is a shared kiosk: any authenticated employee must be able
+ * to punch in/out regardless of whether they can manage HR. We still respect
+ * the tenant-level feature toggle (hr + clock option), but skip the per-user
+ * HR-management permission check that ProtectedRoute applies.
+ */
+function ClockRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user, hasFeature, hasFeatureOption } = useAuth()
+  if (!isAuthenticated || !user) return <Navigate to="/login" replace />
+  if (!hasFeature('hr') || !hasFeatureOption('hr', 'clock')) {
+    return <Navigate to={getDefaultHomePath(user, hasFeature)} replace />
+  }
+  return <>{children}</>
+}
+
 function AppRoutes() {
   const { i18n } = useTranslation()
   const { isAuthenticated, isLocked } = useAuth()
@@ -98,7 +113,7 @@ function AppRoutes() {
       <Route path="/hr" element={<ProtectedRoute feature="hr"><HR /></ProtectedRoute>} />
       <Route path="/hr/cards" element={<ProtectedRoute feature="hr" featureOption="employee_cards"><EmployeeCards /></ProtectedRoute>} />
       <Route path="/settings/login-cards" element={<ProtectedRoute feature="settings" featureOption="login_cards"><UserCards /></ProtectedRoute>} />
-      <Route path="/clock" element={<ProtectedRoute feature="hr" featureOption="clock"><Clock /></ProtectedRoute>} />
+      <Route path="/clock" element={<ClockRoute><Clock /></ClockRoute>} />
       <Route path="/rx/:slug/:token" element={<ClinicPortal />} />
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />

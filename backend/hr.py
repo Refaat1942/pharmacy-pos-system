@@ -291,23 +291,37 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
                 [int(raw)],
             )
             emp = cur.fetchone()
-        if not emp:
-            # If the scanned code is a known login card but it isn't linked to
-            # an employee, give a clearer hint than "unknown code".
-            if code or norm:
+        # If the code is a known login card but the user has no employee yet,
+        # auto-create and link one so any staff member can clock in with their
+        # existing login card — no manual setup needed.
+        if not emp and (code or norm):
+            cur.execute(
+                """SELECT id, name_en, name_ar, role, branch_id, employee_id
+                   FROM users
+                   WHERE UPPER(card_code) = %s
+                      OR UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s
+                   LIMIT 1""",
+                [code, norm],
+            )
+            u = cur.fetchone()
+            if u:
+                emp_name = (u.get("name_en") or u.get("name_ar") or "Staff").strip()
+                emp_role = u.get("role") or None
                 cur.execute(
-                    """SELECT 1 FROM users
-                       WHERE UPPER(card_code) = %s
-                          OR UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s
-                       LIMIT 1""",
-                    [code, norm],
+                    """INSERT INTO employees (name, role, branch_id, active, base_salary)
+                       VALUES (%s, %s, %s, TRUE, 0) RETURNING id, name, role, branch_id, active""",
+                    [emp_name, emp_role, u.get("branch_id")],
                 )
-                if cur.fetchone():
-                    raise HTTPException(
-                        400,
-                        "This login card isn't linked to an employee. "
-                        "Link the user to an employee in Settings, or scan the EMP-… clock card.",
-                    )
+                emp = cur.fetchone()
+                cur.execute(
+                    "UPDATE employees SET clock_code = %s WHERE id = %s",
+                    [_generate_clock_code(emp["id"], emp_name), emp["id"]],
+                )
+                cur.execute(
+                    "UPDATE users SET employee_id = %s WHERE id = %s",
+                    [emp["id"], u["id"]],
+                )
+        if not emp:
             raise HTTPException(404, "Unknown employee code")
         if not emp["active"]:
             raise HTTPException(400, "Employee is inactive")
