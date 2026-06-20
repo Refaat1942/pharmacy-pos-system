@@ -151,7 +151,7 @@ from fraud import router as fraud_router
 app.include_router(fraud_router, dependencies=[Depends(requires_feature("fraud_surveillance"))])
 from shifts import router as shifts_router
 app.include_router(shifts_router, dependencies=[Depends(requires_feature("shifts"))])
-from hr import router as hr_router
+from hr import router as hr_router, _normalize_code
 app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
 from offers import router as offers_router
 app.include_router(offers_router)
@@ -590,9 +590,11 @@ def lookup_seller_by_code(code: str, current_user=Depends(get_current_user)):
     if not raw:
         raise HTTPException(status_code=400, detail="Code is required")
     key = raw.upper()
+    norm = _normalize_code(raw)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # Exact (case-insensitive) match on the user login card first.
         cur.execute(
             """SELECT id, name_ar, name_en, role, status
                FROM users
@@ -600,6 +602,15 @@ def lookup_seller_by_code(code: str, current_user=Depends(get_current_user)):
             [key],
         )
         row = cur.fetchone()
+        if not row and norm:
+            cur.execute(
+                """SELECT id, name_ar, name_en, role, status
+                   FROM users
+                   WHERE status = 'active'
+                     AND UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s""",
+                [norm],
+            )
+            row = cur.fetchone()
         if not row:
             cur.execute(
                 """SELECT u.id, u.name_ar, u.name_en, u.role, u.status
@@ -609,10 +620,23 @@ def lookup_seller_by_code(code: str, current_user=Depends(get_current_user)):
                 [key],
             )
             row = cur.fetchone()
+        if not row and norm:
+            cur.execute(
+                """SELECT u.id, u.name_ar, u.name_en, u.role, u.status
+                   FROM employees e
+                   JOIN users u ON u.employee_id = e.id AND u.status = 'active'
+                   WHERE e.active = TRUE
+                     AND UPPER(REGEXP_REPLACE(e.clock_code, '[^A-Za-z0-9]', '', 'g')) = %s""",
+                [norm],
+            )
+            row = cur.fetchone()
         if not row:
             cur.execute(
-                "SELECT 1 FROM employees WHERE active = TRUE AND UPPER(clock_code) = %s",
-                [key],
+                """SELECT 1 FROM employees
+                   WHERE active = TRUE
+                     AND (UPPER(clock_code) = %s
+                          OR UPPER(REGEXP_REPLACE(clock_code, '[^A-Za-z0-9]', '', 'g')) = %s)""",
+                [key, norm],
             )
             if cur.fetchone():
                 raise HTTPException(

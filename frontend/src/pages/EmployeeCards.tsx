@@ -100,7 +100,7 @@ export default function EmployeeCards() {
                 <div className="w-40 h-40 bg-slate-100 animate-pulse rounded" />
               )}
             </div>
-            <Barcode value={e.clock_code!} />
+            <Barcode value={e.clock_code!.replace(/[^A-Za-z0-9]/g, '')} />
             <div className="font-mono text-[11px] text-slate-700 break-all mt-1">{e.clock_code}</div>
             <div className="text-[10px] text-slate-400 mt-1">{t('hr.scan_to_clock')}</div>
           </div>
@@ -116,9 +116,9 @@ function Barcode({ value }: { value: string }) {
     if (!ref.current || !value) return
     try {
       JsBarcode(ref.current, value, {
-        format: 'CODE128', width: 1.4, height: 40, displayValue: false, margin: 0,
+        format: 'CODE128', width: 1.8, height: 56, displayValue: false, margin: 0,
       })
     } catch {}
   }, [value])
-  return <svg ref={ref} className="w-44 h-12" />
+  return <svg ref={ref} className="w-48 h-16" />
 }

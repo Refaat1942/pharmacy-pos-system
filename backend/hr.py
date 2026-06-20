@@ -17,6 +17,25 @@ def _generate_clock_code(eid: int, name: str) -> str:
     short = hashlib.md5(raw.encode("utf-8")).hexdigest()[:6].upper()
     return f"EMP-{eid:04d}-{short}"
 
+
+def _normalize_code(value: str) -> str:
+    """Reduce a scanned/typed code to a comparable key.
+
+    Barcode scanners (especially on Arabic keyboard layouts) often drop or
+    mangle separators like '-' and whitespace, so we strip everything that
+    isn't an ASCII letter or digit and uppercase the rest. The same
+    transformation is applied to the stored ``clock_code`` in SQL so a card
+    printed as ``EMP-0001-A3F9C2`` still matches ``emp0001a3f9c2``,
+    ``EMP 0001 A3F9C2`` etc."""
+    return "".join(ch for ch in (value or "") if ch.isalnum()).upper()
+
+
+# SQL expression that normalizes a stored clock_code the same way as
+# _normalize_code(): uppercase and keep only A-Z / 0-9.
+_CLOCK_CODE_NORMALIZED_SQL = (
+    "UPPER(REGEXP_REPLACE(clock_code, '[^A-Za-z0-9]', '', 'g'))"
+)
+
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 
 PAYROLL_WORKING_DAYS = 26
@@ -227,17 +246,29 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
     creates a check-in; second scan sets check-out and computes hours. Any
     authenticated tenant user can call this so a shared tablet near the door
     works regardless of which cashier is logged in."""
-    code = (body.code or "").strip().upper()
+    raw = (body.code or "").strip()
+    code = raw.upper()
+    norm = _normalize_code(raw)
     if not code:
         raise HTTPException(400, "Code required")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # Try an exact (case-insensitive) match first, then fall back to a
+        # normalized match that ignores hyphens/spaces/other separators a
+        # scanner may have dropped or altered.
         cur.execute(
             "SELECT id, name, role, branch_id, active FROM employees WHERE UPPER(clock_code)=%s",
             [code],
         )
         emp = cur.fetchone()
+        if not emp and norm:
+            cur.execute(
+                f"SELECT id, name, role, branch_id, active FROM employees "
+                f"WHERE {_CLOCK_CODE_NORMALIZED_SQL}=%s",
+                [norm],
+            )
+            emp = cur.fetchone()
         if not emp:
             raise HTTPException(404, "Unknown employee code")
         if not emp["active"]:
