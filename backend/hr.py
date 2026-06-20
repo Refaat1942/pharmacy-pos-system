@@ -237,7 +237,7 @@ def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
 
 # ─── Self-service clock-in / clock-out ─────────────────────────────────────
 class ClockIn(BaseModel):
-    code: str = Field(min_length=3, max_length=60)
+    code: str = Field(min_length=1, max_length=60)
 
 
 @router.post("/clock")
@@ -267,6 +267,14 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
                 f"SELECT id, name, role, branch_id, active FROM employees "
                 f"WHERE {_CLOCK_CODE_NORMALIZED_SQL}=%s",
                 [norm],
+            )
+            emp = cur.fetchone()
+        # Manual-entry convenience: allow typing just the employee number
+        # (e.g. "1" or "0001" for employee id 1).
+        if not emp and raw.isdigit():
+            cur.execute(
+                "SELECT id, name, role, branch_id, active FROM employees WHERE id=%s",
+                [int(raw)],
             )
             emp = cur.fetchone()
         if not emp:

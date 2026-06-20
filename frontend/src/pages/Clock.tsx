@@ -93,6 +93,13 @@ export default function Clock() {
             disabled={busy}
             className="w-full text-center text-2xl font-mono tracking-wider px-5 py-4 rounded-xl bg-white text-slate-900 placeholder-slate-400 shadow-inner focus:outline-none focus:ring-4 focus:ring-white/40"
           />
+          <button
+            type="submit"
+            disabled={busy || !code.trim()}
+            className="mt-4 w-full text-lg font-semibold px-5 py-3 rounded-xl bg-white/20 hover:bg-white/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {t('clock.submit')}
+          </button>
         </form>
 
         <div className="mt-6 min-h-[120px] flex items-center justify-center">

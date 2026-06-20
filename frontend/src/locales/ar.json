@@ -607,7 +607,8 @@
   "clock": {
     "title": "ساعة حضور الموظفين",
     "prompt": "امسح بطاقة QR أو اكتب كودك ثم اضغط Enter",
-    "placeholder": "EMP-0000-XXXXXX",
+    "placeholder": "امسح البطاقة أو اكتب الكود / الرقم…",
+    "submit": "تسجيل دخول / خروج",
     "waiting": "في انتظار المسح…",
     "checked_in_at": "تم تسجيل الدخول الساعة {{time}}",
     "checked_out_at": "تم تسجيل الخروج الساعة {{time}}",

@@ -378,7 +378,8 @@
   "clock": {
     "title": "Employee Time Clock",
     "prompt": "Scan your QR card or type your code, then press Enter",
-    "placeholder": "EMP-0000-XXXXXX",
+    "placeholder": "Scan card or type code / ID…",
+    "submit": "Punch in / out",
     "waiting": "Waiting for scan…",
     "checked_in_at": "Checked in at {{time}}",
     "checked_out_at": "Checked out at {{time}}",
