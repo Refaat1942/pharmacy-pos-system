@@ -750,6 +750,15 @@ export const insuranceAPI = {
   plans: (companyId?: number) => api.get<import('./insurance').InsurancePlan[]>('/insurance/plans', { params: companyId ? { company_id: companyId } : {} }),
   createPlan: (data: Partial<import('./insurance').InsurancePlan> & { company_id: number }) => api.post('/insurance/plans', data),
   updatePlan: (id: number, data: Partial<import('./insurance').InsurancePlan> & { company_id: number }) => api.put(`/insurance/plans/${id}`, data),
+  profiles: (customerId?: number) => api.get('/insurance/profiles', { params: customerId ? { customer_id: customerId } : {} }),
+  createProfile: (data: Record<string, unknown>) => api.post('/insurance/profiles', data),
+  updateProfile: (id: number, data: Record<string, unknown>) => api.put(`/insurance/profiles/${id}`, data),
+  deleteProfile: (id: number) => api.delete(`/insurance/profiles/${id}`),
+  templates: (templateType?: string) => api.get('/insurance/templates', { params: templateType ? { template_type: templateType } : {} }),
+  createTemplate: (data: Record<string, unknown>) => api.post('/insurance/templates', data),
+  updateTemplate: (id: number, data: Record<string, unknown>) => api.put(`/insurance/templates/${id}`, data),
+  salesReport: (params?: { date_from?: string; date_to?: string; company_id?: number }) =>
+    api.get('/insurance/reports/sales', { params }),
   calculate: (data: {
     company_id: number
     plan_id: number

@@ -4,6 +4,7 @@ import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpre
 import Layout from '../components/Layout'
 import GovernorateRegionSelect from '../components/GovernorateRegionSelect'
 import CustomerInfoCard from '../components/CustomerInfoCard'
+import CustomerInsuranceProfiles from '../components/CustomerInsuranceProfiles'
 import CustomerWhatsAppButton from '../components/CustomerWhatsAppButton'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
 import PhoneField from '../components/PhoneField'
@@ -310,13 +311,14 @@ function CustomerCardModal({
   onEdit: () => void
 }) {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, hasFeature } = useAuth()
   const isAdmin = user?.role === 'admin'
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const showInsurance = hasFeature('insurance')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{t('customers.customer_card')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -349,6 +351,9 @@ function CustomerCardModal({
               </>
             )}
           </dl>
+          {showInsurance && (
+            <CustomerInsuranceProfiles customerId={customer.id} compact />
+          )}
         </div>
         <div className="px-5 py-3 border-t flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.close')}</button>
@@ -365,6 +370,7 @@ function CustomerCardModal({
 
 function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
+  const { hasFeature } = useAuth()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const [f, setF] = useState<Partial<Customer>>(initial)
   const [saving, setSaving] = useState(false)
@@ -467,6 +473,11 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
               ))}
             </div>
           </div>
+          {f.id && hasFeature('insurance') && (
+            <div className="pt-2 border-t">
+              <CustomerInsuranceProfiles customerId={f.id} compact />
+            </div>
+          )}
         </div>
         <div className="px-5 py-3 border-t flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>

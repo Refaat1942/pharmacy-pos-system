@@ -448,6 +448,24 @@ def update_profile(profile_id: int, body: ProfileIn, current_user=Depends(get_cu
         conn.close()
 
 
+@router.delete("/profiles/{profile_id}", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "manage")),
+])
+def delete_profile(profile_id: int, current_user=Depends(get_current_user)):
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM customer_insurance_profiles WHERE id=%s RETURNING id", (profile_id,))
+        if not cur.fetchone():
+            raise HTTPException(404, "Profile not found")
+        conn.commit()
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
 @router.post("/calculate", dependencies=[
     Depends(requires_feature("insurance")),
     Depends(requires_feature_option("insurance", "pos_billing")),
@@ -816,6 +834,273 @@ def audit_log(limit: int = 100, current_user=Depends(get_current_user)):
         return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+class TemplateIn(BaseModel):
+    template_type: str
+    name: str
+    language: str = "bilingual"
+    is_default: bool = False
+    layout: Optional[dict] = None
+    branding: Optional[dict] = None
+    active: bool = True
+
+
+def _load_pharmacy_branding(cur) -> dict:
+    cur.execute(
+        """SELECT name_en, name_ar, address_en, address_ar, phone, tax_id
+           FROM pharmacy_profile WHERE id = 1"""
+    )
+    row = cur.fetchone()
+    return dict(row) if row else {"name_en": "Pharmacy", "address_en": "", "tax_id": ""}
+
+
+def _fetch_claim_bundle(cur, claim_id: int) -> tuple[dict, list, str, str]:
+    cur.execute(
+        """SELECT cl.*, c.name_en AS company_name_en,
+                  pl.name_en AS plan_name_en, b.name_en AS branch_name_en
+           FROM insurance_claims cl
+           JOIN insurance_companies c ON c.id = cl.company_id
+           LEFT JOIN insurance_plans pl ON pl.id = cl.plan_id
+           LEFT JOIN branches b ON b.id = cl.branch_id
+           WHERE cl.id = %s""",
+        (claim_id,),
+    )
+    claim = cur.fetchone()
+    if not claim:
+        raise HTTPException(404, "Claim not found")
+    cur.execute(
+        """SELECT i.invoice_number, i.created_at, i.insurance_snapshot, i.insurance_totals,
+                  cu.name AS customer_name
+           FROM insurance_claim_invoices ci
+           JOIN invoices i ON i.id = ci.invoice_id
+           LEFT JOIN customers cu ON cu.id = i.customer_id
+           WHERE ci.claim_id = %s ORDER BY i.created_at""",
+        (claim_id,),
+    )
+    invoices = [dict(r) for r in cur.fetchall()]
+    return dict(claim), invoices, claim["company_name_en"], claim.get("plan_name_en") or ""
+
+
+@router.get("/templates", dependencies=[Depends(requires_feature("insurance"))])
+def list_templates(template_type: Optional[str] = None, current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if template_type:
+            cur.execute(
+                "SELECT * FROM document_templates WHERE template_type=%s ORDER BY is_default DESC, name",
+                (template_type,),
+            )
+        else:
+            cur.execute("SELECT * FROM document_templates ORDER BY template_type, name")
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+@router.post("/templates", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "templates")),
+])
+def create_template(body: TemplateIn, current_user=Depends(get_current_user)):
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if body.is_default:
+            cur.execute(
+                "UPDATE document_templates SET is_default=false WHERE template_type=%s",
+                (body.template_type,),
+            )
+        cur.execute(
+            """INSERT INTO document_templates
+               (template_type, name, language, is_default, layout, branding, active)
+               VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            (
+                body.template_type, body.name, body.language, body.is_default,
+                psycopg2.extras.Json(body.layout or {}),
+                psycopg2.extras.Json(body.branding or {}),
+                body.active,
+            ),
+        )
+        row = dict(cur.fetchone())
+        log_insurance_audit(cur, entity_type="template", entity_id=row["id"], action="create",
+                            user_id=current_user.get("user_id"), new_value=row)
+        conn.commit()
+        return row
+    finally:
+        conn.close()
+
+
+@router.put("/templates/{template_id}", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "templates")),
+])
+def update_template(template_id: int, body: TemplateIn, current_user=Depends(get_current_user)):
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if body.is_default:
+            cur.execute(
+                "UPDATE document_templates SET is_default=false WHERE template_type=%s AND id != %s",
+                (body.template_type, template_id),
+            )
+        cur.execute(
+            """UPDATE document_templates SET
+               template_type=%s, name=%s, language=%s, is_default=%s,
+               layout=%s, branding=%s, active=%s
+               WHERE id=%s RETURNING *""",
+            (
+                body.template_type, body.name, body.language, body.is_default,
+                psycopg2.extras.Json(body.layout or {}),
+                psycopg2.extras.Json(body.branding or {}),
+                body.active, template_id,
+            ),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(404, "Template not found")
+        conn.commit()
+        return dict(row)
+    finally:
+        conn.close()
+
+
+@router.get("/claims/{claim_id}/pdf", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "claims_export")),
+])
+def export_claim_pdf(claim_id: int, language: str = "bilingual", current_user=Depends(get_current_user)):
+    from pdf_utils import build_claim_pdf, pdf_response
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        claim, invoices, company_name, plan_name = _fetch_claim_bundle(cur, claim_id)
+        brand = _load_pharmacy_branding(cur)
+        pdf = build_claim_pdf(
+            pharmacy_name=brand.get("name_en") or "Pharmacy",
+            pharmacy_address=brand.get("address_en") or "",
+            tax_id=brand.get("tax_id") or "",
+            branch_name=claim.get("branch_name_en") or "",
+            claim=claim,
+            company_name=company_name,
+            plan_name=plan_name,
+            invoices=invoices,
+            language=language,
+        )
+        return pdf_response(pdf, f"claim-{claim['claim_number']}.pdf")
+    finally:
+        conn.close()
+
+
+@router.get("/claims/{claim_id}/payment-request/pdf", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "claims_export")),
+])
+def export_payment_request_pdf(claim_id: int, language: str = "bilingual", current_user=Depends(get_current_user)):
+    from pdf_utils import build_payment_request_pdf, pdf_response
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        claim, _, company_name, _ = _fetch_claim_bundle(cur, claim_id)
+        brand = _load_pharmacy_branding(cur)
+        pdf = build_payment_request_pdf(
+            pharmacy_name=brand.get("name_en") or "Pharmacy",
+            pharmacy_address=brand.get("address_en") or "",
+            tax_id=brand.get("tax_id") or "",
+            branch_name=claim.get("branch_name_en") or "",
+            claim=claim,
+            company_name=company_name,
+            language=language,
+        )
+        return pdf_response(pdf, f"payment-request-{claim['claim_number']}.pdf")
+    finally:
+        conn.close()
+
+
+@router.get("/reports/sales", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "reports")),
+])
+def insurance_sales_report(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    company_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        clauses = ["i.type = 'insurance'", "i.status = 'completed'"]
+        params: list = []
+        if date_from:
+            clauses.append("i.created_at >= %s::date")
+            params.append(date_from)
+        if date_to:
+            clauses.append("i.created_at < (%s::date + INTERVAL '1 day')")
+            params.append(date_to)
+        if company_id:
+            clauses.append("i.insurance_company_id = %s")
+            params.append(company_id)
+        cur.execute(
+            f"""SELECT i.id, i.invoice_number, i.created_at, i.net_total,
+                       i.insurance_totals, i.insurance_snapshot,
+                       c.name AS customer_name,
+                       ic.name_en AS company_name_en, ip.name_en AS plan_name_en
+                FROM invoices i
+                LEFT JOIN customers c ON c.id = i.customer_id
+                LEFT JOIN insurance_companies ic ON ic.id = i.insurance_company_id
+                LEFT JOIN insurance_plans ip ON ip.id = i.insurance_plan_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY i.created_at DESC LIMIT 2000""",
+            params,
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        summary = {
+            "count": len(rows),
+            "covered": sum(float((r.get("insurance_totals") or {}).get("insurance_covered") or 0) for r in rows),
+            "patient_paid": sum(float(r.get("net_total") or 0) for r in rows),
+        }
+        return {"summary": summary, "rows": rows}
+    finally:
+        conn.close()
+
+
+@router.get("/reports/sales/export", dependencies=[
+    Depends(requires_feature("insurance")),
+    Depends(requires_feature_option("insurance", "reports")),
+])
+def insurance_sales_export(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    company_id: Optional[int] = None,
+    current_user=Depends(get_current_user),
+):
+    payload = insurance_sales_report(date_from, date_to, company_id, current_user)
+    rows = []
+    for r in payload["rows"]:
+        totals = r.get("insurance_totals") or {}
+        snap = r.get("insurance_snapshot") or {}
+        rows.append([
+            r.get("invoice_number"),
+            str(r.get("created_at", ""))[:10],
+            r.get("company_name_en", ""),
+            r.get("plan_name_en", ""),
+            r.get("customer_name", ""),
+            snap.get("insurance_card_number", ""),
+            totals.get("insurance_covered", 0),
+            totals.get("patient_share", 0),
+            r.get("net_total", 0),
+        ])
+    return xlsx_response(
+        ["Invoice", "Date", "Company", "Plan", "Patient", "Card #", "Covered", "Patient Share", "Paid"],
+        rows,
+        "insurance-sales.xlsx",
+    )
 
 
 def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: dict) -> dict[str, Any]:

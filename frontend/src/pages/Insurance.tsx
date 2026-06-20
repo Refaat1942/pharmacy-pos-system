@@ -11,8 +11,9 @@ import {
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { downloadApiExcel } from '../lib/downloadExcel'
+import { downloadApiPdf } from '../lib/downloadPdf'
 
-type Tab = 'companies' | 'plans' | 'claims' | 'dashboard'
+type Tab = 'companies' | 'plans' | 'claims' | 'dashboard' | 'reports' | 'templates'
 
 const emptyCompany = (): Partial<InsuranceCompany> => ({
   code: '', name_ar: '', name_en: '', status: 'active', field_config: {},
@@ -30,11 +31,16 @@ export default function Insurance() {
   const { hasFeatureOption } = useAuth()
   const canManage = hasFeatureOption('insurance', 'manage')
   const canClaims = hasFeatureOption('insurance', 'claims')
+  const canReports = hasFeatureOption('insurance', 'reports')
+  const canTemplates = hasFeatureOption('insurance', 'templates')
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const [tab, setTab] = useState<Tab>('companies')
   const [companies, setCompanies] = useState<InsuranceCompany[]>([])
   const [plans, setPlans] = useState<InsurancePlan[]>([])
   const [claims, setClaims] = useState<InsuranceClaim[]>([])
+  const [templates, setTemplates] = useState<Array<{ id: number; name: string; template_type: string; language: string; is_default: boolean }>>([])
+  const [salesReport, setSalesReport] = useState<{ summary?: { count: number; covered: number; patient_paid: number }; rows?: unknown[] } | null>(null)
+  const [reportRange, setReportRange] = useState({ date_from: '', date_to: '', company_id: '' })
   const [dashboard, setDashboard] = useState<{ month_sales?: { total_covered: number; patient_paid: number; invoice_count: number } } | null>(null)
   const [editCompany, setEditCompany] = useState<Partial<InsuranceCompany> | null>(null)
   const [editCompanyId, setEditCompanyId] = useState<number | null>(null)
@@ -50,7 +56,8 @@ export default function Insurance() {
     if (hasFeatureOption('insurance', 'dashboard')) {
       insuranceAPI.dashboard().then((r) => setDashboard(r.data)).catch(() => setDashboard(null))
     }
-  }, [canClaims, hasFeatureOption])
+    if (canTemplates) insuranceAPI.templates().then((r) => setTemplates(r.data)).catch(() => setTemplates([]))
+  }, [canClaims, canTemplates, hasFeatureOption])
 
   useEffect(() => { load() }, [load])
 
@@ -116,8 +123,18 @@ export default function Insurance() {
     { id: 'companies', label: t('insurance.tab_companies'), Icon: Shield },
     { id: 'plans', label: t('insurance.tab_plans'), Icon: FileText },
     ...(canClaims ? [{ id: 'claims' as Tab, label: t('insurance.tab_claims'), Icon: FileText }] : []),
+    ...(canReports ? [{ id: 'reports' as Tab, label: t('insurance.tab_reports'), Icon: BarChart3 }] : []),
+    ...(canTemplates ? [{ id: 'templates' as Tab, label: t('insurance.tab_templates'), Icon: FileText }] : []),
     { id: 'dashboard', label: t('insurance.tab_dashboard'), Icon: BarChart3 },
   ]
+
+  const loadSalesReport = () => {
+    insuranceAPI.salesReport({
+      date_from: reportRange.date_from || undefined,
+      date_to: reportRange.date_to || undefined,
+      company_id: reportRange.company_id ? Number(reportRange.company_id) : undefined,
+    }).then((r) => setSalesReport(r.data)).catch(() => setSalesReport(null))
+  }
 
   return (
     <Layout>
@@ -258,10 +275,18 @@ export default function Insurance() {
                       <td className="px-4 py-2 text-end font-mono">{Number(cl.net_claim_amount).toFixed(2)}</td>
                       <td className="px-4 py-2 text-center">{cl.status}</td>
                       <td className="px-4 py-2 text-end">
-                        {hasFeatureOption('insurance', 'claims_export') && (
-                          <button onClick={() => downloadApiExcel(`/insurance/claims/${cl.id}/export`, `claim-${cl.claim_number}.xlsx`)}
-                            className="text-xs text-pharma-600 hover:underline">{t('insurance.export')}</button>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                          {hasFeatureOption('insurance', 'claims_export') && (
+                            <>
+                              <button onClick={() => downloadApiExcel(`/insurance/claims/${cl.id}/export`, `claim-${cl.claim_number}.xlsx`)}
+                                className="text-xs text-pharma-600 hover:underline">{t('insurance.export')} Excel</button>
+                              <button onClick={() => downloadApiPdf(`/insurance/claims/${cl.id}/pdf`, `claim-${cl.claim_number}.pdf`)}
+                                className="text-xs text-pharma-600 hover:underline">{t('insurance.export')} PDF</button>
+                              <button onClick={() => downloadApiPdf(`/insurance/claims/${cl.id}/payment-request/pdf`, `payment-${cl.claim_number}.pdf`)}
+                                className="text-xs text-sky-600 hover:underline">{t('insurance.payment_request')}</button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -285,6 +310,58 @@ export default function Insurance() {
               <p className="text-xs text-slate-500 uppercase">{t('insurance.patient_paid')}</p>
               <p className="text-2xl font-bold">{(dashboard.month_sales?.patient_paid ?? 0).toFixed(2)}</p>
             </div>
+          </div>
+        )}
+
+        {tab === 'reports' && canReports && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border p-4 flex flex-wrap gap-2 items-end">
+              <input type="date" value={reportRange.date_from} onChange={(e) => setReportRange((r) => ({ ...r, date_from: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+              <input type="date" value={reportRange.date_to} onChange={(e) => setReportRange((r) => ({ ...r, date_to: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+              <select value={reportRange.company_id} onChange={(e) => setReportRange((r) => ({ ...r, company_id: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm">
+                <option value="">{t('insurance.all_companies')}</option>
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+              </select>
+              <button onClick={loadSalesReport} className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm">{t('insurance.run_report')}</button>
+              <button onClick={() => downloadApiExcel('/insurance/reports/sales/export', 'insurance-sales.xlsx', reportRange)} className="border px-4 py-2 rounded-lg text-sm">{t('insurance.export')} Excel</button>
+            </div>
+            {salesReport?.summary && (
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white rounded-xl border p-4"><p className="text-xs text-slate-500">{t('insurance.invoices')}</p><p className="text-xl font-bold">{salesReport.summary.count}</p></div>
+                <div className="bg-white rounded-xl border p-4"><p className="text-xs text-slate-500">{t('insurance.covered')}</p><p className="text-xl font-bold text-sky-700">{salesReport.summary.covered.toFixed(2)}</p></div>
+                <div className="bg-white rounded-xl border p-4"><p className="text-xs text-slate-500">{t('insurance.patient_paid')}</p><p className="text-xl font-bold">{salesReport.summary.patient_paid.toFixed(2)}</p></div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === 'templates' && canTemplates && (
+          <div className="bg-white rounded-xl border overflow-hidden">
+            <div className="p-4 border-b flex justify-between">
+              <p className="text-sm text-slate-600">{t('insurance.templates_hint')}</p>
+              {canManage && (
+                <button onClick={() => insuranceAPI.createTemplate({ template_type: 'insurance_receipt', name: 'Default Receipt', language: 'bilingual', is_default: true }).then(() => load())}
+                  className="text-sm bg-pharma-600 text-white px-3 py-1.5 rounded-lg">{t('insurance.add_template')}</button>
+              )}
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_name')}</th>
+                  <th className="px-4 py-2 text-start">{t('insurance.template_type')}</th>
+                  <th className="px-4 py-2 text-center">{t('insurance.col_status')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((tm) => (
+                  <tr key={tm.id} className="border-t">
+                    <td className="px-4 py-2">{tm.name}{tm.is_default ? ' ★' : ''}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{tm.template_type}</td>
+                    <td className="px-4 py-2 text-center">{tm.language}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 

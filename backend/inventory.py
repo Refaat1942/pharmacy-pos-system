@@ -216,13 +216,16 @@ class ProductUpdate(BaseModel):
     pack_size: Optional[int] = None
     sub_unit: Optional[str] = None
     sub_price: Optional[float] = None
+    origin_type: Optional[str] = None
+    medication_type: Optional[str] = None
+    is_service: Optional[bool] = None
 
 
 
 
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
-                         "pack_size", "sub_unit", "sub_price"}
+                         "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type", "is_service"}
 
 
 @router.put("/products/{product_id}")

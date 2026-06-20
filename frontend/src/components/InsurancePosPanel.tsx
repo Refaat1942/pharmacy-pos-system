@@ -42,6 +42,27 @@ export default function InsurancePosPanel({
   }, [])
 
   useEffect(() => {
+    if (!selectedCustomer?.id) return
+    insuranceAPI.profiles(selectedCustomer.id).then((r) => {
+      const primary = (r.data as Array<{ is_primary?: boolean; company_id: number; plan_id?: number; insurance_card_number?: string; membership_number?: string; policy_number?: string; national_id?: string; approval_number?: string }>)
+        .find((p) => p.is_primary) || r.data[0]
+      if (!primary) return
+      setCompanyId(primary.company_id)
+      if (primary.plan_id) setPlanId(primary.plan_id)
+      setPatientFields((f) => ({
+        ...f,
+        patient_name: selectedCustomer.name || f.patient_name,
+        mobile_number: selectedCustomer.phone || f.mobile_number,
+        insurance_card_number: primary.insurance_card_number || f.insurance_card_number,
+        membership_number: primary.membership_number || f.membership_number,
+        policy_number: primary.policy_number || f.policy_number,
+        national_id: primary.national_id || f.national_id,
+        approval_number: primary.approval_number || f.approval_number,
+      }))
+    }).catch(() => {})
+  }, [selectedCustomer?.id, selectedCustomer?.name, selectedCustomer?.phone])
+
+  useEffect(() => {
     if (!companyId) {
       setPlans([])
       setPlanId('')

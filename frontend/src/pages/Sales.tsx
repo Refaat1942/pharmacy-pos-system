@@ -773,6 +773,20 @@ export default function Sales() {
                   )}
                 </div>
               </div>
+              {inv.type === 'insurance' && inv.insurance_totals && (
+                <div className="bg-sky-50 border border-sky-100 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-sky-700 uppercase mb-2">{t('insurance.pos_panel')}</p>
+                  {(inv.insurance_snapshot as Record<string, string> | null)?.company_name_en && (
+                    <DetailRow label={t('insurance.col_company')} value={(inv.insurance_snapshot as Record<string, string>).company_name_en} />
+                  )}
+                  {(inv.insurance_snapshot as Record<string, string> | null)?.plan_name_en && (
+                    <DetailRow label={t('insurance.select_plan')} value={(inv.insurance_snapshot as Record<string, string>).plan_name_en} />
+                  )}
+                  <DetailRow label={t('insurance.covered')} value={Number(inv.insurance_totals.insurance_covered || 0).toFixed(2)} />
+                  <DetailRow label={t('insurance.patient_share')} value={Number(inv.insurance_totals.patient_share || 0).toFixed(2)} />
+                  <DetailRow label={t('insurance.final_due')} value={Number(inv.insurance_totals.final_patient_paid || inv.net_total || 0).toFixed(2)} />
+                </div>
+              )}
               {(inv.type === 'delivery' || inv.delivery_address || inv.delivery_person_name) && (
                 <div className="bg-teal-50 border border-teal-100 rounded-xl p-4">
                   <p className="text-[10px] font-bold text-teal-700 uppercase mb-2">{t('sales.delivery')}</p>

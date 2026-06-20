@@ -881,6 +881,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     pack_size: item?.pack_size?.toString() || '1',
     sub_unit: item?.sub_unit || '',
     sub_price: item?.sub_price != null ? String(item.sub_price) : '',
+    origin_type: (item as Product & { origin_type?: string })?.origin_type || 'local',
+    medication_type: (item as Product & { medication_type?: string })?.medication_type || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -918,6 +920,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         sub_price: packSize > 1
           ? (f.sub_price ? parseFloat(f.sub_price) : Math.round((priceNum / packSize) * 100) / 100)
           : null,
+        origin_type: f.origin_type || 'local',
+        medication_type: f.medication_type || null,
       }
       if (item) {
         if (f.stock.trim()) {
@@ -977,6 +981,19 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                   <option key={c} value={t(`inventory.cat_${c}`, c) as string} />
                 ))}
               </datalist>
+            </Field>
+            <Field label={t('inventory.f_origin_type')}>
+              <select value={f.origin_type} onChange={e => setF({ ...f, origin_type: e.target.value })} className="input">
+                <option value="local">{t('inventory.origin_local')}</option>
+                <option value="imported">{t('inventory.origin_imported')}</option>
+              </select>
+            </Field>
+            <Field label={t('inventory.f_medication_type')}>
+              <select value={f.medication_type} onChange={e => setF({ ...f, medication_type: e.target.value })} className="input">
+                <option value="">{t('common.all')}</option>
+                <option value="acute">{t('inventory.med_acute')}</option>
+                <option value="chronic">{t('inventory.med_chronic')}</option>
+              </select>
             </Field>
             <Field label={t('inventory.f_barcode')}>
               <div className="flex gap-2">

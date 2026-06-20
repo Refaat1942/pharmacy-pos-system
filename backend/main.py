@@ -472,6 +472,9 @@ class ProductCreate(BaseModel):
     pack_size: Optional[int] = 1
     sub_unit: Optional[str] = None
     sub_price: Optional[float] = None
+    origin_type: Optional[str] = "local"
+    medication_type: Optional[str] = None
+    is_service: Optional[bool] = False
 
 
 @app.post("/api/products")
@@ -486,11 +489,12 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
             from inventory import _next_material_barcode
             barcode = _next_material_barcode(cur)
         cur.execute(
-            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, is_service)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
              req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
-             branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price),
+             branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price,
+             (req.origin_type or "local"), req.medication_type, bool(req.is_service)),
         )
         product = cur.fetchone()
         if req.stock and req.stock > 0:
