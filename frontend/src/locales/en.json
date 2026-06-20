@@ -954,6 +954,7 @@
     "upload_processing": "Importing items…",
     "upload_items": "items",
     "upload_large_hint": "Large files (10,000+ rows) can take 30–90 minutes. Keep this window open — progress updates every few seconds.",
+    "merged_duplicates": "{{count}} duplicate rows merged (highest price kept)",
     "excel_help_optional_ar": "Name (Arabic) is optional. Your supplier file (Code, Material Name, Stock, Unit, …) works as-is.",
     "imported": "imported",
     "updated_count": "updated",

@@ -1380,16 +1380,50 @@ def _clean_cell_str(val) -> str:
 
 def _clean_barcode(val) -> Optional[str]:
     s = _clean_cell_str(val)
+    if not s:
+        return None
+    # Excel sometimes stores long codes as scientific notation strings
+    if re.fullmatch(r"\d+\.?\d*[eE][+\-]?\d+", s):
+        try:
+            s = str(int(float(s)))
+        except (ValueError, OverflowError):
+            pass
     return s or None
 
 
-def _normalize_bulk_key(barcode, intl_barcode, name_en):
+def _digits_only_barcode(val) -> Optional[str]:
+    s = _clean_barcode(val)
+    if not s:
+        return None
+    digits = re.sub(r"\D", "", s)
+    return digits or None
+
+
+def _barcode_merge_key(barcode) -> Optional[str]:
     bc = _clean_barcode(barcode)
+    if not bc:
+        return None
+    digits = _digits_only_barcode(bc)
+    if digits and len(digits) >= 4:
+        return f"bc:{digits.lstrip('0') or '0'}"
+    return f"bc:{bc.lower()}"
+
+
+def _intl_merge_key(intl_barcode) -> Optional[str]:
+    digits = _digits_only_barcode(intl_barcode)
+    if digits and len(digits) >= 8:
+        return f"intl:{digits.lstrip('0') or '0'}"
     ib = _clean_barcode(intl_barcode)
-    if bc:
-        return f"bc:{bc.lower()}"
-    if ib:
-        return f"intl:{ib}"
+    return f"intl:{ib}" if ib else None
+
+
+def _normalize_bulk_key(barcode, intl_barcode, name_en):
+    bc_key = _barcode_merge_key(barcode)
+    if bc_key:
+        return bc_key
+    ib_key = _intl_merge_key(intl_barcode)
+    if ib_key:
+        return ib_key
     return f"name:{re.sub(r'\s+', ' ', str(name_en).strip().lower())}"
 
 
@@ -1563,43 +1597,78 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
     }
 
 
-def _merge_bulk_rows(rows: list) -> list:
-    """Combine duplicate codes/names in one upload — keep highest price row."""
-    merged = {}
-    order = []
+def _combine_bulk_duplicate_rows(rows: list) -> dict:
+    """Merge rows sharing a code/intl/name — highest sales price wins for item fields."""
+    if len(rows) == 1:
+        return {**rows[0], "source_rows": [rows[0]["source_idx"]]}
+
+    best_idx = 0
+    for i, row in enumerate(rows):
+        if float(row["price"] or 0) > float(rows[best_idx]["price"] or 0):
+            best_idx = i
+
+    merged = {**rows[best_idx]}
+    merged["source_rows"] = []
+    merged["stock"] = 0
+    merged["qty_provided"] = False
+    merged["min_stock"] = 0
+    merged["cost"] = None
+
     for row in rows:
-        key = _normalize_bulk_key(row["barcode"], row["intl_barcode"], row["name_en"])
-        if key not in merged:
-            merged[key] = {**row, "source_rows": [row["source_idx"]]}
-            order.append(key)
-            continue
-        cur = merged[key]
-        cur["source_rows"].append(row["source_idx"])
-        if row["price"] >= cur["price"]:
-            cur["price"] = row["price"]
-            cur["cost"] = max(row["cost"] or 0, cur["cost"] or 0) or row["cost"] or cur["cost"]
-            cur["name_en"] = row["name_en"]
-            cur["name_ar"] = row["name_ar"]
-            cur["unit"] = row["unit"]
-            cur["pack_size"] = row["pack_size"]
-            cur["sub_unit"] = row["sub_unit"]
-            cur["sub_price"] = row["sub_price"]
-        else:
-            cur["cost"] = max(row["cost"] or 0, cur["cost"] or 0) or cur["cost"]
+        merged["source_rows"].append(row["source_idx"])
         if row["qty_provided"]:
-            if cur["qty_provided"]:
-                cur["stock"] += row["stock"]
-            else:
-                cur["stock"] = row["stock"]
-                cur["qty_provided"] = True
-        if not cur["intl_barcode"] and row["intl_barcode"]:
-            cur["intl_barcode"] = row["intl_barcode"]
-        if not cur["category"] and row["category"]:
-            cur["category"] = row["category"]
-        if not cur["expiry_date"] and row["expiry_date"]:
-            cur["expiry_date"] = row["expiry_date"]
-        cur["min_stock"] = max(cur["min_stock"], row["min_stock"])
-    return [merged[k] for k in order]
+            merged["stock"] += int(row["stock"])
+            merged["qty_provided"] = True
+        merged["min_stock"] = max(int(merged["min_stock"]), int(row["min_stock"]))
+        merged["cost"] = max(
+            float(merged["cost"] or 0),
+            float(row["cost"] or 0),
+        ) or merged["cost"] or row["cost"]
+        if not merged.get("intl_barcode") and row.get("intl_barcode"):
+            merged["intl_barcode"] = row["intl_barcode"]
+        if not merged.get("category") and row.get("category"):
+            merged["category"] = row["category"]
+        if not merged.get("expiry_date") and row.get("expiry_date"):
+            merged["expiry_date"] = row["expiry_date"]
+        if not merged.get("barcode") and row.get("barcode"):
+            merged["barcode"] = row["barcode"]
+
+    if merged["cost"] == 0:
+        merged["cost"] = None
+    return merged
+
+
+def _merge_bulk_rows(rows: list) -> list:
+    """Combine duplicate codes/intl barcodes in one upload — keep highest price row."""
+    by_code: dict = {}
+    code_order: list = []
+    for row in rows:
+        key = _barcode_merge_key(row["barcode"]) or _intl_merge_key(row["intl_barcode"])
+        if not key:
+            key = _normalize_bulk_key(None, None, row["name_en"])
+        if key not in by_code:
+            by_code[key] = []
+            code_order.append(key)
+        by_code[key].append(row)
+
+    pass1 = [_combine_bulk_duplicate_rows(by_code[k]) for k in code_order]
+
+    # Second pass: rows with different internal codes but same international barcode → one item
+    by_intl: dict = {}
+    intl_order: list = []
+    no_intl: list = []
+    for row in pass1:
+        ik = _intl_merge_key(row.get("intl_barcode"))
+        if not ik:
+            no_intl.append(row)
+            continue
+        if ik not in by_intl:
+            by_intl[ik] = []
+            intl_order.append(ik)
+        by_intl[ik].append(row)
+
+    pass2 = [_combine_bulk_duplicate_rows(by_intl[k]) for k in intl_order]
+    return pass2 + no_intl
 
 
 def _find_existing_product(cur, branch_id, barcode, intl_barcode):
@@ -1705,9 +1774,9 @@ def _load_bulk_rows_from_bytes(content: bytes, filename: str, on_progress=None) 
 def _prefetch_existing_products(cur, branch_id) -> tuple:
     """Load branch products into memory for fast bulk-upload matching."""
     cur.execute(
-        """SELECT id, stock, barcode, international_barcode
+        """SELECT id, stock, barcode, international_barcode, price
            FROM products
-           WHERE branch_id IS NOT DISTINCT FROM %s""",
+           WHERE branch_id IS NOT DISTINCT FROM %s AND active = true""",
         (branch_id,),
     )
     by_barcode: dict = {}
@@ -1716,10 +1785,50 @@ def _prefetch_existing_products(cur, branch_id) -> tuple:
         bc = _clean_barcode(row.get("barcode"))
         ib = _clean_barcode(row.get("international_barcode"))
         if bc:
-            by_barcode[bc.lower()] = row
+            key = _barcode_merge_key(bc) or bc.lower()
+            prev = by_barcode.get(key)
+            if prev is None or float(row.get("price") or 0) >= float(prev.get("price") or 0):
+                by_barcode[key] = row
         if ib:
-            by_intl[ib] = row
+            ikey = _intl_merge_key(ib) or ib
+            prev = by_intl.get(ikey)
+            if prev is None or float(row.get("price") or 0) >= float(prev.get("price") or 0):
+                by_intl[ikey] = row
     return by_barcode, by_intl
+
+
+def _retire_duplicate_products(cur, branch_id, keep_id: int, barcode, intl_barcode):
+    """Deactivate other active branch products with the same code or intl barcode."""
+    if barcode:
+        bc = _clean_barcode(barcode)
+        digits = _digits_only_barcode(bc)
+        if digits and len(digits) >= 4:
+            norm = digits.lstrip("0") or "0"
+            cur.execute(
+                """UPDATE products SET active=false
+                   WHERE branch_id IS NOT DISTINCT FROM %s AND id <> %s AND active = true
+                     AND regexp_replace(COALESCE(barcode, ''), '\\D', '', 'g')
+                         IN (%s, %s)""",
+                (branch_id, keep_id, digits, norm),
+            )
+        elif bc:
+            cur.execute(
+                """UPDATE products SET active=false
+                   WHERE branch_id IS NOT DISTINCT FROM %s AND id <> %s AND active = true
+                     AND lower(barcode) = lower(%s)""",
+                (branch_id, keep_id, bc),
+            )
+    if intl_barcode:
+        digits = _digits_only_barcode(intl_barcode)
+        if digits and len(digits) >= 8:
+            norm = digits.lstrip("0") or "0"
+            cur.execute(
+                """UPDATE products SET active=false
+                   WHERE branch_id IS NOT DISTINCT FROM %s AND id <> %s AND active = true
+                     AND regexp_replace(COALESCE(international_barcode, ''), '\\D', '', 'g')
+                         IN (%s, %s)""",
+                (branch_id, keep_id, digits, norm),
+            )
 
 
 def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, auto_seq: dict,
@@ -1753,21 +1862,27 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
         auto_code_inc = 1
 
     existing = None
-    if barcode:
-        existing = by_barcode.get(barcode.lower())
+    bc_key = _barcode_merge_key(barcode) if barcode else None
+    if bc_key:
+        existing = by_barcode.get(bc_key)
     if not existing and intl_barcode:
-        existing = by_intl.get(intl_barcode)
+        ikey = _intl_merge_key(intl_barcode)
+        existing = by_intl.get(ikey) if ikey else None
 
     if existing:
+        price = max(float(price or 0), float(existing.get("price") or 0))
+        if pack_size > 1 and price:
+            sub_price = round(price / pack_size, 2)
         cur.execute(
             """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
                price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-               sub_price=%s, active=true,
+               sub_price=%s, active=true, barcode=COALESCE(%s, barcode),
                international_barcode=COALESCE(%s, international_barcode)
                WHERE id=%s""",
             (name_en, name_ar, category, unit, price, cost, min_stock,
-             pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
+             pack_size, sub_unit, sub_price, barcode, intl_barcode, existing["id"]),
         )
+        _retire_duplicate_products(cur, branch_id, existing["id"], barcode or existing.get("barcode"), intl_barcode)
         if qty_provided:
             old_q = int(existing["stock"])
             delta = stock - old_q
@@ -1794,6 +1909,13 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
                 "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
                 (expiry_date, existing["id"]),
             )
+        existing["price"] = price
+        if bc_key:
+            by_barcode[bc_key] = existing
+        if intl_barcode:
+            ikey = _intl_merge_key(intl_barcode)
+            if ikey:
+                by_intl[ikey] = existing
         return 0, 1, auto_code_inc, auto_cat_inc
 
     cur.execute(
@@ -1814,11 +1936,16 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
                 reference_type="bulk_upload", reason="Bulk upload",
                 user_id=user_id,
             )
-    cache = {"id": new_id, "stock": stock if qty_provided else 0, "barcode": barcode, "international_barcode": intl_barcode}
-    if barcode:
-        by_barcode[barcode.lower()] = cache
+    cache = {"id": new_id, "stock": stock if qty_provided else 0, "barcode": barcode,
+             "international_barcode": intl_barcode, "price": price}
+    bc_key = _barcode_merge_key(barcode)
+    if bc_key:
+        by_barcode[bc_key] = cache
     if intl_barcode:
-        by_intl[intl_barcode] = cache
+        ikey = _intl_merge_key(intl_barcode)
+        if ikey:
+            by_intl[ikey] = cache
+    _retire_duplicate_products(cur, branch_id, new_id, barcode, intl_barcode)
     return 1, 0, auto_code_inc, auto_cat_inc
 
 
@@ -1827,8 +1954,8 @@ BULK_PROGRESS_EVERY = 25
 
 _BULK_JOB_FIELDS = frozenset({
     "status", "processed", "total", "inserted", "updated", "errors",
-    "auto_codes", "auto_categories", "merged_rows", "message", "error",
-    "error_details", "finished_at",
+    "auto_codes", "auto_categories", "merged_rows", "file_rows", "merged_duplicates",
+    "message", "error", "error_details", "finished_at",
 })
 
 
@@ -1947,9 +2074,14 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
         if job_id and idx % 2000 == 0:
             progress(message=f"Validated row {idx:,}…")
 
-    merged_rows = _merge_bulk_rows(parsed)
-    total = len(merged_rows)
-    progress(total=total, processed=0, message=f"Importing {total:,} items…")
+    merged_rows_list = _merge_bulk_rows(parsed)
+    total = len(merged_rows_list)
+    file_rows = len(parsed)
+    merged_duplicates = max(0, file_rows - total)
+    progress(
+        total=total, processed=0,
+        message=f"Importing {total:,} items ({merged_duplicates:,} duplicate rows merged)…",
+    )
 
     inserted = updated = errors = len(parse_errors)
     error_details = list(parse_errors)
@@ -1962,7 +2094,7 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
         by_barcode, by_intl = _prefetch_existing_products(cur, branch_id)
         auto_seq = {"next": None}
 
-        for n, row in enumerate(merged_rows, start=1):
+        for n, row in enumerate(merged_rows_list, start=1):
             cur.execute("SAVEPOINT row_sp")
             try:
                 ins, upd, ac, cat = _apply_bulk_row(
@@ -1998,6 +2130,8 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
             "auto_codes": auto_codes,
             "auto_categories": auto_categories,
             "merged_rows": total,
+            "file_rows": file_rows,
+            "merged_duplicates": merged_duplicates,
             "error_details": error_details[:50],
         }
     finally:

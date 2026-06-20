@@ -2055,6 +2055,9 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         {result && (
           <div className="p-3 bg-emerald-50 rounded-lg text-emerald-800">
             ✅ {result.inserted} {t('inventory.imported')}, {result.updated} {t('inventory.updated_count')}, {result.errors} {t('inventory.errors')}
+            {(result.merged_duplicates > 0) && (
+              <div className="text-xs mt-1">{t('inventory.merged_duplicates', { count: result.merged_duplicates })}</div>
+            )}
             {(result.auto_codes > 0 || result.auto_categories > 0) && (
               <div className="text-xs mt-1">
                 {result.auto_codes > 0 && <span>{t('inventory.auto_codes', { count: result.auto_codes })} </span>}
