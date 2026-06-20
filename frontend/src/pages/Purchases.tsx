@@ -321,8 +321,8 @@ function CreatePOModal({
   const [branchId, setBranchId] = useState<number | ''>(() => initialPOBranchId(user?.branch_id))
   const [invNum, setInvNum] = useState('')
   const [invDate, setInvDate] = useState('')
-  const [discount, setDiscount] = useState(0)
-  const [tax, setTax] = useState(0)
+  const [invoiceDiscount, setInvoiceDiscount] = useState(0)
+  const [invoiceExtraTax, setInvoiceExtraTax] = useState(0)
   const [notes, setNotes] = useState('')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<any[]>([])
@@ -341,7 +341,10 @@ function CreatePOModal({
     setSearchLoading(true)
     const tm = setTimeout(() => {
       api.get('/inventory/items', { params: { q: search.trim(), branch_id: branchId } })
-        .then((r) => setResults(r.data))
+        .then((r) => {
+          const d = r.data
+          setResults(Array.isArray(d) ? d : (d?.items ?? []))
+        })
         .catch(() => setResults([]))
         .finally(() => setSearchLoading(false))
     }, 250)
@@ -375,7 +378,7 @@ function CreatePOModal({
           bonus_qty: 0,
           unit_cost: p.cost || 0,
           discount_pct: 0,
-          vat_pct: 0,
+          vat_pct: 14,
           public_price: p.price ?? null,
           expiry_date: null,
           expiry_lots: defaultExpiryLots(1),
@@ -394,7 +397,7 @@ function CreatePOModal({
         bonus_qty: 0,
         unit_cost: 0,
         discount_pct: 0,
-        vat_pct: 0,
+        vat_pct: 14,
         public_price: null,
         expiry_date: null,
         expiry_lots: defaultExpiryLots(1),
@@ -435,9 +438,13 @@ function CreatePOModal({
   }
   const remove = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i))
 
-  const lineNet = (i: POItem) => i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100) * (1 + (i.vat_pct || 0) / 100)
-  const subtotal = items.reduce((s, i) => s + lineNet(i), 0)
-  const total = subtotal - discount + tax
+  const lineNet = (i: POItemDraft) =>
+    i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100)
+  const lineVat = (i: POItemDraft) => lineNet(i) * ((i.vat_pct || 0) / 100)
+  const lineGross = (i: POItemDraft) => lineNet(i) + lineVat(i)
+  const subtotalNet = items.reduce((s, i) => s + lineNet(i), 0)
+  const totalVat = items.reduce((s, i) => s + lineVat(i), 0)
+  const total = subtotalNet - invoiceDiscount + totalVat + invoiceExtraTax
 
   const submit = async (receiveImmediately: boolean) => {
     if (!supplierId || !branchId || items.length === 0) { alert(t('purchases.fill_required')); return }
@@ -456,7 +463,9 @@ function CreatePOModal({
         branch_id: Number(branchId),
         supplier_invoice_number: invNum || undefined,
         supplier_invoice_date: invDate || undefined,
-        discount, tax, notes: notes || undefined,
+        discount: invoiceDiscount,
+        tax: totalVat + invoiceExtraTax,
+        notes: notes || undefined,
         receive_immediately: receiveImmediately,
         items: flat.map((i) => ({
           product_id: i.product_id ?? undefined,
@@ -489,31 +498,37 @@ function CreatePOModal({
           <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
             {t('purchases.stock_receive_hint')}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-            <FieldWithHint label={t('purchases.supplier')} hint={t('purchases.hint_supplier') as string}>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input w-full">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.supplier')}</label>
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input w-full mt-1">
                 <option value="">--</option>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-            </FieldWithHint>
-            <FieldWithHint label={t('purchases.branch')} hint={t('purchases.hint_branch') as string}>
-              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input w-full">
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.branch')}</label>
+              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input w-full mt-1">
                 <option value="">--</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>)}
               </select>
-            </FieldWithHint>
-            <FieldWithHint label={t('purchases.invoice_number')} hint={t('purchases.hint_invoice_number') as string}>
-              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input w-full" />
-            </FieldWithHint>
-            <FieldWithHint label={t('purchases.invoice_date')} hint={t('purchases.hint_invoice_date') as string}>
-              <DateInput value={invDate} onChange={setInvDate} className="input w-full" />
-            </FieldWithHint>
-            <FieldWithHint label={t('purchases.discount')} hint={t('purchases.hint_discount') as string}>
-              <input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="input w-full" />
-            </FieldWithHint>
-            <FieldWithHint label={t('purchases.tax')} hint={t('purchases.hint_tax') as string}>
-              <input type="number" step="0.01" value={tax} onChange={(e) => setTax(Number(e.target.value))} className="input w-full" />
-            </FieldWithHint>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_number')}</label>
+              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input w-full mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_date')}</label>
+              <DateInput value={invDate} onChange={setInvDate} className="input w-full mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_discount_egp')}</label>
+              <input type="number" min={0} step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Math.max(0, Number(e.target.value)))} className="input w-full mt-1" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600">{t('purchases.extra_charges_egp')}</label>
+              <input type="number" min={0} step="0.01" value={invoiceExtraTax} onChange={(e) => setInvoiceExtraTax(Math.max(0, Number(e.target.value)))} className="input w-full mt-1" />
+            </div>
           </div>
 
           <div className="border-t pt-3">
@@ -566,43 +581,16 @@ function CreatePOModal({
             )}
             <div className="space-y-2">
               {items.length > 0 && (
-                <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
-                  <div className="col-span-2">
-                    <div>{t('purchases.col_name')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_name')}</div>
-                  </div>
-                  <div className="col-span-2">
-                    <div>{t('purchases.col_barcode')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_barcode')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.qty')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_qty')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.bonus_qty')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_bonus')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.cost')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_cost')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.discount_pct')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_discount')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.vat_pct')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_vat')}</div>
-                  </div>
-                  <div className="col-span-1 text-end">
-                    <div>{t('purchases.public_price')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_public_price')}</div>
-                  </div>
-                  <div className="col-span-2">
-                    <div>{t('purchases.col_expiry')}</div>
-                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_expiry')}</div>
-                  </div>
+                <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-500 font-semibold border-b border-slate-200 pb-1">
+                  <div className="col-span-2">{t('purchases.col_name')}</div>
+                  <div className="col-span-2">{t('purchases.col_barcode')}</div>
+                  <div className="col-span-1 text-end" title={t('purchases.qty_packs_hint') as string}>{t('purchases.qty')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.bonus_qty')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.cost')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.line_total')}</div>
                   <div className="col-span-1" />
                 </div>
               )}
@@ -629,24 +617,27 @@ function CreatePOModal({
                            value={it.vat_pct ?? 0} onChange={(e) => update(i, { vat_pct: Math.max(0, Number(e.target.value)) })} />
                     <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
                            value={it.public_price ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
-                    <div className="col-span-2 text-[10px] text-slate-500 text-end">
-                      {t('purchases.expiry_lots_sum')}: <b className={qtyMismatch ? 'text-red-600' : 'text-slate-800'}>{formatInt(lotSum)}</b>
+                    <div className="col-span-1 text-xs text-end font-semibold text-slate-700 tabular-nums">
+                      {formatMoney(lineGross(it))}
                     </div>
                     <button onClick={() => remove(i)} className="p-1 hover:bg-red-100 rounded text-red-600 col-span-1 justify-self-end">
                       <Trash2 size={14} />
                     </button>
                   </div>
-                  <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-2 space-y-1.5">
+                  <div className="rounded-lg border border-slate-200 bg-white p-2 space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">
                         {t('purchases.expiry_lots_title')}
+                        {' · '}
+                        <span className={qtyMismatch ? 'text-red-600' : 'text-slate-500'}>
+                          {t('purchases.expiry_lots_sum')}: {formatInt(lotSum)} / {formatInt(it.quantity)}
+                        </span>
                       </span>
                       <button type="button" onClick={() => addLot(i)}
                         className="text-[10px] font-medium text-pharma-700 hover:underline inline-flex items-center gap-0.5">
                         <Plus size={12} /> {t('purchases.expiry_lot_add')}
                       </button>
                     </div>
-                    <p className="text-[10px] text-amber-800/90">{t('purchases.expiry_lots_hint')}</p>
                     {it.expiry_lots.map((lot, li) => (
                       <div key={li} className="flex flex-wrap items-center gap-2">
                         <DateInput className="input text-xs flex-1 min-w-[8rem] text-slate-900 font-medium"
@@ -674,9 +665,21 @@ function CreatePOModal({
             </div>
           </div>
 
-          <div className="mt-4 border-t pt-3 text-sm space-y-1 text-end">
-            <div>{t('purchases.subtotal')}: <b>{formatMoney(subtotal)}</b></div>
-            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(total)}</b></div>
+          <div className="mt-4 border-t pt-3 flex flex-col sm:flex-row sm:justify-between gap-4">
+            <p className="text-xs text-slate-500 leading-relaxed max-w-lg">{t('purchases.calc_explanation')}</p>
+            <div className="text-sm space-y-1 text-end min-w-[14rem]">
+              <div>{t('purchases.subtotal_ex_vat')}: <b>{formatMoney(subtotalNet)}</b></div>
+              {invoiceDiscount > 0 && (
+                <div>{t('purchases.invoice_discount_egp')}: <b>-{formatMoney(invoiceDiscount)}</b></div>
+              )}
+              <div>{t('purchases.vat_total')}: <b>{formatMoney(totalVat)}</b></div>
+              {invoiceExtraTax > 0 && (
+                <div>{t('purchases.extra_charges_egp')}: <b>{formatMoney(invoiceExtraTax)}</b></div>
+              )}
+              <div className="text-base border-t border-slate-200 pt-1 mt-1">
+                {t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(total)}</b>
+              </div>
+            </div>
           </div>
         </div>
         <div className="px-5 py-3 border-t flex flex-wrap justify-end gap-2">
@@ -765,11 +768,18 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
               ))}
             </tbody>
           </table>
-          <div className="mt-4 text-sm text-end space-y-1">
-            <div>{t('purchases.subtotal')}: <b>{formatMoney(po.subtotal)}</b></div>
-            <div>{t('purchases.discount')}: <b>{formatMoney(po.discount)}</b></div>
-            <div>{t('purchases.tax')}: <b>{formatMoney(po.tax)}</b></div>
-            <div className="text-base">{t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b></div>
+          <div className="mt-4 flex flex-col sm:flex-row sm:justify-between gap-3 border-t pt-3">
+            <p className="text-xs text-slate-500 max-w-md">{t('purchases.calc_explanation')}</p>
+            <div className="text-sm text-end space-y-1 min-w-[14rem]">
+              <div>{t('purchases.subtotal_ex_vat')}: <b>{formatMoney(po.subtotal)}</b></div>
+              {Number(po.discount) > 0 && (
+                <div>{t('purchases.invoice_discount_egp')}: <b>-{formatMoney(po.discount)}</b></div>
+              )}
+              <div>{t('purchases.vat_total')}: <b>{formatMoney(po.tax)}</b></div>
+              <div className="text-base border-t border-slate-200 pt-1 mt-1">
+                {t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b>
+              </div>
+            </div>
           </div>
         </div>
         <div className="px-5 py-3 border-t flex justify-end gap-2">

@@ -1476,7 +1476,13 @@
     "hint_line_discount": "Invoice: line discount % if shown",
     "hint_line_vat": "Invoice: VAT % on the line if shown",
     "hint_line_public_price": "Invoice: suggested retail / public price if printed",
-    "hint_line_expiry": "Package or invoice line: expiry / batch date"
+    "hint_line_expiry": "Package or invoice line: expiry / batch date",
+    "invoice_discount_egp": "Invoice discount (EGP)",
+    "extra_charges_egp": "Extra charges (EGP)",
+    "subtotal_ex_vat": "Subtotal (ex VAT)",
+    "vat_total": "VAT",
+    "qty_packs_hint": "Quantity in boxes / outer packs (not strips)",
+    "calc_explanation": "Egyptian distributor invoice: unit cost is before discount & VAT. Line total = (qty × cost × (1 − disc%)) × (1 + VAT%). Example: 1 box @ 52, disc 20%, VAT 14% → net 41.60 + VAT 5.82 = 47.42. PO qty adds boxes to stock."
   },
   "customers": {
     "title": "Customers",
@@ -1584,6 +1590,8 @@
   },
   "regions": {
     "select": "-- Select region --",
+    "select_governorate": "Select governorate",
+    "select_region": "Select region",
     "markaz": "City / Markaz",
     "areas": "Areas (Ismailia City)"
   },

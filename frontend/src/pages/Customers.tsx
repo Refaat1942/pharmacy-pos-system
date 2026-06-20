@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet } from 'lucide-react'
 import Layout from '../components/Layout'
-import RegionSelect from '../components/RegionSelect'
+import GovernorateRegionSelect from '../components/GovernorateRegionSelect'
 import CustomerInfoCard from '../components/CustomerInfoCard'
 import CustomerWhatsAppButton from '../components/CustomerWhatsAppButton'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
@@ -427,7 +427,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
           </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_region')}</label>
-            <RegionSelect value={f.region} onChange={(v) => setF({ ...f, region: v })} className="mt-1 w-full" />
+            <GovernorateRegionSelect value={f.region} onChange={(v) => setF({ ...f, region: v })} className="mt-1" />
           </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_address_details')}</label>

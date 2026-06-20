@@ -18,8 +18,24 @@ def _admin_only(user):
         raise HTTPException(status_code=403, detail="Admins only")
 
 
+def _line_net(qty, unit_cost, discount_pct) -> float:
+    """Line amount ex-VAT after line discount (Egyptian distributor invoice)."""
+    return int(qty) * float(unit_cost) * (1 - float(discount_pct or 0) / 100)
+
+
+def _line_vat(net: float, vat_pct) -> float:
+    return net * float(vat_pct or 0) / 100
+
+
+def _line_gross(qty, unit_cost, discount_pct, vat_pct) -> float:
+    net = _line_net(qty, unit_cost, discount_pct)
+    return net + _line_vat(net, vat_pct)
+
+
 def _eff_unit_cost(unit_cost, discount_pct, vat_pct):
-    return float(unit_cost) * (1 - float(discount_pct or 0) / 100) * (1 + float(vat_pct or 0) / 100)
+    """Landed cost per purchased unit (net + VAT), for inventory costing."""
+    u = float(unit_cost) * (1 - float(discount_pct or 0) / 100)
+    return u * (1 + float(vat_pct or 0) / 100)
 
 
 # ─── SUPPLIERS ──────────────────────────────────────────────────────────
@@ -259,9 +275,9 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
         pid = p["id"]
         pack_size = max(1, int(p.get("pack_size") or 1))
 
-    # PO quantity & unit_cost are expressed in the main unit (box). Stock is tracked in
-    # sub-units when pack_size > 1, so convert received boxes → sub-units before adding.
-    stock_qty_sub = stock_qty * pack_size
+    # PO qty is in outer units (box/pac). Internal stock tracks sub-units when pack_size > 1.
+    outer_qty = stock_qty
+    stock_qty_sub = outer_qty * pack_size if pack_size > 1 else outer_qty
     add_batch_stock(cur, pid, branch_id, stock_qty_sub, it["expiry_date"])
     new_stock = sync_product_from_batches(cur, pid)
     sets = ["cost=%s"]
@@ -331,11 +347,14 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                     status_code=400,
                     detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
                 )
-        subtotal = sum(i.quantity * _eff_unit_cost(i.unit_cost, i.discount_pct, i.vat_pct)
-                       for i in req.items)
-        total = subtotal - req.discount + req.tax
+        subtotal_net = sum(_line_net(i.quantity, i.unit_cost, i.discount_pct) for i in req.items)
+        total_vat = sum(
+            _line_vat(_line_net(i.quantity, i.unit_cost, i.discount_pct), i.vat_pct)
+            for i in req.items
+        )
+        total = subtotal_net - req.discount + total_vat + req.tax
         if total < 0:
-            raise HTTPException(status_code=400, detail="Discount cannot exceed subtotal + tax")
+            raise HTTPException(status_code=400, detail="Discount cannot exceed invoice total")
 
         cur.execute("SELECT nextval('purchase_order_seq') AS n")
         seq_n = cur.fetchone()["n"]
@@ -349,7 +368,7 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                VALUES (%s,%s,%s,'draft',%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (po_number, req.supplier_id, req.branch_id,
              req.supplier_invoice_number, req.supplier_invoice_date,
-             subtotal, req.discount, req.tax, total, req.notes,
+             subtotal_net, req.discount, total_vat + req.tax, total, req.notes,
              current_user.get("user_id")),
         )
         po_id = cur.fetchone()["id"]
@@ -374,7 +393,7 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 barcode = barcode or p["barcode"]
             if not pname_en:
                 raise HTTPException(status_code=400, detail="Product name required")
-            line_total = it.quantity * _eff_unit_cost(it.unit_cost, it.discount_pct, it.vat_pct)
+            line_total = _line_gross(it.quantity, it.unit_cost, it.discount_pct, it.vat_pct)
             cur.execute(
                 """INSERT INTO purchase_order_items
                    (po_id, product_id, barcode, product_name_ar, product_name_en,

@@ -7,7 +7,7 @@ import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
 import { formatDateTime } from '../lib/formatDate'
-import RegionSelect from '../components/RegionSelect'
+import GovernorateRegionSelect from '../components/GovernorateRegionSelect'
 import { regionLabel } from '../lib/regions'
 import { exportCSV } from '../lib/csv'
 import i18n from '../lib/i18n'
@@ -245,7 +245,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; 
           </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_region')}</label>
-            <RegionSelect value={(f as any).region} onChange={(v) => setF({ ...f, ...({ region: v } as any) })} className="mt-1 w-full" />
+            <GovernorateRegionSelect value={(f as any).region} onChange={(v) => setF({ ...f, ...({ region: v } as any) })} className="mt-1" />
           </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('suppliers.col_address_details')}</label>

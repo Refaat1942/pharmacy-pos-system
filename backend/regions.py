@@ -1,5 +1,23 @@
-"""Ismailia governorate regions — shared with frontend regions.ts."""
+"""Egypt governorates & regions — shared with frontend regions.ts."""
 from __future__ import annotations
+
+GOVERNORATE_NAMES = {
+    "ismailia": {"en": "Ismailia", "ar": "الإسماعيلية"},
+    "cairo": {"en": "Cairo", "ar": "القاهرة"},
+    "giza": {"en": "Giza", "ar": "الجيزة"},
+    "alexandria": {"en": "Alexandria", "ar": "الإسكندرية"},
+    "sharqia": {"en": "Sharqia", "ar": "الشرقية"},
+    "dakahlia": {"en": "Dakahlia", "ar": "الدقهلية"},
+    "qalyubia": {"en": "Qalyubia", "ar": "القليوبية"},
+    "port_said": {"en": "Port Said", "ar": "بورسعيد"},
+    "suez": {"en": "Suez", "ar": "السويس"},
+    "beheira": {"en": "Beheira", "ar": "البحيرة"},
+    "gharbia": {"en": "Gharbia", "ar": "الغربية"},
+    "monufia": {"en": "Monufia", "ar": "المنوفية"},
+    "kafr_el_sheikh": {"en": "Kafr El Sheikh", "ar": "كفر الشيخ"},
+    "damietta": {"en": "Damietta", "ar": "دمياط"},
+    "other": {"en": "Other Governorate", "ar": "محافظة أخرى"},
+}
 
 REGIONS = [
     {"key": "ismailia_city", "en": "Ismailia City", "ar": "مدينة الإسماعيلية", "group": "markaz"},
@@ -21,6 +39,7 @@ REGIONS = [
     {"key": "second_district", "en": "2nd District", "ar": "الحي الثاني", "group": "area"},
     {"key": "third_district", "en": "3rd District", "ar": "الحي الثالث", "group": "area"},
     {"key": "abtal", "en": "Abtal El Tahrir", "ar": "أبطال التحرير", "group": "area"},
+    {"key": "other", "en": "Other", "ar": "أخرى", "group": "area"},
 ]
 
 REGION_BY_KEY = {r["key"]: r for r in REGIONS}
@@ -33,14 +52,28 @@ for r in REGIONS:
 _MATCH_TERMS.sort(key=lambda x: -len(x[1]))
 
 
+def parse_region_value(value: str | None) -> tuple[str, str]:
+    if not value:
+        return "", ""
+    if ":" in value:
+        governorate, region = value.split(":", 1)
+        return governorate.strip(), region.strip()
+    if value in REGION_BY_KEY:
+        return "ismailia", value
+    return "", value
+
+
 def resolve_region_key(*texts: str | None, customer_region: str | None = None) -> str:
     """Map free-text address or customer.region to a region key."""
-    if customer_region and customer_region in REGION_BY_KEY:
-        return customer_region
     if customer_region:
-        cr = customer_region.strip().lower()
+        cr = customer_region.strip()
+        if ":" in cr:
+            return cr
+        if cr in REGION_BY_KEY:
+            return cr
+        cr_lower = cr.lower()
         for key, term in _MATCH_TERMS:
-            if cr == term.lower() or cr == key:
+            if cr_lower == term.lower() or cr_lower == key:
                 return key
     combined = " ".join(t for t in texts if t).strip()
     if not combined:
@@ -55,7 +88,16 @@ def resolve_region_key(*texts: str | None, customer_region: str | None = None) -
 def region_display(key: str, lang: str = "en") -> str:
     if key == "unknown":
         return "Unknown / Other" if lang == "en" else "غير محدد / أخرى"
-    r = REGION_BY_KEY.get(key)
-    if not r:
-        return key
-    return r["ar"] if lang == "ar" else r["en"]
+    governorate, region = parse_region_value(key)
+    gov = GOVERNORATE_NAMES.get(governorate)
+    reg = REGION_BY_KEY.get(region) or REGION_BY_KEY.get(key)
+    if gov and reg:
+        gname = gov["ar"] if lang == "ar" else gov["en"]
+        rname = reg["ar"] if lang == "ar" else reg["en"]
+        return f"{gname} — {rname}"
+    if reg:
+        return reg["ar"] if lang == "ar" else reg["en"]
+    if gov:
+        gname = gov["ar"] if lang == "ar" else gov["en"]
+        return f"{gname} — {region}" if region else gname
+    return key

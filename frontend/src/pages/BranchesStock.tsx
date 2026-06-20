@@ -13,6 +13,7 @@ import {
   looksLikeMultiInput,
   parseSearchTerms,
 } from '../lib/branchStockPick'
+import { formatDecimalBoxes, formatMajorSubLabel } from '../lib/packStock'
 import i18n from '../lib/i18n'
 
 const fmtInt = (n: number) =>
@@ -26,6 +27,8 @@ type Row = {
   name_ar: string
   category: string | null
   unit: string
+  sub_unit?: string | null
+  pack_size?: number | null
   total_stock: number
   total_min: number
   branches: {
@@ -67,6 +70,40 @@ function stockStatus(stock: number, min: number, missing: boolean) {
   if (stock <= 0) return 'out' as const
   if (stock <= min) return 'low' as const
   return 'ok' as const
+}
+
+function StockCell({
+  stock,
+  min,
+  missing,
+  row,
+}: {
+  stock: number
+  min: number
+  missing: boolean
+  row: Pick<Row, 'pack_size' | 'unit' | 'sub_unit'>
+}) {
+  const pack = row.pack_size && row.pack_size > 1 ? row.pack_size : 1
+  const st = stockStatus(stock, min, missing)
+  const cls =
+    st === 'out'
+      ? 'text-red-600 font-bold'
+      : st === 'low'
+        ? 'text-amber-600 font-semibold'
+        : st === 'missing'
+          ? 'text-slate-300'
+          : 'text-slate-800'
+  const main = missing ? '—' : pack > 1 ? formatDecimalBoxes(stock, pack) : fmtInt(stock)
+  const sub =
+    !missing && pack > 1
+      ? formatMajorSubLabel(stock, pack, row.unit, row.sub_unit)
+      : null
+  return (
+    <div className={`font-mono text-base ${cls}`}>
+      <div>{main}</div>
+      {sub && <div className="text-[10px] font-normal text-slate-500 mt-0.5">{sub}</div>}
+    </div>
+  )
 }
 
 export default function BranchesStock() {
@@ -570,21 +607,13 @@ export default function BranchesStock() {
                           const min = cell?.min_stock ?? 0
                           const missing = cell?.product_id == null
                           const st = stockStatus(stock, min, missing)
-                          const cls =
-                            st === 'out'
-                              ? 'text-red-600 font-bold'
-                              : st === 'low'
-                                ? 'text-amber-600 font-semibold'
-                                : st === 'missing'
-                                  ? 'text-slate-300'
-                                  : 'text-slate-800'
                           return (
                             <>
-                              <td className={`px-3 py-3 text-center font-mono text-base ${cls}`}>
-                                {missing ? '—' : stock}
+                              <td className="px-3 py-3 text-center">
+                                <StockCell stock={stock} min={min} missing={missing} row={row} />
                               </td>
                               <td className="px-3 py-3 text-center font-mono text-xs text-slate-500">
-                                {missing ? '—' : min}
+                                {missing ? '—' : (row.pack_size && row.pack_size > 1 ? formatDecimalBoxes(min, row.pack_size) : fmtInt(min))}
                               </td>
                               <td className="px-3 py-3 text-center">{statusBadge(st)}</td>
                             </>
@@ -598,30 +627,27 @@ export default function BranchesStock() {
                             const min = cell?.min_stock ?? 0
                             const missing = cell?.product_id == null
                             const st = stockStatus(stock, min, missing)
-                            const cls =
-                              st === 'out'
-                                ? 'text-red-600 font-bold bg-red-50/50'
-                                : st === 'low'
-                                  ? 'text-amber-600 font-semibold bg-amber-50/40'
-                                  : st === 'missing'
-                                    ? 'text-slate-300'
-                                    : 'text-slate-700'
                             return (
                               <td
                                 key={b.id}
-                                className={`px-3 py-3 text-center font-mono tabular-nums ${cls}`}
+                                className="px-3 py-3 text-center"
                                 title={
                                   missing
                                     ? undefined
-                                    : `${t('inventory.bs_min')}: ${min}`
+                                    : `${t('inventory.bs_min')}: ${row.pack_size && row.pack_size > 1 ? formatDecimalBoxes(min, row.pack_size) : min}`
                                 }
                               >
-                                {missing ? '—' : stock}
+                                <StockCell stock={stock} min={min} missing={missing} row={row} />
                               </td>
                             )
                           })}
-                          <td className="px-3 py-3 text-center font-mono font-bold tabular-nums bg-pharma-50/50 text-pharma-800">
-                            {row.total_stock}
+                          <td className="px-3 py-3 text-center bg-pharma-50/50">
+                            <StockCell
+                              stock={row.total_stock}
+                              min={row.total_min}
+                              missing={false}
+                              row={row}
+                            />
                           </td>
                         </>
                       )}
