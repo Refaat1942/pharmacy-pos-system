@@ -24,6 +24,7 @@ export default function UserCards() {
   const { user, isAuthenticated } = useAuth()
   const [rows, setRows] = useState<UserRow[]>([])
   const [profile, setProfile] = useState<{ name_en?: string; name_ar?: string } | null>(null)
+  const [printOnly, setPrintOnly] = useState<number | null>(null)
   const printed = useRef(false)
 
   useEffect(() => {
@@ -50,15 +51,24 @@ export default function UserCards() {
     }
   }, [rows])
 
+  const printCard = (id: number) => {
+    setPrintOnly(id)
+    setTimeout(() => {
+      window.print()
+      setTimeout(() => setPrintOnly(null), 200)
+    }, 60)
+  }
+
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (user?.role !== 'admin') {
     return <div className="p-10 text-center text-slate-500">{t('settings.admin_only')}</div>
   }
 
-  const pharmaName = (i18n.language === 'ar' ? profile?.name_ar : profile?.name_en) || 'Fratelanza'
+  const pharmaName = (i18n.language === 'ar' ? profile?.name_ar : profile?.name_en)
+    || profile?.name_en || profile?.name_ar || t('app.brand', 'Pharmacy')
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6 print:bg-white print:p-0">
+    <div className={`min-h-screen bg-slate-100 p-6 print:bg-white print:p-0 ${printOnly != null ? 'print-single' : ''}`}>
       <style>{`
         .cards-grid {
           display: grid;
@@ -70,13 +80,15 @@ export default function UserCards() {
           .no-print { display: none !important; }
           .cards-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
           .id-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; }
+          .print-single .id-card.print-target { }
+          .print-single .id-card:not(.print-target) { display: none !important; }
         }
       `}</style>
 
       <div className="no-print max-w-4xl mx-auto mb-5 flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-800">{t('settings.login_cards')}</h1>
         <button onClick={() => window.print()} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
-          <Printer size={16} /> {t('common.print')}
+          <Printer size={16} /> {t('settings.print_all', 'Print all')}
         </button>
       </div>
 
@@ -90,12 +102,15 @@ export default function UserCards() {
           return (
             <IdCard
               key={u.id}
+              isPrintTarget={printOnly === u.id}
               name={name}
               pharmaName={pharmaName}
               role={t(`settings.role_${u.role}`, u.role)}
               branch={branch}
               code={u.card_code!}
               scanLabel={t('settings.scan_to_unlock')}
+              onPrint={() => printCard(u.id)}
+              printLabel={t('common.print')}
             />
           )
         })}
@@ -104,11 +119,19 @@ export default function UserCards() {
   )
 }
 
-function IdCard({ name, pharmaName, role, branch, code, scanLabel }: {
+function IdCard({ name, pharmaName, role, branch, code, scanLabel, isPrintTarget, onPrint, printLabel }: {
   name: string; pharmaName: string; role: string; branch?: string; code: string; scanLabel: string
+  isPrintTarget?: boolean; onPrint?: () => void; printLabel?: string
 }) {
   return (
-    <div className="id-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+    <div className={`id-card relative bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm ${isPrintTarget ? 'print-target' : ''}`}>
+      <button
+        onClick={onPrint}
+        title={printLabel}
+        className="no-print absolute top-1.5 end-1.5 z-10 p-1.5 rounded-lg bg-white/90 border border-slate-200 text-slate-500 hover:text-pharma-600 hover:border-pharma-300 shadow-sm"
+      >
+        <Printer size={14} />
+      </button>
       <div className="bg-pharma-600 text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-center">
         {pharmaName}
       </div>

@@ -721,6 +721,7 @@
     "is_delivery": "Delivery driver (POS list)",
     "is_delivery_hint": "Shows this person in the delivery-person dropdown when completing delivery sales.",
     "login_cards": "Print login cards",
+    "print_all": "Print all",
     "no_cards": "No active users with a card code",
     "scan_to_unlock": "Scan to unlock terminal",
     "manual_tab": "User manual",
