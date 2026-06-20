@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, requires_feature
+from tenant_ctx import get_current_schema
 from stock_batches import (
     add_batch_stock,
     deduct_stock_fefo,
@@ -1662,7 +1663,7 @@ def bulk_template(current_user=Depends(get_current_user)):
     )
 
 
-def _load_bulk_rows_from_bytes(content: bytes, filename: str) -> list:
+def _load_bulk_rows_from_bytes(content: bytes, filename: str, on_progress=None) -> list:
     """Parse Excel/CSV bytes into normalized header-keyed row dicts."""
     from openpyxl import load_workbook
 
@@ -1672,7 +1673,10 @@ def _load_bulk_rows_from_bytes(content: bytes, filename: str) -> list:
         import csv
         text = content.decode("utf-8-sig", errors="replace")
         reader = csv.DictReader(io.StringIO(text))
-        raw_rows = list(reader)
+        for i, row in enumerate(reader, start=1):
+            raw_rows.append(row)
+            if on_progress and i % 2000 == 0:
+                on_progress(message=f"Reading row {i:,}…")
     else:
         wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         try:
@@ -1683,11 +1687,15 @@ def _load_bulk_rows_from_bytes(content: bytes, filename: str) -> list:
             headers = [str(c).strip().lower() if c is not None else "" for c in header_row]
             if not any(headers):
                 raise ValueError("First row must contain column headers")
+            count = 0
             for r in ws.iter_rows(min_row=2, values_only=True):
                 if not any(v not in (None, "") for v in r):
                     continue
                 row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
                 raw_rows.append(row)
+                count += 1
+                if on_progress and count % 2000 == 0:
+                    on_progress(message=f"Reading row {count:,}…")
         finally:
             wb.close()
     return [{(str(k).strip().lower() if k is not None else ""): v for k, v in row.items()}
@@ -1714,7 +1722,8 @@ def _prefetch_existing_products(cur, branch_id) -> tuple:
     return by_barcode, by_intl
 
 
-def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, auto_seq: dict) -> tuple:
+def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, auto_seq: dict,
+                    *, record_movements: bool = True) -> tuple:
     """Insert/update one merged row. Returns (inserted_inc, updated_inc, auto_code_inc, auto_cat_inc)."""
     name_en = row["name_en"]
     name_ar = row["name_ar"]
@@ -1772,7 +1781,7 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
                     add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
                 else:
                     sync_product_from_batches(cur, existing["id"])
-            if delta != 0:
+            if delta != 0 and record_movements:
                 log_movement(
                     cur, existing["id"], branch_id, "adjustment",
                     delta, stock,
@@ -1798,12 +1807,13 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     new_id = new_row["id"]
     if qty_provided and stock > 0:
         add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
-        log_movement(
-            cur, new_id, branch_id, "initial",
-            stock, stock,
-            reference_type="bulk_upload", reason="Bulk upload",
-            user_id=user_id,
-        )
+        if record_movements:
+            log_movement(
+                cur, new_id, branch_id, "initial",
+                stock, stock,
+                reference_type="bulk_upload", reason="Bulk upload",
+                user_id=user_id,
+            )
     cache = {"id": new_id, "stock": stock if qty_provided else 0, "barcode": barcode, "international_barcode": intl_barcode}
     if barcode:
         by_barcode[barcode.lower()] = cache
@@ -1812,7 +1822,8 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     return 1, 0, auto_code_inc, auto_cat_inc
 
 
-BULK_COMMIT_EVERY = 50
+BULK_COMMIT_EVERY = 100
+BULK_PROGRESS_EVERY = 25
 
 _BULK_JOB_FIELDS = frozenset({
     "status", "processed", "total", "inserted", "updated", "errors",
@@ -1828,25 +1839,27 @@ def _ensure_bulk_jobs_table(cur, conn):
     conn.commit()
 
 
-def _bulk_job_create(job_id: str, branch_id, user_id):
-    conn = get_db_connection()
+def _bulk_job_create(job_id: str, branch_id, user_id, schema: Optional[str] = None):
+    conn = get_db_connection(schema=schema)
     try:
         cur = conn.cursor()
         _ensure_bulk_jobs_table(cur, conn)
         cur.execute(
             """INSERT INTO bulk_upload_jobs (id, status, branch_id, user_id, message)
-               VALUES (%s, 'queued', %s, %s, %s)""",
-            (job_id, branch_id, user_id, "Queued…"),
+               VALUES (%s, 'processing', %s, %s, %s)""",
+            (job_id, branch_id, user_id, "Starting import…"),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _bulk_job_update(job_id: str, **fields):
+def _bulk_job_update(job_id: str, schema: Optional[str] = None, conn=None, **fields):
     if not fields:
         return
-    conn = get_db_connection()
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db_connection(schema=schema)
     try:
         cur = conn.cursor()
         sets, vals = [], []
@@ -1869,11 +1882,12 @@ def _bulk_job_update(job_id: str, **fields):
         )
         conn.commit()
     finally:
-        conn.close()
+        if own_conn:
+            conn.close()
 
 
-def _bulk_job_get(job_id: str) -> Optional[dict]:
-    conn = get_db_connection()
+def _bulk_job_get(job_id: str, schema: Optional[str] = None) -> Optional[dict]:
+    conn = get_db_connection(schema=schema)
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute("SELECT * FROM bulk_upload_jobs WHERE id = %s", (job_id,))
@@ -1883,8 +1897,8 @@ def _bulk_job_get(job_id: str) -> Optional[dict]:
         conn.close()
 
 
-def _bulk_job_prune_old():
-    conn = get_db_connection()
+def _bulk_job_prune_old(schema: Optional[str] = None):
+    conn = get_db_connection(schema=schema)
     try:
         cur = conn.cursor()
         cur.execute(
@@ -1899,19 +1913,26 @@ def _bulk_job_prune_old():
         conn.close()
 
 
-def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id, job_id: Optional[str] = None) -> dict:
+def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
+                         job_id: Optional[str] = None, schema: Optional[str] = None) -> dict:
     """Parse and import rows. Updates job_id progress when provided."""
+    job_conn = get_db_connection(schema=schema) if job_id else None
+
     def progress(**kw):
-        if job_id:
-            _bulk_job_update(job_id, **kw)
+        if job_id and job_conn:
+            _bulk_job_update(job_id, schema=schema, conn=job_conn, **kw)
 
     progress(status="processing", message="Reading spreadsheet…")
     try:
-        raw_rows = _load_bulk_rows_from_bytes(content, filename)
+        raw_rows = _load_bulk_rows_from_bytes(
+            content, filename, on_progress=lambda **kw: progress(status="processing", **kw),
+        )
     except Exception as e:
         raise ValueError(f"Could not read upload file: {e}") from e
     if not raw_rows:
         raise ValueError("No data rows found below the header row")
+
+    progress(message=f"Validating {len(raw_rows):,} rows…")
 
     parsed = []
     parse_errors = []
@@ -1923,15 +1944,17 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
             parsed.append(row)
         except Exception as e:
             parse_errors.append(f"Row {idx}: {e}")
+        if job_id and idx % 2000 == 0:
+            progress(message=f"Validated row {idx:,}…")
 
     merged_rows = _merge_bulk_rows(parsed)
     total = len(merged_rows)
-    progress(total=total, processed=0, message=f"Importing {total} items…")
+    progress(total=total, processed=0, message=f"Importing {total:,} items…")
 
     inserted = updated = errors = len(parse_errors)
     error_details = list(parse_errors)
     auto_codes = auto_categories = 0
-    conn = get_db_connection()
+    conn = get_db_connection(schema=schema)
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         from init_db import apply_product_columns
@@ -1944,6 +1967,7 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
             try:
                 ins, upd, ac, cat = _apply_bulk_row(
                     cur, row, branch_id, user_id, by_barcode, by_intl, auto_seq,
+                    record_movements=False,
                 )
                 inserted += ins
                 updated += upd
@@ -1957,13 +1981,13 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
                 error_details.append(f"Rows {','.join(map(str, src))}: {e}")
             if n % BULK_COMMIT_EVERY == 0:
                 conn.commit()
-            if job_id and (n % 10 == 0 or n == total):
+            if job_id and (n % BULK_PROGRESS_EVERY == 0 or n == total):
                 progress(
                     processed=n,
                     inserted=inserted,
                     updated=updated,
                     errors=errors,
-                    message=f"Imported {n} / {total}…",
+                    message=f"Imported {n:,} / {total:,}…",
                 )
 
         conn.commit()
@@ -1981,13 +2005,22 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
             conn.close()
         except Exception:
             pass
+        if job_conn:
+            try:
+                job_conn.close()
+            except Exception:
+                pass
 
 
-def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, user_id):
+def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, user_id,
+                  schema: Optional[str] = None):
     try:
-        result = _execute_bulk_import(content, filename, branch_id, user_id, job_id=job_id)
+        result = _execute_bulk_import(
+            content, filename, branch_id, user_id, job_id=job_id, schema=schema,
+        )
         _bulk_job_update(
             job_id,
+            schema=schema,
             status="done",
             finished_at=datetime.now(timezone.utc).timestamp(),
             message="Import complete",
@@ -1996,6 +2029,7 @@ def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, us
     except Exception as e:
         _bulk_job_update(
             job_id,
+            schema=schema,
             status="failed",
             finished_at=datetime.now(timezone.utc).timestamp(),
             error=str(e),
@@ -2019,17 +2053,18 @@ def bulk_upload(file: UploadFile = File(...),
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
-    _bulk_job_prune_old()
+    schema = get_current_schema() or "public"
+    _bulk_job_prune_old(schema)
     job_id = str(uuid.uuid4())
-    _bulk_job_create(job_id, branch_id, current_user.get("user_id"))
+    _bulk_job_create(job_id, branch_id, current_user.get("user_id"), schema)
 
     thread = threading.Thread(
         target=_run_bulk_job,
-        args=(job_id, content, file.filename or "", branch_id, current_user.get("user_id")),
+        args=(job_id, content, file.filename or "", branch_id, current_user.get("user_id"), schema),
         daemon=True,
     )
     thread.start()
-    return {"job_id": job_id, "status": "queued"}
+    return {"job_id": job_id, "status": "processing"}
 
 
 @router.get("/bulk-upload/status/{job_id}")

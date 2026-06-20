@@ -1974,10 +1974,10 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     try {
       const { data: start } = await api.post('/inventory/bulk-upload', fd, { timeout: 120000 })
       const jobId = start.job_id as string
-      setProgress({ message: t('inventory.upload_queued') as string })
+      setProgress({ message: t('inventory.upload_processing') as string })
 
-      for (let i = 0; i < 600; i++) {
-        await sleep(1500)
+      for (let i = 0; i < 3600; i++) {
+        await sleep(i === 0 ? 500 : 2000)
         let st: any
         try {
           const res = await api.get(`/inventory/bulk-upload/status/${jobId}`)
@@ -2004,7 +2004,6 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
       setError(formatApiError(e, t('inventory.upload_failed') as string))
     } finally {
       setUploading(false)
-      setProgress(null)
     }
   }
 
@@ -2043,13 +2042,14 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           className="w-full p-2 border border-dashed border-slate-300 rounded-lg" />
         {error && <div className="text-red-600 text-sm whitespace-pre-wrap">{error}</div>}
         {uploading && progress && (
-          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900">
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900 space-y-1">
             <div className="font-medium">{progress.message}</div>
             {progress.total != null && progress.total > 0 && (
-              <div className="text-xs mt-1">
-                {progress.processed ?? 0} / {progress.total} {t('inventory.upload_items')}
+              <div className="text-xs">
+                {(progress.processed ?? 0).toLocaleString()} / {progress.total.toLocaleString()} {t('inventory.upload_items')}
               </div>
             )}
+            <div className="text-xs text-sky-700">{t('inventory.upload_large_hint')}</div>
           </div>
         )}
         {result && (
