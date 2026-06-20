@@ -49,8 +49,28 @@ else
 fi
 
 info "Restarting backend service..."
+if [ -f "$APP_DIR/deploy/pharmapos.service" ]; then
+  cp "$APP_DIR/deploy/pharmapos.service" /etc/systemd/system/pharmapos.service
+  systemctl daemon-reload
+fi
+if [ -f "$APP_DIR/deploy/nginx-pharmapos-security.conf" ] && [ -d /etc/nginx/snippets ]; then
+  cp "$APP_DIR/deploy/nginx-pharmapos-security.conf" /etc/nginx/snippets/pharmapos-security.conf
+fi
+NGINX_SITE=/etc/nginx/sites-available/pharmapos
+if [ -f "$NGINX_SITE" ]; then
+  sed -i 's/proxy_read_timeout 90;/proxy_read_timeout 300;/g' "$NGINX_SITE"
+  sed -i 's/proxy_read_timeout 90/proxy_read_timeout 300/g' "$NGINX_SITE"
+  if ! grep -q 'client_max_body_size 50M' "$NGINX_SITE"; then
+    sed -i '/location \/api\//,/proxy_pass/ {
+      /proxy_pass/i\        client_max_body_size 50M;\
+        proxy_connect_timeout 300;\
+        proxy_send_timeout 300;
+    }' "$NGINX_SITE" 2>/dev/null || true
+  fi
+  nginx -t && systemctl reload nginx || echo "WARN: nginx config test failed — check $NGINX_SITE manually"
+fi
 systemctl restart pharmapos
-systemctl reload nginx
+systemctl reload nginx 2>/dev/null || true
 
 echo ""
 echo "✅ Update complete!"

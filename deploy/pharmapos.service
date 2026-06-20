@@ -15,7 +15,8 @@ ExecStart=/opt/pharmapos/venv/bin/gunicorn main:app \
     --bind 127.0.0.1:8000 \
     --access-logfile /var/log/pharmapos/access.log \
     --error-logfile /var/log/pharmapos/error.log \
-    --timeout 60
+    --timeout 300 \
+    --graceful-timeout 60
 Restart=always
 RestartSec=5
 

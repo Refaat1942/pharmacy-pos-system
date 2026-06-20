@@ -1966,7 +1966,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const { data } = await api.post('/inventory/bulk-upload', fd)
+      const { data } = await api.post('/inventory/bulk-upload', fd, { timeout: 300000 })
       setResult(data)
     } catch (e: any) {
       setError(formatApiError(e, t('inventory.upload_failed') as string))

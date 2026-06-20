@@ -1659,39 +1659,25 @@ def bulk_template(current_user=Depends(get_current_user)):
     )
 
 
-@router.post("/bulk-upload")
-async def bulk_upload(file: UploadFile = File(...),
-                      current_user=Depends(get_current_user),
-                      active_branch=Depends(get_active_branch_id)):
-    """Bulk import items from Excel/CSV. Duplicates in the file are merged (highest price wins)."""
+def _load_bulk_rows_from_bytes(content: bytes, filename: str) -> list:
+    """Parse Excel/CSV bytes into normalized header-keyed row dicts."""
     from openpyxl import load_workbook
 
-    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
-    if branch_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Select a specific branch before uploading items (use the branch selector in the top bar).",
-        )
-
-    try:
-        content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
-        name = (file.filename or "").lower()
-
-        raw_rows = []
-        if name.endswith(".csv"):
-            import csv
-            text = content.decode("utf-8-sig", errors="replace")
-            reader = csv.DictReader(io.StringIO(text))
-            raw_rows = list(reader)
-        else:
-            try:
-                wb = load_workbook(io.BytesIO(content), data_only=True)
-            except Exception as e:
-                raise HTTPException(status_code=400, detail=f"Could not read Excel file: {e}") from e
+    name = (filename or "").lower()
+    raw_rows = []
+    if name.endswith(".csv"):
+        import csv
+        text = content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(text))
+        raw_rows = list(reader)
+    else:
+        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        try:
             ws = wb.active
-            headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+            if not header_row:
+                raise HTTPException(status_code=400, detail="First row must contain column headers")
+            headers = [str(c).strip().lower() if c is not None else "" for c in header_row]
             if not any(headers):
                 raise HTTPException(status_code=400, detail="First row must contain column headers")
             for r in ws.iter_rows(min_row=2, values_only=True):
@@ -1699,9 +1685,157 @@ async def bulk_upload(file: UploadFile = File(...),
                     continue
                 row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
                 raw_rows.append(row)
+        finally:
+            wb.close()
+    return [{(str(k).strip().lower() if k is not None else ""): v for k, v in row.items()}
+            for row in raw_rows]
 
-        raw_rows = [{(str(k).strip().lower() if k is not None else ""): v
-                      for k, v in row.items()} for row in raw_rows]
+
+def _prefetch_existing_products(cur, branch_id) -> tuple:
+    """Load branch products into memory for fast bulk-upload matching."""
+    cur.execute(
+        """SELECT id, stock, barcode, international_barcode
+           FROM products
+           WHERE branch_id IS NOT DISTINCT FROM %s""",
+        (branch_id,),
+    )
+    by_barcode: dict = {}
+    by_intl: dict = {}
+    for row in cur.fetchall():
+        bc = _clean_barcode(row.get("barcode"))
+        ib = _clean_barcode(row.get("international_barcode"))
+        if bc:
+            by_barcode[bc.lower()] = row
+        if ib:
+            by_intl[ib] = row
+    return by_barcode, by_intl
+
+
+def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, auto_seq: dict) -> tuple:
+    """Insert/update one merged row. Returns (inserted_inc, updated_inc, auto_code_inc, auto_cat_inc)."""
+    name_en = row["name_en"]
+    name_ar = row["name_ar"]
+    barcode = row["barcode"]
+    intl_barcode = row["intl_barcode"]
+    category = _resolve_bulk_category(row["category"], name_en, name_ar, intl_barcode, online=False)
+    auto_cat_inc = 1 if (not row["category"] and category) else 0
+    unit = row["unit"]
+    price = row["price"]
+    cost = row["cost"]
+    min_stock = row["min_stock"]
+    pack_size = row["pack_size"]
+    sub_unit = row["sub_unit"]
+    sub_price = row["sub_price"]
+    stock = row["stock"]
+    qty_provided = row["qty_provided"]
+    expiry_date = row["expiry_date"]
+    auto_code_inc = 0
+
+    if not barcode:
+        prefix = f"B{branch_id or 0}-"
+        if auto_seq["next"] is None:
+            auto_seq["next"] = int(_next_auto_barcode(cur, branch_id).replace(prefix, ""))
+        code = f"{prefix}{auto_seq['next']:06d}"
+        auto_seq["next"] += 1
+        barcode = code
+        auto_code_inc = 1
+
+    existing = None
+    if barcode:
+        existing = by_barcode.get(barcode.lower())
+    if not existing and intl_barcode:
+        existing = by_intl.get(intl_barcode)
+
+    if existing:
+        cur.execute(
+            """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
+               price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
+               sub_price=%s, active=true,
+               international_barcode=COALESCE(%s, international_barcode)
+               WHERE id=%s""",
+            (name_en, name_ar, category, unit, price, cost, min_stock,
+             pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
+        )
+        if qty_provided:
+            old_q = int(existing["stock"])
+            delta = stock - old_q
+            if delta > 0:
+                add_batch_stock(cur, existing["id"], branch_id, delta, expiry_date)
+            elif delta < 0:
+                deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
+            elif expiry_date is not None:
+                cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
+                if stock > 0:
+                    add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
+                else:
+                    sync_product_from_batches(cur, existing["id"])
+            if delta != 0:
+                log_movement(
+                    cur, existing["id"], branch_id, "adjustment",
+                    delta, stock,
+                    reference_type="bulk_upload", reason="Bulk upload sync",
+                    user_id=user_id,
+                )
+            existing["stock"] = stock
+        elif expiry_date is not None:
+            cur.execute(
+                "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
+                (expiry_date, existing["id"]),
+            )
+        return 0, 1, auto_code_inc, auto_cat_inc
+
+    cur.execute(
+        """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
+           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
+        (barcode, intl_barcode, name_ar, name_en, category, unit,
+         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
+    )
+    new_row = cur.fetchone()
+    new_id = new_row["id"]
+    if qty_provided and stock > 0:
+        add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
+        log_movement(
+            cur, new_id, branch_id, "initial",
+            stock, stock,
+            reference_type="bulk_upload", reason="Bulk upload",
+            user_id=user_id,
+        )
+    cache = {"id": new_id, "stock": stock if qty_provided else 0, "barcode": barcode, "international_barcode": intl_barcode}
+    if barcode:
+        by_barcode[barcode.lower()] = cache
+    if intl_barcode:
+        by_intl[intl_barcode] = cache
+    return 1, 0, auto_code_inc, auto_cat_inc
+
+
+BULK_COMMIT_EVERY = 50
+
+
+@router.post("/bulk-upload")
+def bulk_upload(file: UploadFile = File(...),
+                current_user=Depends(get_current_user),
+                active_branch=Depends(get_active_branch_id)):
+    """Bulk import items from Excel/CSV. Duplicates in the file are merged (highest price wins)."""
+    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+    if branch_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Select a specific branch before uploading items (use the branch selector in the top bar).",
+        )
+
+    conn = None
+    try:
+        content = file.file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        try:
+            raw_rows = _load_bulk_rows_from_bytes(content, file.filename or "")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not read upload file: {e}") from e
 
         if not raw_rows:
             raise HTTPException(status_code=400, detail="No data rows found below the header row")
@@ -1721,104 +1855,33 @@ async def bulk_upload(file: UploadFile = File(...),
 
         inserted = updated = errors = len(parse_errors)
         error_details = list(parse_errors)
-        auto_codes = 0
-        auto_categories = 0
+        auto_codes = auto_categories = 0
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         user_id = current_user.get("user_id")
+        by_barcode, by_intl = _prefetch_existing_products(cur, branch_id)
+        auto_seq = {"next": None}
 
-        for row in merged_rows:
+        for n, row in enumerate(merged_rows, start=1):
             cur.execute("SAVEPOINT row_sp")
             try:
-                name_en = row["name_en"]
-                name_ar = row["name_ar"]
-                barcode = row["barcode"]
-                intl_barcode = row["intl_barcode"]
-                category = _resolve_bulk_category(
-                    row["category"], name_en, name_ar, intl_barcode, online=False,
+                ins, upd, ac, cat = _apply_bulk_row(
+                    cur, row, branch_id, user_id, by_barcode, by_intl, auto_seq,
                 )
-                if not row["category"] and category:
-                    auto_categories += 1
-                unit = row["unit"]
-                price = row["price"]
-                cost = row["cost"]
-                min_stock = row["min_stock"]
-                pack_size = row["pack_size"]
-                sub_unit = row["sub_unit"]
-                sub_price = row["sub_price"]
-                stock = row["stock"]
-                qty_provided = row["qty_provided"]
-                expiry_date = row["expiry_date"]
-
-                if not barcode:
-                    barcode = _next_auto_barcode(cur, branch_id)
-                    auto_codes += 1
-
-                existing = _find_existing_product(cur, branch_id, barcode, intl_barcode)
-
-                if existing:
-                    cur.execute(
-                        """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
-                           price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-                           sub_price=%s, active=true,
-                           international_barcode=COALESCE(%s, international_barcode)
-                           WHERE id=%s""",
-                        (name_en, name_ar, category, unit, price, cost, min_stock,
-                         pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
-                    )
-                    if qty_provided:
-                        old_q = int(existing["stock"])
-                        delta = stock - old_q
-                        if delta > 0:
-                            add_batch_stock(cur, existing["id"], branch_id, delta, expiry_date)
-                        elif delta < 0:
-                            deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
-                        elif expiry_date is not None:
-                            cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
-                            if stock > 0:
-                                add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
-                            else:
-                                sync_product_from_batches(cur, existing["id"])
-                        if delta != 0:
-                            log_movement(
-                                cur, existing["id"], branch_id, "adjustment",
-                                delta, stock,
-                                reference_type="bulk_upload", reason="Bulk upload sync",
-                                user_id=user_id,
-                            )
-                    elif expiry_date is not None:
-                        cur.execute(
-                            "UPDATE products SET expiry_date=COALESCE(%s, expiry_date) WHERE id=%s",
-                            (expiry_date, existing["id"]),
-                        )
-                    updated += 1
-                else:
-                    cur.execute(
-                        """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
-                           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-                        (barcode, intl_barcode, name_ar, name_en, category, unit,
-                         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
-                    )
-                    new_id = cur.fetchone()["id"]
-                    if qty_provided and stock > 0:
-                        add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
-                        log_movement(
-                            cur, new_id, branch_id, "initial",
-                            stock, stock,
-                            reference_type="bulk_upload", reason="Bulk upload",
-                            user_id=user_id,
-                        )
-                    inserted += 1
+                inserted += ins
+                updated += upd
+                auto_codes += ac
+                auto_categories += cat
                 cur.execute("RELEASE SAVEPOINT row_sp")
             except Exception as e:
                 cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                 errors += 1
                 src = row.get("source_rows") or ["?"]
                 error_details.append(f"Rows {','.join(map(str, src))}: {e}")
+            if n % BULK_COMMIT_EVERY == 0:
+                conn.commit()
 
         conn.commit()
-        conn.close()
         return {
             "inserted": inserted,
             "updated": updated,
@@ -1829,9 +1892,25 @@ async def bulk_upload(file: UploadFile = File(...),
             "error_details": error_details[:50],
         }
     except HTTPException:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         raise
     except Exception as e:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         raise HTTPException(status_code=500, detail=f"Bulk upload failed: {e}") from e
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @router.get("/consumption-alerts")
