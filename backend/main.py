@@ -477,10 +477,14 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         branch_id = current_user.get("branch_id")
+        barcode = (req.barcode or "").strip() or None
+        if not barcode:
+            from inventory import _next_material_barcode
+            barcode = _next_material_barcode(cur)
         cur.execute(
             """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
-            (req.barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
+            (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
              req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price),
         )

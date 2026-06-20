@@ -886,6 +886,15 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
+  const stockPreviewSub = (() => {
+    if (!f.stock.trim()) return null
+    const n = parsePackStockInput(f.stock, packSize)
+    if (n === null) return null
+    if (packSize > 1) {
+      return formatPackStockLabel(n, packSize, f.unit, f.sub_unit || t('inventory.sub_unit_word'))
+    }
+    return String(n)
+  })()
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -971,12 +980,15 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             </Field>
             <Field label={t('inventory.f_barcode')}>
               <div className="flex gap-2">
-                <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" />
+                <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" placeholder={t('inventory.barcode_auto_ph') as string} />
                 <button type="button" onClick={() => setShowBarcodeDesigner(true)}
                   className="px-3 py-2 text-xs rounded-lg border border-pharma-200 text-pharma-700 bg-pharma-50 hover:bg-pharma-100 inline-flex items-center gap-1 whitespace-nowrap">
                   <Wand2 size={13} /> {t('barcode_studio.open')}
                 </button>
               </div>
+              {!f.barcode.trim() && (
+                <p className="text-[11px] text-slate-500 mt-1">{t('inventory.barcode_auto_hint')}</p>
+              )}
             </Field>
             <Field label={t('inventory.f_international_barcode')}>
               <input value={f.international_barcode} onChange={e => setF({ ...f, international_barcode: e.target.value })} className="input" />
@@ -1014,58 +1026,6 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
             </Field>
           </div>
-        </section>
-
-        <section>
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
-            {t('inventory.form_section_stock')}
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {!item && (
-              <>
-                <Field label={t('inventory.f_initial_stock')}>
-                  <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
-                </Field>
-                <Field label={t('inventory.f_expiry')}>
-                  <DateInput value={f.expiry_date} onChange={(v) => setF({ ...f, expiry_date: v })} className="input" />
-                </Field>
-              </>
-            )}
-            {item && (
-              <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={f.stock}
-                  onChange={e => setF({ ...f, stock: e.target.value })}
-                  className="input"
-                  placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
-                />
-                {packSize > 1 && f.stock && (
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    {t('inventory.pack_stock_hint', {
-                      unit: f.unit,
-                      sub: f.sub_unit || t('inventory.sub_unit_word'),
-                      pack: packSize,
-                    })}
-                    {' '}
-                    ({t('inventory.stock_tracked_in', { unit: f.sub_unit || t('inventory.sub_unit_word') })})
-                  </p>
-                )}
-              </Field>
-            )}
-          </div>
-          {item && (
-            <div className="mt-4">
-              <ExpiryBatchesPanel
-                productId={item.id}
-                packSize={packSize}
-                unit={f.unit}
-                subUnit={f.sub_unit || t('inventory.sub_unit_word')}
-                onChanged={() => {}}
-              />
-            </div>
-          )}
         </section>
 
         <section className="p-4 rounded-xl bg-slate-50 border border-slate-200">
@@ -1108,6 +1068,82 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 <> · {t('inventory.f_price_per', { unit: f.sub_unit })}: {(parseFloat(f.price) / packSize).toFixed(2)} {t('pos.egp')}</>
               )}
             </p>
+          )}
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_stock')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {!item && (
+              <>
+                <Field label={t('inventory.f_initial_stock')}>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={f.stock}
+                    onChange={e => setF({ ...f, stock: e.target.value })}
+                    className="input"
+                    placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+                  />
+                  {packSize > 1 && (
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {t('inventory.pack_stock_hint', {
+                        unit: f.unit,
+                        sub: f.sub_unit || t('inventory.sub_unit_word'),
+                        pack: packSize,
+                      })}
+                    </p>
+                  )}
+                  {stockPreviewSub && (
+                    <p className="text-[11px] text-emerald-700 mt-1 font-medium">
+                      = {stockPreviewSub}
+                    </p>
+                  )}
+                </Field>
+                <Field label={t('inventory.f_expiry')}>
+                  <DateInput value={f.expiry_date} onChange={(v) => setF({ ...f, expiry_date: v })} className="input" />
+                </Field>
+              </>
+            )}
+            {item && (
+              <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={f.stock}
+                  onChange={e => setF({ ...f, stock: e.target.value })}
+                  className="input"
+                  placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+                />
+                {packSize > 1 && f.stock && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {t('inventory.pack_stock_hint', {
+                      unit: f.unit,
+                      sub: f.sub_unit || t('inventory.sub_unit_word'),
+                      pack: packSize,
+                    })}
+                    {' '}
+                    ({t('inventory.stock_tracked_in', { unit: f.sub_unit || t('inventory.sub_unit_word') })})
+                  </p>
+                )}
+                {stockPreviewSub && packSize > 1 && (
+                  <p className="text-[11px] text-emerald-700 mt-1 font-medium">= {stockPreviewSub}</p>
+                )}
+              </Field>
+            )}
+          </div>
+          {item && (
+            <div className="mt-4">
+              <ExpiryBatchesPanel
+                productId={item.id}
+                packSize={packSize}
+                unit={f.unit}
+                subUnit={f.sub_unit || t('inventory.sub_unit_word')}
+                onChanged={() => {}}
+              />
+            </div>
           )}
         </section>
 

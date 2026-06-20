@@ -1523,6 +1523,7 @@ def _resolve_bulk_category(category, name_en, name_ar, intl_barcode, *, online: 
 
 
 def _next_auto_barcode(cur, branch_id) -> str:
+    """Legacy branch-prefixed code (bulk upload fallback)."""
     prefix = f"B{branch_id or 0}-"
     cur.execute(
         """SELECT barcode FROM products
@@ -1540,6 +1541,24 @@ def _next_auto_barcode(cur, branch_id) -> str:
         except ValueError:
             seq = 1
     return f"{prefix}{seq:06d}"
+
+
+def _next_material_barcode(cur) -> str:
+    """Next sequential numeric material code (3000xxx) matching distributor item codes."""
+    cur.execute(
+        """SELECT MAX(barcode::bigint) AS m FROM products
+           WHERE barcode ~ '^[0-9]+$' AND length(barcode) BETWEEN 6 AND 10"""
+    )
+    row = cur.fetchone()
+    m = row.get("m") if row else None
+    if m is not None:
+        try:
+            n = int(m)
+            if n >= 3000000:
+                return str(n + 1)
+        except (TypeError, ValueError):
+            pass
+    return "3000001"
 
 
 def _parse_bulk_row(r: dict, idx: int) -> dict:
@@ -1925,12 +1944,10 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     auto_code_inc = 0
 
     if not barcode:
-        prefix = f"B{branch_id or 0}-"
         if auto_seq["next"] is None:
-            auto_seq["next"] = int(_next_auto_barcode(cur, branch_id).replace(prefix, ""))
-        code = f"{prefix}{auto_seq['next']:06d}"
+            auto_seq["next"] = int(_next_material_barcode(cur))
+        barcode = str(auto_seq["next"])
         auto_seq["next"] += 1
-        barcode = code
         auto_code_inc = 1
 
     existing = None

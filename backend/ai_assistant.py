@@ -113,4 +113,45 @@ def assistant_status(current_user=Depends(get_current_user)):
         "ai_enabled": ai_on,
         "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini") if ai_on else None,
         "mode": "ai" if ai_on else "faq",
+        "dose_calculator": user_feature_option(current_user, "ai_assistant", "dose_calculator"),
+        "drug_database": user_feature_option(current_user, "ai_assistant", "drug_database"),
     }
+
+
+class DoseCalcRequest(BaseModel):
+    drug_id: str
+    weight_kg: Optional[float] = None
+    age_years: Optional[float] = None
+    is_adult: bool = False
+    form_index: int = 0
+    lang: Optional[str] = "auto"
+
+
+@router.get("/drugs", dependencies=[Depends(requires_feature("ai_assistant"))])
+def assistant_drugs(q: str = "", current_user=Depends(get_current_user)):
+    from feature_access import user_feature_option
+    if not user_feature_option(current_user, "ai_assistant", "drug_database"):
+        raise HTTPException(status_code=403, detail="Drug database disabled for this pharmacy")
+    from drug_reference import search_drugs
+    return {"items": search_drugs(q)}
+
+
+@router.post("/dose-calc", dependencies=[Depends(requires_feature("ai_assistant"))])
+def assistant_dose_calc(body: DoseCalcRequest, current_user=Depends(get_current_user)):
+    from feature_access import user_feature_option
+    if not user_feature_option(current_user, "ai_assistant", "dose_calculator"):
+        raise HTTPException(status_code=403, detail="Dose calculator disabled for this pharmacy")
+    from drug_reference import calculate_dose
+    lang = _resolve_lang(body.lang, current_user)
+    try:
+        result = calculate_dose(
+            body.drug_id,
+            weight_kg=body.weight_kg,
+            age_years=body.age_years,
+            is_adult=body.is_adult,
+            form_index=body.form_index,
+            lang=lang,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result

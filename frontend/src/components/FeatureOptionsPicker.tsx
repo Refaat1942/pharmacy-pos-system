@@ -15,7 +15,8 @@ export default function FeatureOptionsPicker({
   const { t } = useTranslation()
   const enabled = new Set(enabledFeatures)
   const groups = catalog.filter((g) => enabled.has(g.feature))
-  if (!groups.length) return null
+  const disabledGroups = catalog.filter((g) => !enabled.has(g.feature))
+  if (!groups.length && !disabledGroups.length) return null
 
   const toggle = (feature: string, option: string) => {
     const current = value[feature]?.[option] ?? true
@@ -57,6 +58,17 @@ export default function FeatureOptionsPicker({
           </div>
         </div>
       ))}
+      {disabledGroups.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 space-y-2">
+          <p className="text-xs font-semibold text-amber-900">{t('settings.features_disabled_modules')}</p>
+          <p className="text-[11px] text-amber-800">{t('settings.features_disabled_hint')}</p>
+          <ul className="text-xs text-amber-900 list-disc ps-4 space-y-0.5">
+            {disabledGroups.map((g) => (
+              <li key={g.feature}>{g.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

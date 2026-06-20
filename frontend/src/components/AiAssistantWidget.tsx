@@ -1,9 +1,10 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Bot, Loader2, MessageCircle, Send, Sparkles, X } from 'lucide-react'
+import { Bot, Calculator, Loader2, MessageCircle, Send, Sparkles, X } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
+import AiDoseCalculatorPanel from './AiDoseCalculatorPanel'
 
 type ChatRole = 'user' | 'assistant'
 
@@ -33,6 +34,8 @@ export default function AiAssistantWidget() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [mode, setMode] = useState<'ai' | 'faq'>('faq')
+  const [panel, setPanel] = useState<'chat' | 'dose'>('chat')
+  const [doseCalcOn, setDoseCalcOn] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -42,8 +45,11 @@ export default function AiAssistantWidget() {
 
   useEffect(() => {
     if (!hasFeature('ai_assistant')) return
-    api.get<{ mode: 'ai' | 'faq' }>('/assistant/status')
-      .then(({ data }) => setMode(data.mode))
+    api.get<{ mode: 'ai' | 'faq'; dose_calculator?: boolean }>('/assistant/status')
+      .then(({ data }) => {
+        setMode(data.mode)
+        setDoseCalcOn(!!data.dose_calculator)
+      })
       .catch(() => setMode('faq'))
   }, [hasFeature])
 
@@ -133,6 +139,35 @@ export default function AiAssistantWidget() {
             </button>
           </div>
 
+          <div className="flex items-center gap-1 px-3 pt-2 bg-slate-50 border-b border-slate-200 shrink-0">
+            <button
+              type="button"
+              onClick={() => setPanel('chat')}
+              className={`px-3 py-1.5 text-xs rounded-t-lg font-medium ${
+                panel === 'chat' ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' : 'text-slate-500'
+              }`}
+            >
+              {t('assistant.tab_chat')}
+            </button>
+            {doseCalcOn && hasFeatureOption('ai_assistant', 'dose_calculator') && (
+              <button
+                type="button"
+                onClick={() => setPanel('dose')}
+                className={`px-3 py-1.5 text-xs rounded-t-lg font-medium inline-flex items-center gap-1 ${
+                  panel === 'dose' ? 'bg-white border border-b-0 border-slate-200 text-indigo-700' : 'text-slate-500'
+                }`}
+              >
+                <Calculator className="w-3 h-3" /> {t('assistant.tab_dose')}
+              </button>
+            )}
+          </div>
+
+          {panel === 'dose' ? (
+            <div className="flex-1 overflow-y-auto p-3 bg-slate-50">
+              <AiDoseCalculatorPanel />
+            </div>
+          ) : (
+          <>
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50">
             {messages.map((m, i) => (
               <div
@@ -207,6 +242,8 @@ export default function AiAssistantWidget() {
               </button>
             </div>
           </form>
+          </>
+          )}
         </div>
       )}
 

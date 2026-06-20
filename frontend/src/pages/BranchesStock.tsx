@@ -13,7 +13,7 @@ import {
   looksLikeMultiInput,
   parseSearchTerms,
 } from '../lib/branchStockPick'
-import { formatDecimalBoxes, formatMajorSubLabel } from '../lib/packStock'
+import { formatDecimalBoxes, formatMajorSubLabel, formatPackStockLabel } from '../lib/packStock'
 import i18n from '../lib/i18n'
 
 const fmtInt = (n: number) =>
@@ -93,15 +93,28 @@ function StockCell({
         : st === 'missing'
           ? 'text-slate-300'
           : 'text-slate-800'
-  const main = missing ? '—' : pack > 1 ? formatDecimalBoxes(stock, pack) : fmtInt(stock)
-  const sub =
-    !missing && pack > 1
-      ? formatMajorSubLabel(stock, pack, row.unit, row.sub_unit)
-      : null
+  if (missing) {
+    return <div className={`font-mono text-base ${cls}`}>—</div>
+  }
+  if (pack <= 1) {
+    const u = row.unit || ''
+    return (
+      <div className={`font-mono text-base ${cls}`}>
+        <div>{fmtInt(stock)}{u ? ` ${u}` : ''}</div>
+      </div>
+    )
+  }
+  const main = formatDecimalBoxes(stock, pack)
+  const unit = row.unit || 'box'
+  const subUnit = row.sub_unit || 'unit'
+  const breakdown = formatMajorSubLabel(stock, pack, unit, subUnit)
+  const fullLabel = formatPackStockLabel(stock, pack, unit, subUnit)
   return (
-    <div className={`font-mono text-base ${cls}`}>
-      <div>{main}</div>
-      {sub && <div className="text-[10px] font-normal text-slate-500 mt-0.5">{sub}</div>}
+    <div className={`font-mono text-base ${cls}`} title={fullLabel}>
+      <div>{main} {unit}</div>
+      {breakdown && (
+        <div className="text-[10px] font-normal text-slate-500 mt-0.5">{breakdown}</div>
+      )}
     </div>
   )
 }

@@ -27,6 +27,10 @@ export default function GovernorateRegionSelect({ value, onChange, className = '
 
   const markaz = regions.filter((r) => r.group === 'markaz' || r.group === 'city')
   const areas = regions.filter((r) => r.group === 'area' || !r.group)
+  const govMeta = EGYPT_GOVERNORATES.find((g) => g.key === governorate)
+  const areasGroupLabel = govMeta
+    ? (lang === 'ar' ? `أحياء — ${govMeta.ar}` : `Areas — ${govMeta.en}`)
+    : (t('regions.areas') as string)
 
   return (
     <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${className}`}>
@@ -63,7 +67,7 @@ export default function GovernorateRegionSelect({ value, onChange, className = '
           </optgroup>
         )}
         {areas.length > 0 && markaz.length > 0 && (
-          <optgroup label={t('regions.areas') as string}>
+          <optgroup label={areasGroupLabel}>
             {areas.map((r) => (
               <option key={r.value} value={r.value}>{lang === 'ar' ? r.ar : r.en}</option>
             ))}
