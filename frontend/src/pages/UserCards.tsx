@@ -15,6 +15,8 @@ type UserRow = {
   role: string
   card_code: string | null
   status: string
+  branch_name_en?: string | null
+  branch_name_ar?: string | null
 }
 
 export default function UserCards() {
@@ -84,12 +86,14 @@ export default function UserCards() {
         )}
         {rows.map((u) => {
           const name = (i18n.language === 'ar' ? u.name_ar : u.name_en) || u.name_en || u.name_ar || u.username
+          const branch = (i18n.language === 'ar' ? u.branch_name_ar : u.branch_name_en) || u.branch_name_en || u.branch_name_ar || ''
           return (
             <IdCard
               key={u.id}
               name={name}
               pharmaName={pharmaName}
               role={t(`settings.role_${u.role}`, u.role)}
+              branch={branch}
               code={u.card_code!}
               scanLabel={t('settings.scan_to_unlock')}
             />
@@ -100,8 +104,8 @@ export default function UserCards() {
   )
 }
 
-function IdCard({ name, pharmaName, role, code, scanLabel }: {
-  name: string; pharmaName: string; role: string; code: string; scanLabel: string
+function IdCard({ name, pharmaName, role, branch, code, scanLabel }: {
+  name: string; pharmaName: string; role: string; branch?: string; code: string; scanLabel: string
 }) {
   return (
     <div className="id-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -111,6 +115,7 @@ function IdCard({ name, pharmaName, role, code, scanLabel }: {
       <div className="px-4 py-3 flex flex-col items-center text-center">
         <div className="font-bold text-slate-800 text-base leading-tight">{name}</div>
         <div className="text-xs text-slate-500 capitalize">{role}</div>
+        {branch && <div className="text-[11px] text-slate-400 mt-0.5">{branch}</div>}
         <Barcode value={code.replace(/[^A-Za-z0-9]/g, '')} />
         <div className="font-mono text-[12px] text-slate-700 tracking-wide">{code}</div>
         <div className="text-[10px] text-slate-400 mt-0.5">{scanLabel}</div>

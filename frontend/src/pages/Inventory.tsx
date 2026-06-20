@@ -2502,6 +2502,11 @@ function StocktakeTab() {
   useEffect(() => { items.forEach((it) => { cacheRef.current[it.id] = it }) }, [items])
   const [scan, setScan] = useState('')
   const [scanMsg, setScanMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  // Product IDs in the order they were scanned (most recent first) so the
+  // stocktake table lists items as they are scanned, not alphabetically.
+  const [scanOrder, setScanOrder] = useState<number[]>([])
+  const noteScanOrder = (id: number) =>
+    setScanOrder(prev => [id, ...prev.filter(x => x !== id)])
   const scanRef = useRef<HTMLInputElement | null>(null)
   const focusScan = () => window.setTimeout(() => scanRef.current?.focus(), 30)
 
@@ -2596,15 +2601,18 @@ function StocktakeTab() {
     if (!code) return
     setScan('')
     const norm = (s: any) => String(s || '').trim().toLowerCase()
-    let prod: any = Object.values(cacheRef.current).find(
-      (p: any) => (p.barcode && norm(p.barcode) === norm(code)) ||
-        (p.international_barcode && norm(p.international_barcode) === norm(code)),
-    )
+    const isBarcodeHit = (p: any) =>
+      (p?.barcode && norm(p.barcode) === norm(code)) ||
+      (p?.international_barcode && norm(p.international_barcode) === norm(code))
+    let prod: any = Object.values(cacheRef.current).find(isBarcodeHit)
     if (!prod) {
       try {
         const { data } = await api.get('/inventory/items', { params: { branch_id: branchId, q: code } })
         const list = Array.isArray(data) ? data : []
-        prod = list.find((p: any) => norm(p.barcode) === norm(code) || norm(p.international_barcode) === norm(code)) || list[0]
+        // Prefer an exact barcode match; the backend already normalizes scanner
+        // wrappers/EAN variants. Only accept a non-barcode result when the
+        // query is unambiguous (a single hit) so we never count the wrong item.
+        prod = list.find(isBarcodeHit) || (list.length === 1 ? list[0] : undefined)
         if (prod) cacheRef.current[prod.id] = prod
       } catch { /* ignore */ }
     }
@@ -2614,6 +2622,7 @@ function StocktakeTab() {
       return
     }
     cacheRef.current[prod.id] = prod
+    noteScanOrder(prod.id)
     const base = parseInt(counted[prod.id] ?? '', 10)
     const newCount = (Number.isFinite(base) ? base : 0) + 1
     bumpCount(prod.id, 1)
@@ -2683,13 +2692,24 @@ function StocktakeTab() {
 
   // Table shows the searched/loaded items PLUS any scanned/counted items
   // (resolved from the cache) so scanned products appear in the full editable
-  // table even when nothing is searched.
+  // table even when nothing is searched. Scanned items are listed first in
+  // scan order (most recent on top); the rest follow the loaded list order.
   const tableSource = useMemo(() => {
-    const m = new Map<number, any>()
-    countedSummary.forEach((it) => m.set(it.id, it))
-    items.forEach((it) => { if (!m.has(it.id)) m.set(it.id, it) })
-    return [...m.values()]
-  }, [items, countedSummary])
+    const byId = new Map<number, any>()
+    countedSummary.forEach((it) => byId.set(it.id, it))
+    items.forEach((it) => { if (!byId.has(it.id)) byId.set(it.id, it) })
+
+    const ordered: any[] = []
+    const used = new Set<number>()
+    // 1) Scanned items, newest first.
+    scanOrder.forEach((id) => {
+      const it = byId.get(id) || cacheRef.current[id]
+      if (it && !used.has(id)) { ordered.push(it); used.add(id) }
+    })
+    // 2) Remaining counted/loaded items in their existing order.
+    byId.forEach((it, id) => { if (!used.has(id)) { ordered.push(it); used.add(id) } })
+    return ordered
+  }, [items, countedSummary, scanOrder])
 
   const stFilter = useQuickFilter(tableSource, [
     (it: any) => it.name_en,
@@ -2738,6 +2758,7 @@ function StocktakeTab() {
       setCategoriesEdits({})
       setLotsEdits({})
       setScanMsg(null)
+      setScanOrder([])
       cacheRef.current = {}
       await load()
       await loadPastRuns()
@@ -2752,7 +2773,7 @@ function StocktakeTab() {
       <div className="bg-white rounded-xl shadow-sm p-4 flex flex-wrap gap-3 items-center">
         <select
           value={branchId}
-          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}); setExpiries({}); setLotsEdits({}); cacheRef.current = {}; setScanMsg(null) }}
+          onChange={e => { setBranchId(e.target.value ? Number(e.target.value) : ''); setCounted({}); setCategoriesEdits({}); setExpiries({}); setLotsEdits({}); cacheRef.current = {}; setScanMsg(null); setScanOrder([]) }}
           disabled={!isAdmin}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 disabled:bg-slate-50"
         >
@@ -2828,7 +2849,7 @@ function StocktakeTab() {
             <span className="text-xs text-slate-600">
               {t('inventory.st_scanned_title')}: <b>{countedSummary.length}</b>
               <button
-                onClick={() => { setCounted({}); setScanMsg(null); focusScan() }}
+                onClick={() => { setCounted({}); setScanMsg(null); setScanOrder([]); focusScan() }}
                 className="ms-2 text-red-500 hover:text-red-700 font-medium"
               >
                 {t('inventory.st_clear_counts')}

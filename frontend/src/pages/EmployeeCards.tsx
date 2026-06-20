@@ -83,23 +83,27 @@ export default function EmployeeCards() {
         {rows.length === 0 && (
           <div style={{ gridColumn: '1 / -1' }} className="text-center text-slate-400 py-10">{t('hr.no_employees')}</div>
         )}
-        {rows.map((e) => (
-          <IdCard
-            key={e.id}
-            name={e.name}
-            pharmaName={pharmaName}
-            role={e.role || ''}
-            code={e.clock_code!}
-            scanLabel={t('hr.scan_to_clock')}
-          />
-        ))}
+        {rows.map((e) => {
+          const branch = (i18n.language === 'ar' ? e.branch_name_ar : e.branch_name_en) || e.branch_name_en || e.branch_name_ar || ''
+          return (
+            <IdCard
+              key={e.id}
+              name={e.name}
+              pharmaName={pharmaName}
+              role={e.role || ''}
+              branch={branch}
+              code={e.clock_code!}
+              scanLabel={t('hr.scan_to_clock')}
+            />
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function IdCard({ name, pharmaName, role, code, scanLabel }: {
-  name: string; pharmaName: string; role: string; code: string; scanLabel: string
+function IdCard({ name, pharmaName, role, branch, code, scanLabel }: {
+  name: string; pharmaName: string; role: string; branch?: string; code: string; scanLabel: string
 }) {
   return (
     <div className="id-card bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -109,6 +113,7 @@ function IdCard({ name, pharmaName, role, code, scanLabel }: {
       <div className="px-4 py-3 flex flex-col items-center text-center">
         <div className="font-bold text-slate-800 text-base leading-tight">{name}</div>
         {role && <div className="text-xs text-slate-500 capitalize">{role}</div>}
+        {branch && <div className="text-[11px] text-slate-400 mt-0.5">{branch}</div>}
         <Barcode value={code.replace(/[^A-Za-z0-9]/g, '')} />
         <div className="font-mono text-[12px] text-slate-700 tracking-wide">{code}</div>
         <div className="text-[10px] text-slate-400 mt-0.5">{scanLabel}</div>
