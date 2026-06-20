@@ -408,8 +408,10 @@ def delete_product_batch(batch_id: int, current_user=Depends(get_current_user)):
 # Max rows returned by list-style endpoints (raise if you outgrow this).
 MAX_INVENTORY_ROWS = 100_000
 
-# Unit value for stock valuation: prefer purchase cost; fall back to selling price when cost unset.
-_STOCK_UNIT_VALUE = "COALESCE(NULLIF(cost, 0), price, 0)"
+# Stock valuation: box-equivalent qty × unit cost or unit sales price separately.
+_STOCK_COST_P = "COALESCE(NULLIF(p.cost, 0), 0)"
+_STOCK_PRICE_P = "COALESCE(NULLIF(p.price, 0), 0)"
+# Legacy blended value (cost preferred, else price) — kept for backward compatibility.
 _STOCK_UNIT_VALUE_P = "COALESCE(NULLIF(p.cost, 0), p.price, 0)"
 # products.stock is in sub-units when pack_size > 1; cost/price are per box (main unit).
 _STOCK_QTY_BOXES_P = "(p.stock::float / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))"
@@ -483,12 +485,14 @@ def inventory_summary(
     elif stock_filter == "ok":
         where.append("p.stock > p.min_stock")
     w = " AND ".join(where)
-    # Stock value: box-equivalent qty × cost (or price); sub-unit stock divided by pack_size.
+    # Stock value: box-equivalent qty × cost and × sales price (reported separately).
     cur.execute(
         f"""SELECT
               COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE p.stock <= 0)::int AS zero_stock,
               COUNT(*) FILTER (WHERE p.stock > 0 AND p.stock <= p.min_stock)::int AS low_stock,
+              COALESCE(SUM({_STOCK_QTY_BOXES_P} * {_STOCK_COST_P}), 0)::float AS stock_value_cost,
+              COALESCE(SUM({_STOCK_QTY_BOXES_P} * {_STOCK_PRICE_P}), 0)::float AS stock_value_retail,
               COALESCE(SUM({_STOCK_QTY_BOXES_P} * {_STOCK_UNIT_VALUE_P}), 0)::float AS stock_value
             FROM products p WHERE {w}""",
         params,
@@ -1355,16 +1359,16 @@ def bulk_template(current_user=Depends(get_current_user)):
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
-    headers = ["Code", "International Barcode", "Material Name", "Name (Arabic)", "Unit", "Small Unit",
-               "Small Unit Quantity Per Unit", "Quantity",
-               "Sales Price", "Cost", "Category", "Min Stock", "Expiry Date"]
+    headers = [
+        "Code", "Material Name", "International Barcode", "Stock", "Unit",
+        "Sub unit", "Subunit Quantity", "Sales Price", "Cost", "Category",
+        "Min Stock", "Expiry Date",
+    ]
     ws.append(headers)
-    ws.append(["1234567890123", "5000112637922", "Panadol Extra 48 Tab", "بانادول اكسترا 48 قرص",
-               "Box", "Strip", 4, 100,
-               116.00, 80.00, "Painkillers", 10, "2027-12-31"])
-    ws.append(["7654321098765", "8901234567890", "Augmentin 1g", "اوجمنتين 1 جم",
-               "Box", "Tablet", 14, 50,
-               180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
+    ws.append(["1234567890123", "Panadol Extra 48 Tab", "5000112637922", 100,
+               "Box", "Strip", 4, 116.00, 80.00, "Painkillers", 10, "2027-12-31"])
+    ws.append(["7654321098765", "Augmentin 1g", "8901234567890", 50,
+               "Box", "Tablet", 14, 180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -1433,6 +1437,7 @@ async def bulk_upload(file: UploadFile = File(...),
             min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
 
             pack_raw = _row_get(r, "pack_size", "pack size",
+                                "subunit quantity", "sub unit quantity", "subunit qty", "sub unit qty",
                                 "small unit quantity per unit", "small unit qty per unit",
                                 "small unit per unit", "small unit quantity",
                                 "units per unit", "quantity per unit", "qty per unit",

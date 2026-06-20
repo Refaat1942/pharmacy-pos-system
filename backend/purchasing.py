@@ -269,6 +269,9 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     if new_price is not None:
         sets.append("price=%s")
         params.append(new_price)
+        if pack_size > 1:
+            sets.append("sub_price=%s")
+            params.append(round(new_price / pack_size, 2))
     params.append(pid)
     cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
     cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s", (pid, it["id"]))

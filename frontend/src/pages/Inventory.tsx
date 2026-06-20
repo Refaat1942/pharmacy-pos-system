@@ -192,17 +192,18 @@ const STANDARD_CATEGORIES = [
   'Other',
 ] as const
 
-/** Prefer purchase cost; use selling price when cost is unset (matches backend valuation). */
-function stockUnitValue(i: { cost?: number | null; price?: number | null }): number {
-  const cost = Number(i.cost || 0)
-  if (cost > 0) return cost
-  return Number(i.price || 0)
-}
-
 /** Box count for valuation (stock is stored in sub-units when pack_size > 1). */
 function stockQtyBoxes(i: { stock: number; pack_size?: number | null }): number {
   const pack = i.pack_size && i.pack_size > 1 ? i.pack_size : 1
   return Number(i.stock) / pack
+}
+
+function stockValueCost(i: { stock: number; pack_size?: number | null; cost?: number | null }): number {
+  return stockQtyBoxes(i) * Number(i.cost || 0)
+}
+
+function stockValueRetail(i: { stock: number; pack_size?: number | null; price?: number | null }): number {
+  return stockQtyBoxes(i) * Number(i.price || 0)
 }
 
 export default function Inventory() {
@@ -225,7 +226,10 @@ export default function Inventory() {
     }
   }, [visibleTabs, tab])
   const [items, setItems] = useState<Product[]>([])
-  const [itemStats, setItemStats] = useState<{ total: number; zero: number; low_stock: number; stock_value: number } | null>(null)
+  const [itemStats, setItemStats] = useState<{
+    total: number; zero: number; low_stock: number
+    stock_value_cost: number; stock_value_retail: number
+  } | null>(null)
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState('')
   const [stockFilter, setStockFilter] = useState<'' | 'low' | 'zero' | 'ok'>('')
@@ -274,7 +278,10 @@ export default function Inventory() {
       delete summaryParams.load_all
       const [listRes, sumRes] = await Promise.all([
         api.get<Product[]>('/inventory/items', { params }),
-        api.get<{ total: number; zero_stock: number; low_stock: number; stock_value: number }>(
+        api.get<{
+          total: number; zero_stock: number; low_stock: number
+          stock_value_cost: number; stock_value_retail: number
+        }>(
           '/inventory/summary',
           { params: summaryParams },
         ),
@@ -284,7 +291,8 @@ export default function Inventory() {
         total: sumRes.data.total,
         zero: sumRes.data.zero_stock,
         low_stock: sumRes.data.low_stock,
-        stock_value: sumRes.data.stock_value,
+        stock_value_cost: sumRes.data.stock_value_cost,
+        stock_value_retail: sumRes.data.stock_value_retail,
       })
     } finally {
       if (!silent) setLoading(false)
@@ -328,16 +336,18 @@ export default function Inventory() {
         total: itemStats.total,
         zero: itemStats.zero,
         low: itemStats.low_stock,
-        totalValue: itemStats.stock_value,
+        valueCost: itemStats.stock_value_cost,
+        valueRetail: itemStats.stock_value_retail,
       }
     }
     if (!showAllItems && !q.trim()) {
-      return { total: 0, zero: 0, low: 0, totalValue: 0 }
+      return { total: 0, zero: 0, low: 0, valueCost: 0, valueRetail: 0 }
     }
     const total = items.length
     const zero = items.filter((i) => i.stock <= 0).length
-    const totalValue = items.reduce((s, i) => s + stockQtyBoxes(i) * stockUnitValue(i), 0)
-    return { total, zero, low: 0, totalValue }
+    const valueCost = items.reduce((s, i) => s + stockValueCost(i), 0)
+    const valueRetail = items.reduce((s, i) => s + stockValueRetail(i), 0)
+    return { total, zero, low: 0, valueCost, valueRetail }
   }, [items, itemStats, showAllItems, q])
 
   const itemFilter = useQuickFilter(items, [
@@ -402,18 +412,19 @@ export default function Inventory() {
         {tab === 'items' && (
           <>
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               <StatCard label={t('inventory.stat_total')} value={formatInt(stats.total)} color="slate" />
               <StatCard label={t('inventory.stat_low')} value={formatInt(stats.low)} color="amber" />
               <StatCard label={t('inventory.stat_zero')} value={formatInt(stats.zero)} color="red" />
               <StatCard
-                label={
-                  q || stockFilter || categoryFilter
-                    ? t('inventory.stat_value_filtered')
-                    : t('inventory.stat_value')
-                }
-                value={`${formatInt(stats.totalValue)} ${t('pos.egp')}`}
+                label={q || stockFilter || categoryFilter ? t('inventory.stat_value_cost_filtered') : t('inventory.stat_value_cost')}
+                value={`${formatInt(stats.valueCost)} ${t('pos.egp')}`}
                 color="emerald"
+              />
+              <StatCard
+                label={q || stockFilter || categoryFilter ? t('inventory.stat_value_retail_filtered') : t('inventory.stat_value_retail')}
+                value={`${formatInt(stats.valueRetail)} ${t('pos.egp')}`}
+                color="sky"
               />
             </div>
 
@@ -632,6 +643,7 @@ function StatCard({ label, value, color }: { label: string; value: any; color: s
     amber: 'bg-amber-100 text-amber-700',
     red: 'bg-red-100 text-red-700',
     emerald: 'bg-emerald-100 text-emerald-700',
+    sky: 'bg-sky-100 text-sky-700',
   }
   return (
     <div className="bg-white rounded-xl shadow-sm p-4">
@@ -977,7 +989,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           <div className="text-xs font-semibold text-slate-600 mb-2">
             {t('inventory.pack_hint')}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Field label={t('inventory.f_sub_unit')}>
               <select
                 value={f.sub_unit}
@@ -1004,24 +1016,13 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 placeholder="10"
               />
             </Field>
-            <Field label={t('inventory.f_price_per', { unit: f.sub_unit || t('inventory.sub_unit_word') })}>
-              <input
-                type="number" step="0.01"
-                value={f.sub_price}
-                onChange={e => setF({ ...f, sub_price: e.target.value })}
-                className="input"
-                placeholder={
-                  f.price && f.pack_size && parseInt(f.pack_size) > 1
-                    ? (parseFloat(f.price) / parseInt(f.pack_size)).toFixed(2)
-                    : 'auto'
-                }
-                disabled={!f.sub_unit || parseInt(f.pack_size) <= 1}
-              />
-            </Field>
           </div>
           {f.sub_unit && parseInt(f.pack_size) > 1 && (
             <p className="text-[11px] text-slate-500 mt-2">
               1 {f.unit} = {f.pack_size} {f.sub_unit}. {t('inventory.stock_tracked_in', { unit: f.sub_unit })}
+              {f.price && (
+                <> · {t('inventory.f_price_per', { unit: f.sub_unit })}: {(parseFloat(f.price) / packSize).toFixed(2)} {t('pos.egp')}</>
+              )}
             </p>
           )}
         </div>
@@ -1962,7 +1963,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
           <div>{t('inventory.excel_help_cols')}</div>
           <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200">
-            Code, International Barcode, Material Name, Name (Arabic), Unit, Small Unit, Small Unit Quantity Per Unit, Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
+            Code, Material Name, International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}

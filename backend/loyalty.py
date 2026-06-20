@@ -120,6 +120,9 @@ def calculate_loyalty(body: CalculateRequest, current_user=Depends(get_current_u
         balance = 0
         if body.customer_id:
             balance = get_customer_points(cur, body.customer_id)
+        else:
+            # Settings calculator: assume sufficient balance so redeem limits are visible.
+            balance = max(int(body.redeem_points or 0), 100_000)
         result = preview_loyalty(
             settings=settings,
             customer_points=balance,

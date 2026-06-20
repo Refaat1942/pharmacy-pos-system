@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Lock, Unlock, FileText, X, AlertCircle } from 'lucide-react'
+import { Lock, Unlock, FileText, X, AlertCircle, FileDown } from 'lucide-react'
 import Layout from '../components/Layout'
 import api from '../lib/api'
+import { downloadApiExcel } from '../lib/downloadExcel'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
 import { formatDateTime } from '../lib/formatDate'
@@ -237,8 +238,17 @@ export default function Shifts() {
         <div>
           <div className="flex items-center justify-between mb-2 gap-2">
             <h2 className="text-base font-semibold text-slate-700">{t('shifts.history')}</h2>
-            <TableFilter value={filter.query} onChange={filter.setQuery}
-              placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
+            <div className="flex items-center gap-2">
+              <TableFilter value={filter.query} onChange={filter.setQuery}
+                placeholder={t('common.filter_placeholder') as string} className="w-full md:w-64" />
+              <button
+                onClick={() => downloadApiExcel('/shifts/export', `cash-shifts-${new Date().toISOString().slice(0, 10)}.xlsx`)}
+                disabled={shifts.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 disabled:opacity-40 whitespace-nowrap"
+              >
+                <FileDown size={16} /> {t('shifts.export_excel')}
+              </button>
+            </div>
           </div>
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">

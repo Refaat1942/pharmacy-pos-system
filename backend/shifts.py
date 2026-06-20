@@ -238,6 +238,79 @@ def shift_report(shift_id: int, current_user: dict = Depends(get_current_user)):
         cur.close(); conn.close()
 
 
+@router.get("/export")
+def export_shifts(
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    user_id: Optional[int] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Export shift history to Excel."""
+    from excel_utils import xlsx_response
+
+    is_admin = current_user.get('role') == 'admin'
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        where = ["1=1"]
+        params: list = []
+        if not is_admin:
+            where.append("s.user_id = %s")
+            params.append(current_user['user_id'])
+        elif user_id:
+            where.append("s.user_id = %s")
+            params.append(user_id)
+        if date_from:
+            where.append("s.opened_at >= %s::date")
+            params.append(date_from)
+        if date_to:
+            where.append("s.opened_at < (%s::date + INTERVAL '1 day')")
+            params.append(date_to)
+        cur.execute(f"""
+            SELECT s.id, s.status, s.shift_type, s.opened_at, s.closed_at,
+                   s.opening_cash, s.closing_cash, s.expected_cash, s.variance,
+                   s.counted_visa, s.variance_visa, s.notes,
+                   u.username AS user_name, u.name_en AS user_name_en, u.name_ar AS user_name_ar,
+                   b.name_en AS branch_name_en, b.name_ar AS branch_name_ar
+            FROM shifts s
+            LEFT JOIN users u ON u.id = s.user_id
+            LEFT JOIN branches b ON b.id = s.branch_id
+            WHERE {' AND '.join(where)}
+            ORDER BY s.opened_at DESC LIMIT 500
+        """, params)
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+        conn.close()
+
+    headers = [
+        "Shift ID", "User", "Branch", "Status", "Shift Type",
+        "Opened At", "Closed At", "Opening Cash", "Closing Cash",
+        "Expected Cash", "Variance", "Counted Visa", "Variance Visa", "Notes",
+    ]
+    data = []
+    for r in rows:
+        user_label = r.get("user_name_en") or r.get("user_name_ar") or r.get("user_name") or ""
+        branch_label = r.get("branch_name_en") or r.get("branch_name_ar") or ""
+        data.append([
+            r.get("id"),
+            user_label,
+            branch_label,
+            r.get("status"),
+            r.get("shift_type") or "",
+            r.get("opened_at"),
+            r.get("closed_at") or "",
+            r.get("opening_cash"),
+            r.get("closing_cash") or "",
+            r.get("expected_cash") or "",
+            r.get("variance") or "",
+            r.get("counted_visa") or "",
+            r.get("variance_visa") or "",
+            r.get("notes") or "",
+        ])
+    return xlsx_response(headers, data, "cash_shifts.xlsx")
+
+
 @router.get("")
 def list_shifts(
     request: Request,

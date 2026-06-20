@@ -214,6 +214,8 @@ function SettingsPanel({ isAdmin, onSaved }: { isAdmin: boolean; onSaved: () => 
             <dd className="font-semibold">{(preview.net_after_loyalty ?? 0).toFixed(2)}</dd>
             <dt className="text-slate-500">{t('loyalty.col_earn')}</dt>
             <dd className="font-semibold text-indigo-700">{preview.points_earn ?? 0}</dd>
+            <dt className="text-slate-500">{t('loyalty.col_balance_after')}</dt>
+            <dd className="font-semibold">{preview.points_balance_after ?? 0}</dd>
           </dl>
         )}
       </div>
@@ -226,20 +228,14 @@ function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boo
   const [list, setList] = useState<LoyaltyMember[]>([])
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState('')
-  const [minPoints, setMinPoints] = useState('')
-  const [maxPoints, setMaxPoints] = useState('')
 
   const load = useCallback(() => {
     setLoading(true)
-    loyaltyAPI.members({
-      q,
-      min_points: minPoints ? Number(minPoints) : undefined,
-      max_points: maxPoints ? Number(maxPoints) : undefined,
-    })
+    loyaltyAPI.members({ q })
       .then((r) => setList(r.data))
       .catch(() => setList([]))
       .finally(() => setLoading(false))
-  }, [q, minPoints, maxPoints])
+  }, [q])
 
   useEffect(() => {
     const id = setTimeout(load, 250)
@@ -257,17 +253,12 @@ function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boo
     phone: (m: LoyaltyMember) => m.phone || '',
     points: (m: LoyaltyMember) => Number(m.loyalty_points || 0),
     sales: (m: LoyaltyMember) => Number(m.total_sales || 0),
-    count: (m: LoyaltyMember) => Number(m.sale_count || 0),
-    earned: (m: LoyaltyMember) => Number(m.lifetime_earned || 0),
-    last: (m: LoyaltyMember) => m.last_sale_at || '',
   }), [])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const exportExcel = () => {
     if (!isAdmin) return
-    void downloadApiExcel('/loyalty/members/export', `loyalty-members-${new Date().toISOString().slice(0, 10)}.xlsx`, {
-      q, min_points: minPoints || undefined, max_points: maxPoints || undefined,
-    })
+    void downloadApiExcel('/loyalty/members/export', `loyalty-members-${new Date().toISOString().slice(0, 10)}.xlsx`, { q })
   }
 
   return (
@@ -275,10 +266,6 @@ function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boo
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('loyalty.search_members') as string}
           className="input w-full md:w-72" />
-        <input value={minPoints} onChange={(e) => setMinPoints(e.target.value)} placeholder={t('loyalty.min_points') as string}
-          className="input w-28" type="number" min={0} />
-        <input value={maxPoints} onChange={(e) => setMaxPoints(e.target.value)} placeholder={t('loyalty.max_points') as string}
-          className="input w-28" type="number" min={0} />
         <TableFilter value={filter.query} onChange={filter.setQuery}
           placeholder={t('common.filter_placeholder') as string} className="w-full md:w-56" />
         {isAdmin && canExport && (
@@ -297,14 +284,11 @@ function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boo
               <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('customers.col_phone')}</SortTh>
               <SortTh k="points" sort={sort} onToggle={toggle} align="end">{t('loyalty.col_points')}</SortTh>
               <SortTh k="sales" sort={sort} onToggle={toggle} align="end">{t('loyalty.col_total_sales')}</SortTh>
-              <SortTh k="count" sort={sort} onToggle={toggle} align="end">{t('loyalty.col_sale_count')}</SortTh>
-              <SortTh k="earned" sort={sort} onToggle={toggle} align="end">{t('loyalty.col_lifetime_earned')}</SortTh>
-              <SortTh k="last" sort={sort} onToggle={toggle} align="end">{t('loyalty.col_last_sale')}</SortTh>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-            {!loading && sorted.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">{t('loyalty.empty_members')}</td></tr>}
+            {loading && <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
+            {!loading && sorted.length === 0 && <tr><td colSpan={5} className="text-center py-8 text-slate-400">{t('loyalty.empty_members')}</td></tr>}
             {sorted.map((m) => (
               <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-2 font-mono text-xs">{m.code || '—'}</td>
@@ -312,9 +296,6 @@ function MembersPanel({ isAdmin, canExport }: { isAdmin: boolean; canExport: boo
                 <td className="px-3 py-2 font-mono text-xs text-slate-600">{m.phone || '—'}</td>
                 <td className="px-3 py-2 text-end font-bold text-indigo-700">{Number(m.loyalty_points || 0).toLocaleString()}</td>
                 <td className="px-3 py-2 text-end">{Number(m.total_sales || 0).toFixed(2)}</td>
-                <td className="px-3 py-2 text-end">{m.sale_count ?? 0}</td>
-                <td className="px-3 py-2 text-end text-slate-600">{Number(m.lifetime_earned || 0).toLocaleString()}</td>
-                <td className="px-3 py-2 text-end text-xs text-slate-500">{m.last_sale_at ? formatDateTime(m.last_sale_at) : '—'}</td>
               </tr>
             ))}
           </tbody>
