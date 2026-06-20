@@ -32,7 +32,7 @@ pip install -q -r "$APP_DIR/backend/requirements.txt" 2>/dev/null || true
 
 info "Applying database schema migrations..."
 cd "$APP_DIR/backend"
-python init_db.py || true
+python init_db.py
 
 info "Building frontend..."
 cd "$APP_DIR/frontend"

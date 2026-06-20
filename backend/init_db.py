@@ -664,16 +664,37 @@ CREATE TABLE IF NOT EXISTS digital_platforms (
 CREATE INDEX IF NOT EXISTS idx_digital_platforms_active ON digital_platforms(active, sort_order);
 """
 
+# Applied one statement at a time so a failure in the big SQL blob cannot roll these back.
+PRODUCT_COLUMN_MIGRATIONS = [
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_unit VARCHAR(30)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL",
+    """CREATE INDEX IF NOT EXISTS idx_products_intl_barcode_lookup
+       ON products(UPPER(international_barcode))
+       WHERE international_barcode IS NOT NULL AND international_barcode <> ''""",
+]
+
+
+def apply_product_columns(cur, conn) -> list:
+    """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
+    warnings = []
+    for stmt in PRODUCT_COLUMN_MIGRATIONS:
+        try:
+            cur.execute(stmt)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            warnings.append(f"{stmt[:72].strip()}… -> {e}")
+    return warnings
+
 
 def init():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute(SQL)
-    from digital_platforms import ensure_default_platforms
-    ensure_default_platforms(cur)
-    conn.commit()
-    conn.close()
-    print("✅ Database tables created successfully!")
+    from platform_db import bootstrap_platform, apply_schema_to_all_tenants
+    bootstrap_platform()
+    result = apply_schema_to_all_tenants()
+    print(f"✅ Database schemas verified: {result}")
 
 
 if __name__ == "__main__":

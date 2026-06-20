@@ -1050,7 +1050,8 @@ def delete_tenant(tid: int) -> None:
 def apply_schema_to_all_tenants() -> dict:
     """Self-heal: run init_db.SQL against every tenant schema. Idempotent."""
     import init_db
-    out = {"ok": 0, "failed": []}
+    from digital_platforms import ensure_default_platforms
+    out = {"ok": 0, "failed": [], "column_warnings": []}
     for t in list_tenants():
         schema = t["schema_name"]
         try:
@@ -1059,11 +1060,20 @@ def apply_schema_to_all_tenants() -> dict:
             cur.execute(
                 sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema))
             )
+            col_warn = init_db.apply_product_columns(cur, conn)
+            if col_warn:
+                out["column_warnings"].append({"slug": t["slug"], "warnings": col_warn})
             cur.execute(init_db.SQL)
+            ensure_default_platforms(cur)
             conn.commit()
             conn.close()
             out["ok"] += 1
         except Exception as e:
+            try:
+                conn.rollback()
+                conn.close()
+            except Exception:
+                pass
             out["failed"].append({"slug": t["slug"], "error": str(e)})
     return out
 

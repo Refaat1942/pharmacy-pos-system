@@ -1871,6 +1871,8 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        from init_db import apply_product_columns
+        apply_product_columns(cur, conn)
         by_barcode, by_intl = _prefetch_existing_products(cur, branch_id)
         auto_seq = {"next": None}
 
