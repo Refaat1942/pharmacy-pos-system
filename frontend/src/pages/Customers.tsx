@@ -31,6 +31,20 @@ export default function Customers() {
   const [viewing, setViewing] = useState<Customer | null>(null)
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
 
+  const saleTypeLabel = (st: string | null | undefined) => {
+    if (st === 'delivery') return t('payment.delivery_sale')
+    if (st === 'digital') return t('payment.digital_sale')
+    if (st === 'insurance') return t('payment.insurance_sale')
+    return t('payment.cash_sale')
+  }
+
+  const saleTypeBadgeClass = (st: string | null | undefined) => {
+    if (st === 'delivery') return 'bg-amber-100 text-amber-800 border-amber-200'
+    if (st === 'digital') return 'bg-violet-100 text-violet-800 border-violet-200'
+    if (st === 'insurance') return 'bg-sky-100 text-sky-800 border-sky-200'
+    return 'bg-slate-100 text-slate-700 border-slate-200'
+  }
+
   const filter = useQuickFilter(list, [
     (c) => c.name,
     (c) => c.code,
@@ -46,7 +60,8 @@ export default function Customers() {
     charged: (c: Customer) => Number(c.total_charged || 0),
     paid: (c: Customer) => Number(c.total_paid || 0),
     balance: (c: Customer) => Number(c.balance || 0),
-  }), [lang])
+    sale_type: (c: Customer) => saleTypeLabel(c.sale_type),
+  }), [lang, t])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
   const load = () => {
@@ -67,6 +82,7 @@ export default function Customers() {
       { label: t('customers.col_name'), value: (c) => c.name },
       { label: t('customers.col_phone'), value: (c) => c.phone || '' },
       { label: t('customers.col_region'), value: (c) => regionLabel(c.region, lang) || '' },
+      { label: t('customers.col_sale_type'), value: (c) => saleTypeLabel(c.sale_type) },
       { label: t('customers.col_limit'), value: (c) => Number(c.credit_limit || 0).toFixed(2) },
       { label: t('customers.col_charged'), value: (c) => Number(c.total_charged || 0).toFixed(2) },
       { label: t('customers.col_paid'), value: (c) => Number(c.total_paid || 0).toFixed(2) },
@@ -120,6 +136,7 @@ export default function Customers() {
               <tr>
                 <SortTh k="code" sort={sort} onToggle={toggle} align="start">{t('customers.col_code')}</SortTh>
                 <SortTh k="name" sort={sort} onToggle={toggle} align="start">{t('customers.col_name')}</SortTh>
+                <SortTh k="sale_type" sort={sort} onToggle={toggle} align="start">{t('customers.col_sale_type')}</SortTh>
                 <SortTh k="phone" sort={sort} onToggle={toggle} align="start">{t('customers.col_phone')}</SortTh>
                 <SortTh k="region" sort={sort} onToggle={toggle} align="start">{t('customers.col_region')}</SortTh>
                 <SortTh k="limit" sort={sort} onToggle={toggle} align="end">{t('customers.col_limit')}</SortTh>
@@ -130,8 +147,8 @@ export default function Customers() {
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
-              {!loading && sorted.length === 0 && <tr><td colSpan={9} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
+              {loading && <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('common.loading')}</td></tr>}
+              {!loading && sorted.length === 0 && <tr><td colSpan={10} className="text-center py-8 text-slate-400">{t('customers.empty')}</td></tr>}
               {sorted.map((c) => {
                 const bal = Number(c.balance)
                 const limit = Number(c.credit_limit || 0)
@@ -148,6 +165,11 @@ export default function Customers() {
                       >
                         {c.name}
                       </button>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${saleTypeBadgeClass(c.sale_type)}`}>
+                        {saleTypeLabel(c.sale_type)}
+                      </span>
                     </td>
                     <td className="px-3 py-2 text-slate-600 font-mono text-xs">
                       <div className="flex items-center gap-1.5">
@@ -326,6 +348,13 @@ function CustomerCardModal({
         <div className="p-5 space-y-4">
           <CustomerInfoCard customer={customer} />
           <dl className="grid grid-cols-2 gap-3 text-sm">
+            <dt className="text-slate-500">{t('customers.col_sale_type')}</dt>
+            <dd className="text-slate-800">
+              {customer.sale_type === 'delivery' ? t('payment.delivery_sale')
+                : customer.sale_type === 'digital' ? t('payment.digital_sale')
+                : customer.sale_type === 'insurance' ? t('payment.insurance_sale')
+                : t('payment.cash_sale')}
+            </dd>
             {customer.email && (
               <>
                 <dt className="text-slate-500">{t('customers.col_email')}</dt>
@@ -421,6 +450,21 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_name')} *</label>
             <input value={f.name || ''} onChange={(e) => setF({ ...f, name: e.target.value })} className="input mt-1 w-full" />
           </div>
+          {f.id && (
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.col_sale_type')}</label>
+              <select
+                value={f.sale_type || 'cash'}
+                onChange={(e) => setF({ ...f, sale_type: e.target.value })}
+                className="input mt-1 w-full"
+              >
+                <option value="cash">{t('payment.cash_sale')}</option>
+                <option value="delivery">{t('payment.delivery_sale')}</option>
+                <option value="digital">{t('payment.digital_sale')}</option>
+                <option value="insurance">{t('payment.insurance_sale')}</option>
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-slate-600 font-medium">{t('customers.col_phone')}</label>

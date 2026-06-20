@@ -481,6 +481,8 @@ def create_profile(body: ProfileIn, current_user=Depends(get_current_user)):
             ),
         )
         row = dict(cur.fetchone())
+        from customer_insurance_sync import mark_customer_sale_type
+        mark_customer_sale_type(cur, body.customer_id, "insurance")
         conn.commit()
         return row
     finally:
@@ -521,6 +523,8 @@ def update_profile(profile_id: int, body: ProfileIn, current_user=Depends(get_cu
         row = cur.fetchone()
         if not row:
             raise HTTPException(404, "Profile not found")
+        from customer_insurance_sync import mark_customer_sale_type
+        mark_customer_sale_type(cur, body.customer_id, "insurance")
         conn.commit()
         return dict(row)
     finally:
@@ -1199,8 +1203,6 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
 
     if not req.insurance_company_id or not req.insurance_plan_id:
         raise HTTPException(400, "Insurance company and plan are required")
-    if not req.customer_id:
-        raise HTTPException(400, "Customer is required for insurance sales")
 
     cur.execute(
         """SELECT p.*, c.field_config, c.status AS company_status, c.name_en AS company_name_en,
@@ -1216,6 +1218,22 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
 
     patient_fields = req.insurance_patient_fields or {}
     _validate_patient_fields(plan_row["field_config"] or {}, patient_fields)
+
+    from customer_insurance_sync import ensure_customer_for_insurance_sale, patient_display_name
+    if not str(patient_fields.get("patient_first_name") or "").strip() and not str(patient_fields.get("patient_name") or "").strip():
+        raise HTTPException(400, "Patient name is required in insurance transaction")
+    if not str(patient_fields.get("insurance_card_number") or "").strip() and not str(patient_fields.get("membership_number") or "").strip():
+        raise HTTPException(400, "Insurance card or membership number is required")
+
+    resolved_customer_id = ensure_customer_for_insurance_sale(
+        cur,
+        patient_fields,
+        branch_id=branch_id,
+        company_id=req.insurance_company_id,
+        plan_id=req.insurance_plan_id,
+        existing_customer_id=req.customer_id,
+        user_id=current_user.get("user_id"),
+    )
 
     item_payloads = [
         {
@@ -1247,7 +1265,7 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
                 items=item_payloads,
                 products=products,
                 eligible_amount=sum(i.quantity * i.unit_price - i.discount - (i.offer_discount or 0) for i in items),
-                customer_id=req.customer_id,
+                customer_id=resolved_customer_id,
                 has_insurance=True,
                 has_promotions=any(i.offer_discount for i in items),
             )
@@ -1259,13 +1277,14 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
         plan=dict(plan_row),
         company_id=req.insurance_company_id,
         plan_id=req.insurance_plan_id,
-        customer_id=req.customer_id,
+        customer_id=resolved_customer_id,
         patient_fields=patient_fields,
         discount_card_result=card_result,
     )
 
     snapshot = {
         **patient_fields,
+        "patient_name": patient_fields.get("patient_name") or patient_display_name(patient_fields),
         "company_id": req.insurance_company_id,
         "plan_id": req.insurance_plan_id,
         "company_name_en": plan_row["company_name_en"],
@@ -1282,4 +1301,5 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
         "discount_card_result": card_result,
         "company_id": req.insurance_company_id,
         "plan_id": req.insurance_plan_id,
+        "customer_id": resolved_customer_id,
     }

@@ -25,6 +25,13 @@ interface Props {
 
 const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'patient_share_pct', 'max_patient_share'])
 
+function hasPatientIdentity(fields: Record<string, string>): boolean {
+  const first = (fields.patient_first_name || '').trim()
+  const last = (fields.patient_last_name || '').trim()
+  if (first || last) return true
+  return !!(fields.patient_name || '').trim()
+}
+
 function profileLabel(p: InsuranceProfile): string {
   const card = p.insurance_card_number || p.membership_number || `#${p.id}`
   const extra = p.extra_fields?.patient_name || p.extra_fields?.patient_first_name
@@ -168,8 +175,8 @@ export default function InsurancePosPanel({
   }, [discountCardId, onCardChange])
 
   useEffect(() => {
-    onReadyChange?.(!!(companyId && planId && preview && selectedCustomer))
-  }, [companyId, planId, preview, selectedCustomer, onReadyChange])
+    onReadyChange?.(!!(companyId && planId && preview && hasPatientIdentity(patientFields)))
+  }, [companyId, planId, preview, patientFields, onReadyChange])
 
   useEffect(() => {
     if (!companyId || !planId || !cartItems.length) {
@@ -273,10 +280,15 @@ export default function InsurancePosPanel({
 
   return (
     <div className="space-y-3 p-4 bg-sky-50 border-2 border-sky-200 rounded-xl max-h-[70vh] overflow-y-auto">
-      <p className="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-2 sticky top-0 bg-sky-50 py-1 z-10">
-        <Shield size={14} />
-        {t('insurance.transaction_title')}
-      </p>
+      <div className="sticky top-0 bg-sky-50 py-1 z-10 space-y-1">
+        <p className="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-2">
+          <Shield size={14} />
+          {t('insurance.transaction_title')}
+        </p>
+        {!selectedCustomer && (
+          <p className="text-[11px] text-sky-700">{t('insurance.patient_auto_register')}</p>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div>

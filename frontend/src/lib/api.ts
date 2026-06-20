@@ -92,6 +92,7 @@ export interface Customer {
   total_paid?: number
   branch_ids?: number[]
   loyalty_points?: number
+  sale_type?: string | null
 }
 
 export interface LoyaltySettings {

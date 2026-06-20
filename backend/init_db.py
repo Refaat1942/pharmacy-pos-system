@@ -629,6 +629,7 @@ ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_earn_on_account BO
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS loyalty_max_redeem_pct DECIMAL(6,2) DEFAULT 50;
 
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS loyalty_points INTEGER DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS sale_type VARCHAR(20) DEFAULT 'cash';
 
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS loyalty_points_earned INTEGER DEFAULT 0;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS loyalty_points_redeemed INTEGER DEFAULT 0;

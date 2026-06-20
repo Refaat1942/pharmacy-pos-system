@@ -149,7 +149,6 @@ export default function PaymentModal({
 
   const canContinueSetup = () => {
     if (saleType === 'insurance') {
-      if (!selectedCustomer) return false
       return insuranceReady
     }
     if (needsDelivery) {
@@ -159,10 +158,6 @@ export default function PaymentModal({
   }
 
   const goToPaymentStep = () => {
-    if (saleType === 'insurance' && !selectedCustomer) {
-      setError(t('insurance.customer_required') as string)
-      return
-    }
     if (!canContinueSetup()) {
       if (saleType === 'insurance') setError(t('insurance.complete_transaction') as string)
       else if (needsDelivery && !deliveryPersonId) setError(t('payment.delivery_person_required') as string)
@@ -230,7 +225,7 @@ export default function PaymentModal({
   }, [
     loyaltyOn, selectedCustomer?.id, cartTotal, loyaltyRedeem, paymentMethod, accountPaidNow,
   ])
-  const requiresCustomerInfo = effectiveTotal > 100 || isInsurance
+  const requiresCustomerInfo = !isInsurance && effectiveTotal > 100
   const hasDeliveryCustomerDetails =
     deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== ''
   const hasCustomerForShipment =
@@ -297,10 +292,6 @@ export default function PaymentModal({
       return
     }
     if (isInsurance) {
-      if (!selectedCustomer) {
-        setError(t('insurance.customer_required') as string)
-        return
-      }
       if (!insuranceCompanyId || !insurancePlanId || !insurancePreview) {
         setError(t('insurance.select_company_plan') as string)
         return
@@ -519,11 +510,6 @@ export default function PaymentModal({
 
             {checkoutStep === 'setup' && isInsurance && (
               <>
-                {!selectedCustomer && (
-                  <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                    {t('insurance.customer_required')}
-                  </div>
-                )}
                 <InsurancePosPanel
                   cartItems={cartItems}
                   selectedCustomer={selectedCustomer}

@@ -656,10 +656,6 @@ export default function POS() {
   const tryCheckout = () => {
     if (!canCheckout) return
     setCheckoutHint('')
-    if (posSaleType === 'insurance' && !selectedCustomer) {
-      setCheckoutHint(t('insurance.customer_required') as string)
-      return
-    }
     setShowPaymentModal(true)
   }
 
@@ -1224,8 +1220,8 @@ export default function POS() {
 
             <div className="border-t border-dashed border-slate-200 pt-3 mt-1">
               <PosSaleTypePicker value={posSaleType} onChange={setPosSaleType} compact />
-              {posSaleType === 'insurance' && !selectedCustomer && (
-                <p className="text-[10px] text-amber-700 mt-2 font-medium">{t('insurance.customer_required')}</p>
+              {posSaleType === 'insurance' && (
+                <p className="text-[10px] text-sky-700 mt-2 font-medium">{t('insurance.patient_auto_register')}</p>
               )}
             </div>
           </div>

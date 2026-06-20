@@ -803,7 +803,7 @@ def create_sale(req: SaleRequest,
         insurance_totals = None
         invoice_discount = req.discount
 
-        if req.type != "return" and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
+        if req.type != "return" and net_total > 100 and req.type != "insurance" and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
 
         cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
@@ -911,10 +911,15 @@ def create_sale(req: SaleRequest,
                 change = max(0.0, req.cash_amount - net_total)
 
         # Non-admin: any sale that attaches a customer_id requires customer-branch authorization
+        insurance_customer_id = insurance_data.get("customer_id") if insurance_data else None
         invoice_customer_id = (
-            account_customer_id
-            if req.payment_method == "account" and req.type != "return"
-            else req.customer_id
+            insurance_customer_id
+            if req.type == "insurance"
+            else (
+                account_customer_id
+                if req.payment_method == "account" and req.type != "return"
+                else req.customer_id
+            )
         )
         if invoice_customer_id and current_user.get("role") != "admin":
             cur.execute(
@@ -1204,6 +1209,10 @@ def create_sale(req: SaleRequest,
                     branch_id=branch_id,
                     discount_amount=float(card_res.get("discount_amount") or 0),
                 )
+
+        if invoice_customer_id and req.type in ("cash", "delivery", "digital", "insurance"):
+            from customer_insurance_sync import mark_customer_sale_type
+            mark_customer_sale_type(cur, invoice_customer_id, req.type)
 
         conn.commit()
         cur.execute(
