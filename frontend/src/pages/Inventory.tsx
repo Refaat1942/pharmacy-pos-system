@@ -33,6 +33,12 @@ import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import { useAuth } from '../lib/auth'
 import { inventoryTabEnabled } from '../lib/featureGates'
+import {
+  DEFAULT_MATERIAL_GROUP,
+  MATERIAL_GROUP_CODES,
+  materialGroupLabel,
+  originFromMaterialGroup,
+} from '../lib/materialGroups'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 
 const SORT_TH_CLASS = 'font-semibold text-xs uppercase tracking-wider'
@@ -864,6 +870,8 @@ function ExpiryBatchesPanel({
 
 function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: () => void; onSaved: () => void }) {
   const { t, i18n } = useTranslation()
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const itemExt = item as Product & { material_group?: string; origin_type?: string; medication_type?: string }
   const [f, setF] = useState({
     barcode: item?.barcode || '',
     international_barcode: item?.international_barcode || '',
@@ -881,8 +889,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     pack_size: item?.pack_size?.toString() || '1',
     sub_unit: item?.sub_unit || '',
     sub_price: item?.sub_price != null ? String(item.sub_price) : '',
-    origin_type: (item as Product & { origin_type?: string })?.origin_type || 'local',
-    medication_type: (item as Product & { medication_type?: string })?.medication_type || '',
+    material_group: itemExt?.material_group || (itemExt?.origin_type === 'imported' ? 'DI' : DEFAULT_MATERIAL_GROUP),
+    medication_type: itemExt?.medication_type || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -920,7 +928,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         sub_price: packSize > 1
           ? (f.sub_price ? parseFloat(f.sub_price) : Math.round((priceNum / packSize) * 100) / 100)
           : null,
-        origin_type: f.origin_type || 'local',
+        material_group: f.material_group || DEFAULT_MATERIAL_GROUP,
+        origin_type: originFromMaterialGroup(f.material_group || DEFAULT_MATERIAL_GROUP),
         medication_type: f.medication_type || null,
       }
       if (item) {
@@ -982,11 +991,25 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 ))}
               </datalist>
             </Field>
-            <Field label={t('inventory.f_origin_type')}>
-              <select value={f.origin_type} onChange={e => setF({ ...f, origin_type: e.target.value })} className="input">
-                <option value="local">{t('inventory.origin_local')}</option>
-                <option value="imported">{t('inventory.origin_imported')}</option>
+            <Field label={t('inventory.f_material_group')}>
+              <select
+                value={f.material_group}
+                onChange={e => setF({ ...f, material_group: e.target.value })}
+                className="input"
+              >
+                {MATERIAL_GROUP_CODES.map((code) => (
+                  <option key={code} value={code}>
+                    {code} — {materialGroupLabel(code, t, lang)}
+                  </option>
+                ))}
               </select>
+              <p className="text-[11px] text-slate-500 mt-1">
+                {t('inventory.material_group_hint', {
+                  origin: originFromMaterialGroup(f.material_group) === 'imported'
+                    ? t('inventory.origin_imported')
+                    : t('inventory.origin_local'),
+                })}
+              </p>
             </Field>
             <Field label={t('inventory.f_medication_type')}>
               <select value={f.medication_type} onChange={e => setF({ ...f, medication_type: e.target.value })} className="input">
@@ -2141,7 +2164,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           <div>{t('inventory.excel_help_cols')}</div>
           <div className="text-xs mt-1 text-slate-600">{t('inventory.excel_help_auto')}</div>
           <code className="block mt-2 text-xs bg-white p-3 rounded border border-slate-200 leading-relaxed">
-            Code, Material Name, [Name (Arabic)], International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
+            Code, Material Name, [Name (Arabic)], International Barcode, Material Group, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
           <p className="text-[11px] text-slate-500 mt-1">{t('inventory.excel_help_optional_ar')}</p>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">

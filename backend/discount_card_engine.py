@@ -7,6 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Optional
 
 from insurance_constants import DEFAULT_CARD_COMPATIBILITY, DEFAULT_CARD_RULES
+from material_groups import is_discountable_product, resolve_product_origin
 
 Q = Decimal("0.01")
 
@@ -97,7 +98,9 @@ def calculate_discount_card(
         for item in items:
             pid = item["product_id"]
             product = products.get(pid) or {}
-            origin = (product.get("origin_type") or "local").lower()
+            if not is_discountable_product(product):
+                continue
+            origin = resolve_product_origin(product)
             pct = imported_pct if origin == "imported" else local_pct
             if pct <= 0:
                 continue

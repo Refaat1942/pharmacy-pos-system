@@ -36,7 +36,7 @@ def _load_products(cur, product_ids: list[int]) -> dict[int, dict]:
     if not product_ids:
         return {}
     cur.execute(
-        """SELECT id, category, origin_type, medication_type, brand_id,
+        """SELECT id, category, origin_type, medication_type, material_group, brand_id,
                   COALESCE(is_service, false) AS is_service, name_en, name_ar
            FROM products WHERE id = ANY(%s)""",
         (product_ids,),

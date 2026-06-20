@@ -135,6 +135,7 @@ export interface InsuranceTotals {
 export interface InsuranceLineResult {
   product_id: number
   product_name?: string
+  material_group?: string
   origin_type?: string
   coverage_rule?: string
   line_gross: number

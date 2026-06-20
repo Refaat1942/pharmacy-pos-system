@@ -674,6 +674,7 @@ CREATE TABLE IF NOT EXISTS product_brands (
 
 ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_type VARCHAR(20) DEFAULT 'local';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS medication_type VARCHAR(20);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS material_group VARCHAR(20) DEFAULT 'DL';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id INTEGER REFERENCES product_brands(id);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT false;
 
@@ -864,6 +865,7 @@ PRODUCT_COLUMN_MIGRATIONS = [
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS material_group VARCHAR(20) DEFAULT 'DL'",
     """CREATE INDEX IF NOT EXISTS idx_products_intl_barcode_lookup
        ON products(UPPER(international_barcode))
        WHERE international_barcode IS NOT NULL AND international_barcode <> ''""",

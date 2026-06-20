@@ -474,6 +474,7 @@ class ProductCreate(BaseModel):
     sub_price: Optional[float] = None
     origin_type: Optional[str] = "local"
     medication_type: Optional[str] = None
+    material_group: Optional[str] = "DL"
     is_service: Optional[bool] = False
 
 
@@ -488,13 +489,21 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
         if not barcode:
             from inventory import _next_material_barcode
             barcode = _next_material_barcode(cur)
+        from material_groups import normalize_material_group, product_fields_from_material_group, infer_material_group
+        mg = normalize_material_group(req.material_group)
+        if mg:
+            cls = product_fields_from_material_group(mg)
+        else:
+            cls = product_fields_from_material_group(
+                infer_material_group(origin_type=req.origin_type, is_service=req.is_service, category=req.category)
+            )
         cur.execute(
-            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, is_service)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, material_group, is_service)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
              req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price,
-             (req.origin_type or "local"), req.medication_type, bool(req.is_service)),
+             cls["origin_type"], req.medication_type, cls["material_group"], cls["is_service"]),
         )
         product = cur.fetchone()
         if req.stock and req.stock > 0:

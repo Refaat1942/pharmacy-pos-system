@@ -218,6 +218,7 @@ class ProductUpdate(BaseModel):
     sub_price: Optional[float] = None
     origin_type: Optional[str] = None
     medication_type: Optional[str] = None
+    material_group: Optional[str] = None
     is_service: Optional[bool] = None
 
 
@@ -225,7 +226,8 @@ class ProductUpdate(BaseModel):
 
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
-                         "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type", "is_service"}
+                         "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type",
+                         "material_group", "is_service"}
 
 
 @router.put("/products/{product_id}")
@@ -235,6 +237,17 @@ def update_product(product_id: int, req: ProductUpdate,
               if k in ALLOWED_UPDATE_FIELDS}
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if "material_group" in fields or "origin_type" in fields or "is_service" in fields:
+        from material_groups import infer_material_group, product_fields_from_material_group, normalize_material_group
+        mg = normalize_material_group(fields.get("material_group"))
+        if mg:
+            fields.update(product_fields_from_material_group(mg))
+        elif any(k in fields for k in ("origin_type", "is_service")):
+            inferred = infer_material_group(
+                origin_type=fields.get("origin_type"),
+                is_service=fields.get("is_service"),
+            )
+            fields.update(product_fields_from_material_group(inferred))
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -1631,6 +1644,23 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
                 except ValueError:
                     continue
 
+    from material_groups import infer_material_group, normalize_material_group, product_fields_from_material_group
+    mg_raw = _row_get(
+        r, "material group", "material_group", "materialgroup", "mg", "mat group",
+        "item group", "product group", "material type", "material classification",
+    )
+    origin_raw = _row_get(r, "origin", "origin type", "origin_type", "local imported", "local/imported")
+    mg = normalize_material_group(mg_raw)
+    if not mg and origin_raw:
+        o = str(origin_raw).strip().lower()
+        if "import" in o:
+            mg = "DI"
+        elif "local" in o:
+            mg = "DL"
+    if not mg:
+        mg = infer_material_group(category=category, origin_type=None)
+    classification = product_fields_from_material_group(mg)
+
     if pack_size > 1:
         sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
         sub_price = round(price / pack_size, 2) if price else None
@@ -1658,6 +1688,9 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         "qty_big": qty_big,
         "qty_provided": qty_provided,
         "expiry_date": expiry_date,
+        "material_group": classification["material_group"],
+        "origin_type": classification["origin_type"],
+        "is_service": classification["is_service"],
     }
 
 
@@ -1807,14 +1840,15 @@ def bulk_template(current_user=Depends(get_current_user)):
     ws = wb.active
     ws.title = "Items"
     headers = [
-        "Code", "Material Name", "Name (Arabic)", "International Barcode", "Stock", "Unit",
+        "Code", "Material Name", "Name (Arabic)", "International Barcode", "Material Group",
+        "Stock", "Unit",
         "Sub unit", "Subunit Quantity", "Sales Price", "Cost", "Category",
         "Min Stock", "Expiry Date",
     ]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 48 Tab", "بانادول اكسترا", "5000112637922", 100,
+    ws.append(["1234567890123", "Panadol Extra 48 Tab", "بانادول اكسترا", "5000112637922", "DL", 100,
                "Box", "Strip", 4, 116.00, 80.00, "Painkillers", 10, "2027-12-31"])
-    ws.append(["7654321098765", "Augmentin 1g", "أوجمنتين 1 جم", "8901234567890", 50,
+    ws.append(["7654321098765", "Augmentin 1g", "أوجمنتين 1 جم", "8901234567890", "DI", 50,
                "Box", "Tablet", 14, 180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
     buf = io.BytesIO()
     wb.save(buf)
@@ -1944,6 +1978,9 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     stock = row["stock"]
     qty_provided = row["qty_provided"]
     expiry_date = row["expiry_date"]
+    material_group = row.get("material_group")
+    origin_type = row.get("origin_type")
+    is_service = row.get("is_service", False)
     auto_code_inc = 0
 
     if not barcode:
@@ -1969,10 +2006,13 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
             """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
                price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
                sub_price=%s, active=true, barcode=COALESCE(%s, barcode),
-               international_barcode=COALESCE(%s, international_barcode)
+               international_barcode=COALESCE(%s, international_barcode),
+               material_group=COALESCE(%s, material_group), origin_type=COALESCE(%s, origin_type),
+               is_service=COALESCE(%s, is_service)
                WHERE id=%s""",
             (name_en, name_ar, category, unit, price, cost, min_stock,
-             pack_size, sub_unit, sub_price, barcode, intl_barcode, existing["id"]),
+             pack_size, sub_unit, sub_price, barcode, intl_barcode,
+             material_group, origin_type, is_service, existing["id"]),
         )
         _retire_duplicate_products(cur, branch_id, existing["id"], barcode or existing.get("barcode"), intl_barcode)
         if qty_provided:
@@ -2012,10 +2052,12 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
 
     cur.execute(
         """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
-           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
+           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
+           material_group, origin_type, is_service)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
         (barcode, intl_barcode, name_ar, name_en, category, unit,
-         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
+         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
+         material_group, origin_type, is_service),
     )
     new_row = cur.fetchone()
     new_id = new_row["id"]

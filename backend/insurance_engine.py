@@ -14,6 +14,13 @@ from insurance_constants import (
     DEFAULT_RESTRICTIONS,
     MEDICINE_CATEGORY_HINTS,
 )
+from material_groups import (
+    infer_material_group,
+    is_discountable_product,
+    normalize_material_group,
+    resolve_product_kind,
+    resolve_product_origin,
+)
 
 Q = Decimal("0.01")
 
@@ -104,6 +111,33 @@ def _category_coverage_pct(
     coverage_rules: dict,
     patient_fields: Optional[dict],
 ) -> tuple[float, str]:
+    if not is_discountable_product(product):
+        return 0.0, "non_discountable"
+
+    kind = resolve_product_kind(product)
+    origin = resolve_product_origin(product)
+    mg = normalize_material_group(product.get("material_group")) or infer_material_group(
+        origin_type=origin,
+        is_service=product.get("is_service"),
+        category=product.get("category"),
+    )
+
+    if kind in ("service", "lab"):
+        rule = "lab" if kind == "lab" else "services"
+        return float(coverage_rules.get("services_pct") or 0), rule
+
+    if kind == "cosmetic":
+        pct = float(coverage_rules.get("cosmetics_pct") or 0)
+        return pct, f"cosmetics_{origin}"
+
+    if kind == "medical_supply":
+        pct = float(coverage_rules.get("medical_supplies_pct") or 0)
+        return pct, f"medical_supplies_{origin}"
+
+    if kind == "drug":
+        prod = {**product, "origin_type": origin, "material_group": mg}
+        return _drug_coverage_pct(prod, coverage_rules, patient_fields)
+
     cat = (product.get("category") or "").strip()
     cat_lower = cat.lower()
     is_service = bool(product.get("is_service"))
@@ -119,7 +153,6 @@ def _category_coverage_pct(
     if _is_medicine_product(product):
         return _drug_coverage_pct(product, coverage_rules, patient_fields)
 
-    origin = (product.get("origin_type") or "local").lower()
     if origin == "imported":
         return float(coverage_rules.get("imported_drugs_pct") or 0), "imported_drugs"
     return float(coverage_rules.get("local_drugs_pct") or 0), "local_drugs"
@@ -287,10 +320,16 @@ def calculate_insurance_sale(
 
         patient_line = line_net - covered
         insurance_covered += covered
-        origin = (product.get("origin_type") or "local").lower()
+        origin = resolve_product_origin(product)
+        mg = normalize_material_group(product.get("material_group")) or infer_material_group(
+            origin_type=origin,
+            is_service=product.get("is_service"),
+            category=product.get("category"),
+        )
         line_results.append({
             "product_id": pid,
             "product_name": product.get("name_en") or product.get("name_ar") or "",
+            "material_group": mg,
             "origin_type": origin,
             "line_gross": _money(line_net),
             "coverage_pct": pct,

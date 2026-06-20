@@ -463,7 +463,7 @@ export default function InsurancePosPanel({
             <thead className="bg-sky-100 text-sky-900">
               <tr>
                 <th className="text-start p-1.5">{t('insurance.line_item')}</th>
-                <th className="p-1.5">{t('insurance.line_origin')}</th>
+                <th className="p-1.5">{t('inventory.f_material_group')}</th>
                 <th className="p-1.5">{t('insurance.line_coverage')}</th>
                 <th className="text-end p-1.5">{t('insurance.covered')}</th>
               </tr>
@@ -472,7 +472,9 @@ export default function InsurancePosPanel({
               {preview.lines.map((line) => (
                 <tr key={line.product_id} className="border-t border-sky-50">
                   <td className="p-1.5 truncate max-w-[120px]" title={line.product_name}>{line.product_name || `#${line.product_id}`}</td>
-                  <td className="p-1.5 text-center capitalize">{line.origin_type === 'imported' ? t('insurance.origin_imported') : t('insurance.origin_local')}</td>
+                  <td className="p-1.5 text-center font-mono" title={line.material_group || line.origin_type}>
+                    {line.material_group || (line.origin_type === 'imported' ? 'DI' : 'DL')}
+                  </td>
                   <td className="p-1.5 text-center">{line.coverage_pct}%</td>
                   <td className="p-1.5 text-end font-mono">{line.covered_amount.toFixed(2)}</td>
                 </tr>
