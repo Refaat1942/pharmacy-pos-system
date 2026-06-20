@@ -17,8 +17,35 @@ type Tab = 'companies' | 'plans' | 'claims' | 'dashboard' | 'reports' | 'templat
 
 const emptyCompany = (): Partial<InsuranceCompany> => ({
   code: '', name_ar: '', name_en: '', status: 'active', field_config: {},
-  local_drugs_pct: 80, imported_drugs_pct: 70, patient_share_pct: 20,
+  local_drugs_pct: 80, imported_drugs_pct: 70,
 })
+
+function formatApiError(e: unknown, fallback: string): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (item && typeof item === 'object' && 'msg' in item) return String((item as { msg: string }).msg)
+        return String(item)
+      })
+      .join('; ')
+  }
+  return fallback
+}
+
+function companyPayload(c: Partial<InsuranceCompany>) {
+  const nameEn = (c.name_en || '').trim()
+  return {
+    code: (c.code || '').trim(),
+    name_en: nameEn,
+    name_ar: (c.name_ar || '').trim() || nameEn,
+    status: c.status || 'active',
+    field_config: c.field_config || {},
+    local_drugs_pct: c.local_drugs_pct ?? 80,
+    imported_drugs_pct: c.imported_drugs_pct ?? 70,
+  }
+}
 
 function defaultPlanForCompany(plans: InsurancePlan[], companyId: number) {
   return plans.find((p) => p.company_id === companyId && p.code === 'DEFAULT')
@@ -69,19 +96,20 @@ export default function Insurance() {
   useEffect(() => { load() }, [load])
 
   const saveCompany = async () => {
-    if (!editCompany?.code || !editCompany.name_en || !editCompany.name_ar) {
+    if (!editCompany?.code?.trim() || !editCompany.name_en?.trim()) {
       setError(t('insurance.required_fields') as string)
       return
     }
     setError('')
+    const payload = companyPayload(editCompany)
     try {
-      if (editCompanyId) await insuranceAPI.updateCompany(editCompanyId, editCompany)
-      else await insuranceAPI.createCompany(editCompany)
+      if (editCompanyId) await insuranceAPI.updateCompany(editCompanyId, payload)
+      else await insuranceAPI.createCompany(payload)
       setEditCompany(null)
+      setEditCompanyId(null)
       load()
     } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(typeof d === 'string' ? d : 'Error')
+      setError(formatApiError(e, t('common.error') as string))
     }
   }
 
@@ -168,7 +196,7 @@ export default function Insurance() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             {canManage && (
               <div className="p-4 border-b">
-                <button onClick={() => { setEditCompanyId(null); setShowFieldConfig(false); setEditCompany(emptyCompany()) }}
+                <button onClick={() => { setError(''); setEditCompanyId(null); setShowFieldConfig(false); setEditCompany(emptyCompany()) }}
                   className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2">
                   <Plus size={16} /> {t('insurance.new_company')}
                 </button>
@@ -206,7 +234,6 @@ export default function Insurance() {
                             field_config: c.field_config || {},
                             local_drugs_pct: plan?.coverage_rules?.local_drugs_pct ?? 80,
                             imported_drugs_pct: plan?.coverage_rules?.imported_drugs_pct ?? 70,
-                            patient_share_pct: plan?.financial_rules?.patient_share_pct ?? 20,
                           })
                         }}
                           className="text-pharma-600 hover:underline flex items-center gap-1 ms-auto">
@@ -391,64 +418,84 @@ export default function Insurance() {
 
         {editCompany && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-6">
-              <div className="flex justify-between mb-4">
-                <h2 className="font-bold text-lg">{editCompanyId ? t('insurance.edit_company') : t('insurance.new_company')}</h2>
-                <button onClick={() => setEditCompany(null)}><X /></button>
+            <div className="bg-white rounded-xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl">
+              <div className="flex justify-between items-center px-6 py-4 border-b shrink-0">
+                <h2 className="font-bold text-xl">{editCompanyId ? t('insurance.edit_company') : t('insurance.new_company')}</h2>
+                <button type="button" onClick={() => { setEditCompany(null); setEditCompanyId(null); setError('') }} className="p-1 hover:bg-slate-100 rounded">
+                  <X size={20} />
+                </button>
               </div>
-              <div className="space-y-3 mb-4">
-                <input value={editCompany.code || ''} onChange={(e) => setEditCompany({ ...editCompany, code: e.target.value })}
-                  placeholder={t('insurance.col_code') as string} className="w-full border rounded-lg px-3 py-2 text-sm font-mono uppercase" />
-                <input value={editCompany.name_en || ''} onChange={(e) => setEditCompany({ ...editCompany, name_en: e.target.value })}
-                  placeholder={t('offers.name_en') as string} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                <input value={editCompany.name_ar || ''} onChange={(e) => setEditCompany({ ...editCompany, name_ar: e.target.value })}
-                  placeholder={t('offers.name_ar') as string} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                <select value={editCompany.status || 'active'} onChange={(e) => setEditCompany({ ...editCompany, status: e.target.value })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm">
-                  <option value="active">{t('insurance.active')}</option>
-                  <option value="inactive">{t('insurance.inactive')}</option>
-                </select>
-                <div className="grid grid-cols-3 gap-2 pt-2 border-t">
-                  <label className="text-xs">
-                    <span className="block text-slate-500 mb-1">{t('insurance.local_pct')}</span>
-                    <input type="number" min={0} max={100} value={editCompany.local_drugs_pct ?? 80}
-                      onChange={(e) => setEditCompany({ ...editCompany, local_drugs_pct: Number(e.target.value) })}
-                      className="w-full border rounded-lg px-2 py-1.5 text-sm text-end" />
+              <div className="px-6 py-5 overflow-y-auto flex-1 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">{t('insurance.col_code')} *</span>
+                    <input value={editCompany.code || ''} onChange={(e) => setEditCompany({ ...editCompany, code: e.target.value })}
+                      className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm font-mono uppercase" />
                   </label>
-                  <label className="text-xs">
-                    <span className="block text-slate-500 mb-1">{t('insurance.imported_pct')}</span>
-                    <input type="number" min={0} max={100} value={editCompany.imported_drugs_pct ?? 70}
-                      onChange={(e) => setEditCompany({ ...editCompany, imported_drugs_pct: Number(e.target.value) })}
-                      className="w-full border rounded-lg px-2 py-1.5 text-sm text-end" />
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">{t('insurance.col_status')}</span>
+                    <select value={editCompany.status || 'active'} onChange={(e) => setEditCompany({ ...editCompany, status: e.target.value })}
+                      className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm">
+                      <option value="active">{t('insurance.active')}</option>
+                      <option value="inactive">{t('insurance.inactive')}</option>
+                    </select>
                   </label>
-                  <label className="text-xs">
-                    <span className="block text-slate-500 mb-1">{t('insurance.fields.patient_share_pct')}</span>
-                    <input type="number" min={0} max={100} value={editCompany.patient_share_pct ?? 20}
-                      onChange={(e) => setEditCompany({ ...editCompany, patient_share_pct: Number(e.target.value) })}
-                      className="w-full border rounded-lg px-2 py-1.5 text-sm text-end" />
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">{t('offers.name_en')} *</span>
+                    <input value={editCompany.name_en || ''} onChange={(e) => setEditCompany({ ...editCompany, name_en: e.target.value })}
+                      className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm" />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-medium text-slate-600">{t('offers.name_ar')}</span>
+                    <input value={editCompany.name_ar || ''} onChange={(e) => setEditCompany({ ...editCompany, name_ar: e.target.value })}
+                      placeholder={t('insurance.name_ar_optional') as string}
+                      className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm" />
                   </label>
                 </div>
-                <button type="button" onClick={() => setShowFieldConfig((v) => !v)}
-                  className="text-xs text-pharma-600 hover:underline">
-                  {showFieldConfig ? t('insurance.hide_advanced') : t('insurance.show_advanced')}
-                </button>
-                {showFieldConfig && (
-                  <div className="grid grid-cols-1 gap-1 max-h-40 overflow-y-auto border rounded-lg p-2">
-                    {INSURANCE_FIELD_KEYS.map((key) => (
-                      <div key={key} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate">{insuranceFieldLabel(key, t)}</span>
-                        <select value={editCompany.field_config?.[key] || 'optional'} onChange={(e) => setFieldMode(key, e.target.value as FieldMode)}
-                          className="border rounded px-1 py-0.5 text-[10px]">
-                          <option value="required">{t('insurance.mode_required')}</option>
-                          <option value="optional">{t('insurance.mode_optional')}</option>
-                          <option value="hidden">{t('insurance.mode_hidden')}</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                  <label className="text-sm">
+                    <span className="block text-slate-600 mb-1 font-medium">{t('insurance.local_pct')}</span>
+                    <input type="number" min={0} max={100} value={editCompany.local_drugs_pct ?? 80}
+                      onChange={(e) => setEditCompany({ ...editCompany, local_drugs_pct: Number(e.target.value) })}
+                      className="w-full border rounded-lg px-3 py-2.5 text-sm text-end" />
+                  </label>
+                  <label className="text-sm">
+                    <span className="block text-slate-600 mb-1 font-medium">{t('insurance.imported_pct')}</span>
+                    <input type="number" min={0} max={100} value={editCompany.imported_drugs_pct ?? 70}
+                      onChange={(e) => setEditCompany({ ...editCompany, imported_drugs_pct: Number(e.target.value) })}
+                      className="w-full border rounded-lg px-3 py-2.5 text-sm text-end" />
+                  </label>
+                </div>
+                <div>
+                  <button type="button" onClick={() => setShowFieldConfig((v) => !v)}
+                    className="text-sm text-pharma-600 hover:underline font-medium">
+                    {showFieldConfig ? t('insurance.hide_advanced') : t('insurance.show_advanced')}
+                  </button>
+                  {showFieldConfig && (
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[45vh] overflow-y-auto border rounded-xl p-3 bg-slate-50">
+                      {INSURANCE_FIELD_KEYS.map((key) => (
+                        <div key={key} className="flex items-center justify-between gap-2 text-xs bg-white border rounded-lg px-2 py-2">
+                          <span className="truncate">{insuranceFieldLabel(key, t)}</span>
+                          <select value={editCompany.field_config?.[key] || 'optional'} onChange={(e) => setFieldMode(key, e.target.value as FieldMode)}
+                            className="border rounded px-2 py-1 text-[11px] shrink-0">
+                            <option value="required">{t('insurance.mode_required')}</option>
+                            <option value="optional">{t('insurance.mode_optional')}</option>
+                            <option value="hidden">{t('insurance.mode_hidden')}</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {error && (
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
                 )}
               </div>
-              <button onClick={saveCompany} className="w-full bg-pharma-600 text-white py-2 rounded-lg font-medium">{t('common.save')}</button>
+              <div className="px-6 py-4 border-t shrink-0">
+                <button type="button" onClick={saveCompany} className="w-full bg-pharma-600 text-white py-3 rounded-lg font-semibold hover:bg-pharma-700">
+                  {t('common.save')}
+                </button>
+              </div>
             </div>
           </div>
         )}

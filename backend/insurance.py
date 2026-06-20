@@ -249,11 +249,19 @@ def create_company(body: CompanyIn, current_user=Depends(get_current_user)):
                             user_id=current_user.get("user_id"), new_value=row)
         conn.commit()
         return row
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         if "unique" in str(e).lower():
             raise HTTPException(400, "Company code already exists") from e
-        raise
+        if "insurance_audit_log" in str(e).lower() or "does not exist" in str(e).lower():
+            raise HTTPException(
+                500,
+                "Insurance tables are not fully migrated. Restart the backend or run database init.",
+            ) from e
+        raise HTTPException(500, f"Could not save company: {e}") from e
     finally:
         conn.close()
 
@@ -307,7 +315,7 @@ def update_company(company_id: int, body: CompanyIn, current_user=Depends(get_cu
         conn.rollback()
         if "unique" in str(e).lower():
             raise HTTPException(400, "Company code already exists") from e
-        raise
+        raise HTTPException(500, f"Could not update company: {e}") from e
     finally:
         conn.close()
 

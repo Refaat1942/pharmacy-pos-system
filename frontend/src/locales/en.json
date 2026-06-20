@@ -1804,6 +1804,7 @@
     "imported_pct": "Imported %",
     "show_advanced": "Advanced POS field settings",
     "hide_advanced": "Hide advanced settings",
+    "name_ar_optional": "Optional — uses English name if blank",
     "complete_transaction": "Complete all required insurance fields and wait for calculation",
     "proceed_checkout": "Proceed to checkout",
     "active": "Active",
