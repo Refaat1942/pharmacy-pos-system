@@ -6,6 +6,7 @@ from typing import Optional, List
 from datetime import date, datetime
 import io
 import math
+import re
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, requires_feature
@@ -1343,6 +1344,258 @@ def export_velocity(
 
 DEFAULT_SUB_UNIT = "piece"
 
+PHARMACY_CATEGORIES = [
+    "Medicine", "Cosmetics", "Medical Supplies", "Baby Care",
+    "Personal Care", "Supplements", "Other",
+]
+
+_NAME_CATEGORY_RULES = [
+    (("antibiotic", "augmentin", "amox", "cipro", "azith", "metronid", "doxycycl", "cef"), "Medicine"),
+    (("panadol", "paracetamol", "ibuprofen", "aspirin", "diclofen", "analges", "brufen"), "Medicine"),
+    (("vitamin", "supplement", "omega", "calcium", "zinc", "feroglobin"), "Supplements"),
+    (("shampoo", "cream", "lotion", "serum", "makeup", "lipstick", "mascara"), "Cosmetics"),
+    (("diaper", "baby", "infant", "pampers", "huggies"), "Baby Care"),
+    (("soap", "toothpaste", "deodorant", "sanitizer", "mouthwash"), "Personal Care"),
+    (("syringe", "gloves", "bandage", "gauze", "thermometer", "mask"), "Medical Supplies"),
+]
+
+
+def _normalize_bulk_key(barcode, intl_barcode, name_en):
+    if barcode:
+        return f"bc:{str(barcode).strip().lower()}"
+    if intl_barcode:
+        return f"intl:{str(intl_barcode).strip()}"
+    return f"name:{re.sub(r'\s+', ' ', str(name_en).strip().lower())}"
+
+
+def _lookup_category_online(intl_barcode: str) -> Optional[str]:
+    """Best-effort category from Open Food Facts (GTIN/EAN lookup)."""
+    code = re.sub(r"\D", "", str(intl_barcode or ""))
+    if len(code) < 8:
+        return None
+    import json
+    import urllib.error
+    import urllib.request
+    url = f"https://world.openfoodfacts.org/api/v2/product/{code}.json?fields=categories_tags"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "PharmaPOS/2.0 (pharmacy bulk import)"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+        if payload.get("status") != 1:
+            return None
+        tags = payload.get("product", {}).get("categories_tags") or []
+        joined = " ".join(tags).lower()
+        if any(k in joined for k in ("medicine", "pharmaceutical", "drug")):
+            return "Medicine"
+        if "supplement" in joined or "vitamin" in joined:
+            return "Supplements"
+        if any(k in joined for k in ("cosmetic", "beauty", "skin")):
+            return "Cosmetics"
+        if "baby" in joined or "infant" in joined:
+            return "Baby Care"
+        if any(k in joined for k in ("personal-care", "hygiene", "soap")):
+            return "Personal Care"
+    except (urllib.error.URLError, TimeoutError, ValueError, KeyError):
+        return None
+    return None
+
+
+def _guess_category_from_name(name_en: str, name_ar: str) -> str:
+    text = f"{name_en} {name_ar}".lower()
+    for keywords, cat in _NAME_CATEGORY_RULES:
+        if any(k in text for k in keywords):
+            return cat
+    if any(w in text for w in (" tab", "tablet", " cap", "capsule", " mg", " syrup", " susp", " injection", " ampoule", " vial")):
+        return "Medicine"
+    return "Other"
+
+
+def _resolve_bulk_category(category, name_en, name_ar, intl_barcode) -> Optional[str]:
+    cat = str(category or "").strip()
+    if cat:
+        return cat
+    if intl_barcode:
+        online = _lookup_category_online(intl_barcode)
+        if online:
+            return online
+    return _guess_category_from_name(name_en, name_ar)
+
+
+def _next_auto_barcode(cur, branch_id) -> str:
+    prefix = f"B{branch_id or 0}-"
+    cur.execute(
+        """SELECT barcode FROM products
+           WHERE branch_id IS NOT DISTINCT FROM %s
+             AND barcode LIKE %s
+           ORDER BY barcode DESC LIMIT 1""",
+        (branch_id, prefix + "%"),
+    )
+    row = cur.fetchone()
+    seq = 1
+    if row and row.get("barcode"):
+        tail = str(row["barcode"])[len(prefix):]
+        try:
+            seq = int(tail) + 1
+        except ValueError:
+            seq = 1
+    return f"{prefix}{seq:06d}"
+
+
+def _parse_bulk_row(r: dict, idx: int) -> dict:
+    from datetime import datetime as _dt, date as _date
+
+    name_en = str(_row_get(r, "name_en", "name", "material name", "item name") or "").strip()
+    name_ar = str(_row_get(r, "name_ar", "arabic name", "name (arabic)") or "").strip() or name_en
+    barcode = str(_row_get(r, "barcode", "code", "material code", "item code") or "").strip() or None
+    intl_barcode = str(_row_get(r, "international barcode", "international_barcode",
+                                "intl barcode", "global barcode", "gtin", "ean") or "").strip() or None
+    category = str(_row_get(r, "category") or "").strip() or None
+    unit = str(_row_get(r, "unit", "material unit", "big unit", "main unit") or "box").strip()
+    price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
+    cost_val = _row_get(r, "cost", "cost price", "purchase price")
+    cost = float(cost_val) if cost_val not in (None, "") else None
+    if cost is None and price > 0:
+        cost = price
+    min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
+
+    pack_raw = _row_get(r, "pack_size", "pack size",
+                        "subunit quantity", "sub unit quantity", "subunit qty", "sub unit qty",
+                        "small unit quantity per unit", "small unit qty per unit",
+                        "small unit per unit", "small unit quantity",
+                        "units per unit", "quantity per unit", "qty per unit",
+                        "number of small unit", "number of small units",
+                        "small units", "units per pack", "units per box",
+                        "units per 1 box", "units per big unit")
+    sub_unit_name = str(_row_get(r, "small unit", "small_unit", "sub_unit",
+                                 "sub unit", "small unit name",
+                                 "unit classification", "small unit type") or "").strip()
+
+    if pack_raw in (None, "") and sub_unit_name:
+        try:
+            pack_raw = float(sub_unit_name)
+            sub_unit_name = ""
+        except ValueError:
+            pass
+
+    pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
+    if pack_size < 1:
+        pack_size = 1
+    sub_unit_name = sub_unit_name.lower()
+
+    qty_raw = _row_get(r, "stock", "quantity", "qty")
+    qty_provided = qty_raw not in (None, "")
+    qty_big = float(qty_raw) if qty_provided else 0.0
+
+    expiry_date = None
+    exp_raw = _row_get(r, "expiry", "expiry date", "expiry_date",
+                       "expiration", "expiration date", "exp date", "exp")
+    if exp_raw not in (None, ""):
+        if isinstance(exp_raw, _dt):
+            expiry_date = exp_raw.date()
+        elif isinstance(exp_raw, _date):
+            expiry_date = exp_raw
+        else:
+            s = str(exp_raw).strip()
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"):
+                try:
+                    expiry_date = _dt.strptime(s, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+    if pack_size > 1:
+        sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
+        sub_price = round(price / pack_size, 2) if price else None
+        stock = int(round(qty_big * pack_size))
+    else:
+        sub_unit = None
+        sub_price = None
+        stock = int(round(qty_big))
+
+    return {
+        "source_idx": idx,
+        "name_en": name_en,
+        "name_ar": name_ar,
+        "barcode": barcode,
+        "intl_barcode": intl_barcode,
+        "category": category,
+        "unit": unit,
+        "price": price,
+        "cost": cost,
+        "min_stock": min_stock,
+        "pack_size": pack_size,
+        "sub_unit": sub_unit,
+        "sub_price": sub_price,
+        "stock": stock,
+        "qty_provided": qty_provided,
+        "expiry_date": expiry_date,
+    }
+
+
+def _merge_bulk_rows(rows: list) -> list:
+    """Combine duplicate codes/names in one upload — keep highest price row."""
+    merged = {}
+    order = []
+    for row in rows:
+        key = _normalize_bulk_key(row["barcode"], row["intl_barcode"], row["name_en"])
+        if key not in merged:
+            merged[key] = {**row, "source_rows": [row["source_idx"]]}
+            order.append(key)
+            continue
+        cur = merged[key]
+        cur["source_rows"].append(row["source_idx"])
+        if row["price"] >= cur["price"]:
+            cur["price"] = row["price"]
+            cur["cost"] = max(row["cost"] or 0, cur["cost"] or 0) or row["cost"] or cur["cost"]
+            cur["name_en"] = row["name_en"]
+            cur["name_ar"] = row["name_ar"]
+            cur["unit"] = row["unit"]
+            cur["pack_size"] = row["pack_size"]
+            cur["sub_unit"] = row["sub_unit"]
+            cur["sub_price"] = row["sub_price"]
+        else:
+            cur["cost"] = max(row["cost"] or 0, cur["cost"] or 0) or cur["cost"]
+        if row["qty_provided"]:
+            if cur["qty_provided"]:
+                cur["stock"] += row["stock"]
+            else:
+                cur["stock"] = row["stock"]
+                cur["qty_provided"] = True
+        if not cur["intl_barcode"] and row["intl_barcode"]:
+            cur["intl_barcode"] = row["intl_barcode"]
+        if not cur["category"] and row["category"]:
+            cur["category"] = row["category"]
+        if not cur["expiry_date"] and row["expiry_date"]:
+            cur["expiry_date"] = row["expiry_date"]
+        cur["min_stock"] = max(cur["min_stock"], row["min_stock"])
+    return [merged[k] for k in order]
+
+
+def _find_existing_product(cur, branch_id, barcode, intl_barcode):
+    if barcode:
+        if branch_id is None:
+            cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id IS NULL", (barcode,))
+        else:
+            cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s", (barcode, branch_id))
+        row = cur.fetchone()
+        if row:
+            return row
+    if intl_barcode:
+        if branch_id is None:
+            cur.execute(
+                "SELECT id, stock FROM products WHERE international_barcode=%s AND branch_id IS NULL LIMIT 1",
+                (intl_barcode,),
+            )
+        else:
+            cur.execute(
+                "SELECT id, stock FROM products WHERE international_barcode=%s AND branch_id=%s LIMIT 1",
+                (intl_barcode, branch_id),
+            )
+        row = cur.fetchone()
+        if row:
+            return row
+    return None
+
 
 def _row_get(r, *keys):
     """Return the first non-empty value among the given (lowercased) header keys."""
@@ -1383,17 +1636,17 @@ def bulk_template(current_user=Depends(get_current_user)):
 async def bulk_upload(file: UploadFile = File(...),
                       current_user=Depends(get_current_user),
                       active_branch=Depends(get_active_branch_id)):
-    """Bulk import items from Excel/CSV. Existing barcodes are updated."""
+    """Bulk import items from Excel/CSV. Duplicates in the file are merged (highest price wins)."""
     from openpyxl import load_workbook
     content = await file.read()
     name = (file.filename or "").lower()
 
-    rows = []
+    raw_rows = []
     if name.endswith(".csv"):
         import csv
         text = content.decode("utf-8-sig", errors="replace")
         reader = csv.DictReader(io.StringIO(text))
-        rows = list(reader)
+        raw_rows = list(reader)
     else:
         wb = load_workbook(io.BytesIO(content), data_only=True)
         ws = wb.active
@@ -1402,13 +1655,28 @@ async def bulk_upload(file: UploadFile = File(...),
             if not any(r):
                 continue
             row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
-            rows.append(row)
+            raw_rows.append(row)
 
-    rows = [{(str(k).strip().lower() if k is not None else ""): v
-             for k, v in row.items()} for row in rows]
+    raw_rows = [{(str(k).strip().lower() if k is not None else ""): v
+                  for k, v in row.items()} for row in raw_rows]
 
-    inserted = updated = errors = 0
-    error_details = []
+    parsed = []
+    parse_errors = []
+    for idx, r in enumerate(raw_rows, start=2):
+        try:
+            row = _parse_bulk_row(r, idx)
+            if not row["name_en"]:
+                raise ValueError("Material Name is required")
+            parsed.append(row)
+        except Exception as e:
+            parse_errors.append(f"Row {idx}: {e}")
+
+    merged_rows = _merge_bulk_rows(parsed)
+
+    inserted = updated = errors = len(parse_errors)
+    error_details = list(parse_errors)
+    auto_codes = 0
+    auto_categories = 0
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
@@ -1417,91 +1685,36 @@ async def bulk_upload(file: UploadFile = File(...),
         raise HTTPException(status_code=400, detail="Select a specific branch before uploading items")
     user_id = current_user.get("user_id")
 
-    for idx, r in enumerate(rows, start=2):
+    for row in merged_rows:
         cur.execute("SAVEPOINT row_sp")
         try:
-            name_en = str(_row_get(r, "name_en", "name", "material name", "item name") or "").strip()
-            if not name_en:
-                raise ValueError("Material Name is required")
-            name_ar = str(_row_get(r, "name_ar", "arabic name", "name (arabic)") or "").strip() or name_en
-            barcode = str(_row_get(r, "barcode", "code", "material code", "item code") or "").strip() or None
-            intl_barcode = str(_row_get(r, "international barcode", "international_barcode",
-                                        "intl barcode", "global barcode", "gtin", "ean") or "").strip() or None
-            category = str(_row_get(r, "category") or "").strip() or None
-            unit = str(_row_get(r, "unit", "material unit", "big unit", "main unit") or "box").strip()
-            price = float(_row_get(r, "price", "sales price", "selling price", "material price") or 0)
-            cost_val = _row_get(r, "cost", "cost price", "purchase price")
-            cost = float(cost_val) if cost_val not in (None, "") else None
-            if cost is None and price > 0:
-                cost = price
-            min_stock = int(float(_row_get(r, "min_stock", "min stock", "minimum stock") or 5))
+            name_en = row["name_en"]
+            name_ar = row["name_ar"]
+            barcode = row["barcode"]
+            intl_barcode = row["intl_barcode"]
+            category = _resolve_bulk_category(row["category"], name_en, name_ar, intl_barcode)
+            if not row["category"] and category:
+                auto_categories += 1
+            unit = row["unit"]
+            price = row["price"]
+            cost = row["cost"]
+            min_stock = row["min_stock"]
+            pack_size = row["pack_size"]
+            sub_unit = row["sub_unit"]
+            sub_price = row["sub_price"]
+            stock = row["stock"]
+            qty_provided = row["qty_provided"]
+            expiry_date = row["expiry_date"]
 
-            pack_raw = _row_get(r, "pack_size", "pack size",
-                                "subunit quantity", "sub unit quantity", "subunit qty", "sub unit qty",
-                                "small unit quantity per unit", "small unit qty per unit",
-                                "small unit per unit", "small unit quantity",
-                                "units per unit", "quantity per unit", "qty per unit",
-                                "number of small unit", "number of small units",
-                                "small units", "units per pack", "units per box",
-                                "units per 1 box", "units per big unit")
-            sub_unit_name = str(_row_get(r, "small unit", "small_unit", "sub_unit",
-                                         "sub unit", "small unit name",
-                                         "unit classification", "small unit type") or "").strip()
+            if not barcode:
+                barcode = _next_auto_barcode(cur, branch_id)
+                auto_codes += 1
 
-            if pack_raw in (None, "") and sub_unit_name:
-                try:
-                    pack_raw = float(sub_unit_name)
-                    sub_unit_name = ""
-                except ValueError:
-                    pass
-
-            pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
-            if pack_size < 1:
-                pack_size = 1
-            sub_unit_name = sub_unit_name.lower()
-
-            qty_raw = _row_get(r, "stock", "quantity", "qty")
-            qty_provided = qty_raw not in (None, "")
-            qty_big = float(qty_raw) if qty_provided else 0.0
-
-            from datetime import datetime as _dt, date as _date
-            expiry_date = None
-            exp_raw = _row_get(r, "expiry", "expiry date", "expiry_date",
-                               "expiration", "expiration date", "exp date", "exp")
-            if exp_raw not in (None, ""):
-                if isinstance(exp_raw, _dt):
-                    expiry_date = exp_raw.date()
-                elif isinstance(exp_raw, _date):
-                    expiry_date = exp_raw
-                else:
-                    s = str(exp_raw).strip()
-                    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"):
-                        try:
-                            expiry_date = _dt.strptime(s, fmt).date()
-                            break
-                        except ValueError:
-                            continue
-
-            if pack_size > 1:
-                sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
-                sub_price = round(price / pack_size, 2) if price else None
-                stock = int(round(qty_big * pack_size))
-            else:
-                sub_unit = None
-                sub_price = None
-                stock = int(round(qty_big))
-
-            existing = None
-            if barcode:
-                if branch_id is None:
-                    cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id IS NULL", (barcode,))
-                else:
-                    cur.execute("SELECT id, stock FROM products WHERE barcode=%s AND branch_id=%s", (barcode, branch_id))
-                existing = cur.fetchone()
+            existing = _find_existing_product(cur, branch_id, barcode, intl_barcode)
 
             if existing:
                 cur.execute(
-                    """UPDATE products SET name_en=%s, name_ar=%s, category=%s, unit=%s,
+                    """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
                        price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
                        sub_price=%s, active=true,
                        international_barcode=COALESCE(%s, international_barcode)
@@ -1509,9 +1722,6 @@ async def bulk_upload(file: UploadFile = File(...),
                     (name_en, name_ar, category, unit, price, cost, min_stock,
                      pack_size, sub_unit, sub_price, intl_barcode, existing["id"]),
                 )
-                # Stock & expiry live in the FEFO batch ledger. Only touch them when
-                # the row actually carries a quantity, so a metadata-only re-import
-                # never silently zeroes stock or wipes expiry batches.
                 if qty_provided:
                     old_q = int(existing["stock"])
                     delta = stock - old_q
@@ -1520,8 +1730,6 @@ async def bulk_upload(file: UploadFile = File(...),
                     elif delta < 0:
                         deduct_stock_fefo(cur, existing["id"], -delta, sellable_only=False)
                     elif expiry_date is not None:
-                        # Quantity unchanged but a single expiry was supplied:
-                        # rebuild the lot so the expiry lands in the batch ledger.
                         cur.execute("DELETE FROM product_batches WHERE product_id=%s", (existing["id"],))
                         if stock > 0:
                             add_batch_stock(cur, existing["id"], branch_id, stock, expiry_date)
@@ -1549,8 +1757,6 @@ async def bulk_upload(file: UploadFile = File(...),
                      price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id),
                 )
                 new_id = cur.fetchone()["id"]
-                # Seed the opening quantity through the batch ledger so the expiry
-                # is recorded as a FEFO lot (consistent with PO receive & stocktake).
                 if qty_provided and stock > 0:
                     add_batch_stock(cur, new_id, branch_id, stock, expiry_date)
                     log_movement(
@@ -1564,12 +1770,18 @@ async def bulk_upload(file: UploadFile = File(...),
         except Exception as e:
             cur.execute("ROLLBACK TO SAVEPOINT row_sp")
             errors += 1
-            error_details.append(f"Row {idx}: {e}")
+            src = row.get("source_rows") or ["?"]
+            error_details.append(f"Rows {','.join(map(str, src))}: {e}")
 
     conn.commit()
     conn.close()
     return {
-        "inserted": inserted, "updated": updated, "errors": errors,
+        "inserted": inserted,
+        "updated": updated,
+        "errors": errors,
+        "auto_codes": auto_codes,
+        "auto_categories": auto_categories,
+        "merged_rows": len(merged_rows),
         "error_details": error_details[:50],
     }
 
@@ -1645,8 +1857,8 @@ def reallocation_suggestions(
     Suggest inter-branch transfers based on consumption vs stock.
     Matches products by barcode across branches.
     """
-    if current_user.get("role") not in ("admin", "pharmacist"):
-        raise HTTPException(403, "Admin or pharmacist required")
+    if current_user.get("role") not in ("admin", "pharmacist", "branch_manager"):
+        raise HTTPException(403, "Admin, branch manager, or pharmacist required")
 
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

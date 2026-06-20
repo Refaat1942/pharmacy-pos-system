@@ -12,6 +12,26 @@ import { formatDateTime } from '../lib/formatDate'
 import i18n from '../lib/i18n'
 import { formatMoney, formatInt, formatNumber } from '../lib/formatNumber'
 
+function FieldWithHint({
+  label,
+  hint,
+  children,
+  className = '',
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={className}>
+      <label className="text-xs text-slate-600 font-medium">{label}</label>
+      <div className="mt-1">{children}</div>
+      {hint && <p className="text-[10px] text-slate-500 mt-1 leading-snug">{hint}</p>}
+    </div>
+  )
+}
+
 type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
 
 type POExpiryLot = { expiry_date: string; quantity: number }
@@ -470,36 +490,30 @@ function CreatePOModal({
             {t('purchases.stock_receive_hint')}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.supplier')}</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input mt-1 w-full">
+            <FieldWithHint label={t('purchases.supplier')} hint={t('purchases.hint_supplier') as string}>
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input w-full">
                 <option value="">--</option>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.branch')}</label>
-              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input mt-1 w-full">
+            </FieldWithHint>
+            <FieldWithHint label={t('purchases.branch')} hint={t('purchases.hint_branch') as string}>
+              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input w-full">
                 <option value="">--</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.invoice_number')}</label>
-              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input mt-1 w-full" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.invoice_date')}</label>
-              <DateInput value={invDate} onChange={setInvDate} className="input mt-1 w-full" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.discount')}</label>
-              <input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="input mt-1 w-full" />
-            </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('purchases.tax')}</label>
-              <input type="number" step="0.01" value={tax} onChange={(e) => setTax(Number(e.target.value))} className="input mt-1 w-full" />
-            </div>
+            </FieldWithHint>
+            <FieldWithHint label={t('purchases.invoice_number')} hint={t('purchases.hint_invoice_number') as string}>
+              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input w-full" />
+            </FieldWithHint>
+            <FieldWithHint label={t('purchases.invoice_date')} hint={t('purchases.hint_invoice_date') as string}>
+              <DateInput value={invDate} onChange={setInvDate} className="input w-full" />
+            </FieldWithHint>
+            <FieldWithHint label={t('purchases.discount')} hint={t('purchases.hint_discount') as string}>
+              <input type="number" step="0.01" value={discount} onChange={(e) => setDiscount(Number(e.target.value))} className="input w-full" />
+            </FieldWithHint>
+            <FieldWithHint label={t('purchases.tax')} hint={t('purchases.hint_tax') as string}>
+              <input type="number" step="0.01" value={tax} onChange={(e) => setTax(Number(e.target.value))} className="input w-full" />
+            </FieldWithHint>
           </div>
 
           <div className="border-t pt-3">
@@ -553,15 +567,42 @@ function CreatePOModal({
             <div className="space-y-2">
               {items.length > 0 && (
                 <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
-                  <div className="col-span-2">{t('purchases.col_name')}</div>
-                  <div className="col-span-2">{t('purchases.col_barcode')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.qty')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.bonus_qty')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.cost')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
-                  <div className="col-span-2">{t('purchases.col_expiry')}</div>
+                  <div className="col-span-2">
+                    <div>{t('purchases.col_name')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_name')}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div>{t('purchases.col_barcode')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_barcode')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.qty')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_qty')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.bonus_qty')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_bonus')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.cost')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_cost')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.discount_pct')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_discount')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.vat_pct')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_vat')}</div>
+                  </div>
+                  <div className="col-span-1 text-end">
+                    <div>{t('purchases.public_price')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_public_price')}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <div>{t('purchases.col_expiry')}</div>
+                    <div className="normal-case font-normal text-slate-400">{t('purchases.hint_line_expiry')}</div>
+                  </div>
                   <div className="col-span-1" />
                 </div>
               )}
@@ -935,36 +976,33 @@ function ReplenishmentModal({
 
         {/* Filters */}
         <div className="px-5 py-3 border-b bg-slate-50 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-          <div>
-            <label className="text-xs text-slate-600 font-medium">{t('purchases.branch')}</label>
+          <FieldWithHint label={t('purchases.branch')} hint={t('purchases.hint_branch') as string}>
             <select
               value={branchId}
               onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')}
               disabled={!isAdmin}
-              className="input w-full mt-1"
+              className="input w-full"
             >
               <option value="">{t('purchases.all_branches')}</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label className="text-xs text-slate-600 font-medium">{t('purchases.filter_supplier')}</label>
+          </FieldWithHint>
+          <FieldWithHint label={t('purchases.filter_supplier')} hint={t('purchases.hint_repl_filter_supplier') as string}>
             <select
               value={supplierFilter}
               onChange={(e) => {
                 const v = e.target.value ? Number(e.target.value) : ''
                 setSupplierFilter(v)
-                // Mirror filter into the PO supplier so the draft PO + Excel header are consistent
                 if (v) setPoSupplier(v)
               }}
-              className="input w-full mt-1"
+              className="input w-full"
             >
               <option value="">{t('purchases.all_suppliers')}</option>
               {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </div>
+          </FieldWithHint>
           <div className="flex items-end gap-4">
             <label className="flex items-center gap-2 text-xs text-slate-700 font-medium cursor-pointer">
               <input type="checkbox" checked={onlyZero} disabled={showAll} onChange={(e) => setOnlyZero(e.target.checked)} />
@@ -1021,8 +1059,14 @@ function ReplenishmentModal({
                   <SortTh k="supplier" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_supplier')}</SortTh>
                   <SortTh k="stock" sort={replSort} onToggle={replToggle} align="end">{t('purchases.in_stock')}</SortTh>
                   <SortTh k="min_stock" sort={replSort} onToggle={replToggle} align="end">{t('purchases.min_stock')}</SortTh>
-                  <SortTh k="qty" sort={replSort} onToggle={replToggle} align="end">{t('purchases.order_qty')}</SortTh>
-                  <SortTh k="cost" sort={replSort} onToggle={replToggle} align="end">{t('purchases.cost')}</SortTh>
+                  <SortTh k="qty" sort={replSort} onToggle={replToggle} align="end">
+                    <div>{t('purchases.order_qty')}</div>
+                    <div className="normal-case font-normal text-slate-400 text-[9px]">{t('purchases.hint_repl_qty')}</div>
+                  </SortTh>
+                  <SortTh k="cost" sort={replSort} onToggle={replToggle} align="end">
+                    <div>{t('purchases.cost')}</div>
+                    <div className="normal-case font-normal text-slate-400 text-[9px]">{t('purchases.hint_repl_cost')}</div>
+                  </SortTh>
                   <SortTh k="line_total" sort={replSort} onToggle={replToggle} align="end">{t('purchases.line_total')}</SortTh>
                 </tr>
               </thead>
@@ -1068,20 +1112,20 @@ function ReplenishmentModal({
 
         {/* Action bar */}
         <div className="border-t bg-slate-50 px-5 py-3 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-          <div>
-            <label className="text-xs text-slate-600 font-medium">{t('purchases.supplier')}</label>
+          <FieldWithHint label={t('purchases.supplier')} hint={t('purchases.hint_supplier') as string}>
             <select
               value={poSupplier}
               onChange={(e) => setPoSupplier(e.target.value ? Number(e.target.value) : '')}
-              className="input w-full mt-1"
+              className="input w-full"
             >
               <option value="">--</option>
               {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </div>
+          </FieldWithHint>
           <div className="md:col-span-2">
-            <label className="text-xs text-slate-600 font-medium">{t('purchases.notes_optional')}</label>
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full mt-1" />
+            <FieldWithHint label={t('purchases.notes_optional')} hint={t('purchases.hint_notes') as string}>
+              <input value={notes} onChange={(e) => setNotes(e.target.value)} className="input w-full" />
+            </FieldWithHint>
           </div>
           <div className="text-end">
             <div className="text-xs text-slate-500">{t('purchases.selected_total')}</div>

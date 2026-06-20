@@ -9,8 +9,8 @@ from digital_platforms import platform_display_name as platform_partner_display_
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 def _check_role(user):
-    if user.get("role") not in ("admin", "pharmacist"):
-        raise HTTPException(403, "Reports require admin or pharmacist role")
+    if user.get("role") not in ("admin", "pharmacist", "branch_manager"):
+        raise HTTPException(403, "Reports require admin, branch manager, or pharmacist role")
 
 
 def _resolve_report_branch(request: Request, user: dict) -> Optional[int]:

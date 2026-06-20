@@ -1997,6 +1997,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         <div className="bg-slate-50 p-4 rounded-lg text-slate-700">
           <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
           <div>{t('inventory.excel_help_cols')}</div>
+          <div className="text-xs mt-1 text-slate-600">{t('inventory.excel_help_auto')}</div>
           <code className="block mt-2 text-xs bg-white p-3 rounded border border-slate-200 leading-relaxed">
             Code, Material Name, Name (Arabic), International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
@@ -2010,6 +2011,12 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         {result && (
           <div className="p-3 bg-emerald-50 rounded-lg text-emerald-800">
             ✅ {result.inserted} {t('inventory.imported')}, {result.updated} {t('inventory.updated_count')}, {result.errors} {t('inventory.errors')}
+            {(result.auto_codes > 0 || result.auto_categories > 0) && (
+              <div className="text-xs mt-1">
+                {result.auto_codes > 0 && <span>{t('inventory.auto_codes', { count: result.auto_codes })} </span>}
+                {result.auto_categories > 0 && <span>{t('inventory.auto_categories', { count: result.auto_categories })}</span>}
+              </div>
+            )}
             {result.error_details?.length > 0 && (
               <details className="mt-2 text-xs">
                 <summary className="cursor-pointer">{t('inventory.show_errors')}</summary>

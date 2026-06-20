@@ -55,6 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/expiry', labelKey: 'nav.expiry', Icon: Calendar, feature: 'expiry' },
       { to: '/purchases', labelKey: 'nav.purchases', Icon: FileText, feature: 'purchases' },
       { to: '/suppliers', labelKey: 'nav.suppliers', Icon: Truck, feature: 'suppliers' },
+      { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist', 'branch_manager'] },
     ],
   },
   {
@@ -69,7 +70,8 @@ const NAV_SECTIONS: NavSection[] = [
   {
     sectionKey: 'nav.section_operations',
     items: [
-      { to: '/reports', labelKey: 'nav.reports', Icon: LineChart, feature: 'reports', roles: ['admin', 'pharmacist'] },
+      { to: '/reports', labelKey: 'nav.reports', Icon: LineChart, feature: 'reports', roles: ['admin', 'pharmacist', 'branch_manager'] },
+      { to: '/fraud', labelKey: 'nav.fraud', Icon: ShieldAlert, feature: 'fraud_surveillance', adminOnly: true },
       { to: '/shifts', labelKey: 'nav.shifts', Icon: DollarSign, feature: 'shifts' },
       { to: '/clock', labelKey: 'nav.clock', Icon: Clock, feature: 'hr', featureOption: 'clock', clockScreen: true },
       { to: '/hr', labelKey: 'nav.hr', Icon: UsersRound, feature: 'hr', roles: ['admin', 'branch'] },
@@ -78,8 +80,6 @@ const NAV_SECTIONS: NavSection[] = [
 ]
 
 const PINNED_NAV: NavItem[] = [
-  { to: '/fraud', labelKey: 'nav.fraud', Icon: ShieldAlert, feature: 'fraud_surveillance', adminOnly: true, pinned: true },
-  { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist'], pinned: true },
   { to: '/settings', labelKey: 'nav.settings', Icon: SettingsIcon, feature: 'settings', adminOnly: true, pinned: true },
 ]
 

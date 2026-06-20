@@ -440,7 +440,7 @@ export default function Reports() {
   const [error, setError] = useState<string | null>(null)
 
   const isAdmin = user?.role === 'admin'
-  const canSee = isAdmin || user?.role === 'pharmacist'
+  const canSee = isAdmin || user?.role === 'pharmacist' || user?.role === 'branch_manager'
 
   const dateParams = useMemo(() => ({ date_from: from, date_to: to }), [from, to])
 

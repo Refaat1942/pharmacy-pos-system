@@ -49,7 +49,7 @@ export function canAccessFeature(
       ? new Set(user.permissions)
       : null
 
-  if (feature === 'reports' && !['admin', 'pharmacist'].includes(user.role || '')) {
+  if (feature === 'reports' && !['admin', 'pharmacist', 'branch_manager'].includes(user.role || '')) {
     if (!userPerms?.has('reports')) return false
   }
 
