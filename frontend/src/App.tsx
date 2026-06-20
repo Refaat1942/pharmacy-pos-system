@@ -14,6 +14,8 @@ import Suppliers from './pages/Suppliers'
 import Purchases from './pages/Purchases'
 import Customers from './pages/Customers'
 import Loyalty from './pages/Loyalty'
+import Insurance from './pages/Insurance'
+import DiscountCards from './pages/DiscountCards'
 import Clinics from './pages/Clinics'
 import ClinicPortal from './pages/ClinicPortal'
 import Dashboard from './pages/Dashboard'
@@ -100,6 +102,8 @@ function AppRoutes() {
       <Route path="/purchases" element={<ProtectedRoute feature="purchases"><Purchases /></ProtectedRoute>} />
       <Route path="/customers" element={<ProtectedRoute feature="customers"><Customers /></ProtectedRoute>} />
       <Route path="/loyalty" element={<ProtectedRoute feature="loyalty"><Loyalty /></ProtectedRoute>} />
+      <Route path="/insurance" element={<ProtectedRoute feature="insurance"><Insurance /></ProtectedRoute>} />
+      <Route path="/discount-cards" element={<ProtectedRoute feature="discount_cards"><DiscountCards /></ProtectedRoute>} />
       <Route path="/clinics" element={<ProtectedRoute feature="clinics"><Clinics /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute feature="dashboard"><Dashboard /></ProtectedRoute>} />
       <Route path="/returns" element={<Navigate to="/sales" replace />} />

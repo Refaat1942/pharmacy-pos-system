@@ -215,6 +215,8 @@ export interface Invoice {
   offer_ids?: number[] | null
   offer_savings?: number
   offer_names?: string | null
+  insurance_totals?: import('./insurance').InsuranceTotals | null
+  insurance_snapshot?: Record<string, unknown> | null
 }
 
 export interface SaleResponse {
@@ -332,6 +334,10 @@ export const salesAPI = {
     account_paid_amount?: number
     account_paid_method?: string
     loyalty_points_redeemed?: number
+    insurance_company_id?: number
+    insurance_plan_id?: number
+    insurance_patient_fields?: Record<string, string>
+    discount_card_id?: number
   }) => api.post<SaleResponse>('/sales', data),
   list: (params: {
     limit?: number; offset?: number;
@@ -733,4 +739,42 @@ export const loyaltyAPI = {
     api.get(`/loyalty/customers/${customerId}/summary`),
   adjust: (customerId: number, data: { points: number; notes?: string }) =>
     api.post(`/loyalty/customers/${customerId}/adjust`, data),
+}
+
+export const insuranceAPI = {
+  fieldKeys: () => api.get<{ keys: string[]; defaults: Record<string, string> }>('/insurance/field-keys'),
+  companies: (status?: string) => api.get<import('./insurance').InsuranceCompany[]>('/insurance/companies', { params: status ? { status } : {} }),
+  activeCompanies: () => api.get<import('./insurance').InsuranceCompany[]>('/insurance/companies/active'),
+  createCompany: (data: Partial<import('./insurance').InsuranceCompany>) => api.post('/insurance/companies', data),
+  updateCompany: (id: number, data: Partial<import('./insurance').InsuranceCompany>) => api.put(`/insurance/companies/${id}`, data),
+  plans: (companyId?: number) => api.get<import('./insurance').InsurancePlan[]>('/insurance/plans', { params: companyId ? { company_id: companyId } : {} }),
+  createPlan: (data: Partial<import('./insurance').InsurancePlan> & { company_id: number }) => api.post('/insurance/plans', data),
+  updatePlan: (id: number, data: Partial<import('./insurance').InsurancePlan> & { company_id: number }) => api.put(`/insurance/plans/${id}`, data),
+  calculate: (data: {
+    company_id: number
+    plan_id: number
+    customer_id?: number
+    discount_card_id?: number
+    patient_fields?: Record<string, string>
+    items: { product_id: number; quantity: number; unit_price: number; discount: number; offer_discount?: number }[]
+  }) => api.post<import('./insurance').InsuranceCalculateResult>('/insurance/calculate', data),
+  claims: (params?: { company_id?: number; status?: string }) =>
+    api.get<import('./insurance').InsuranceClaim[]>('/insurance/claims', { params }),
+  generateClaim: (data: { company_id: number; plan_id?: number; branch_id?: number; period_type: string; date_from: string; date_to: string }) =>
+    api.post('/insurance/claims/generate', data),
+  claimDetail: (id: number) => api.get(`/insurance/claims/${id}`),
+  claimStatus: (id: number, status: string) => api.post(`/insurance/claims/${id}/status`, null, { params: { status } }),
+  dashboard: () => api.get('/insurance/dashboard'),
+  audit: (limit = 100) => api.get('/insurance/audit', { params: { limit } }),
+}
+
+export const discountCardsAPI = {
+  programs: () => api.get('/discount-cards/programs'),
+  createProgram: (data: Record<string, unknown>) => api.post('/discount-cards/programs', data),
+  updateProgram: (id: number, data: Record<string, unknown>) => api.put(`/discount-cards/programs/${id}`, data),
+  cards: (params?: { program_id?: number; q?: string }) => api.get('/discount-cards/cards', { params }),
+  lookup: (card_number: string) => api.get('/discount-cards/cards/lookup', { params: { card_number } }),
+  createCard: (data: Record<string, unknown>) => api.post('/discount-cards/cards', data),
+  updateCard: (id: number, data: Record<string, unknown>) => api.put(`/discount-cards/cards/${id}`, data),
+  dashboard: () => api.get('/discount-cards/dashboard'),
 }

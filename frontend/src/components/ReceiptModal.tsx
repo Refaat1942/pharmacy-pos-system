@@ -319,6 +319,24 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 <span className="tabular-nums">{invoice.discount.toFixed(2)}</span>
               </div>
             )}
+            {invoice.type === 'insurance' && invoice.insurance_totals && (
+              <>
+                <div className="flex justify-between text-xs text-sky-700">
+                  <span>{tr('insurance.covered')}</span>
+                  <span className="tabular-nums">{Number(invoice.insurance_totals.insurance_covered || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>{tr('insurance.patient_share')}</span>
+                  <span className="tabular-nums">{Number(invoice.insurance_totals.patient_share || 0).toFixed(2)}</span>
+                </div>
+                {Number(invoice.insurance_totals.copayment || 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{tr('insurance.copayment')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.copayment).toFixed(2)}</span>
+                  </div>
+                )}
+              </>
+            )}
             <div className="flex justify-between text-base font-bold text-gray-900 pt-2 border-t-2 border-gray-200">
               <span>{tr('receipt.net_total')}</span>
               <span className="tabular-nums" style={{ color: accent }}>

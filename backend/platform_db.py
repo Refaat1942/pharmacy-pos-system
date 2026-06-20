@@ -42,6 +42,8 @@ FEATURES_CATALOG = [
     {"key": "ai_assistant", "label": "Smart AI Assistant", "default": True},
     {"key": "offers",     "label": "Promo Offers",         "default": False},
     {"key": "loyalty",    "label": "Loyalty Program",      "default": False},
+    {"key": "insurance",  "label": "Insurance Billing",    "default": False},
+    {"key": "discount_cards", "label": "Discount Cards",   "default": False},
     {"key": "pos_counseling", "label": "Smart POS Counseling", "default": True},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
@@ -68,6 +70,7 @@ FEATURE_OPTIONS_CATALOG = [
             {"key": "dose_labels", "label": "Dose label printing", "default": True},
             {"key": "quick_items", "label": "Quick-add small items", "default": True},
             {"key": "digital_sales", "label": "Digital platform sales", "default": True},
+            {"key": "insurance_sales", "label": "Insurance sales at POS", "default": True},
         ],
     },
     {
@@ -258,6 +261,30 @@ FEATURE_OPTIONS_CATALOG = [
         ],
     },
     {
+        "feature": "insurance",
+        "label": "Insurance Billing",
+        "options": [
+            {"key": "manage", "label": "Manage companies & plans", "default": True},
+            {"key": "pos_billing", "label": "Insurance billing at POS", "default": True},
+            {"key": "claims", "label": "Claims management", "default": True},
+            {"key": "claims_export", "label": "Claim Excel export", "default": True},
+            {"key": "templates", "label": "Receipt & claim templates", "default": True},
+            {"key": "reports", "label": "Insurance reports", "default": True},
+            {"key": "dashboard", "label": "Insurance dashboard", "default": True},
+            {"key": "audit", "label": "Audit log", "default": True},
+        ],
+    },
+    {
+        "feature": "discount_cards",
+        "label": "Discount Cards",
+        "options": [
+            {"key": "manage", "label": "Manage programs & cards", "default": True},
+            {"key": "pos_apply", "label": "Apply cards at POS", "default": True},
+            {"key": "reports", "label": "Usage reports & export", "default": True},
+            {"key": "dashboard", "label": "Discount card dashboard", "default": True},
+        ],
+    },
+    {
         "feature": "pos_counseling",
         "label": "Smart POS Counseling",
         "options": [
@@ -287,6 +314,7 @@ _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
         "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
         "stock_reallocation", "shifts", "hr", "settings", "offers", "loyalty",
+        "insurance", "discount_cards",
     ],
     "pilot": list(ALL_FEATURE_KEYS),
 }

@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2, AlertCircle } from 'lucide-react'
+import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2, AlertCircle, Shield } from 'lucide-react'
 import { salesAPI, employeesAPI, loyaltyAPI } from '../lib/api'
 import type { CartItem, Employee, Customer, SaleResponse, LoyaltyCalculateResult } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useAuth } from '../lib/auth'
 import { platformDisplayLabel } from '../lib/digitalPlatforms'
 import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
+import InsurancePosPanel from './InsurancePosPanel'
+import type { InsuranceCalculateResult } from '../lib/insurance'
 
 interface Props {
   cartItems: CartItem[]
@@ -37,6 +39,7 @@ export default function PaymentModal({
   const lang = i18n.language
   const loyaltyOn = hasFeature('loyalty') && hasFeatureOption('loyalty', 'pos_redeem')
   const digitalSalesOn = hasFeature('pos') && hasFeatureOption('pos', 'digital_sales')
+  const insuranceSalesOn = hasFeature('insurance') && hasFeatureOption('insurance', 'pos_billing')
   const { platforms } = useDigitalPlatforms()
   const langCode = lang === 'ar' ? 'ar' : 'en'
 
@@ -60,6 +63,11 @@ export default function PaymentModal({
   const [digitalBilling, setDigitalBilling] = useState<'paid' | 'account'>('paid')
   const [loyaltyRedeem, setLoyaltyRedeem] = useState('')
   const [loyaltyPreview, setLoyaltyPreview] = useState<LoyaltyCalculateResult | null>(null)
+  const [insuranceCompanyId, setInsuranceCompanyId] = useState<number | null>(null)
+  const [insurancePlanId, setInsurancePlanId] = useState<number | null>(null)
+  const [discountCardId, setDiscountCardId] = useState<number | null>(null)
+  const [insurancePreview, setInsurancePreview] = useState<InsuranceCalculateResult | null>(null)
+  const [insurancePatientFields, setInsurancePatientFields] = useState<Record<string, string>>({})
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
@@ -88,6 +96,13 @@ export default function PaymentModal({
   }, [digitalSalesOn, saleType])
 
   useEffect(() => {
+    if (!insuranceSalesOn && saleType === 'insurance') {
+      setSaleType('cash')
+      setPaymentMethod('cash')
+    }
+  }, [insuranceSalesOn, saleType])
+
+  useEffect(() => {
     if (selectedCustomer) {
       setDeliveryCustomerName(selectedCustomer.name || '')
       setDeliveryCustomerPhone(selectedCustomer.phone || '')
@@ -98,6 +113,8 @@ export default function PaymentModal({
     setSaleType(type)
     if (type === 'digital') {
       setDigitalBilling('paid')
+      setPaymentMethod('cash')
+    } else if (type === 'insurance') {
       setPaymentMethod('cash')
     } else if (paymentMethod === 'account') {
       setPaymentMethod('cash')
@@ -117,15 +134,17 @@ export default function PaymentModal({
     }
   }
 
+  const isInsurance = saleType === 'insurance'
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const cartTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
   const accountPaidNow = Math.min(Math.max(parseFloat(accountPaidAmount) || 0, 0), cartTotal)
-  const loyaltyDiscount = loyaltyOn && loyaltyPreview?.active ? (loyaltyPreview.loyalty_discount || 0) : 0
-  const effectiveTotal = Math.max(0, cartTotal - loyaltyDiscount)
+  const loyaltyDiscount = !isInsurance && loyaltyOn && loyaltyPreview?.active ? (loyaltyPreview.loyalty_discount || 0) : 0
+  const insuranceDue = isInsurance && insurancePreview?.totals ? insurancePreview.totals.final_patient_paid : null
+  const effectiveTotal = insuranceDue != null ? insuranceDue : Math.max(0, cartTotal - loyaltyDiscount)
 
   useEffect(() => {
-    if (!loyaltyOn || !selectedCustomer?.id) {
+    if (!loyaltyOn || !selectedCustomer?.id || isInsurance) {
       setLoyaltyPreview(null)
       setLoyaltyRedeem('')
       return
@@ -145,7 +164,7 @@ export default function PaymentModal({
   }, [
     loyaltyOn, selectedCustomer?.id, cartTotal, loyaltyRedeem, paymentMethod, accountPaidNow,
   ])
-  const requiresCustomerInfo = effectiveTotal > 100
+  const requiresCustomerInfo = effectiveTotal > 100 || isInsurance
   const hasDeliveryCustomerDetails =
     deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== ''
   const hasCustomerForShipment =
@@ -210,6 +229,16 @@ export default function PaymentModal({
     if (requiresCustomerInfo && !hasCustomerInfo) {
       setError(t('payment.customer_required_over_100') as string)
       return
+    }
+    if (isInsurance) {
+      if (!selectedCustomer) {
+        setError(t('insurance.customer_required') as string)
+        return
+      }
+      if (!insuranceCompanyId || !insurancePlanId || !insurancePreview) {
+        setError(t('insurance.select_company_plan') as string)
+        return
+      }
     }
     if (needsDelivery) {
       if (!deliveryPersonId) {
@@ -291,6 +320,10 @@ export default function PaymentModal({
           needsDelivery && deliveryPersonId
             ? deliveryPeople.find((p) => p.id === Number(deliveryPersonId))?.name
             : undefined,
+        insurance_company_id: isInsurance ? insuranceCompanyId ?? undefined : undefined,
+        insurance_plan_id: isInsurance ? insurancePlanId ?? undefined : undefined,
+        insurance_patient_fields: isInsurance ? insurancePatientFields : undefined,
+        discount_card_id: isInsurance && discountCardId ? discountCardId : undefined,
       })
       onSuccess(data)
     } catch (e: any) {
@@ -340,7 +373,7 @@ export default function PaymentModal({
               </p>
             </div>
 
-            {loyaltyOn && selectedCustomer && (
+            {loyaltyOn && selectedCustomer && !isInsurance && (
               <div className="p-3 rounded-xl border-2 border-indigo-100 bg-indigo-50/80 space-y-2">
                 <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider">
                   {t('loyalty.pos_title')}
@@ -380,11 +413,12 @@ export default function PaymentModal({
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 {t('payment.sale_type')}
               </p>
-              <div className={`grid gap-2 ${digitalSalesOn ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              <div className={`grid gap-2 ${digitalSalesOn && insuranceSalesOn ? 'grid-cols-4' : digitalSalesOn || insuranceSalesOn ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {[
                   { value: 'cash', icon: Banknote, label: t('payment.cash_sale') },
                   { value: 'delivery', icon: ShoppingBag, label: t('payment.delivery_sale') },
                   ...(digitalSalesOn ? [{ value: 'digital' as const, icon: Smartphone, label: t('payment.digital_sale') }] : []),
+                  ...(insuranceSalesOn ? [{ value: 'insurance' as const, icon: Shield, label: t('payment.insurance_sale') }] : []),
                 ].map(({ value, icon: Icon, label }) => (
                   <button
                     key={value}
@@ -401,6 +435,17 @@ export default function PaymentModal({
                 ))}
               </div>
             </div>
+
+            {isInsurance && (
+              <InsurancePosPanel
+                cartItems={cartItems}
+                selectedCustomer={selectedCustomer}
+                onPreviewChange={(p, fields) => { setInsurancePreview(p); setInsurancePatientFields(fields) }}
+                onCompanyChange={setInsuranceCompanyId}
+                onPlanChange={setInsurancePlanId}
+                onCardChange={setDiscountCardId}
+              />
+            )}
 
             {/* Delivery details */}
             {needsDelivery && (

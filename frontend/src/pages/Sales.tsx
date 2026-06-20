@@ -271,6 +271,7 @@ export default function Sales() {
     cash: t('sales.cash_sale'),
     delivery: t('sales.delivery'),
     digital: t('sales.digital'),
+    insurance: t('payment.insurance_sale'),
     return: t('sales.return_type'),
   }
 
@@ -455,6 +456,7 @@ export default function Sales() {
                 <option value="cash">{t('sales.cash_sale')}</option>
                 <option value="delivery">{t('sales.delivery')}</option>
                 <option value="digital">{t('sales.digital')}</option>
+                <option value="insurance">{t('payment.insurance_sale')}</option>
                 <option value="return">{t('sales.return_type')}</option>
               </select>
             </div>

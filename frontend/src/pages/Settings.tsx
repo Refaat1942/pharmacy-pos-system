@@ -34,6 +34,7 @@ const ALL_FEATURES = [
   'dashboard', 'pos', 'sales', 'returns', 'inventory', 'transfers', 'branches_stock',
   'expiry', 'purchases', 'customers', 'suppliers', 'reports', 'shifts', 'hr',
   'hr_employees', 'hr_attendance', 'hr_payroll', 'hr_performance',
+  'insurance', 'discount_cards',
 ] as const
 
 const HR_SUB_FEATURES = ['hr_employees', 'hr_attendance', 'hr_payroll', 'hr_performance'] as const

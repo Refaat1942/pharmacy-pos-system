@@ -662,6 +662,199 @@ CREATE TABLE IF NOT EXISTS digital_platforms (
     created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_digital_platforms_active ON digital_platforms(active, sort_order);
+
+-- ─── Insurance & Discount Cards ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS product_brands (
+    id SERIAL PRIMARY KEY,
+    name_ar VARCHAR(200),
+    name_en VARCHAR(200),
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_type VARCHAR(20) DEFAULT 'local';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS medication_type VARCHAR(20);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS brand_id INTEGER REFERENCES product_brands(id);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS insurance_companies (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name_ar VARCHAR(200) NOT NULL,
+    name_en VARCHAR(200) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',
+    contact_person VARCHAR(100),
+    phone VARCHAR(30),
+    email VARCHAR(200),
+    address TEXT,
+    notes TEXT,
+    field_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    custom_field_defs JSONB DEFAULT '[]'::jsonb,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS insurance_plans (
+    id SERIAL PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES insurance_companies(id) ON DELETE CASCADE,
+    code VARCHAR(50) NOT NULL,
+    name_ar VARCHAR(200) NOT NULL,
+    name_en VARCHAR(200) NOT NULL,
+    status VARCHAR(20) DEFAULT 'active',
+    priority INTEGER DEFAULT 0,
+    notes TEXT,
+    coverage_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    financial_rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    limits JSONB NOT NULL DEFAULT '{}'::jsonb,
+    controls JSONB NOT NULL DEFAULT '{}'::jsonb,
+    restrictions JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(company_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_insurance_plans_company ON insurance_plans(company_id, status);
+
+CREATE TABLE IF NOT EXISTS customer_insurance_profiles (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    company_id INTEGER NOT NULL REFERENCES insurance_companies(id),
+    plan_id INTEGER REFERENCES insurance_plans(id),
+    insurance_card_number VARCHAR(100),
+    membership_number VARCHAR(100),
+    policy_number VARCHAR(100),
+    national_id VARCHAR(50),
+    expiry_date DATE,
+    approval_number VARCHAR(100),
+    coverage_class VARCHAR(50),
+    max_coverage DECIMAL(12,2),
+    remaining_balance DECIMAL(12,2),
+    notes TEXT,
+    is_primary BOOLEAN DEFAULT true,
+    active BOOLEAN DEFAULT true,
+    extra_fields JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_customer_insurance_profiles_customer ON customer_insurance_profiles(customer_id);
+
+CREATE TABLE IF NOT EXISTS discount_card_programs (
+    id SERIAL PRIMARY KEY,
+    name_ar VARCHAR(200),
+    name_en VARCHAR(200) NOT NULL,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    card_type VARCHAR(30) DEFAULT 'promotional',
+    status VARCHAR(20) DEFAULT 'active',
+    rules JSONB NOT NULL DEFAULT '{}'::jsonb,
+    compatibility JSONB NOT NULL DEFAULT '{}'::jsonb,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS discount_cards (
+    id SERIAL PRIMARY KEY,
+    program_id INTEGER NOT NULL REFERENCES discount_card_programs(id) ON DELETE CASCADE,
+    card_number VARCHAR(100) UNIQUE NOT NULL,
+    customer_id INTEGER REFERENCES customers(id),
+    expiry_date DATE,
+    status VARCHAR(20) DEFAULT 'active',
+    notes TEXT,
+    issued_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_discount_cards_program ON discount_cards(program_id, status);
+
+CREATE TABLE IF NOT EXISTS discount_card_usage (
+    id SERIAL PRIMARY KEY,
+    card_id INTEGER NOT NULL REFERENCES discount_cards(id),
+    invoice_id INTEGER REFERENCES invoices(id),
+    customer_id INTEGER REFERENCES customers(id),
+    branch_id INTEGER REFERENCES branches(id),
+    discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    used_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_discount_card_usage_card ON discount_card_usage(card_id, used_at DESC);
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_company_id INTEGER REFERENCES insurance_companies(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_plan_id INTEGER REFERENCES insurance_plans(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_card_id INTEGER REFERENCES discount_cards(id);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_snapshot JSONB;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_totals JSONB;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS claim_id INTEGER;
+
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS insurance_line JSONB;
+
+CREATE TABLE IF NOT EXISTS insurance_usage_ledger (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER REFERENCES customers(id),
+    company_id INTEGER NOT NULL REFERENCES insurance_companies(id),
+    plan_id INTEGER NOT NULL REFERENCES insurance_plans(id),
+    branch_id INTEGER REFERENCES branches(id),
+    invoice_id INTEGER REFERENCES invoices(id),
+    period_type VARCHAR(20) NOT NULL,
+    period_key VARCHAR(20) NOT NULL,
+    covered_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_insurance_usage_lookup
+    ON insurance_usage_ledger(customer_id, company_id, plan_id, period_type, period_key);
+
+CREATE TABLE IF NOT EXISTS insurance_claims (
+    id SERIAL PRIMARY KEY,
+    claim_number VARCHAR(50) UNIQUE NOT NULL,
+    company_id INTEGER NOT NULL REFERENCES insurance_companies(id),
+    plan_id INTEGER REFERENCES insurance_plans(id),
+    branch_id INTEGER REFERENCES branches(id),
+    period_type VARCHAR(20) DEFAULT 'monthly',
+    period_from DATE NOT NULL,
+    period_to DATE NOT NULL,
+    status VARCHAR(20) DEFAULT 'draft',
+    receipt_count INTEGER DEFAULT 0,
+    total_sales DECIMAL(14,2) DEFAULT 0,
+    total_discounts DECIMAL(14,2) DEFAULT 0,
+    covered_amount DECIMAL(14,2) DEFAULT 0,
+    patient_share DECIMAL(14,2) DEFAULT 0,
+    additional_amount DECIMAL(14,2) DEFAULT 0,
+    net_claim_amount DECIMAL(14,2) DEFAULT 0,
+    submitted_at TIMESTAMPTZ,
+    approved_at TIMESTAMPTZ,
+    paid_at TIMESTAMPTZ,
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_insurance_claims_company ON insurance_claims(company_id, status);
+
+CREATE TABLE IF NOT EXISTS insurance_claim_invoices (
+    claim_id INTEGER NOT NULL REFERENCES insurance_claims(id) ON DELETE CASCADE,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (claim_id, invoice_id)
+);
+
+CREATE TABLE IF NOT EXISTS document_templates (
+    id SERIAL PRIMARY KEY,
+    template_type VARCHAR(30) NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    language VARCHAR(20) DEFAULT 'bilingual',
+    is_default BOOLEAN DEFAULT false,
+    layout JSONB NOT NULL DEFAULT '{}'::jsonb,
+    branding JSONB DEFAULT '{}'::jsonb,
+    active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS insurance_audit_log (
+    id BIGSERIAL PRIMARY KEY,
+    entity_type VARCHAR(50) NOT NULL,
+    entity_id INTEGER,
+    action VARCHAR(50) NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    branch_id INTEGER REFERENCES branches(id),
+    old_value JSONB,
+    new_value JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_insurance_audit_created ON insurance_audit_log(created_at DESC);
 """
 
 # Applied one statement at a time so a failure in the big SQL blob cannot roll these back.

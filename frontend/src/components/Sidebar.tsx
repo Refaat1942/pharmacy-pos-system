@@ -5,7 +5,7 @@ import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
   FileText, Users, BarChart3, Pill, Settings as SettingsIcon,
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
-  ShieldAlert, Sparkles, Gift, Award,
+  ShieldAlert, Sparkles, Gift, Award, Shield, CreditCard,
 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
@@ -63,6 +63,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/customers', labelKey: 'nav.customers', Icon: Users, feature: 'customers' },
       { to: '/loyalty', labelKey: 'nav.loyalty', Icon: Award, feature: 'loyalty', adminOnly: true },
+      { to: '/insurance', labelKey: 'nav.insurance', Icon: Shield, feature: 'insurance', adminOnly: true },
+      { to: '/discount-cards', labelKey: 'nav.discount_cards', Icon: CreditCard, feature: 'discount_cards', adminOnly: true },
       { to: '/offers', labelKey: 'nav.offers', Icon: Gift, feature: 'offers', adminOnly: true },
       { to: '/clinics', labelKey: 'nav.clinics', Icon: Stethoscope, feature: 'clinics', adminOnly: true },
     ],

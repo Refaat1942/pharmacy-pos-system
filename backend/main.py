@@ -165,6 +165,10 @@ from pos_counseling import router as pos_counseling_router
 app.include_router(pos_counseling_router)
 from digital_platforms import router as digital_platforms_router
 app.include_router(digital_platforms_router)
+from insurance import router as insurance_router
+app.include_router(insurance_router)
+from discount_cards import router as discount_cards_router
+app.include_router(discount_cards_router)
 
 
 @app.on_event("startup")
@@ -745,6 +749,10 @@ class SaleRequest(BaseModel):
     offer_savings: float = 0.0
     offer_names: Optional[str] = None
     loyalty_points_redeemed: int = 0
+    insurance_company_id: Optional[int] = None
+    insurance_plan_id: Optional[int] = None
+    insurance_patient_fields: Optional[dict] = None
+    discount_card_id: Optional[int] = None
 
 
 @app.post("/api/sales")
@@ -765,9 +773,22 @@ def create_sale(req: SaleRequest,
             if not user_feature_option(current_user, "pos", "digital_sales"):
                 raise HTTPException(400, "Digital platform sales are not enabled for your account")
 
+        if req.type == "insurance":
+            from feature_access import user_feature_option
+            if not user_feature_option(current_user, "insurance", "pos_billing"):
+                raise HTTPException(400, "Insurance sales are not enabled for your account")
+
         subtotal = sum(i.quantity * i.unit_price for i in req.items)
-        delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type != "return") else 0.0
+        delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type not in ("return", "insurance")) else 0.0
         net_total = subtotal - req.discount + delivery_fee
+
+        insurance_data = None
+        insurance_company_id = None
+        insurance_plan_id = None
+        discount_card_id_val = None
+        insurance_snapshot = None
+        insurance_totals = None
+        invoice_discount = req.discount
 
         if req.type != "return" and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
@@ -863,6 +884,19 @@ def create_sale(req: SaleRequest,
         if not cur.fetchone():
             raise HTTPException(status_code=400, detail=f"Branch {branch_id} does not exist")
 
+        if req.type == "insurance":
+            from insurance import process_insurance_sale
+            insurance_data = process_insurance_sale(cur, req, branch_id, req.items, current_user)
+            net_total = float(insurance_data["net_total"])
+            insurance_company_id = insurance_data["company_id"]
+            insurance_plan_id = insurance_data["plan_id"]
+            discount_card_id_val = req.discount_card_id
+            insurance_snapshot = insurance_data["insurance_snapshot"]
+            insurance_totals = insurance_data["insurance_totals"]
+            invoice_discount = float(insurance_totals.get("total_discount") or 0)
+            if req.payment_method == "cash" and req.cash_amount:
+                change = max(0.0, req.cash_amount - net_total)
+
         # Non-admin: any sale that attaches a customer_id requires customer-branch authorization
         invoice_customer_id = (
             account_customer_id
@@ -883,7 +917,7 @@ def create_sale(req: SaleRequest,
         loyalty_points_redeemed = 0
         loyalty_discount = 0.0
         loyalty_points_earned = 0
-        if req.type != "return" and invoice_customer_id:
+        if req.type != "return" and invoice_customer_id and req.type != "insurance":
             from loyalty_engine import prepare_sale_loyalty
             pre_credit = 0.0
             if req.payment_method == "account":
@@ -1017,19 +1051,29 @@ def create_sale(req: SaleRequest,
                 delivery_address, delivery_fee, delivery_customer_name, delivery_customer_phone,
                 delivery_person_id, delivery_person_name, delivery_status,
                 offer_ids, offer_savings, offer_names,
-                loyalty_points_earned, loyalty_points_redeemed, loyalty_discount)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                loyalty_points_earned, loyalty_points_redeemed, loyalty_discount,
+                insurance_company_id, insurance_plan_id, discount_card_id,
+                insurance_snapshot, insurance_totals)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
-             subtotal, req.discount, net_total, cash_amount_val, visa_amount_val,
+             subtotal, invoice_discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
              req.delivery_address, delivery_fee or None,
              req.delivery_customer_name, req.delivery_customer_phone,
              delivery_person_id, delivery_person_name, delivery_status,
              offer_ids_val, offer_savings_val, offer_names_val,
-             loyalty_points_earned, loyalty_points_redeemed, loyalty_discount),
+             loyalty_points_earned, loyalty_points_redeemed, loyalty_discount,
+             insurance_company_id, insurance_plan_id, discount_card_id_val,
+             psycopg2.extras.Json(insurance_snapshot) if insurance_snapshot else None,
+             psycopg2.extras.Json(insurance_totals) if insurance_totals else None),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
+
+        insurance_lines_by_pid: dict = {}
+        if insurance_data:
+            for lr in insurance_data.get("insurance_lines", []):
+                insurance_lines_by_pid[lr["product_id"]] = lr
 
         if account_paid_now > 0 and invoice_customer_id:
             cur.execute(
@@ -1088,16 +1132,18 @@ def create_sale(req: SaleRequest,
                     )
                 line_discount = offer_disc
             item_total = item.quantity * item.unit_price - line_discount
+            ins_line = insurance_lines_by_pid.get(item.product_id)
             cur.execute(
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
                     barcode, quantity, unit_price, discount, total, unit_label, pack_size,
-                    offer_id, offer_discount, dose_text)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    offer_id, offer_discount, dose_text, insurance_line)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, line_discount,
                  item_total, unit_label, line_pack,
-                 item.offer_id, offer_disc, (item.dose_text or "").strip() or None),
+                 item.offer_id, offer_disc, (item.dose_text or "").strip() or None,
+                 psycopg2.extras.Json(ins_line) if ins_line else None),
             )
             # POS allows overselling (stock may go negative; replenishment nets it out).
             deduct_stock_fefo(cur, item.product_id, stock_used, today=today, allow_negative=True)
@@ -1122,6 +1168,29 @@ def create_sale(req: SaleRequest,
                 net_paid=net_total,
                 user_id=current_user.get("user_id"),
             )
+
+        if req.type == "insurance" and insurance_data and insurance_totals:
+            from insurance_engine import record_usage_ledger
+            from discount_card_engine import record_card_usage
+            record_usage_ledger(
+                cur,
+                customer_id=invoice_customer_id,
+                company_id=insurance_company_id,
+                plan_id=insurance_plan_id,
+                branch_id=branch_id,
+                invoice_id=invoice_id,
+                covered_amount=float(insurance_totals.get("insurance_covered") or 0),
+            )
+            card_res = insurance_data.get("discount_card_result")
+            if card_res and card_res.get("active") and discount_card_id_val:
+                record_card_usage(
+                    cur,
+                    card_id=discount_card_id_val,
+                    invoice_id=invoice_id,
+                    customer_id=invoice_customer_id,
+                    branch_id=branch_id,
+                    discount_amount=float(card_res.get("discount_amount") or 0),
+                )
 
         conn.commit()
         cur.execute(

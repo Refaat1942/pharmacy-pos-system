@@ -226,6 +226,7 @@ ALL_FEATURES = {
     "branches_stock", "expiry", "purchases", "customers", "suppliers",
     "reports", "shifts", "hr",
     "hr_employees", "hr_attendance", "hr_payroll", "hr_performance",
+    "insurance", "discount_cards",
 }
 
 HR_SUB_FEATURES = {"hr_employees", "hr_attendance", "hr_payroll", "hr_performance"}

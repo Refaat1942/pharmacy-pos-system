@@ -1,0 +1,372 @@
+import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Shield, Plus, Edit2, X, FileText, BarChart3 } from 'lucide-react'
+import Layout from '../components/Layout'
+import { insuranceAPI } from '../lib/api'
+import type { InsuranceCompany, InsurancePlan, InsuranceClaim } from '../lib/insurance'
+import {
+  DEFAULT_CONTROLS, DEFAULT_COVERAGE_RULES, DEFAULT_FINANCIAL_RULES,
+  INSURANCE_FIELD_KEYS, insuranceFieldLabel, type FieldMode,
+} from '../lib/insurance'
+import { useAuth } from '../lib/auth'
+import i18n from '../lib/i18n'
+import { downloadApiExcel } from '../lib/downloadExcel'
+
+type Tab = 'companies' | 'plans' | 'claims' | 'dashboard'
+
+const emptyCompany = (): Partial<InsuranceCompany> => ({
+  code: '', name_ar: '', name_en: '', status: 'active', field_config: {},
+})
+
+const emptyPlan = (companyId: number): Partial<InsurancePlan> & { company_id: number } => ({
+  company_id: companyId, code: '', name_ar: '', name_en: '', status: 'active', priority: 0,
+  coverage_rules: { ...DEFAULT_COVERAGE_RULES },
+  financial_rules: { ...DEFAULT_FINANCIAL_RULES },
+  controls: { ...DEFAULT_CONTROLS },
+})
+
+export default function Insurance() {
+  const { t } = useTranslation()
+  const { hasFeatureOption } = useAuth()
+  const canManage = hasFeatureOption('insurance', 'manage')
+  const canClaims = hasFeatureOption('insurance', 'claims')
+  const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const [tab, setTab] = useState<Tab>('companies')
+  const [companies, setCompanies] = useState<InsuranceCompany[]>([])
+  const [plans, setPlans] = useState<InsurancePlan[]>([])
+  const [claims, setClaims] = useState<InsuranceClaim[]>([])
+  const [dashboard, setDashboard] = useState<{ month_sales?: { total_covered: number; patient_paid: number; invoice_count: number } } | null>(null)
+  const [editCompany, setEditCompany] = useState<Partial<InsuranceCompany> | null>(null)
+  const [editCompanyId, setEditCompanyId] = useState<number | null>(null)
+  const [editPlan, setEditPlan] = useState<(Partial<InsurancePlan> & { company_id: number }) | null>(null)
+  const [editPlanId, setEditPlanId] = useState<number | null>(null)
+  const [error, setError] = useState('')
+  const [claimForm, setClaimForm] = useState({ company_id: '', date_from: '', date_to: '' })
+
+  const load = useCallback(() => {
+    insuranceAPI.companies().then((r) => setCompanies(r.data)).catch(() => setCompanies([]))
+    insuranceAPI.plans().then((r) => setPlans(r.data)).catch(() => setPlans([]))
+    if (canClaims) insuranceAPI.claims().then((r) => setClaims(r.data)).catch(() => setClaims([]))
+    if (hasFeatureOption('insurance', 'dashboard')) {
+      insuranceAPI.dashboard().then((r) => setDashboard(r.data)).catch(() => setDashboard(null))
+    }
+  }, [canClaims, hasFeatureOption])
+
+  useEffect(() => { load() }, [load])
+
+  const saveCompany = async () => {
+    if (!editCompany?.code || !editCompany.name_en || !editCompany.name_ar) {
+      setError(t('insurance.required_fields') as string)
+      return
+    }
+    setError('')
+    try {
+      if (editCompanyId) await insuranceAPI.updateCompany(editCompanyId, editCompany)
+      else await insuranceAPI.createCompany(editCompany)
+      setEditCompany(null)
+      load()
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof d === 'string' ? d : 'Error')
+    }
+  }
+
+  const savePlan = async () => {
+    if (!editPlan?.code || !editPlan.name_en || !editPlan.company_id) {
+      setError(t('insurance.required_fields') as string)
+      return
+    }
+    setError('')
+    try {
+      if (editPlanId) await insuranceAPI.updatePlan(editPlanId, editPlan)
+      else await insuranceAPI.createPlan(editPlan)
+      setEditPlan(null)
+      load()
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof d === 'string' ? d : 'Error')
+    }
+  }
+
+  const generateClaim = async () => {
+    if (!claimForm.company_id || !claimForm.date_from || !claimForm.date_to) return
+    try {
+      await insuranceAPI.generateClaim({
+        company_id: Number(claimForm.company_id),
+        period_type: 'custom',
+        date_from: claimForm.date_from,
+        date_to: claimForm.date_to,
+      })
+      load()
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof d === 'string' ? d : 'Error')
+    }
+  }
+
+  const setFieldMode = (key: string, mode: FieldMode) => {
+    if (!editCompany) return
+    setEditCompany({
+      ...editCompany,
+      field_config: { ...(editCompany.field_config || {}), [key]: mode },
+    })
+  }
+
+  const tabs: { id: Tab; label: string; Icon: typeof Shield }[] = [
+    { id: 'companies', label: t('insurance.tab_companies'), Icon: Shield },
+    { id: 'plans', label: t('insurance.tab_plans'), Icon: FileText },
+    ...(canClaims ? [{ id: 'claims' as Tab, label: t('insurance.tab_claims'), Icon: FileText }] : []),
+    { id: 'dashboard', label: t('insurance.tab_dashboard'), Icon: BarChart3 },
+  ]
+
+  return (
+    <Layout>
+      <main className="flex-1 overflow-auto p-6 max-w-6xl mx-auto w-full">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Shield className="text-pharma-600" /> {t('insurance.title')}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">{t('insurance.subtitle')}</p>
+        </div>
+
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {tabs.map(({ id, label, Icon }) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${tab === id ? 'bg-pharma-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+              <Icon size={16} /> {label}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+
+        {tab === 'companies' && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            {canManage && (
+              <div className="p-4 border-b">
+                <button onClick={() => { setEditCompanyId(null); setEditCompany(emptyCompany()) }}
+                  className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+                  <Plus size={16} /> {t('insurance.new_company')}
+                </button>
+              </div>
+            )}
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_code')}</th>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_name')}</th>
+                  <th className="px-4 py-2 text-center">{t('insurance.col_status')}</th>
+                  {canManage && <th className="px-4 py-2" />}
+                </tr>
+              </thead>
+              <tbody>
+                {companies.map((c) => (
+                  <tr key={c.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 font-mono">{c.code}</td>
+                    <td className="px-4 py-2">{lang === 'ar' ? c.name_ar : c.name_en}</td>
+                    <td className="px-4 py-2 text-center">{c.status}</td>
+                    {canManage && (
+                      <td className="px-4 py-2 text-end">
+                        <button onClick={() => { setEditCompanyId(c.id); setEditCompany({ ...c, field_config: c.field_config || {} }) }}
+                          className="text-pharma-600 hover:underline flex items-center gap-1 ms-auto">
+                          <Edit2 size={14} /> {t('common.edit')}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'plans' && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            {canManage && (
+              <div className="p-4 border-b">
+                <button onClick={() => {
+                  const cid = companies[0]?.id
+                  if (!cid) { setError(t('insurance.need_company') as string); return }
+                  setEditPlanId(null); setEditPlan(emptyPlan(cid))
+                }} className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+                  <Plus size={16} /> {t('insurance.new_plan')}
+                </button>
+              </div>
+            )}
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_company')}</th>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_code')}</th>
+                  <th className="px-4 py-2 text-start">{t('insurance.col_name')}</th>
+                  <th className="px-4 py-2 text-center">{t('insurance.local_pct')}</th>
+                  {canManage && <th className="px-4 py-2" />}
+                </tr>
+              </thead>
+              <tbody>
+                {plans.map((p) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2">{lang === 'ar' ? p.company_name_ar : p.company_name_en}</td>
+                    <td className="px-4 py-2 font-mono">{p.code}</td>
+                    <td className="px-4 py-2">{lang === 'ar' ? p.name_ar : p.name_en}</td>
+                    <td className="px-4 py-2 text-center">{p.coverage_rules?.local_drugs_pct ?? '—'}%</td>
+                    {canManage && (
+                      <td className="px-4 py-2 text-end">
+                        <button onClick={() => { setEditPlanId(p.id); setEditPlan({ ...p, company_id: p.company_id }) }}
+                          className="text-pharma-600 hover:underline flex items-center gap-1 ms-auto">
+                          <Edit2 size={14} /> {t('common.edit')}
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === 'claims' && canClaims && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border p-4 flex flex-wrap gap-2 items-end">
+              <select value={claimForm.company_id} onChange={(e) => setClaimForm((f) => ({ ...f, company_id: e.target.value }))}
+                className="border rounded-lg px-3 py-2 text-sm">
+                <option value="">{t('insurance.select_company')}</option>
+                {companies.map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+              </select>
+              <input type="date" value={claimForm.date_from} onChange={(e) => setClaimForm((f) => ({ ...f, date_from: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+              <input type="date" value={claimForm.date_to} onChange={(e) => setClaimForm((f) => ({ ...f, date_to: e.target.value }))} className="border rounded-lg px-3 py-2 text-sm" />
+              <button onClick={generateClaim} className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm">{t('insurance.generate_claim')}</button>
+            </div>
+            <div className="bg-white rounded-xl border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2 text-start">{t('insurance.claim_number')}</th>
+                    <th className="px-4 py-2 text-start">{t('insurance.col_company')}</th>
+                    <th className="px-4 py-2 text-center">{t('insurance.receipts')}</th>
+                    <th className="px-4 py-2 text-end">{t('insurance.claim_amount')}</th>
+                    <th className="px-4 py-2 text-center">{t('insurance.col_status')}</th>
+                    <th className="px-4 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {claims.map((cl) => (
+                    <tr key={cl.id} className="border-t">
+                      <td className="px-4 py-2 font-mono">{cl.claim_number}</td>
+                      <td className="px-4 py-2">{cl.company_name_en}</td>
+                      <td className="px-4 py-2 text-center">{cl.receipt_count}</td>
+                      <td className="px-4 py-2 text-end font-mono">{Number(cl.net_claim_amount).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-center">{cl.status}</td>
+                      <td className="px-4 py-2 text-end">
+                        {hasFeatureOption('insurance', 'claims_export') && (
+                          <button onClick={() => downloadApiExcel(`/insurance/claims/${cl.id}/export`, `claim-${cl.claim_number}.xlsx`)}
+                            className="text-xs text-pharma-600 hover:underline">{t('insurance.export')}</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'dashboard' && dashboard && (
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl border p-4">
+              <p className="text-xs text-slate-500 uppercase">{t('insurance.month_invoices')}</p>
+              <p className="text-2xl font-bold">{dashboard.month_sales?.invoice_count ?? 0}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4">
+              <p className="text-xs text-slate-500 uppercase">{t('insurance.covered')}</p>
+              <p className="text-2xl font-bold text-sky-700">{(dashboard.month_sales?.total_covered ?? 0).toFixed(2)}</p>
+            </div>
+            <div className="bg-white rounded-xl border p-4">
+              <p className="text-xs text-slate-500 uppercase">{t('insurance.patient_paid')}</p>
+              <p className="text-2xl font-bold">{(dashboard.month_sales?.patient_paid ?? 0).toFixed(2)}</p>
+            </div>
+          </div>
+        )}
+
+        {editCompany && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+              <div className="flex justify-between mb-4">
+                <h2 className="font-bold text-lg">{editCompanyId ? t('insurance.edit_company') : t('insurance.new_company')}</h2>
+                <button onClick={() => setEditCompany(null)}><X /></button>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {(['code', 'name_en', 'name_ar'] as const).map((k) => (
+                  <input key={k} value={(editCompany[k] as string) || ''} onChange={(e) => setEditCompany({ ...editCompany, [k]: e.target.value })}
+                    placeholder={k} className="border rounded-lg px-3 py-2 text-sm" />
+                ))}
+                <select value={editCompany.status || 'active'} onChange={(e) => setEditCompany({ ...editCompany, status: e.target.value })}
+                  className="border rounded-lg px-3 py-2 text-sm">
+                  <option value="active">{t('insurance.active')}</option>
+                  <option value="inactive">{t('insurance.inactive')}</option>
+                </select>
+              </div>
+              <p className="text-xs font-bold uppercase text-slate-500 mb-2">{t('insurance.field_requirements')}</p>
+              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto mb-4">
+                {INSURANCE_FIELD_KEYS.map((key) => (
+                  <div key={key} className="flex items-center justify-between gap-2 text-xs border rounded px-2 py-1">
+                    <span>{insuranceFieldLabel(key, t)}</span>
+                    <select value={editCompany.field_config?.[key] || 'optional'} onChange={(e) => setFieldMode(key, e.target.value as FieldMode)}
+                      className="border rounded px-1 py-0.5">
+                      <option value="required">{t('insurance.mode_required')}</option>
+                      <option value="optional">{t('insurance.mode_optional')}</option>
+                      <option value="hidden">{t('insurance.mode_hidden')}</option>
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <button onClick={saveCompany} className="w-full bg-pharma-600 text-white py-2 rounded-lg font-medium">{t('common.save')}</button>
+            </div>
+          </div>
+        )}
+
+        {editPlan && (
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex justify-between mb-4">
+                <h2 className="font-bold text-lg">{editPlanId ? t('insurance.edit_plan') : t('insurance.new_plan')}</h2>
+                <button onClick={() => setEditPlan(null)}><X /></button>
+              </div>
+              <div className="space-y-3">
+                <select value={editPlan.company_id} onChange={(e) => setEditPlan({ ...editPlan, company_id: Number(e.target.value) })}
+                  className="w-full border rounded-lg px-3 py-2 text-sm">
+                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
+                </select>
+                {(['code', 'name_en', 'name_ar'] as const).map((k) => (
+                  <input key={k} value={(editPlan[k] as string) || ''} onChange={(e) => setEditPlan({ ...editPlan, [k]: e.target.value })}
+                    placeholder={k} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                ))}
+                {Object.entries(DEFAULT_COVERAGE_RULES).map(([k, v]) => (
+                  <label key={k} className="flex justify-between text-sm items-center">
+                    <span>{k.replace(/_/g, ' ')}</span>
+                    <input type="number" min={0} max={100} className="border rounded w-20 px-2 py-1 text-end"
+                      value={editPlan.coverage_rules?.[k] ?? v}
+                      onChange={(e) => setEditPlan({
+                        ...editPlan,
+                        coverage_rules: { ...editPlan.coverage_rules, [k]: Number(e.target.value) },
+                      })} />
+                  </label>
+                ))}
+                <label className="flex justify-between text-sm items-center">
+                  <span>{t('insurance.copayment')}</span>
+                  <input type="number" min={0} step={0.5} className="border rounded w-24 px-2 py-1 text-end"
+                    value={editPlan.financial_rules?.fixed_copayment ?? 0}
+                    onChange={(e) => setEditPlan({
+                      ...editPlan,
+                      financial_rules: { ...editPlan.financial_rules, fixed_copayment: Number(e.target.value) },
+                    })} />
+                </label>
+              </div>
+              <button onClick={savePlan} className="w-full mt-4 bg-pharma-600 text-white py-2 rounded-lg font-medium">{t('common.save')}</button>
+            </div>
+          </div>
+        )}
+      </main>
+    </Layout>
+  )
+}

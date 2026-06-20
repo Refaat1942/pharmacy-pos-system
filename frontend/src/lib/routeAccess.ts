@@ -19,6 +19,8 @@ export const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
   { path: '/offers', feature: 'offers' },
   { path: '/customers', feature: 'customers' },
   { path: '/loyalty', feature: 'loyalty' },
+  { path: '/insurance', feature: 'insurance' },
+  { path: '/discount-cards', feature: 'discount_cards' },
   { path: '/suppliers', feature: 'suppliers' },
   { path: '/reports', feature: 'reports' },
   { path: '/fraud', feature: 'fraud_surveillance' },
