@@ -269,6 +269,20 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
                 [norm],
             )
             emp = cur.fetchone()
+        # Also accept a user *login* card (USR-...). Resolve it to the
+        # employee linked on the user account so the same card works for both
+        # unlocking a terminal and punching attendance.
+        if not emp:
+            cur.execute(
+                """SELECT e.id, e.name, e.role, e.branch_id, e.active
+                   FROM users u
+                   JOIN employees e ON e.id = u.employee_id
+                   WHERE UPPER(u.card_code) = %s
+                      OR UPPER(REGEXP_REPLACE(u.card_code, '[^A-Za-z0-9]', '', 'g')) = %s
+                   LIMIT 1""",
+                [code, norm],
+            )
+            emp = cur.fetchone()
         # Manual-entry convenience: allow typing just the employee number
         # (e.g. "1" or "0001" for employee id 1).
         if not emp and raw.isdigit():
@@ -278,6 +292,22 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
             )
             emp = cur.fetchone()
         if not emp:
+            # If the scanned code is a known login card but it isn't linked to
+            # an employee, give a clearer hint than "unknown code".
+            if code or norm:
+                cur.execute(
+                    """SELECT 1 FROM users
+                       WHERE UPPER(card_code) = %s
+                          OR UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s
+                       LIMIT 1""",
+                    [code, norm],
+                )
+                if cur.fetchone():
+                    raise HTTPException(
+                        400,
+                        "This login card isn't linked to an employee. "
+                        "Link the user to an employee in Settings, or scan the EMP-… clock card.",
+                    )
             raise HTTPException(404, "Unknown employee code")
         if not emp["active"]:
             raise HTTPException(400, "Employee is inactive")

@@ -70,10 +70,19 @@ export default function EmployeeCards() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 print:bg-white print:p-0">
       <style>{`
+        .cards-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 1rem;
+        }
+        @media (min-width: 768px) {
+          .cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
         @media print {
           @page { size: A4; margin: 10mm; }
           .no-print { display: none !important; }
-          .card { break-inside: avoid; page-break-inside: avoid; }
+          .cards-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+          .id-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; }
         }
       `}</style>
 
@@ -84,24 +93,25 @@ export default function EmployeeCards() {
         </button>
       </div>
 
-      <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-3 gap-4 print:gap-3">
+      <div className="cards-grid max-w-5xl mx-auto">
         {rows.length === 0 && (
-          <div className="col-span-3 text-center text-slate-400 py-10">{t('hr.no_employees')}</div>
+          <div style={{ gridColumn: '1 / -1' }} className="text-center text-slate-400 py-10">{t('hr.no_employees')}</div>
         )}
         {rows.map((e) => (
-          <div key={e.id} className="card bg-white border-2 border-slate-300 rounded-xl p-4 flex flex-col items-center text-center shadow-sm">
-            <div className="text-[11px] uppercase tracking-wider text-slate-400">{pharmaName}</div>
+          <div key={e.id} className="id-card bg-white border border-slate-300 rounded-2xl p-4 flex flex-col items-center text-center shadow-sm">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-pharma-600">{pharmaName}</div>
+            <div className="mt-1 w-12 border-b-2 border-pharma-500/40" />
             <div className="mt-2 font-bold text-slate-800 text-base leading-tight">{e.name}</div>
             {e.role && <div className="text-xs text-slate-500 capitalize">{e.role}</div>}
             <div className="my-3">
               {qrs[e.clock_code!] ? (
-                <img src={qrs[e.clock_code!]} alt={e.clock_code!} className="w-40 h-40" />
+                <img src={qrs[e.clock_code!]} alt={e.clock_code!} className="w-36 h-36" />
               ) : (
-                <div className="w-40 h-40 bg-slate-100 animate-pulse rounded" />
+                <div className="w-36 h-36 bg-slate-100 animate-pulse rounded" />
               )}
             </div>
             <Barcode value={e.clock_code!.replace(/[^A-Za-z0-9]/g, '')} />
-            <div className="font-mono text-[11px] text-slate-700 break-all mt-1">{e.clock_code}</div>
+            <div className="font-mono text-[11px] text-slate-700 tracking-wide mt-1">{e.clock_code}</div>
             <div className="text-[10px] text-slate-400 mt-1">{t('hr.scan_to_clock')}</div>
           </div>
         ))}
@@ -116,9 +126,9 @@ function Barcode({ value }: { value: string }) {
     if (!ref.current || !value) return
     try {
       JsBarcode(ref.current, value, {
-        format: 'CODE128', width: 1.8, height: 56, displayValue: false, margin: 0,
+        format: 'CODE128', width: 1.8, height: 54, displayValue: false, margin: 0,
       })
     } catch {}
   }, [value])
-  return <svg ref={ref} className="w-48 h-16" />
+  return <svg ref={ref} className="w-44 h-14" />
 }
