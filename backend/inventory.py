@@ -1814,26 +1814,89 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
 
 BULK_COMMIT_EVERY = 50
 
-_bulk_jobs: dict = {}
-_bulk_jobs_lock = threading.Lock()
+_BULK_JOB_FIELDS = frozenset({
+    "status", "processed", "total", "inserted", "updated", "errors",
+    "auto_codes", "auto_categories", "merged_rows", "message", "error",
+    "error_details", "finished_at",
+})
+
+
+def _ensure_bulk_jobs_table(cur, conn):
+    from init_db import BULK_UPLOAD_MIGRATIONS
+    for stmt in BULK_UPLOAD_MIGRATIONS:
+        cur.execute(stmt)
+    conn.commit()
+
+
+def _bulk_job_create(job_id: str, branch_id, user_id):
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        _ensure_bulk_jobs_table(cur, conn)
+        cur.execute(
+            """INSERT INTO bulk_upload_jobs (id, status, branch_id, user_id, message)
+               VALUES (%s, 'queued', %s, %s, %s)""",
+            (job_id, branch_id, user_id, "Queued…"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _bulk_job_update(job_id: str, **fields):
-    with _bulk_jobs_lock:
-        if job_id in _bulk_jobs:
-            _bulk_jobs[job_id].update(fields)
+    if not fields:
+        return
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        sets, vals = [], []
+        for key, val in fields.items():
+            if key not in _BULK_JOB_FIELDS:
+                continue
+            if key == "finished_at":
+                if isinstance(val, (int, float)):
+                    val = datetime.fromtimestamp(val, tz=timezone.utc)
+            elif key == "error_details":
+                val = psycopg2.extras.Json(val)
+            sets.append(f"{key} = %s")
+            vals.append(val)
+        if not sets:
+            return
+        vals.append(job_id)
+        cur.execute(
+            f"UPDATE bulk_upload_jobs SET {', '.join(sets)} WHERE id = %s",
+            vals,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _bulk_job_get(job_id: str) -> Optional[dict]:
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute("SELECT * FROM bulk_upload_jobs WHERE id = %s", (job_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
 
 
 def _bulk_job_prune_old():
-    """Drop finished jobs older than 2 hours to limit memory use."""
-    cutoff = datetime.now(timezone.utc).timestamp() - 7200
-    with _bulk_jobs_lock:
-        stale = [
-            jid for jid, j in _bulk_jobs.items()
-            if j.get("status") in ("done", "failed") and j.get("finished_at", 0) < cutoff
-        ]
-        for jid in stale:
-            del _bulk_jobs[jid]
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """DELETE FROM bulk_upload_jobs
+               WHERE finished_at IS NOT NULL
+                 AND finished_at < NOW() - INTERVAL '2 hours'"""
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        conn.close()
 
 
 def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id, job_id: Optional[str] = None) -> dict:
@@ -1958,18 +2021,7 @@ def bulk_upload(file: UploadFile = File(...),
 
     _bulk_job_prune_old()
     job_id = str(uuid.uuid4())
-    with _bulk_jobs_lock:
-        _bulk_jobs[job_id] = {
-            "status": "queued",
-            "progress": 0,
-            "processed": 0,
-            "total": 0,
-            "inserted": 0,
-            "updated": 0,
-            "errors": 0,
-            "message": "Queued…",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
+    _bulk_job_create(job_id, branch_id, current_user.get("user_id"))
 
     thread = threading.Thread(
         target=_run_bulk_job,
@@ -1982,8 +2034,7 @@ def bulk_upload(file: UploadFile = File(...),
 
 @router.get("/bulk-upload/status/{job_id}")
 def bulk_upload_status(job_id: str, current_user=Depends(get_current_user)):
-    with _bulk_jobs_lock:
-        job = _bulk_jobs.get(job_id)
+    job = _bulk_job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Import job not found or expired")
     return job

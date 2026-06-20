@@ -676,11 +676,34 @@ PRODUCT_COLUMN_MIGRATIONS = [
        WHERE international_barcode IS NOT NULL AND international_barcode <> ''""",
 ]
 
+BULK_UPLOAD_MIGRATIONS = [
+    """CREATE TABLE IF NOT EXISTS bulk_upload_jobs (
+        id UUID PRIMARY KEY,
+        status VARCHAR(20) NOT NULL DEFAULT 'queued',
+        branch_id INTEGER,
+        user_id INTEGER,
+        processed INTEGER DEFAULT 0,
+        total INTEGER DEFAULT 0,
+        inserted INTEGER DEFAULT 0,
+        updated INTEGER DEFAULT 0,
+        errors INTEGER DEFAULT 0,
+        auto_codes INTEGER DEFAULT 0,
+        auto_categories INTEGER DEFAULT 0,
+        merged_rows INTEGER DEFAULT 0,
+        message TEXT,
+        error TEXT,
+        error_details JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        finished_at TIMESTAMPTZ
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_bulk_upload_jobs_created ON bulk_upload_jobs(created_at DESC)",
+]
+
 
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
-    for stmt in PRODUCT_COLUMN_MIGRATIONS:
+    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS:
         try:
             cur.execute(stmt)
             conn.commit()

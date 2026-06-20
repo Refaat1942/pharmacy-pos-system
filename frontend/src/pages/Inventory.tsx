@@ -1978,7 +1978,14 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
 
       for (let i = 0; i < 600; i++) {
         await sleep(1500)
-        const { data: st } = await api.get(`/inventory/bulk-upload/status/${jobId}`)
+        let st: any
+        try {
+          const res = await api.get(`/inventory/bulk-upload/status/${jobId}`)
+          st = res.data
+        } catch (pollErr: any) {
+          if (pollErr?.response?.status === 404 && i < 5) continue
+          throw pollErr
+        }
         setProgress({
           processed: st.processed,
           total: st.total,
