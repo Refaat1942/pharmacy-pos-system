@@ -1,5 +1,6 @@
 """Shared constants for insurance field configuration."""
 
+# Admin-configurable POS fields (required / optional / hidden)
 INSURANCE_FIELD_KEYS = [
     "insurance_card_number",
     "membership_number",
@@ -7,8 +8,12 @@ INSURANCE_FIELD_KEYS = [
     "approval_number",
     "national_id",
     "patient_name",
+    "patient_first_name",
+    "patient_last_name",
+    "child_customer_id",
     "date_of_birth",
     "gender",
+    "mobile_country_code",
     "mobile_number",
     "address",
     "doctor_name",
@@ -20,11 +25,40 @@ INSURANCE_FIELD_KEYS = [
     "referral_number",
     "employee_number",
     "employer_name",
+    "receipt_limit",
+    "exceeding_amount",
+    "patient_share_pct",
+    "max_patient_share",
+    "treatment_type",
+    "transaction_notes",
+]
+
+# Always core to an insurance transaction at POS (MetLife / RMS-style)
+INSURANCE_TRANSACTION_CORE_KEYS = [
+    "child_customer_id",
+    "insurance_card_number",
+    "patient_first_name",
+    "patient_last_name",
+    "mobile_country_code",
+    "mobile_number",
+    "receipt_limit",
+    "exceeding_amount",
+    "approval_number",
+    "patient_share_pct",
+    "employer_name",
+    "max_patient_share",
+    "treatment_type",
+    "transaction_notes",
+    "attachment_upload",
 ]
 
 DEFAULT_FIELD_CONFIG = {k: "optional" for k in INSURANCE_FIELD_KEYS}
 DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
-DEFAULT_FIELD_CONFIG["patient_name"] = "required"
+DEFAULT_FIELD_CONFIG["patient_first_name"] = "required"
+DEFAULT_FIELD_CONFIG["patient_last_name"] = "required"
+DEFAULT_FIELD_CONFIG["approval_number"] = "optional"
+DEFAULT_FIELD_CONFIG["patient_share_pct"] = "optional"
+DEFAULT_FIELD_CONFIG["treatment_type"] = "required"
 
 DEFAULT_COVERAGE_RULES = {
     "local_drugs_pct": 80,
@@ -81,3 +115,5 @@ DEFAULT_CARD_COMPATIBILITY = {
     "combine_with_promotions": True,
     "combine_with_coupons": True,
 }
+
+MEDICINE_CATEGORY_HINTS = ("medicine", "supplement", "drug", "دواء", "أدوية")

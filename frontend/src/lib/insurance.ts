@@ -6,8 +6,12 @@ export const INSURANCE_FIELD_KEYS = [
   'approval_number',
   'national_id',
   'patient_name',
+  'patient_first_name',
+  'patient_last_name',
+  'child_customer_id',
   'date_of_birth',
   'gender',
+  'mobile_country_code',
   'mobile_number',
   'address',
   'doctor_name',
@@ -15,10 +19,40 @@ export const INSURANCE_FIELD_KEYS = [
   'diagnosis',
   'prescription_number',
   'prescription_date',
+  'attachment_upload',
   'referral_number',
   'employee_number',
   'employer_name',
+  'receipt_limit',
+  'exceeding_amount',
+  'patient_share_pct',
+  'max_patient_share',
+  'treatment_type',
+  'transaction_notes',
 ] as const
+
+/** Fixed POS insurance transaction form (RMS-style). */
+export const INSURANCE_TRANSACTION_CORE_KEYS = [
+  'child_customer_id',
+  'insurance_card_number',
+  'patient_first_name',
+  'patient_last_name',
+  'mobile_country_code',
+  'mobile_number',
+  'receipt_limit',
+  'exceeding_amount',
+  'approval_number',
+  'patient_share_pct',
+  'employer_name',
+  'max_patient_share',
+  'treatment_type',
+  'transaction_notes',
+  'attachment_upload',
+] as const
+
+export const INSURANCE_EXTRA_FIELD_KEYS = INSURANCE_FIELD_KEYS.filter(
+  (k) => !INSURANCE_TRANSACTION_CORE_KEYS.includes(k as (typeof INSURANCE_TRANSACTION_CORE_KEYS)[number]),
+)
 
 export type InsuranceFieldKey = (typeof INSURANCE_FIELD_KEYS)[number]
 export type FieldMode = 'required' | 'optional' | 'hidden'
@@ -27,6 +61,20 @@ export function insuranceFieldLabel(key: string, t: (k: string) => string): stri
   const k = `insurance.fields.${key}`
   const v = t(k)
   return v === k ? key.replace(/_/g, ' ') : v
+}
+
+export function fieldMode(
+  key: string,
+  fieldConfig?: Record<string, FieldMode>,
+  fallback: FieldMode = 'optional',
+): FieldMode {
+  return fieldConfig?.[key] || fallback
+}
+
+export function splitCustomerName(name: string): { first: string; last: string } {
+  const parts = name.trim().split(/\s+/)
+  if (parts.length <= 1) return { first: parts[0] || '', last: '' }
+  return { first: parts[0], last: parts.slice(1).join(' ') }
 }
 
 export const DEFAULT_COVERAGE_RULES = {
@@ -78,20 +126,33 @@ export interface InsuranceTotals {
   patient_share: number
   additional_amount: number
   copayment: number
+  exceeding_amount?: number
   final_patient_paid: number
 }
 
+export interface InsuranceLineResult {
+  product_id: number
+  product_name?: string
+  origin_type?: string
+  coverage_rule?: string
+  line_gross: number
+  coverage_pct: number
+  insurance_discount?: number
+  covered_amount: number
+  patient_share: number
+}
+
 export interface InsuranceCalculateResult {
-  lines: Array<{
-    product_id: number
-    line_gross: number
-    coverage_pct: number
-    covered_amount: number
-    patient_share: number
-  }>
+  lines: InsuranceLineResult[]
   totals: InsuranceTotals
   net_total: number
   warnings?: string[]
+  coverage_summary?: {
+    local_lines: number
+    imported_lines: number
+    local_drugs_pct?: number
+    imported_drugs_pct?: number
+  }
 }
 
 export interface InsuranceCompany {
@@ -142,4 +203,18 @@ export interface InsuranceClaim {
   covered_amount: number
   net_claim_amount: number
   company_name_en?: string
+}
+
+export interface InsuranceProfile {
+  id: number
+  customer_id: number
+  company_id: number
+  plan_id?: number
+  insurance_card_number?: string
+  membership_number?: string
+  policy_number?: string
+  national_id?: string
+  approval_number?: string
+  is_primary?: boolean
+  extra_fields?: Record<string, string>
 }

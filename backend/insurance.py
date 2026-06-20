@@ -543,9 +543,18 @@ def calculate(body: CalculateIn, current_user=Depends(get_current_user)):
 
 
 def _validate_patient_fields(field_config: dict, patient_fields: dict) -> None:
-    for key, mode in field_config.items():
+    cfg = {**DEFAULT_FIELD_CONFIG, **(field_config or {})}
+    pf = dict(patient_fields or {})
+    if not str(pf.get("patient_name") or "").strip():
+        combined = f"{pf.get('patient_first_name', '').strip()} {pf.get('patient_last_name', '').strip()}".strip()
+        if combined:
+            pf["patient_name"] = combined
+    attachment = pf.get("attachment_upload") or ""
+    if attachment and len(str(attachment)) > 750_000:
+        raise HTTPException(400, "Attachment too large (max ~500KB)")
+    for key, mode in cfg.items():
         if mode == "required":
-            val = patient_fields.get(key)
+            val = pf.get(key)
             if val is None or str(val).strip() == "":
                 raise HTTPException(400, f"Field required: {key}")
 
