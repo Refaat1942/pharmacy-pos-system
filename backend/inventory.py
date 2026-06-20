@@ -412,6 +412,9 @@ def delete_product_batch(batch_id: int, current_user=Depends(get_current_user)):
 
 # Max rows returned by list-style endpoints (raise if you outgrow this).
 MAX_INVENTORY_ROWS = 100_000
+DEFAULT_LIST_LIMIT = 500
+MAX_LIST_LIMIT = 1000
+BRANCH_STOCK_LOAD_ALL_LIMIT = 3000
 
 # Stock valuation: box-equivalent qty × unit cost or unit sales price separately.
 _STOCK_COST_P = "COALESCE(NULLIF(p.cost, 0), 0)"
@@ -464,6 +467,12 @@ def inventory_summary(
     active_branch=Depends(get_active_branch_id),
 ):
     """Branch-scoped product counts for dashboard cards (not capped by list limits)."""
+    search_q = (q or "").strip()
+    if search_q and len(search_q) < 2:
+        return {
+            "total": 0, "zero_stock": 0, "low_stock": 0,
+            "stock_value_cost": 0, "stock_value_retail": 0, "stock_value": 0,
+        }
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     if branch_id is not None and current_user.get("role") != "admin":
@@ -515,21 +524,28 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
                category: Optional[str] = None,
                include_inactive: bool = False,
                load_all: bool = False,
-               limit: int = 20000,
+               include_batches: bool = False,
+               paged: bool = False,
+               offset: int = 0,
+               limit: int = DEFAULT_LIST_LIMIT,
                current_user=Depends(get_current_user),
                active_branch=Depends(get_active_branch_id)):
     """stock_filter: 'low' | 'zero' | 'ok'. Requires search (q) or load_all=true."""
     if not load_all and not (q or "").strip():
-        return []
+        return {"items": [], "total": 0, "offset": 0, "limit": limit} if paged else []
+    search_q = (q or "").strip()
+    if not load_all and len(search_q) < 2:
+        return {"items": [], "total": 0, "offset": 0, "limit": limit} if paged else []
+
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     where = []
     params = []
     if not include_inactive:
         where.append("p.active = true")
-    if q:
+    if search_q:
         from barcode_utils import product_search_clause
-        clause, clause_params = product_search_clause(q, table_prefix="p")
+        clause, clause_params = product_search_clause(search_q, table_prefix="p")
         where.append(clause)
         params += clause_params
     if branch_id is not None and current_user.get("role") != "admin":
@@ -549,25 +565,48 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
     elif stock_filter == "ok":
         where.append("p.stock > p.min_stock")
 
+    where_sql = " AND ".join(where) if where else "TRUE"
+    page_limit = max(1, min(limit, MAX_LIST_LIMIT))
+    page_offset = max(0, offset)
+
+    if include_batches:
+        batches_sql = (
+            "COALESCE("
+            "  (SELECT json_agg(json_build_object("
+            "     'id', pb.id, 'expiry_date', pb.expiry_date, 'quantity', pb.quantity"
+            "   ) ORDER BY COALESCE(pb.expiry_date, DATE '9999-12-31'), pb.id)"
+            "   FROM product_batches pb WHERE pb.product_id = p.id AND pb.quantity > 0),"
+            "  '[]'::json"
+            ") AS batches"
+        )
+    else:
+        batches_sql = "'[]'::json AS batches"
+
     sql = (
         "SELECT p.*, b.name_en AS branch_name_en, b.name_ar AS branch_name_ar, "
-        "COALESCE("
-        "  (SELECT json_agg(json_build_object("
-        "     'id', pb.id, 'expiry_date', pb.expiry_date, 'quantity', pb.quantity"
-        "   ) ORDER BY COALESCE(pb.expiry_date, DATE '9999-12-31'), pb.id)"
-        "   FROM product_batches pb WHERE pb.product_id = p.id AND pb.quantity > 0),"
-        "  '[]'::json"
-        ") AS batches "
-        "FROM products p LEFT JOIN branches b ON p.branch_id = b.id"
+        f"{batches_sql} "
+        "FROM products p LEFT JOIN branches b ON p.branch_id = b.id "
+        f"WHERE {where_sql} "
+        "ORDER BY p.name_en LIMIT %s OFFSET %s"
     )
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY p.name_en LIMIT %s"
-    params.append(max(1, min(limit, MAX_INVENTORY_ROWS)))
-    cur.execute(sql, params)
-    rows = cur.fetchall()
+    list_params = params + [page_limit, page_offset]
+
+    total = None
+    if paged:
+        cur.execute(f"SELECT COUNT(*)::int AS c FROM products p WHERE {where_sql}", params)
+        total = int(cur.fetchone()["c"])
+
+    cur.execute(sql, list_params)
+    rows = [dict(r) for r in cur.fetchall()]
     conn.close()
-    return [dict(r) for r in rows]
+    if paged:
+        return {
+            "items": rows,
+            "total": total if total is not None else len(rows),
+            "offset": page_offset,
+            "limit": page_limit,
+        }
+    return rows
 
 
 @router.get("/items/export")
@@ -586,6 +625,8 @@ def export_items(
         stock_filter=stock_filter,
         category=category,
         load_all=load_all,
+        include_batches=True,
+        limit=MAX_INVENTORY_ROWS,
         current_user=current_user,
         active_branch=active_branch,
     )
@@ -2914,7 +2955,7 @@ def _branch_stock_data(
             params.append(effective_branch)
 
         where_sql = " AND ".join(where)
-        row_limit = BRANCH_STOCK_LIMIT if (q or keys) else MAX_INVENTORY_ROWS
+        row_limit = BRANCH_STOCK_LIMIT if (q or keys) else BRANCH_STOCK_LOAD_ALL_LIMIT
 
         grouped_cte = f"""WITH grouped AS (
                   SELECT

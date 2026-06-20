@@ -245,6 +245,9 @@ export default function Inventory() {
   const [showBulkPrint, setShowBulkPrint] = useState(false)
   const [showCategoryMgr, setShowCategoryMgr] = useState(false)
   const [showAllItems, setShowAllItems] = useState(false)
+  const [listPage, setListPage] = useState(0)
+  const [listTotal, setListTotal] = useState(0)
+  const LIST_PAGE_SIZE = 500
 
   const toggleOne = (id: number) => {
     setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -265,28 +268,47 @@ export default function Inventory() {
     if (!showAllItems && !searchQ) {
       setItems([])
       setItemStats(null)
+      setListTotal(0)
+      return
+    }
+    if (!showAllItems && searchQ.length > 0 && searchQ.length < 2) {
+      setItems([])
+      setItemStats(null)
+      setListTotal(0)
       return
     }
     if (!silent) setLoading(true)
     try {
       const params: Record<string, string> = {}
       if (searchQ) params.q = searchQ
-      if (showAllItems) params.load_all = 'true'
+      if (showAllItems) {
+        params.load_all = 'true'
+        params.paged = 'true'
+        params.offset = String(listPage * LIST_PAGE_SIZE)
+        params.limit = String(LIST_PAGE_SIZE)
+      }
       if (stockFilter) params.stock_filter = stockFilter
       if (categoryFilter) params.category = categoryFilter
       const summaryParams = { ...params }
       delete summaryParams.load_all
+      delete summaryParams.paged
+      delete summaryParams.offset
+      delete summaryParams.limit
       const [listRes, sumRes] = await Promise.all([
-        api.get<Product[]>('/inventory/items', { params }),
+        api.get('/inventory/items', { params }),
         api.get<{
           total: number; zero_stock: number; low_stock: number
           stock_value_cost: number; stock_value_retail: number
-        }>(
-          '/inventory/summary',
-          { params: summaryParams },
-        ),
+        }>('/inventory/summary', { params: summaryParams }),
       ])
-      setItems(listRes.data)
+      const payload = listRes.data as Product[] | { items: Product[]; total: number }
+      if (showAllItems && payload && typeof payload === 'object' && 'items' in payload) {
+        setItems(payload.items)
+        setListTotal(payload.total)
+      } else {
+        setItems(Array.isArray(payload) ? payload : [])
+        setListTotal(Array.isArray(payload) ? payload.length : 0)
+      }
       setItemStats({
         total: sumRes.data.total,
         zero: sumRes.data.zero_stock,
@@ -317,10 +339,14 @@ export default function Inventory() {
   }, [tab])
 
   useEffect(() => {
+    setListPage(0)
+  }, [showAllItems, q, stockFilter, categoryFilter])
+
+  useEffect(() => {
     if (tab !== 'items') return
-    const id = setTimeout(loadItems, 300)
+    const id = setTimeout(loadItems, 400)
     return () => clearTimeout(id)
-  }, [tab, q, stockFilter, categoryFilter, showAllItems])
+  }, [tab, q, stockFilter, categoryFilter, showAllItems, listPage])
 
   // Soft auto-refresh every 120s: silently re-fetch the current view without a spinner.
   useEffect(() => {
@@ -328,7 +354,7 @@ export default function Inventory() {
     const id = setInterval(() => loadItems(true), 120_000)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, q, stockFilter, categoryFilter, showAllItems])
+  }, [tab, q, stockFilter, categoryFilter, showAllItems, listPage])
 
   const stats = useMemo(() => {
     if (itemStats) {
@@ -539,7 +565,9 @@ export default function Inventory() {
                         <td colSpan={11} className="text-center py-8 text-slate-500 text-sm max-w-md mx-auto">
                           {!showAllItems && !q.trim()
                             ? t('inventory.search_or_show_all_hint')
-                            : t('inventory.no_items')}
+                            : !showAllItems && q.trim().length > 0 && q.trim().length < 2
+                              ? t('inventory.search_min_chars')
+                              : t('inventory.no_items')}
                         </td>
                       </tr>
                     )}
@@ -601,6 +629,35 @@ export default function Inventory() {
                   </tbody>
                 </table>
               </div>
+              {showAllItems && listTotal > LIST_PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-600">
+                  <span>
+                    {t('inventory.list_page_info', {
+                      from: listPage * LIST_PAGE_SIZE + 1,
+                      to: Math.min((listPage + 1) * LIST_PAGE_SIZE, listTotal),
+                      total: listTotal,
+                    })}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={listPage === 0 || loading}
+                      onClick={() => setListPage((p) => Math.max(0, p - 1))}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-50 hover:bg-slate-50"
+                    >
+                      {t('common.previous', 'Previous')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={(listPage + 1) * LIST_PAGE_SIZE >= listTotal || loading}
+                      onClick={() => setListPage((p) => p + 1)}
+                      className="px-3 py-1.5 border border-slate-200 rounded-lg disabled:opacity-50 hover:bg-slate-50"
+                    >
+                      {t('common.next', 'Next')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}

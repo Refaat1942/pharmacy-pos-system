@@ -697,13 +697,21 @@ BULK_UPLOAD_MIGRATIONS = [
         finished_at TIMESTAMPTZ
     )""",
     "CREATE INDEX IF NOT EXISTS idx_bulk_upload_jobs_created ON bulk_upload_jobs(created_at DESC)",
+    "ALTER TABLE bulk_upload_jobs ADD COLUMN IF NOT EXISTS file_rows INTEGER DEFAULT 0",
+    "ALTER TABLE bulk_upload_jobs ADD COLUMN IF NOT EXISTS merged_duplicates INTEGER DEFAULT 0",
+]
+
+SEARCH_INDEX_MIGRATIONS = [
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    "CREATE INDEX IF NOT EXISTS idx_products_name_en_trgm ON products USING gin (name_en gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS idx_products_name_ar_trgm ON products USING gin (name_ar gin_trgm_ops)",
 ]
 
 
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
-    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS:
+    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS:
         try:
             cur.execute(stmt)
             conn.commit()
