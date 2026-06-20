@@ -27,6 +27,7 @@ INSURANCE_FIELD_KEYS = [
     "employer_name",
     "receipt_limit",
     "exceeding_amount",
+    "additional_amount",
     "patient_share_pct",
     "max_patient_share",
     "treatment_type",
@@ -43,6 +44,7 @@ INSURANCE_TRANSACTION_CORE_KEYS = [
     "mobile_number",
     "receipt_limit",
     "exceeding_amount",
+    "additional_amount",
     "approval_number",
     "patient_share_pct",
     "employer_name",
@@ -73,6 +75,7 @@ DEFAULT_COVERAGE_RULES = {
 DEFAULT_FINANCIAL_RULES = {
     "insurance_coverage_pct": 80,
     "patient_share_pct": 20,
+    "patient_share_timing": "after_discount",
     "additional_amount_pct": 0,
     "fixed_copayment": 0,
 }

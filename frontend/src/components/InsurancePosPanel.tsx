@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Paperclip, Shield, X } from 'lucide-react'
 import type { CartItem, Customer } from '../lib/api'
-import { insuranceAPI, discountCardsAPI } from '../lib/api'
+import { insuranceAPI } from '../lib/api'
 import type { InsuranceCalculateResult, InsuranceCompany, InsurancePlan, InsuranceProfile } from '../lib/insurance'
 import {
   INSURANCE_EXTRA_FIELD_KEYS,
@@ -18,12 +18,11 @@ interface Props {
   onPreviewChange: (preview: InsuranceCalculateResult | null, patientFields: Record<string, string>) => void
   onCompanyChange: (id: number | null) => void
   onPlanChange: (id: number | null) => void
-  onCardChange: (id: number | null) => void
   onReadyChange?: (ready: boolean) => void
   hidePlanSelect?: boolean
 }
 
-const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'patient_share_pct', 'max_patient_share'])
+const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'additional_amount', 'patient_share_pct', 'max_patient_share'])
 
 function hasPatientIdentity(fields: Record<string, string>): boolean {
   const first = (fields.patient_first_name || '').trim()
@@ -45,7 +44,6 @@ export default function InsurancePosPanel({
   onPreviewChange,
   onCompanyChange,
   onPlanChange,
-  onCardChange,
   onReadyChange,
   hidePlanSelect = true,
 }: Props) {
@@ -61,11 +59,10 @@ export default function InsurancePosPanel({
     treatment_type: 'chronic',
     receipt_limit: '0',
     exceeding_amount: '0',
+    additional_amount: '0',
     max_patient_share: '0',
   })
   const [attachmentName, setAttachmentName] = useState('')
-  const [cardNumber, setCardNumber] = useState('')
-  const [discountCardId, setDiscountCardId] = useState<number | null>(null)
   const [preview, setPreview] = useState<InsuranceCalculateResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -171,10 +168,6 @@ export default function InsurancePosPanel({
   }, [companyId, planId, onCompanyChange, onPlanChange])
 
   useEffect(() => {
-    onCardChange(discountCardId)
-  }, [discountCardId, onCardChange])
-
-  useEffect(() => {
     onReadyChange?.(!!(companyId && planId && preview && hasPatientIdentity(patientFields)))
   }, [companyId, planId, preview, patientFields, onReadyChange])
 
@@ -191,7 +184,6 @@ export default function InsurancePosPanel({
         company_id: Number(companyId),
         plan_id: Number(planId),
         customer_id: selectedCustomer?.id,
-        discount_card_id: discountCardId || undefined,
         patient_fields: patientFields,
         items: cartItems.map((item) => ({
           product_id: item.product.id,
@@ -213,19 +205,7 @@ export default function InsurancePosPanel({
         .finally(() => setLoading(false))
     }, 350)
     return () => clearTimeout(timer)
-  }, [companyId, planId, cartItems, patientFields, selectedCustomer?.id, discountCardId, onPreviewChange, t])
-
-  const lookupCard = async () => {
-    if (!cardNumber.trim()) return
-    try {
-      const { data } = await discountCardsAPI.lookup(cardNumber.trim())
-      setDiscountCardId(data.id)
-      setError('')
-    } catch {
-      setDiscountCardId(null)
-      setError(t('insurance.card_not_found') as string)
-    }
-  }
+  }, [companyId, planId, cartItems, patientFields, selectedCustomer?.id, onPreviewChange, t])
 
   const onAttachment = (file: File | null) => {
     if (!file) {
@@ -361,6 +341,7 @@ export default function InsurancePosPanel({
       <div className="grid grid-cols-2 gap-2">
         {fieldMode('receipt_limit', fieldConfig) !== 'hidden' && renderInput('receipt_limit')}
         {fieldMode('exceeding_amount', fieldConfig) !== 'hidden' && renderInput('exceeding_amount')}
+        {fieldMode('additional_amount', fieldConfig) !== 'hidden' && renderInput('additional_amount')}
         {fieldMode('approval_number', fieldConfig) !== 'hidden' && renderInput('approval_number')}
         {fieldMode('patient_share_pct', fieldConfig) !== 'hidden' && renderInput('patient_share_pct')}
         {fieldMode('employer_name', fieldConfig) !== 'hidden' && renderInput('employer_name')}
@@ -437,22 +418,9 @@ export default function InsurancePosPanel({
         </div>
       )}
 
-      <div className="flex gap-2 border-t border-sky-200 pt-2">
-        <input
-          type="text"
-          value={cardNumber}
-          onChange={(e) => setCardNumber(e.target.value)}
-          placeholder={t('insurance.discount_card_ph') as string}
-          className="flex-1 border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white"
-        />
-        <button type="button" onClick={lookupCard} className="px-3 py-2 text-xs font-semibold bg-sky-600 text-white rounded-lg shrink-0">
-          {t('insurance.apply_card')}
-        </button>
-      </div>
-
       {(planLocalPct != null || planImportedPct != null) && (
         <p className="text-[10px] text-sky-700 bg-sky-100 rounded px-2 py-1">
-          {t('insurance.plan_coverage_hint', {
+          {t('insurance.company_coverage_hint', {
             local: planLocalPct ?? '—',
             imported: planImportedPct ?? '—',
           })}
@@ -476,7 +444,7 @@ export default function InsurancePosPanel({
               <tr>
                 <th className="text-start p-1.5">{t('insurance.line_item')}</th>
                 <th className="p-1.5">{t('inventory.f_material_group')}</th>
-                <th className="p-1.5">{t('insurance.line_coverage')}</th>
+                <th className="p-1.5">{t('insurance.line_discount')}</th>
                 <th className="text-end p-1.5">{t('insurance.covered')}</th>
               </tr>
             </thead>
@@ -500,16 +468,22 @@ export default function InsurancePosPanel({
         <div className="bg-white rounded-lg border border-sky-100 p-3 text-xs space-y-1 font-mono">
           <div className="flex justify-between"><span>{t('insurance.gross')}</span><span>{preview.totals.gross_before_discounts.toFixed(2)} {egp}</span></div>
           <div className="flex justify-between text-sky-700"><span>{t('insurance.insurance_discount')}</span><span>-{preview.totals.insurance_discount.toFixed(2)} {egp}</span></div>
+          {(preview.totals.after_insurance_discount ?? 0) > 0 && (
+            <div className="flex justify-between"><span>{t('insurance.after_discount')}</span><span>{preview.totals.after_insurance_discount!.toFixed(2)} {egp}</span></div>
+          )}
+          <div className="flex justify-between"><span>{t('insurance.patient_share')}{preview.totals.patient_share_pct != null ? ` (${preview.totals.patient_share_pct}%)` : ''}</span><span>{preview.totals.patient_share.toFixed(2)} {egp}</span></div>
           <div className="flex justify-between text-sky-700"><span>{t('insurance.covered')}</span><span>{preview.totals.insurance_covered.toFixed(2)} {egp}</span></div>
-          <div className="flex justify-between"><span>{t('insurance.patient_share')}</span><span>{preview.totals.patient_share.toFixed(2)} {egp}</span></div>
+          {(preview.totals.receipt_limit_excess ?? 0) > 0 && (
+            <div className="flex justify-between text-amber-700"><span>{t('insurance.receipt_limit_excess')}</span><span>{preview.totals.receipt_limit_excess!.toFixed(2)} {egp}</span></div>
+          )}
           {(preview.totals.exceeding_amount ?? 0) > 0 && (
             <div className="flex justify-between"><span>{t('insurance.fields.exceeding_amount')}</span><span>{preview.totals.exceeding_amount!.toFixed(2)} {egp}</span></div>
           )}
+          {(preview.totals.additional_amount ?? 0) > 0 && (
+            <div className="flex justify-between"><span>{t('insurance.additional_amount')}</span><span>{preview.totals.additional_amount.toFixed(2)} {egp}</span></div>
+          )}
           {preview.totals.copayment > 0 && (
             <div className="flex justify-between"><span>{t('insurance.copayment')}</span><span>{preview.totals.copayment.toFixed(2)} {egp}</span></div>
-          )}
-          {preview.totals.discount_card_amount > 0 && (
-            <div className="flex justify-between text-emerald-700"><span>{t('insurance.card_discount')}</span><span>-{preview.totals.discount_card_amount.toFixed(2)} {egp}</span></div>
           )}
           <div className="flex justify-between font-bold text-base border-t border-sky-100 pt-2 mt-2">
             <span>{t('insurance.final_due')}</span>

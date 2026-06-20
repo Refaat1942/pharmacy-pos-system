@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 
 from db import get_db_connection
 from deps import get_active_branch_id, get_current_user, requires_feature, requires_feature_option
-from discount_card_engine import calculate_discount_card, record_card_usage
 from excel_utils import xlsx_response
 from insurance_audit import log_insurance_audit
 from insurance_constants import (
@@ -58,7 +57,8 @@ class CompanyIn(BaseModel):
     custom_field_defs: Optional[list] = None
     local_drugs_pct: Optional[float] = Field(None, ge=0, le=100)
     imported_drugs_pct: Optional[float] = Field(None, ge=0, le=100)
-    patient_share_pct: Optional[float] = Field(None, ge=0, le=100)
+    default_patient_share_pct: Optional[float] = Field(None, ge=0, le=100)
+    patient_share_timing: Optional[str] = "after_discount"
 
 
 def _upsert_default_plan(
@@ -69,10 +69,14 @@ def _upsert_default_plan(
     name_ar: str,
     local_drugs_pct: Optional[float],
     imported_drugs_pct: Optional[float],
-    patient_share_pct: Optional[float],
+    default_patient_share_pct: Optional[float] = None,
+    patient_share_timing: Optional[str] = None,
 ) -> None:
     """Ensure each company has a DEFAULT plan with local/imported coverage."""
-    if local_drugs_pct is None and imported_drugs_pct is None and patient_share_pct is None:
+    if (
+        local_drugs_pct is None and imported_drugs_pct is None
+        and default_patient_share_pct is None and patient_share_timing is None
+    ):
         return
     coverage = dict(DEFAULT_COVERAGE_RULES)
     financial = dict(DEFAULT_FINANCIAL_RULES)
@@ -80,9 +84,10 @@ def _upsert_default_plan(
         coverage["local_drugs_pct"] = local_drugs_pct
     if imported_drugs_pct is not None:
         coverage["imported_drugs_pct"] = imported_drugs_pct
-    if patient_share_pct is not None:
-        financial["patient_share_pct"] = patient_share_pct
-        financial["insurance_coverage_pct"] = max(0.0, 100.0 - patient_share_pct)
+    if default_patient_share_pct is not None:
+        financial["patient_share_pct"] = default_patient_share_pct
+    if patient_share_timing in ("before_discount", "after_discount"):
+        financial["patient_share_timing"] = patient_share_timing
     cur.execute(
         "SELECT id FROM insurance_plans WHERE company_id=%s AND code='DEFAULT'",
         (company_id,),
@@ -243,7 +248,8 @@ def create_company(body: CompanyIn, current_user=Depends(get_current_user)):
             name_ar=body.name_ar,
             local_drugs_pct=body.local_drugs_pct,
             imported_drugs_pct=body.imported_drugs_pct,
-            patient_share_pct=body.patient_share_pct,
+            default_patient_share_pct=body.default_patient_share_pct,
+            patient_share_timing=body.patient_share_timing,
         )
         log_insurance_audit(cur, entity_type="company", entity_id=row["id"], action="create",
                             user_id=current_user.get("user_id"), new_value=row)
@@ -302,7 +308,8 @@ def update_company(company_id: int, body: CompanyIn, current_user=Depends(get_cu
             name_ar=body.name_ar,
             local_drugs_pct=body.local_drugs_pct,
             imported_drugs_pct=body.imported_drugs_pct,
-            patient_share_pct=body.patient_share_pct,
+            default_patient_share_pct=body.default_patient_share_pct,
+            patient_share_timing=body.patient_share_timing,
         )
         log_insurance_audit(cur, entity_type="company", entity_id=company_id, action="update",
                             user_id=current_user.get("user_id"), old_value=dict(old), new_value=row)
@@ -584,33 +591,6 @@ def calculate(body: CalculateIn, current_user=Depends(get_current_user)):
         product_ids = [i["product_id"] for i in body.items]
         products = _load_products(cur, product_ids)
 
-        card_result = None
-        if body.discount_card_id:
-            cur.execute(
-                """SELECT dc.*, dp.rules, dp.compatibility, dp.status AS program_status
-                   FROM discount_cards dc
-                   JOIN discount_card_programs dp ON dp.id = dc.program_id
-                   WHERE dc.id = %s""",
-                (body.discount_card_id,),
-            )
-            card = cur.fetchone()
-            if card:
-                card_result = calculate_discount_card(
-                    cur,
-                    card=dict(card),
-                    program={"rules": card["rules"], "compatibility": card["compatibility"], "status": card["program_status"]},
-                    items=body.items,
-                    products=products,
-                    eligible_amount=sum(
-                        (i.get("quantity", 0) * i.get("unit_price", 0))
-                        - (i.get("discount", 0) + i.get("offer_discount", 0))
-                        for i in body.items
-                    ),
-                    customer_id=body.customer_id,
-                    has_insurance=True,
-                    has_promotions=any(i.get("offer_discount") for i in body.items),
-                )
-
         plan = dict(plan_row)
         result = calculate_insurance_sale(
             cur,
@@ -621,11 +601,9 @@ def calculate(body: CalculateIn, current_user=Depends(get_current_user)):
             plan_id=body.plan_id,
             customer_id=body.customer_id,
             patient_fields=body.patient_fields,
-            discount_card_result=card_result,
         )
         result["company_id"] = body.company_id
         result["plan_id"] = body.plan_id
-        result["discount_card"] = card_result
         return result
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -1255,29 +1233,6 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
     ]
     products = _load_products(cur, [i.product_id for i in items])
 
-    card_result = None
-    if req.discount_card_id:
-        cur.execute(
-            """SELECT dc.*, dp.rules, dp.compatibility, dp.status AS program_status
-               FROM discount_cards dc
-               JOIN discount_card_programs dp ON dp.id = dc.program_id
-               WHERE dc.id = %s""",
-            (req.discount_card_id,),
-        )
-        card = cur.fetchone()
-        if card:
-            card_result = calculate_discount_card(
-                cur,
-                card=dict(card),
-                program={"rules": card["rules"], "compatibility": card["compatibility"], "status": card["program_status"]},
-                items=item_payloads,
-                products=products,
-                eligible_amount=sum(i.quantity * i.unit_price - i.discount - (i.offer_discount or 0) for i in items),
-                customer_id=resolved_customer_id,
-                has_insurance=True,
-                has_promotions=any(i.offer_discount for i in items),
-            )
-
     result = calculate_insurance_sale(
         cur,
         items=item_payloads,
@@ -1287,7 +1242,6 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
         plan_id=req.insurance_plan_id,
         customer_id=resolved_customer_id,
         patient_fields=patient_fields,
-        discount_card_result=card_result,
     )
 
     snapshot = {
@@ -1306,7 +1260,6 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
         "insurance_totals": result["totals"],
         "insurance_snapshot": snapshot,
         "insurance_lines": result["lines"],
-        "discount_card_result": card_result,
         "company_id": req.insurance_company_id,
         "plan_id": req.insurance_plan_id,
         "customer_id": resolved_customer_id,

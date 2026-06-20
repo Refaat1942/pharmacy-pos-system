@@ -67,92 +67,42 @@ def _is_medicine_product(product: dict) -> bool:
     return cat not in ("cosmetics", "medical supplies", "baby care", "personal care")
 
 
-def _drug_coverage_pct(
+def _line_discount_pct(
     product: dict,
     coverage_rules: dict,
-    patient_fields: Optional[dict],
 ) -> tuple[float, str]:
-    """Local vs imported drug coverage from plan rules (primary insurance discount)."""
-    origin = (product.get("origin_type") or "local").strip().lower()
-    if origin == "imported":
-        pct = float(coverage_rules.get("imported_drugs_pct") or 0)
-        rule = "imported_drugs"
-    else:
-        pct = float(coverage_rules.get("local_drugs_pct") or 0)
-        rule = "local_drugs"
-
-    txn_treatment = (patient_fields or {}).get("treatment_type") or ""
-    prod_treatment = (product.get("medication_type") or "").strip().lower()
-    treatment = (txn_treatment or prod_treatment).lower()
-
-    if treatment == "chronic":
-        chronic_pct = float(coverage_rules.get("chronic_medication_pct") or 0)
-        if chronic_pct > pct:
-            pct = chronic_pct
-            rule = "chronic_medication"
-    elif treatment == "acute":
-        acute_pct = float(coverage_rules.get("acute_medication_pct") or 0)
-        if acute_pct > pct:
-            pct = acute_pct
-            rule = "acute_medication"
-
-    txn_patient_pct = _pf_float(patient_fields, "patient_share_pct", default=-1)
-    if txn_patient_pct >= 0:
-        min_coverage = max(0.0, 100.0 - txn_patient_pct)
-        if min_coverage > pct:
-            pct = min_coverage
-            rule = f"{rule}+patient_share_floor"
-
-    return pct, rule
-
-
-def _category_coverage_pct(
-    product: dict,
-    coverage_rules: dict,
-    patient_fields: Optional[dict],
-) -> tuple[float, str]:
+    """Insurance company discount % by material group / origin (local 10%, imported 5%, etc.)."""
     if not is_discountable_product(product):
         return 0.0, "non_discountable"
 
     kind = resolve_product_kind(product)
     origin = resolve_product_origin(product)
-    mg = normalize_material_group(product.get("material_group")) or infer_material_group(
-        origin_type=origin,
-        is_service=product.get("is_service"),
-        category=product.get("category"),
-    )
 
     if kind in ("service", "lab"):
-        rule = "lab" if kind == "lab" else "services"
-        return float(coverage_rules.get("services_pct") or 0), rule
-
-    if kind == "cosmetic":
-        pct = float(coverage_rules.get("cosmetics_pct") or 0)
-        return pct, f"cosmetics_{origin}"
-
-    if kind == "medical_supply":
-        pct = float(coverage_rules.get("medical_supplies_pct") or 0)
-        return pct, f"medical_supplies_{origin}"
-
-    if kind == "drug":
-        prod = {**product, "origin_type": origin, "material_group": mg}
-        return _drug_coverage_pct(prod, coverage_rules, patient_fields)
-
-    cat = (product.get("category") or "").strip()
-    cat_lower = cat.lower()
-    is_service = bool(product.get("is_service"))
-
-    if is_service:
         return float(coverage_rules.get("services_pct") or 0), "services"
 
-    if "cosmetic" in cat_lower:
+    if kind == "cosmetic":
+        return float(coverage_rules.get("cosmetics_pct") or 0), f"cosmetics_{origin}"
+
+    if kind == "medical_supply":
+        return float(coverage_rules.get("medical_supplies_pct") or 0), f"medical_supplies_{origin}"
+
+    if kind == "drug":
+        if origin == "imported":
+            return float(coverage_rules.get("imported_drugs_pct") or 0), "imported_drugs"
+        return float(coverage_rules.get("local_drugs_pct") or 0), "local_drugs"
+
+    cat = (product.get("category") or "").strip().lower()
+    if product.get("is_service"):
+        return float(coverage_rules.get("services_pct") or 0), "services"
+    if "cosmetic" in cat:
         return float(coverage_rules.get("cosmetics_pct") or 0), "cosmetics"
-    if "medical suppl" in cat_lower or cat_lower == "medical supplies":
+    if "medical suppl" in cat or cat == "medical supplies":
         return float(coverage_rules.get("medical_supplies_pct") or 0), "medical_supplies"
-
     if _is_medicine_product(product):
-        return _drug_coverage_pct(product, coverage_rules, patient_fields)
-
+        if origin == "imported":
+            return float(coverage_rules.get("imported_drugs_pct") or 0), "imported_drugs"
+        return float(coverage_rules.get("local_drugs_pct") or 0), "local_drugs"
     if origin == "imported":
         return float(coverage_rules.get("imported_drugs_pct") or 0), "imported_drugs"
     return float(coverage_rules.get("local_drugs_pct") or 0), "local_drugs"
@@ -177,23 +127,12 @@ def _product_excluded(product: dict, restrictions: dict) -> bool:
     return False
 
 
-def _resolve_coverage_pct(
-    product: dict,
-    plan: dict,
-    patient_fields: Optional[dict],
-) -> tuple[float, str]:
+def _resolve_discount_pct(product: dict, plan: dict) -> tuple[float, str]:
     coverage_rules = _merge(DEFAULT_COVERAGE_RULES, plan.get("coverage_rules"))
     restrictions = _merge(DEFAULT_RESTRICTIONS, plan.get("restrictions"))
     if _product_excluded(product, restrictions):
         return 0.0, "excluded"
-    pct, rule = _category_coverage_pct(product, coverage_rules, patient_fields)
-    financial = _merge(DEFAULT_FINANCIAL_RULES, plan.get("financial_rules"))
-    cap = float(financial.get("insurance_coverage_pct") or 100)
-    if _pf_float(patient_fields, "patient_share_pct", default=-1) < 0:
-        plan_patient = float(financial.get("patient_share_pct") or 0)
-        if plan_patient > 0:
-            cap = min(cap, 100.0 - plan_patient)
-    return min(pct, cap), rule
+    return _line_discount_pct(product, coverage_rules)
 
 
 def _period_keys(d: date) -> dict[str, str]:
@@ -229,22 +168,11 @@ def _check_limits(
     proposed_covered: float,
     controls: dict,
     limits: dict,
-    receipt_limit: float,
 ) -> tuple[float, list[str]]:
     warnings: list[str] = []
+    remaining = proposed_covered
     today = date.today()
     keys = _period_keys(today)
-    remaining = proposed_covered
-
-    if receipt_limit > 0 and proposed_covered > receipt_limit:
-        if controls.get("allow_exceeding_limits"):
-            warnings.append("Receipt insurance limit exceeded — patient pays difference")
-        elif controls.get("allow_partial_coverage"):
-            remaining = min(remaining, receipt_limit)
-            warnings.append("Partial coverage due to receipt limit")
-        else:
-            remaining = receipt_limit
-            warnings.append("Coverage capped at receipt limit")
 
     max_invoice = limits.get("max_coverage_per_invoice")
     if max_invoice is not None and remaining > float(max_invoice):
@@ -283,7 +211,16 @@ def calculate_insurance_sale(
     patient_fields: Optional[dict] = None,
     discount_card_result: Optional[dict] = None,
 ) -> dict[str, Any]:
-    """Calculate insurance breakdown for a cart."""
+    """Calculate insurance breakdown for a cart.
+
+    Flow:
+    1. Apply company discount % per line (local/imported/etc.) → after_insurance_discount
+    2. Patient share % on gross OR after discount (company setting)
+    3. Insurance company pays remainder (capped by receipt limit)
+    4. Patient pays share + exceeding/additional amounts + copayment
+    """
+    del discount_card_result  # discount cards are a separate module — not combined here
+
     pf = patient_fields or {}
     coverage_rules = _merge(DEFAULT_COVERAGE_RULES, plan.get("coverage_rules"))
     financial = _merge(DEFAULT_FINANCIAL_RULES, plan.get("financial_rules"))
@@ -294,13 +231,19 @@ def calculate_insurance_sale(
         raise ValueError("Approval number is required for this insurance plan")
 
     receipt_limit = _pf_float(pf, "receipt_limit")
-    exceeding_amount = _pf_float(pf, "exceeding_amount")
+    exceeding_amount = Decimal(str(_pf_float(pf, "exceeding_amount")))
     max_patient_share = _pf_float(pf, "max_patient_share")
+
+    txn_patient_pct = _pf_float(pf, "patient_share_pct", default=-1)
+    patient_share_pct = txn_patient_pct if txn_patient_pct >= 0 else float(financial.get("patient_share_pct") or 0)
+    timing = str(financial.get("patient_share_timing") or "after_discount").strip().lower()
+    if timing not in ("before_discount", "after_discount"):
+        timing = "after_discount"
 
     line_results = []
     gross = Decimal("0")
-    insurance_covered = Decimal("0")
-    max_item = limits.get("max_coverage_per_item")
+    insurance_discount_total = Decimal("0")
+    after_discount = Decimal("0")
 
     for item in items:
         pid = item["product_id"]
@@ -308,18 +251,15 @@ def calculate_insurance_sale(
         qty = Decimal(str(item.get("quantity") or 0))
         unit_price = Decimal(str(item.get("unit_price") or 0))
         line_disc = Decimal(str(item.get("discount") or 0)) + Decimal(str(item.get("offer_discount") or 0))
-        line_net = max(Decimal("0"), qty * unit_price - line_disc)
-        gross += line_net
+        line_gross = max(Decimal("0"), qty * unit_price - line_disc)
+        gross += line_gross
 
-        pct, rule = _resolve_coverage_pct(product, plan, pf)
-        covered = (line_net * Decimal(str(pct)) / Decimal("100")).quantize(Q, rounding=ROUND_HALF_UP)
-        insurance_disc = line_net - covered
-        if max_item is not None:
-            covered = min(covered, Decimal(str(max_item)))
-            insurance_disc = line_net - covered
+        discount_pct, rule = _resolve_discount_pct(product, plan)
+        line_insurance_disc = (line_gross * Decimal(str(discount_pct)) / Decimal("100")).quantize(Q, rounding=ROUND_HALF_UP)
+        line_after = line_gross - line_insurance_disc
+        insurance_discount_total += line_insurance_disc
+        after_discount += line_after
 
-        patient_line = line_net - covered
-        insurance_covered += covered
         origin = resolve_product_origin(product)
         mg = normalize_material_group(product.get("material_group")) or infer_material_group(
             origin_type=origin,
@@ -331,17 +271,37 @@ def calculate_insurance_sale(
             "product_name": product.get("name_en") or product.get("name_ar") or "",
             "material_group": mg,
             "origin_type": origin,
-            "line_gross": _money(line_net),
-            "coverage_pct": pct,
+            "line_gross": _money(line_gross),
+            "coverage_pct": discount_pct,
             "coverage_rule": rule,
-            "insurance_discount": _money(insurance_disc),
-            "covered_amount": _money(covered),
-            "patient_share": _money(patient_line),
+            "insurance_discount": _money(line_insurance_disc),
+            "line_after_discount": _money(line_after),
+            "covered_amount": 0.0,
+            "patient_share": 0.0,
             "additional_amount": 0.0,
         })
 
     gross_f = _money(gross)
-    covered_f, limit_warnings = _check_limits(
+    after_discount_f = _money(after_discount)
+    insurance_discount_f = _money(insurance_discount_total)
+
+    share_base = gross if timing == "before_discount" else after_discount
+    patient_share_amt = (share_base * Decimal(str(patient_share_pct)) / Decimal("100")).quantize(Q, rounding=ROUND_HALF_UP)
+
+    insurance_owed = after_discount - patient_share_amt
+    if insurance_owed < 0:
+        insurance_owed = Decimal("0")
+
+    receipt_limit_excess = Decimal("0")
+    if receipt_limit > 0 and insurance_owed > Decimal(str(receipt_limit)):
+        receipt_limit_excess = insurance_owed - Decimal(str(receipt_limit))
+        insurance_owed = Decimal(str(receipt_limit))
+        limit_warnings = ["Receipt insurance limit exceeded — patient pays difference"]
+    else:
+        limit_warnings = []
+
+    insurance_covered = insurance_owed
+    covered_f, period_warnings = _check_limits(
         cur,
         customer_id=customer_id,
         company_id=company_id,
@@ -349,33 +309,31 @@ def calculate_insurance_sale(
         proposed_covered=float(insurance_covered),
         controls=controls,
         limits=limits,
-        receipt_limit=receipt_limit,
     )
+    limit_warnings.extend(period_warnings)
 
     if covered_f < float(insurance_covered):
-        ratio = Decimal(str(covered_f)) / insurance_covered if insurance_covered else Decimal("0")
+        shortfall = insurance_covered - Decimal(str(covered_f))
+        receipt_limit_excess += shortfall
         insurance_covered = Decimal(str(covered_f))
+
+    if after_discount > 0 and insurance_covered > 0:
+        ratio = insurance_covered / after_discount
         for lr in line_results:
-            line_gross = Decimal(str(lr["line_gross"]))
-            c = (line_gross * ratio).quantize(Q, rounding=ROUND_HALF_UP)
+            line_after = Decimal(str(lr["line_after_discount"]))
+            c = (line_after * ratio).quantize(Q, rounding=ROUND_HALF_UP)
             lr["covered_amount"] = _money(c)
-            lr["insurance_discount"] = _money(line_gross - c)
-            lr["patient_share"] = _money(line_gross - c)
+            lr["patient_share"] = _money(line_after - c)
+    else:
+        for lr in line_results:
+            lr["patient_share"] = lr["line_after_discount"]
 
-    patient_share = gross - insurance_covered
-    additional_pct = Decimal(str(financial.get("additional_amount_pct") or 0))
-    additional = (patient_share * additional_pct / Decimal("100")).quantize(Q, rounding=ROUND_HALF_UP)
     copayment = Decimal(str(financial.get("fixed_copayment") or 0))
+    additional = exceeding_amount
+    if _pf_float(pf, "additional_amount") > 0:
+        additional += Decimal(str(_pf_float(pf, "additional_amount")))
 
-    if exceeding_amount > 0:
-        additional += Decimal(str(exceeding_amount))
-
-    insurance_discount_total = gross - insurance_covered
-    card_amount = Decimal("0")
-    if discount_card_result and discount_card_result.get("active"):
-        card_amount = Decimal(str(discount_card_result.get("discount_amount") or 0))
-
-    final_patient = patient_share + additional + copayment - card_amount
+    final_patient = patient_share_amt + receipt_limit_excess + additional + copayment
     if max_patient_share > 0 and final_patient > Decimal(str(max_patient_share)):
         final_patient = Decimal(str(max_patient_share))
         limit_warnings.append("Capped at max patient share")
@@ -388,6 +346,7 @@ def calculate_insurance_sale(
         "imported_lines": sum(1 for lr in line_results if lr.get("origin_type") == "imported"),
         "local_drugs_pct": coverage_rules.get("local_drugs_pct"),
         "imported_drugs_pct": coverage_rules.get("imported_drugs_pct"),
+        "patient_share_timing": timing,
     }
 
     return {
@@ -396,11 +355,15 @@ def calculate_insurance_sale(
         "coverage_summary": local_summary,
         "totals": {
             "gross_before_discounts": gross_f,
-            "insurance_discount": _money(insurance_discount_total),
-            "discount_card_amount": _money(card_amount),
-            "total_discount": _money(insurance_discount_total + card_amount),
+            "after_insurance_discount": after_discount_f,
+            "insurance_discount": insurance_discount_f,
+            "discount_card_amount": 0.0,
+            "total_discount": insurance_discount_f,
             "insurance_covered": _money(insurance_covered),
-            "patient_share": _money(patient_share),
+            "patient_share_pct": patient_share_pct,
+            "patient_share_timing": timing,
+            "patient_share": _money(patient_share_amt),
+            "receipt_limit_excess": _money(receipt_limit_excess),
             "additional_amount": _money(additional),
             "copayment": _money(copayment),
             "exceeding_amount": _money(exceeding_amount),

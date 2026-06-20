@@ -41,6 +41,7 @@ export const INSURANCE_TRANSACTION_CORE_KEYS = [
   'mobile_number',
   'receipt_limit',
   'exceeding_amount',
+  'additional_amount',
   'approval_number',
   'patient_share_pct',
   'employer_name',
@@ -121,11 +122,15 @@ export const DEFAULT_CARD_COMPATIBILITY = {
 
 export interface InsuranceTotals {
   gross_before_discounts: number
+  after_insurance_discount?: number
   insurance_discount: number
   discount_card_amount: number
   total_discount: number
   insurance_covered: number
+  patient_share_pct?: number
+  patient_share_timing?: string
   patient_share: number
+  receipt_limit_excess?: number
   additional_amount: number
   copayment: number
   exceeding_amount?: number
@@ -173,7 +178,8 @@ export interface InsuranceCompany {
   custom_field_defs?: Array<{ key: string; label_en?: string; label_ar?: string; mode?: FieldMode }>
   local_drugs_pct?: number
   imported_drugs_pct?: number
-  patient_share_pct?: number
+  default_patient_share_pct?: number
+  patient_share_timing?: string
 }
 
 export interface InsurancePlan {

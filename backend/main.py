@@ -903,10 +903,10 @@ def create_sale(req: SaleRequest,
             net_total = float(insurance_data["net_total"])
             insurance_company_id = insurance_data["company_id"]
             insurance_plan_id = insurance_data["plan_id"]
-            discount_card_id_val = req.discount_card_id
+            discount_card_id_val = None
             insurance_snapshot = insurance_data["insurance_snapshot"]
             insurance_totals = insurance_data["insurance_totals"]
-            invoice_discount = float(insurance_totals.get("total_discount") or 0)
+            invoice_discount = float(insurance_totals.get("insurance_discount") or 0)
             if req.payment_method == "cash" and req.cash_amount:
                 change = max(0.0, req.cash_amount - net_total)
 
@@ -1189,7 +1189,6 @@ def create_sale(req: SaleRequest,
 
         if req.type == "insurance" and insurance_data and insurance_totals:
             from insurance_engine import record_usage_ledger
-            from discount_card_engine import record_card_usage
             record_usage_ledger(
                 cur,
                 customer_id=invoice_customer_id,
@@ -1199,16 +1198,6 @@ def create_sale(req: SaleRequest,
                 invoice_id=invoice_id,
                 covered_amount=float(insurance_totals.get("insurance_covered") or 0),
             )
-            card_res = insurance_data.get("discount_card_result")
-            if card_res and card_res.get("active") and discount_card_id_val:
-                record_card_usage(
-                    cur,
-                    card_id=discount_card_id_val,
-                    invoice_id=invoice_id,
-                    customer_id=invoice_customer_id,
-                    branch_id=branch_id,
-                    discount_amount=float(card_res.get("discount_amount") or 0),
-                )
 
         if invoice_customer_id and req.type in ("cash", "delivery", "digital", "insurance"):
             from customer_insurance_sync import mark_customer_sale_type

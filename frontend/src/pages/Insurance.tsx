@@ -5,7 +5,6 @@ import Layout from '../components/Layout'
 import { insuranceAPI } from '../lib/api'
 import type { InsuranceCompany, InsurancePlan, InsuranceClaim } from '../lib/insurance'
 import {
-  DEFAULT_CONTROLS, DEFAULT_COVERAGE_RULES, DEFAULT_FINANCIAL_RULES,
   INSURANCE_FIELD_KEYS, insuranceFieldLabel, type FieldMode,
 } from '../lib/insurance'
 import { useAuth } from '../lib/auth'
@@ -13,11 +12,13 @@ import i18n from '../lib/i18n'
 import { downloadApiExcel } from '../lib/downloadExcel'
 import { downloadApiPdf } from '../lib/downloadPdf'
 
-type Tab = 'companies' | 'plans' | 'claims' | 'dashboard' | 'reports' | 'templates'
+type Tab = 'companies' | 'claims' | 'dashboard' | 'reports' | 'templates'
 
 const emptyCompany = (): Partial<InsuranceCompany> => ({
   code: '', name_ar: '', name_en: '', status: 'active', field_config: {},
   local_drugs_pct: 80, imported_drugs_pct: 70,
+  default_patient_share_pct: 20,
+  patient_share_timing: 'after_discount',
 })
 
 function formatApiError(e: unknown, fallback: string): string {
@@ -44,6 +45,8 @@ function companyPayload(c: Partial<InsuranceCompany>) {
     field_config: c.field_config || {},
     local_drugs_pct: c.local_drugs_pct ?? 80,
     imported_drugs_pct: c.imported_drugs_pct ?? 70,
+    default_patient_share_pct: c.default_patient_share_pct ?? 20,
+    patient_share_timing: c.patient_share_timing || 'after_discount',
   }
 }
 
@@ -51,13 +54,6 @@ function defaultPlanForCompany(plans: InsurancePlan[], companyId: number) {
   return plans.find((p) => p.company_id === companyId && p.code === 'DEFAULT')
     || plans.find((p) => p.company_id === companyId)
 }
-
-const emptyPlan = (companyId: number): Partial<InsurancePlan> & { company_id: number } => ({
-  company_id: companyId, code: '', name_ar: '', name_en: '', status: 'active', priority: 0,
-  coverage_rules: { ...DEFAULT_COVERAGE_RULES },
-  financial_rules: { ...DEFAULT_FINANCIAL_RULES },
-  controls: { ...DEFAULT_CONTROLS },
-})
 
 export default function Insurance() {
   const { t } = useTranslation()
@@ -78,8 +74,6 @@ export default function Insurance() {
   const [editCompany, setEditCompany] = useState<Partial<InsuranceCompany> | null>(null)
   const [editCompanyId, setEditCompanyId] = useState<number | null>(null)
   const [showFieldConfig, setShowFieldConfig] = useState(false)
-  const [editPlan, setEditPlan] = useState<(Partial<InsurancePlan> & { company_id: number }) | null>(null)
-  const [editPlanId, setEditPlanId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [claimForm, setClaimForm] = useState({ company_id: '', date_from: '', date_to: '' })
 
@@ -113,23 +107,6 @@ export default function Insurance() {
     }
   }
 
-  const savePlan = async () => {
-    if (!editPlan?.code || !editPlan.name_en || !editPlan.company_id) {
-      setError(t('insurance.required_fields') as string)
-      return
-    }
-    setError('')
-    try {
-      if (editPlanId) await insuranceAPI.updatePlan(editPlanId, editPlan)
-      else await insuranceAPI.createPlan(editPlan)
-      setEditPlan(null)
-      load()
-    } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(typeof d === 'string' ? d : 'Error')
-    }
-  }
-
   const generateClaim = async () => {
     if (!claimForm.company_id || !claimForm.date_from || !claimForm.date_to) return
     try {
@@ -156,7 +133,6 @@ export default function Insurance() {
 
   const tabs: { id: Tab; label: string; Icon: typeof Shield }[] = [
     { id: 'companies', label: t('insurance.tab_companies'), Icon: Shield },
-    { id: 'plans', label: t('insurance.tab_plans'), Icon: FileText },
     ...(canClaims ? [{ id: 'claims' as Tab, label: t('insurance.tab_claims'), Icon: FileText }] : []),
     ...(canReports ? [{ id: 'reports' as Tab, label: t('insurance.tab_reports'), Icon: BarChart3 }] : []),
     ...(canTemplates ? [{ id: 'templates' as Tab, label: t('insurance.tab_templates'), Icon: FileText }] : []),
@@ -234,6 +210,8 @@ export default function Insurance() {
                             field_config: c.field_config || {},
                             local_drugs_pct: plan?.coverage_rules?.local_drugs_pct ?? 80,
                             imported_drugs_pct: plan?.coverage_rules?.imported_drugs_pct ?? 70,
+                            default_patient_share_pct: Number(plan?.financial_rules?.patient_share_pct ?? 20),
+                            patient_share_timing: String(plan?.financial_rules?.patient_share_timing || 'after_discount'),
                           })
                         }}
                           className="text-pharma-600 hover:underline flex items-center gap-1 ms-auto">
@@ -243,51 +221,6 @@ export default function Insurance() {
                     )}
                   </tr>
                 )})}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {tab === 'plans' && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            {canManage && (
-              <div className="p-4 border-b">
-                <button onClick={() => {
-                  const cid = companies[0]?.id
-                  if (!cid) { setError(t('insurance.need_company') as string); return }
-                  setEditPlanId(null); setEditPlan(emptyPlan(cid))
-                }} className="bg-pharma-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-                  <Plus size={16} /> {t('insurance.new_plan')}
-                </button>
-              </div>
-            )}
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-4 py-2 text-start">{t('insurance.col_company')}</th>
-                  <th className="px-4 py-2 text-start">{t('insurance.col_code')}</th>
-                  <th className="px-4 py-2 text-start">{t('insurance.col_name')}</th>
-                  <th className="px-4 py-2 text-center">{t('insurance.local_pct')}</th>
-                  {canManage && <th className="px-4 py-2" />}
-                </tr>
-              </thead>
-              <tbody>
-                {plans.map((p) => (
-                  <tr key={p.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2">{lang === 'ar' ? p.company_name_ar : p.company_name_en}</td>
-                    <td className="px-4 py-2 font-mono">{p.code}</td>
-                    <td className="px-4 py-2">{lang === 'ar' ? p.name_ar : p.name_en}</td>
-                    <td className="px-4 py-2 text-center">{p.coverage_rules?.local_drugs_pct ?? '—'}%</td>
-                    {canManage && (
-                      <td className="px-4 py-2 text-end">
-                        <button onClick={() => { setEditPlanId(p.id); setEditPlan({ ...p, company_id: p.company_id }) }}
-                          className="text-pharma-600 hover:underline flex items-center gap-1 ms-auto">
-                          <Edit2 size={14} /> {t('common.edit')}
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
               </tbody>
             </table>
           </div>
@@ -465,6 +398,21 @@ export default function Insurance() {
                       onChange={(e) => setEditCompany({ ...editCompany, imported_drugs_pct: Number(e.target.value) })}
                       className="w-full border rounded-lg px-3 py-2.5 text-sm text-end" />
                   </label>
+                  <label className="text-sm">
+                    <span className="block text-slate-600 mb-1 font-medium">{t('insurance.default_patient_share_pct')}</span>
+                    <input type="number" min={0} max={100} value={editCompany.default_patient_share_pct ?? 20}
+                      onChange={(e) => setEditCompany({ ...editCompany, default_patient_share_pct: Number(e.target.value) })}
+                      className="w-full border rounded-lg px-3 py-2.5 text-sm text-end" />
+                  </label>
+                  <label className="text-sm">
+                    <span className="block text-slate-600 mb-1 font-medium">{t('insurance.patient_share_timing')}</span>
+                    <select value={editCompany.patient_share_timing || 'after_discount'}
+                      onChange={(e) => setEditCompany({ ...editCompany, patient_share_timing: e.target.value })}
+                      className="w-full border rounded-lg px-3 py-2.5 text-sm">
+                      <option value="after_discount">{t('insurance.patient_share_after_discount')}</option>
+                      <option value="before_discount">{t('insurance.patient_share_before_discount')}</option>
+                    </select>
+                  </label>
                 </div>
                 <div>
                   <button type="button" onClick={() => setShowFieldConfig((v) => !v)}
@@ -500,47 +448,6 @@ export default function Insurance() {
           </div>
         )}
 
-        {editPlan && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-              <div className="flex justify-between mb-4">
-                <h2 className="font-bold text-lg">{editPlanId ? t('insurance.edit_plan') : t('insurance.new_plan')}</h2>
-                <button onClick={() => setEditPlan(null)}><X /></button>
-              </div>
-              <div className="space-y-3">
-                <select value={editPlan.company_id} onChange={(e) => setEditPlan({ ...editPlan, company_id: Number(e.target.value) })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm">
-                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name_en}</option>)}
-                </select>
-                {(['code', 'name_en', 'name_ar'] as const).map((k) => (
-                  <input key={k} value={(editPlan[k] as string) || ''} onChange={(e) => setEditPlan({ ...editPlan, [k]: e.target.value })}
-                    placeholder={k} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                ))}
-                {Object.entries(DEFAULT_COVERAGE_RULES).map(([k, v]) => (
-                  <label key={k} className="flex justify-between text-sm items-center">
-                    <span>{k.replace(/_/g, ' ')}</span>
-                    <input type="number" min={0} max={100} className="border rounded w-20 px-2 py-1 text-end"
-                      value={editPlan.coverage_rules?.[k] ?? v}
-                      onChange={(e) => setEditPlan({
-                        ...editPlan,
-                        coverage_rules: { ...editPlan.coverage_rules, [k]: Number(e.target.value) },
-                      })} />
-                  </label>
-                ))}
-                <label className="flex justify-between text-sm items-center">
-                  <span>{t('insurance.copayment')}</span>
-                  <input type="number" min={0} step={0.5} className="border rounded w-24 px-2 py-1 text-end"
-                    value={editPlan.financial_rules?.fixed_copayment ?? 0}
-                    onChange={(e) => setEditPlan({
-                      ...editPlan,
-                      financial_rules: { ...editPlan.financial_rules, fixed_copayment: Number(e.target.value) },
-                    })} />
-                </label>
-              </div>
-              <button onClick={savePlan} className="w-full mt-4 bg-pharma-600 text-white py-2 rounded-lg font-medium">{t('common.save')}</button>
-            </div>
-          </div>
-        )}
       </main>
     </Layout>
   )

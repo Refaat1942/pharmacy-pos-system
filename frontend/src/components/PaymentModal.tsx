@@ -70,7 +70,6 @@ export default function PaymentModal({
   const [loyaltyPreview, setLoyaltyPreview] = useState<LoyaltyCalculateResult | null>(null)
   const [insuranceCompanyId, setInsuranceCompanyId] = useState<number | null>(null)
   const [insurancePlanId, setInsurancePlanId] = useState<number | null>(null)
-  const [discountCardId, setDiscountCardId] = useState<number | null>(null)
   const [insurancePreview, setInsurancePreview] = useState<InsuranceCalculateResult | null>(null)
   const [insurancePatientFields, setInsurancePatientFields] = useState<Record<string, string>>({})
   const [insuranceReady, setInsuranceReady] = useState(false)
@@ -380,7 +379,6 @@ export default function PaymentModal({
         insurance_company_id: isInsurance ? insuranceCompanyId ?? undefined : undefined,
         insurance_plan_id: isInsurance ? insurancePlanId ?? undefined : undefined,
         insurance_patient_fields: isInsurance ? insurancePatientFields : undefined,
-        discount_card_id: isInsurance && discountCardId ? discountCardId : undefined,
       })
       onSuccess(data)
     } catch (e: any) {
@@ -516,7 +514,6 @@ export default function PaymentModal({
                   onPreviewChange={(p, fields) => { setInsurancePreview(p); setInsurancePatientFields(fields) }}
                   onCompanyChange={setInsuranceCompanyId}
                   onPlanChange={setInsurancePlanId}
-                  onCardChange={setDiscountCardId}
                   onReadyChange={setInsuranceReady}
                 />
               </>

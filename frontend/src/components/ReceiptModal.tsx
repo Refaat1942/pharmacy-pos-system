@@ -250,6 +250,16 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                 <span className="text-gray-700">{invoice.customer_name || invoice.delivery_customer_name}</span>
               </div>
             )}
+            {invoice.type === 'insurance' && invoice.insurance_snapshot && (
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">{tr('insurance.col_company')}</span>
+                <span className="text-gray-700 font-medium">
+                  {lang === 'ar'
+                    ? String(invoice.insurance_snapshot.company_name_ar || invoice.insurance_snapshot.company_name_en || '')
+                    : String(invoice.insurance_snapshot.company_name_en || invoice.insurance_snapshot.company_name_ar || '')}
+                </span>
+              </div>
+            )}
             {invoice.delivery_person_name && (
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">{tr('receipt.delivery_person')}</span>
@@ -321,6 +331,16 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
             )}
             {invoice.type === 'insurance' && invoice.insurance_totals && (
               <>
+                <div className="flex justify-between text-xs text-gray-600">
+                  <span>{tr('insurance.insurance_discount')}</span>
+                  <span className="tabular-nums">-{Number(invoice.insurance_totals.insurance_discount || 0).toFixed(2)}</span>
+                </div>
+                {Number(invoice.insurance_totals.after_insurance_discount || 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{tr('insurance.after_discount')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.after_insurance_discount).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-xs text-sky-700">
                   <span>{tr('insurance.covered')}</span>
                   <span className="tabular-nums">{Number(invoice.insurance_totals.insurance_covered || 0).toFixed(2)}</span>
@@ -329,6 +349,24 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                   <span>{tr('insurance.patient_share')}</span>
                   <span className="tabular-nums">{Number(invoice.insurance_totals.patient_share || 0).toFixed(2)}</span>
                 </div>
+                {Number(invoice.insurance_totals.receipt_limit_excess || 0) > 0 && (
+                  <div className="flex justify-between text-xs text-amber-700">
+                    <span>{tr('insurance.receipt_limit_excess')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.receipt_limit_excess).toFixed(2)}</span>
+                  </div>
+                )}
+                {Number(invoice.insurance_totals.exceeding_amount || 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{tr('insurance.fields.exceeding_amount')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.exceeding_amount).toFixed(2)}</span>
+                  </div>
+                )}
+                {Number(invoice.insurance_totals.additional_amount || 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{tr('insurance.additional_amount')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.additional_amount).toFixed(2)}</span>
+                  </div>
+                )}
                 {Number(invoice.insurance_totals.copayment || 0) > 0 && (
                   <div className="flex justify-between text-xs text-gray-600">
                     <span>{tr('insurance.copayment')}</span>
