@@ -22,6 +22,7 @@ interface Props {
   selectedCustomer: Customer | null
   clinicId?: number | null
   prescriptionId?: number | null
+  initialSaleType?: string
   onClose: () => void
   onSuccess: (sale: SaleResponse) => void
 }
@@ -33,7 +34,9 @@ type CheckoutStep = 'type' | 'setup' | 'pay'
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
   offerIds, offerSavings, offerNames,
-  selectedSeller, selectedCustomer, clinicId, prescriptionId, onClose, onSuccess,
+  selectedSeller, selectedCustomer, clinicId, prescriptionId,
+  initialSaleType,
+  onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
   const { hasFeature, hasFeatureOption } = useAuth()
@@ -44,7 +47,8 @@ export default function PaymentModal({
   const { platforms } = useDigitalPlatforms()
   const langCode = lang === 'ar' ? 'ar' : 'en'
 
-  const [saleType, setSaleType] = useState('cash')
+  const typePreselected = Boolean(initialSaleType)
+  const [saleType, setSaleType] = useState(initialSaleType || 'cash')
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [digitalType, setDigitalType] = useState('talabat')
   const [cashAmount, setCashAmount] = useState('')
@@ -70,7 +74,10 @@ export default function PaymentModal({
   const [insurancePreview, setInsurancePreview] = useState<InsuranceCalculateResult | null>(null)
   const [insurancePatientFields, setInsurancePatientFields] = useState<Record<string, string>>({})
   const [insuranceReady, setInsuranceReady] = useState(false)
-  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('type')
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>(() => {
+    if (!initialSaleType) return 'type'
+    return initialSaleType === 'cash' ? 'pay' : 'setup'
+  })
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
@@ -90,6 +97,13 @@ export default function PaymentModal({
       platforms.some((p) => p.platform_key === prev) ? prev : platforms[0].platform_key
     ))
   }, [platforms])
+
+  useEffect(() => {
+    if (initialSaleType) {
+      setSaleType(initialSaleType)
+      setCheckoutStep(initialSaleType === 'cash' ? 'pay' : 'setup')
+    }
+  }, [initialSaleType])
 
   useEffect(() => {
     if (!digitalSalesOn && saleType === 'digital') {
@@ -926,7 +940,14 @@ export default function PaymentModal({
                 onClick={() => {
                   setError('')
                   if (checkoutStep === 'pay') {
-                    setCheckoutStep(saleType === 'cash' ? 'type' : 'setup')
+                    if (typePreselected) {
+                      if (saleType === 'cash') onClose()
+                      else setCheckoutStep('setup')
+                    } else {
+                      setCheckoutStep(saleType === 'cash' ? 'type' : 'setup')
+                    }
+                  } else if (typePreselected) {
+                    onClose()
                   } else {
                     setCheckoutStep('type')
                   }

@@ -22,6 +22,7 @@ import type { ComponentType } from 'react'
 import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
+import PosSaleTypePicker, { type PosSaleType } from '../components/PosSaleTypePicker'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
 import PosCounselingTips, { type CounselingTip } from '../components/PosCounselingTips'
@@ -191,6 +192,8 @@ export default function POS() {
 
   const [doseLabelItems, setDoseLabelItems] = useState<DoseLabelItem[] | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [posSaleType, setPosSaleType] = useState<PosSaleType>('cash')
+  const [checkoutHint, setCheckoutHint] = useState('')
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
   const [openShift, setOpenShift] = useState<{ id: number } | null>(null)
@@ -637,6 +640,7 @@ export default function POS() {
     setInvoiceDiscount(0)
     setSelectedCustomer(null)
     setSelectedSeller(null)
+    setPosSaleType('cash')
     setRxClinic(null)
     setRxId(null)
   }
@@ -651,8 +655,19 @@ export default function POS() {
 
   const tryCheckout = () => {
     if (!canCheckout) return
+    setCheckoutHint('')
+    if (posSaleType === 'insurance' && !selectedCustomer) {
+      setCheckoutHint(t('insurance.customer_required') as string)
+      return
+    }
     setShowPaymentModal(true)
   }
+
+  const checkoutButtonLabel = posSaleType === 'cash'
+    ? t('pos.checkout')
+    : posSaleType === 'insurance'
+      ? t('pos.continue_insurance')
+      : t('pos.continue_sale')
 
   return (
     <Layout>
@@ -1206,6 +1221,13 @@ export default function POS() {
                 </div>
               )}
             </div>
+
+            <div className="border-t border-dashed border-slate-200 pt-3 mt-1">
+              <PosSaleTypePicker value={posSaleType} onChange={setPosSaleType} compact />
+              {posSaleType === 'insurance' && !selectedCustomer && (
+                <p className="text-[10px] text-amber-700 mt-2 font-medium">{t('insurance.customer_required')}</p>
+              )}
+            </div>
           </div>
 
           {/* Totals */}
@@ -1292,13 +1314,16 @@ export default function POS() {
                 )}
               </button>
             </div>
+            {checkoutHint && (
+              <p className="text-xs text-red-600 font-medium px-1">{checkoutHint}</p>
+            )}
             <button
               onClick={tryCheckout}
               disabled={cartItems.length === 0 || !canCheckout}
               title={!canCheckout ? (t('pos.shift_required') as string) : undefined}
               className="w-full bg-gradient-to-br from-pharma-600 to-pharma-700 hover:from-pharma-700 hover:to-pharma-800 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-pharma-500/30 text-base tracking-wide"
             >
-              {t('pos.checkout')} →
+              {checkoutButtonLabel} →
             </button>
           </div>
         </aside>
@@ -1325,6 +1350,7 @@ export default function POS() {
           selectedCustomer={selectedCustomer}
           clinicId={rxClinic?.id ?? null}
           prescriptionId={rxId}
+          initialSaleType={posSaleType}
           onClose={() => setShowPaymentModal(false)}
           onSuccess={handleSaleSuccess}
         />
