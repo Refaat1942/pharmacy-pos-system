@@ -91,28 +91,42 @@ def calculate_discount_card(
     base = Decimal(str(eligible_amount))
     discount = Decimal("0")
 
-    pct = Decimal(str(rules.get("percentage_discount") or 0))
-    fixed = Decimal(str(rules.get("fixed_discount") or 0))
-    if pct > 0:
-        discount = base * pct / Decimal("100")
-    elif fixed > 0:
-        discount = fixed
-    else:
-        cat_discounts = rules.get("category_discounts") or {}
-        prod_discounts = rules.get("product_discounts") or {}
+    local_pct = Decimal(str(rules.get("local_drugs_discount_pct") or 0))
+    imported_pct = Decimal(str(rules.get("imported_drugs_discount_pct") or 0))
+    if local_pct > 0 or imported_pct > 0:
         for item in items:
             pid = item["product_id"]
             product = products.get(pid) or {}
-            cat = (product.get("category") or "").strip()
+            origin = (product.get("origin_type") or "local").lower()
+            pct = imported_pct if origin == "imported" else local_pct
+            if pct <= 0:
+                continue
             line_amt = Decimal(str(item.get("quantity") or 0)) * Decimal(str(item.get("unit_price") or 0))
             line_amt -= Decimal(str(item.get("discount") or 0)) + Decimal(str(item.get("offer_discount") or 0))
-            if str(pid) in prod_discounts or pid in prod_discounts:
-                key = str(pid) if str(pid) in prod_discounts else pid
-                p = Decimal(str(prod_discounts[key]))
-                discount += line_amt * p / Decimal("100") if p <= 100 else p
-            elif cat in cat_discounts:
-                p = Decimal(str(cat_discounts[cat]))
-                discount += line_amt * p / Decimal("100") if p <= 100 else p
+            discount += line_amt * pct / Decimal("100")
+    else:
+        pct = Decimal(str(rules.get("percentage_discount") or 0))
+        fixed = Decimal(str(rules.get("fixed_discount") or 0))
+        if pct > 0:
+            discount = base * pct / Decimal("100")
+        elif fixed > 0:
+            discount = fixed
+        else:
+            cat_discounts = rules.get("category_discounts") or {}
+            prod_discounts = rules.get("product_discounts") or {}
+            for item in items:
+                pid = item["product_id"]
+                product = products.get(pid) or {}
+                cat = (product.get("category") or "").strip()
+                line_amt = Decimal(str(item.get("quantity") or 0)) * Decimal(str(item.get("unit_price") or 0))
+                line_amt -= Decimal(str(item.get("discount") or 0)) + Decimal(str(item.get("offer_discount") or 0))
+                if str(pid) in prod_discounts or pid in prod_discounts:
+                    key = str(pid) if str(pid) in prod_discounts else pid
+                    p = Decimal(str(prod_discounts[key]))
+                    discount += line_amt * p / Decimal("100") if p <= 100 else p
+                elif cat in cat_discounts:
+                    p = Decimal(str(cat_discounts[cat]))
+                    discount += line_amt * p / Decimal("100") if p <= 100 else p
 
     max_disc = rules.get("max_discount")
     if max_disc is not None:

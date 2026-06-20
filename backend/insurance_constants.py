@@ -102,6 +102,8 @@ DEFAULT_RESTRICTIONS = {
 
 DEFAULT_CARD_RULES = {
     "percentage_discount": 0,
+    "local_drugs_discount_pct": 0,
+    "imported_drugs_discount_pct": 0,
     "fixed_discount": 0,
     "category_discounts": {},
     "product_discounts": {},

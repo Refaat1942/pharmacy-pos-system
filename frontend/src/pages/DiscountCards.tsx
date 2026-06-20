@@ -90,7 +90,10 @@ export default function DiscountCards() {
           <div className="flex justify-between mb-3">
             <h2 className="font-semibold">{t('discount_cards.programs')}</h2>
             {canManage && (
-              <button onClick={() => { setEditProgramId(null); setEditProgram({ code: '', name_en: '', status: 'active', card_type: 'promotional' }) }}
+              <button onClick={() => { setEditProgramId(null); setEditProgram({
+                code: '', name_en: '', status: 'active', card_type: 'promotional',
+                rules: { ...DEFAULT_CARD_RULES, local_drugs_discount_pct: 10, imported_drugs_discount_pct: 5 },
+              }) }}
                 className="bg-pharma-600 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1">
                 <Plus size={14} /> {t('discount_cards.new_program')}
               </button>
@@ -103,6 +106,8 @@ export default function DiscountCards() {
                   <th className="px-4 py-2 text-start">{t('insurance.col_code')}</th>
                   <th className="px-4 py-2 text-start">{t('insurance.col_name')}</th>
                   <th className="px-4 py-2 text-center">{t('discount_cards.discount_pct')}</th>
+                  <th className="px-4 py-2 text-center">{t('insurance.local_pct')}</th>
+                  <th className="px-4 py-2 text-center">{t('insurance.imported_pct')}</th>
                   {canManage && <th />}
                 </tr>
               </thead>
@@ -112,6 +117,8 @@ export default function DiscountCards() {
                     <td className="px-4 py-2 font-mono">{p.code}</td>
                     <td className="px-4 py-2">{p.name_en}</td>
                     <td className="px-4 py-2 text-center">{(p.rules as { percentage_discount?: number })?.percentage_discount ?? 0}%</td>
+                    <td className="px-4 py-2 text-center">{(p.rules as { local_drugs_discount_pct?: number })?.local_drugs_discount_pct ?? 0}%</td>
+                    <td className="px-4 py-2 text-center">{(p.rules as { imported_drugs_discount_pct?: number })?.imported_drugs_discount_pct ?? 0}%</td>
                     {canManage && (
                       <td className="px-4 py-2 text-end">
                         <button onClick={() => { setEditProgramId(p.id); setEditProgram({ ...p }) }} className="text-pharma-600 text-xs flex items-center gap-1 ms-auto">
@@ -168,14 +175,29 @@ export default function DiscountCards() {
         {editProgram && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-6">
-              <div className="flex justify-between mb-4"><h2 className="font-bold">{t('discount_cards.new_program')}</h2><button onClick={() => setEditProgram(null)}><X /></button></div>
-              <div className="space-y-2">
-                <input placeholder="Code" value={editProgram.code || ''} onChange={(e) => setEditProgram({ ...editProgram, code: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                <input placeholder="Name EN" value={editProgram.name_en || ''} onChange={(e) => setEditProgram({ ...editProgram, name_en: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
-                <input type="number" placeholder="Discount %" min={0} max={100}
-                  value={(editProgram.rules as { percentage_discount?: number })?.percentage_discount ?? 0}
-                  onChange={(e) => setEditProgram({ ...editProgram, rules: { ...DEFAULT_CARD_RULES, percentage_discount: Number(e.target.value) } })}
-                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              <div className="flex justify-between mb-4">
+                <h2 className="font-bold">{editProgramId ? t('common.edit') : t('discount_cards.new_program')}</h2>
+                <button onClick={() => setEditProgram(null)}><X /></button>
+              </div>
+              <div className="space-y-3">
+                <input placeholder={t('insurance.col_code') as string} value={editProgram.code || ''} onChange={(e) => setEditProgram({ ...editProgram, code: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm font-mono uppercase" />
+                <input placeholder={t('offers.name_en') as string} value={editProgram.name_en || ''} onChange={(e) => setEditProgram({ ...editProgram, name_en: e.target.value })} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t">
+                  <label className="text-xs">
+                    <span className="block text-slate-500 mb-1">{t('insurance.local_pct')}</span>
+                    <input type="number" min={0} max={100}
+                      value={(editProgram.rules as { local_drugs_discount_pct?: number })?.local_drugs_discount_pct ?? 0}
+                      onChange={(e) => setEditProgram({ ...editProgram, rules: { ...DEFAULT_CARD_RULES, ...(editProgram.rules || {}), local_drugs_discount_pct: Number(e.target.value), percentage_discount: 0 } })}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm text-end" />
+                  </label>
+                  <label className="text-xs">
+                    <span className="block text-slate-500 mb-1">{t('insurance.imported_pct')}</span>
+                    <input type="number" min={0} max={100}
+                      value={(editProgram.rules as { imported_drugs_discount_pct?: number })?.imported_drugs_discount_pct ?? 0}
+                      onChange={(e) => setEditProgram({ ...editProgram, rules: { ...DEFAULT_CARD_RULES, ...(editProgram.rules || {}), imported_drugs_discount_pct: Number(e.target.value), percentage_discount: 0 } })}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm text-end" />
+                  </label>
+                </div>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={editProgram.compatibility?.combine_with_insurance ?? false}
                     onChange={(e) => setEditProgram({ ...editProgram, compatibility: { ...DEFAULT_CARD_COMPATIBILITY, combine_with_insurance: e.target.checked } })} />

@@ -28,6 +28,7 @@ interface Props {
 
 const SETTLEMENT_METHODS = ['cash', 'visa', 'hybrid', 'instapay', 'vodafone_cash'] as const
 type SettlementMethod = (typeof SETTLEMENT_METHODS)[number]
+type CheckoutStep = 'type' | 'setup' | 'pay'
 
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
@@ -68,6 +69,8 @@ export default function PaymentModal({
   const [discountCardId, setDiscountCardId] = useState<number | null>(null)
   const [insurancePreview, setInsurancePreview] = useState<InsuranceCalculateResult | null>(null)
   const [insurancePatientFields, setInsurancePatientFields] = useState<Record<string, string>>({})
+  const [insuranceReady, setInsuranceReady] = useState(false)
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('type')
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
@@ -111,6 +114,7 @@ export default function PaymentModal({
 
   const handleSaleTypeChange = (type: string) => {
     setSaleType(type)
+    setError('')
     if (type === 'digital') {
       setDigitalBilling('paid')
       setPaymentMethod('cash')
@@ -120,6 +124,54 @@ export default function PaymentModal({
       setPaymentMethod('cash')
     }
   }
+
+  const saleTypeLabel = (type: string) => {
+    if (type === 'cash') return t('payment.cash_sale')
+    if (type === 'delivery') return t('payment.delivery_sale')
+    if (type === 'digital') return t('payment.digital_sale')
+    if (type === 'insurance') return t('payment.insurance_sale')
+    return type
+  }
+
+  const canContinueSetup = () => {
+    if (saleType === 'insurance') {
+      if (!selectedCustomer) return false
+      return insuranceReady
+    }
+    if (needsDelivery) {
+      return !!deliveryPersonId && deliveryAddress.trim() !== '' && hasCustomerForShipment
+    }
+    return true
+  }
+
+  const goToPaymentStep = () => {
+    if (saleType === 'insurance' && !selectedCustomer) {
+      setError(t('insurance.customer_required') as string)
+      return
+    }
+    if (!canContinueSetup()) {
+      if (saleType === 'insurance') setError(t('insurance.complete_transaction') as string)
+      else if (needsDelivery && !deliveryPersonId) setError(t('payment.delivery_person_required') as string)
+      else if (needsDelivery && !deliveryAddress.trim()) setError(t('payment.delivery_address_required') as string)
+      else if (needsDelivery && !hasCustomerForShipment) setError(t('payment.delivery_customer_required') as string)
+      return
+    }
+    setError('')
+    setCheckoutStep('pay')
+  }
+
+  const handleTypeContinue = () => {
+    setError('')
+    if (saleType === 'cash') setCheckoutStep('pay')
+    else setCheckoutStep('setup')
+  }
+
+  const modalMaxWidth = checkoutStep === 'setup' && saleType === 'insurance' ? 'max-w-4xl' : 'max-w-2xl'
+  const stepTitle = checkoutStep === 'type'
+    ? t('payment.step_sale_type')
+    : checkoutStep === 'setup'
+      ? (saleType === 'insurance' ? t('insurance.transaction_title') : t('payment.step_setup'))
+      : t('payment.title')
 
   const handleDigitalBillingChange = (mode: 'paid' | 'account') => {
     setDigitalBilling(mode)
@@ -335,11 +387,23 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[min(92vh,calc(100dvh-2rem))] my-2 sm:my-4 overflow-hidden">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${modalMaxWidth} flex flex-col max-h-[min(92vh,calc(100dvh-2rem))] my-2 sm:my-4 overflow-hidden`}>
         {/* Header */}
         <div className="shrink-0 border-b border-gray-100">
           <div className="flex items-center justify-between px-6 py-4">
-            <h2 className="text-lg font-bold text-gray-900">{t('payment.title')}</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{stepTitle}</h2>
+              {checkoutStep === 'pay' && (
+                <p className="text-xs text-gray-500 mt-0.5">{saleTypeLabel(saleType)}</p>
+              )}
+              {checkoutStep !== 'type' && (
+                <div className="flex gap-1 mt-2">
+                  {(['type', 'setup', 'pay'] as CheckoutStep[]).filter((s) => s !== 'setup' || saleType !== 'cash').map((s, i) => (
+                    <span key={s} className={`h-1 flex-1 rounded-full max-w-12 ${checkoutStep === s ? 'bg-pharma-600' : i < ['type', 'setup', 'pay'].indexOf(checkoutStep) ? 'bg-pharma-300' : 'bg-gray-200'}`} />
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={onClose}
@@ -373,7 +437,7 @@ export default function PaymentModal({
               </p>
             </div>
 
-            {loyaltyOn && selectedCustomer && !isInsurance && (
+            {checkoutStep === 'pay' && loyaltyOn && selectedCustomer && !isInsurance && (
               <div className="p-3 rounded-xl border-2 border-indigo-100 bg-indigo-50/80 space-y-2">
                 <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider">
                   {t('loyalty.pos_title')}
@@ -408,11 +472,12 @@ export default function PaymentModal({
               </div>
             )}
 
-            {/* Sale type */}
+            {checkoutStep === 'type' && (
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                 {t('payment.sale_type')}
               </p>
+              <p className="text-sm text-gray-600 mb-3">{t('payment.step_sale_type_hint')}</p>
               <div className={`grid gap-2 ${digitalSalesOn && insuranceSalesOn ? 'grid-cols-4' : digitalSalesOn || insuranceSalesOn ? 'grid-cols-3' : 'grid-cols-2'}`}>
                 {[
                   { value: 'cash', icon: Banknote, label: t('payment.cash_sale') },
@@ -422,6 +487,7 @@ export default function PaymentModal({
                 ].map(({ value, icon: Icon, label }) => (
                   <button
                     key={value}
+                    type="button"
                     onClick={() => handleSaleTypeChange(value)}
                     className={`flex flex-col items-center gap-2 py-3 px-2 rounded-xl border-2 text-xs font-semibold transition-all ${
                       saleType === value
@@ -435,20 +501,36 @@ export default function PaymentModal({
                 ))}
               </div>
             </div>
-
-            {isInsurance && (
-              <InsurancePosPanel
-                cartItems={cartItems}
-                selectedCustomer={selectedCustomer}
-                onPreviewChange={(p, fields) => { setInsurancePreview(p); setInsurancePatientFields(fields) }}
-                onCompanyChange={setInsuranceCompanyId}
-                onPlanChange={setInsurancePlanId}
-                onCardChange={setDiscountCardId}
-              />
             )}
 
-            {/* Delivery details */}
-            {needsDelivery && (
+            {checkoutStep === 'setup' && isInsurance && (
+              <>
+                {!selectedCustomer && (
+                  <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    {t('insurance.customer_required')}
+                  </div>
+                )}
+                <InsurancePosPanel
+                  cartItems={cartItems}
+                  selectedCustomer={selectedCustomer}
+                  onPreviewChange={(p, fields) => { setInsurancePreview(p); setInsurancePatientFields(fields) }}
+                  onCompanyChange={setInsuranceCompanyId}
+                  onPlanChange={setInsurancePlanId}
+                  onCardChange={setDiscountCardId}
+                  onReadyChange={setInsuranceReady}
+                />
+              </>
+            )}
+
+            {checkoutStep === 'pay' && isInsurance && insurancePreview?.totals && (
+              <div className="p-4 bg-sky-50 border-2 border-sky-200 rounded-xl text-xs space-y-1">
+                <p className="font-bold text-sky-900 uppercase tracking-wider mb-2">{t('insurance.transaction_title')}</p>
+                <div className="flex justify-between"><span>{t('insurance.covered')}</span><span>{insurancePreview.totals.insurance_covered.toFixed(2)} {t('receipt.egp')}</span></div>
+                <div className="flex justify-between font-bold"><span>{t('insurance.final_due')}</span><span>{insurancePreview.totals.final_patient_paid.toFixed(2)} {t('receipt.egp')}</span></div>
+              </div>
+            )}
+
+            {checkoutStep === 'setup' && needsDelivery && (
               <div className="space-y-3 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
                 <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
                   {t('payment.delivery_details')}
@@ -508,7 +590,7 @@ export default function PaymentModal({
             )}
 
             {/* Payment method */}
-            {saleType !== 'digital' && (
+            {checkoutStep === 'pay' && saleType !== 'digital' && (
               <div>
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
@@ -539,7 +621,7 @@ export default function PaymentModal({
             )}
 
             {/* Digital: platform billing (paid vs on-account) */}
-            {saleType === 'digital' && (
+            {checkoutStep === 'setup' && saleType === 'digital' && (
               <div className="space-y-3">
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
@@ -565,35 +647,36 @@ export default function PaymentModal({
                     ))}
                   </div>
                 </div>
-                {isDigitalPaid && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                      {t('payment.platform_settlement')}
-                    </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {SETTLEMENT_METHODS.map((value) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setPaymentMethod(value)}
-                          className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                            paymentMethod === value
-                              ? 'border-pharma-500 bg-pharma-50 text-pharma-700'
-                              : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                          }`}
-                        >
-                          {t(`payment.${value}`)}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-[11px] text-gray-500 mt-2">{t('payment.platform_settlement_hint')}</p>
-                  </div>
-                )}
+              </div>
+            )}
+
+            {checkoutStep === 'pay' && saleType === 'digital' && isDigitalPaid && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  {t('payment.platform_settlement')}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {SETTLEMENT_METHODS.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setPaymentMethod(value)}
+                      className={`py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
+                        paymentMethod === value
+                          ? 'border-pharma-500 bg-pharma-50 text-pharma-700'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {t(`payment.${value}`)}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-gray-500 mt-2">{t('payment.platform_settlement_hint')}</p>
               </div>
             )}
 
             {/* Cash form */}
-            {paymentMethod === 'cash' && (saleType !== 'digital' || isDigitalPaid) && (
+            {checkoutStep === 'pay' && paymentMethod === 'cash' && (saleType !== 'digital' || isDigitalPaid) && (
               <div className="space-y-3">
                 <div>
                   <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
@@ -622,7 +705,7 @@ export default function PaymentModal({
             )}
 
             {/* Electronic form */}
-            {(paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash') &&
+            {(checkoutStep === 'pay') && (paymentMethod === 'visa' || paymentMethod === 'instapay' || paymentMethod === 'vodafone_cash') &&
               (saleType !== 'digital' || isDigitalPaid) && (
               <div className="bg-blue-50 border-2 border-blue-200 p-6 rounded-xl text-center space-y-2">
                 <CreditCard size={36} className="text-blue-500 mx-auto" />
@@ -638,7 +721,7 @@ export default function PaymentModal({
             )}
 
             {/* Hybrid form */}
-            {paymentMethod === 'hybrid' && (saleType !== 'digital' || isDigitalPaid) && (
+            {checkoutStep === 'pay' && paymentMethod === 'hybrid' && (saleType !== 'digital' || isDigitalPaid) && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -685,7 +768,7 @@ export default function PaymentModal({
             )}
 
             {/* Account (on-credit) — digital bills the platform (Talabat, etc.), not the POS customer */}
-            {paymentMethod === 'account' && (saleType !== 'digital' || isDigitalAccount) && (
+            {checkoutStep === 'pay' && paymentMethod === 'account' && (saleType !== 'digital' || isDigitalAccount) && (
               <div className={`p-5 rounded-xl border-2 text-center space-y-2 ${
                 isDigitalAccount || selectedCustomer
                   ? 'bg-amber-50 border-amber-200'
@@ -758,23 +841,24 @@ export default function PaymentModal({
               </div>
             )}
 
-            {/* Digital platform (Talabat, Vezeeta, …) */}
-            {saleType === 'digital' && (
-              <div>
-                <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
-                  {t('payment.digital_type')}
-                </label>
-                <select
-                  value={digitalType}
-                  onChange={(e) => setDigitalType(e.target.value)}
-                  className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
-                >
-                  {platforms.map((p) => (
-                    <option key={p.platform_key} value={p.platform_key}>
-                      {platformDisplayLabel(p, p.platform_key, langCode)}
-                    </option>
-                  ))}
-                </select>
+            {checkoutStep === 'setup' && saleType === 'digital' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700 mb-1.5 block">
+                    {t('payment.digital_type')}
+                  </label>
+                  <select
+                    value={digitalType}
+                    onChange={(e) => setDigitalType(e.target.value)}
+                    className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-4 py-3 text-sm focus:outline-none transition-all"
+                  >
+                    {platforms.map((p) => (
+                      <option key={p.platform_key} value={p.platform_key}>
+                        {platformDisplayLabel(p, p.platform_key, langCode)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
@@ -834,21 +918,62 @@ export default function PaymentModal({
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 px-6 py-4 border-t border-gray-100 flex gap-3 justify-end bg-white">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="px-6 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-pharma-200/50"
-          >
-            {loading && <Loader2 size={16} className="animate-spin" />}
-            {loading ? t('payment.processing') : t('payment.confirm')}
-          </button>
+        <div className="shrink-0 px-6 py-4 border-t border-gray-100 flex gap-3 justify-between bg-white">
+          <div className="flex gap-2">
+            {checkoutStep !== 'type' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setError('')
+                  if (checkoutStep === 'pay') {
+                    setCheckoutStep(saleType === 'cash' ? 'type' : 'setup')
+                  } else {
+                    setCheckoutStep('type')
+                  }
+                }}
+                className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
+              >
+                {t('common.back')}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"
+            >
+              {t('common.cancel')}
+            </button>
+          </div>
+          <div className="flex gap-2">
+            {checkoutStep === 'type' && (
+              <button
+                type="button"
+                onClick={handleTypeContinue}
+                className="px-6 py-2.5 bg-pharma-600 hover:bg-pharma-700 text-white rounded-xl text-sm font-bold transition-all"
+              >
+                {t('payment.continue')}
+              </button>
+            )}
+            {checkoutStep === 'setup' && (
+              <button
+                type="button"
+                onClick={goToPaymentStep}
+                disabled={!canContinueSetup()}
+                className="px-6 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold transition-all"
+              >
+                {saleType === 'insurance' ? t('insurance.proceed_checkout') : t('payment.continue')}
+              </button>
+            )}
+            {checkoutStep === 'pay' && (
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="px-6 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-pharma-200/50"
+              >
+                {loading && <Loader2 size={16} className="animate-spin" />}
+                {loading ? t('payment.processing') : t('payment.confirm')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

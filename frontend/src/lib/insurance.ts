@@ -103,6 +103,8 @@ export const DEFAULT_CONTROLS = {
 
 export const DEFAULT_CARD_RULES = {
   percentage_discount: 0,
+  local_drugs_discount_pct: 0,
+  imported_drugs_discount_pct: 0,
   fixed_discount: 0,
   category_discounts: {},
   product_discounts: {},
@@ -168,6 +170,9 @@ export interface InsuranceCompany {
   notes?: string
   field_config?: Record<string, FieldMode>
   custom_field_defs?: Array<{ key: string; label_en?: string; label_ar?: string; mode?: FieldMode }>
+  local_drugs_pct?: number
+  imported_drugs_pct?: number
+  patient_share_pct?: number
 }
 
 export interface InsurancePlan {

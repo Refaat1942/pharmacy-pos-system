@@ -6,7 +6,6 @@ import { insuranceAPI, discountCardsAPI } from '../lib/api'
 import type { InsuranceCalculateResult, InsuranceCompany, InsurancePlan, InsuranceProfile } from '../lib/insurance'
 import {
   INSURANCE_EXTRA_FIELD_KEYS,
-  INSURANCE_TRANSACTION_CORE_KEYS,
   fieldMode,
   insuranceFieldLabel,
   splitCustomerName,
@@ -20,6 +19,8 @@ interface Props {
   onCompanyChange: (id: number | null) => void
   onPlanChange: (id: number | null) => void
   onCardChange: (id: number | null) => void
+  onReadyChange?: (ready: boolean) => void
+  hidePlanSelect?: boolean
 }
 
 const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'patient_share_pct', 'max_patient_share'])
@@ -38,6 +39,8 @@ export default function InsurancePosPanel({
   onCompanyChange,
   onPlanChange,
   onCardChange,
+  onReadyChange,
+  hidePlanSelect = true,
 }: Props) {
   const { t } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
@@ -139,8 +142,15 @@ export default function InsurancePosPanel({
       setPlanId('')
       return
     }
-    insuranceAPI.plans(Number(companyId)).then((r) => setPlans(r.data)).catch(() => setPlans([]))
+    insuranceAPI.plans(Number(companyId)).then((r) => {
+      const active = r.data.filter((p) => p.status === 'active')
+      setPlans(active)
+      const def = active.find((p) => p.code === 'DEFAULT') || active[0]
+      setPlanId(def ? def.id : '')
+    }).catch(() => setPlans([]))
   }, [companyId])
+
+  const showPlanPicker = !hidePlanSelect && plans.length > 1
 
   useEffect(() => {
     if (!selectedPlan?.financial_rules?.patient_share_pct) return
@@ -156,6 +166,10 @@ export default function InsurancePosPanel({
   useEffect(() => {
     onCardChange(discountCardId)
   }, [discountCardId, onCardChange])
+
+  useEffect(() => {
+    onReadyChange?.(!!(companyId && planId && preview && selectedCustomer))
+  }, [companyId, planId, preview, selectedCustomer, onReadyChange])
 
   useEffect(() => {
     if (!companyId || !planId || !cartItems.length) {
@@ -280,17 +294,19 @@ export default function InsurancePosPanel({
             ))}
           </select>
         </div>
-        <select
-          value={planId}
-          onChange={(e) => setPlanId(e.target.value ? Number(e.target.value) : '')}
-          disabled={!companyId}
-          className="border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white disabled:opacity-50 self-end mt-5"
-        >
-          <option value="">{t('insurance.select_plan')}</option>
-          {plans.filter((p) => p.status === 'active').map((p) => (
-            <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name_en}</option>
-          ))}
-        </select>
+        {showPlanPicker && (
+          <select
+            value={planId}
+            onChange={(e) => setPlanId(e.target.value ? Number(e.target.value) : '')}
+            disabled={!companyId}
+            className="border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white disabled:opacity-50 self-end mt-5"
+          >
+            <option value="">{t('insurance.select_plan')}</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name_en}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {fieldMode('child_customer_id', fieldConfig) !== 'hidden' && (

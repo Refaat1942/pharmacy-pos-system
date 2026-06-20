@@ -56,6 +56,67 @@ class CompanyIn(BaseModel):
     notes: Optional[str] = None
     field_config: Optional[dict] = None
     custom_field_defs: Optional[list] = None
+    local_drugs_pct: Optional[float] = Field(None, ge=0, le=100)
+    imported_drugs_pct: Optional[float] = Field(None, ge=0, le=100)
+    patient_share_pct: Optional[float] = Field(None, ge=0, le=100)
+
+
+def _upsert_default_plan(
+    cur,
+    *,
+    company_id: int,
+    name_en: str,
+    name_ar: str,
+    local_drugs_pct: Optional[float],
+    imported_drugs_pct: Optional[float],
+    patient_share_pct: Optional[float],
+) -> None:
+    """Ensure each company has a DEFAULT plan with local/imported coverage."""
+    if local_drugs_pct is None and imported_drugs_pct is None and patient_share_pct is None:
+        return
+    coverage = dict(DEFAULT_COVERAGE_RULES)
+    financial = dict(DEFAULT_FINANCIAL_RULES)
+    if local_drugs_pct is not None:
+        coverage["local_drugs_pct"] = local_drugs_pct
+    if imported_drugs_pct is not None:
+        coverage["imported_drugs_pct"] = imported_drugs_pct
+    if patient_share_pct is not None:
+        financial["patient_share_pct"] = patient_share_pct
+        financial["insurance_coverage_pct"] = max(0.0, 100.0 - patient_share_pct)
+    cur.execute(
+        "SELECT id FROM insurance_plans WHERE company_id=%s AND code='DEFAULT'",
+        (company_id,),
+    )
+    existing = cur.fetchone()
+    if existing:
+        cur.execute(
+            """UPDATE insurance_plans SET
+               coverage_rules=%s, financial_rules=%s, status='active', updated_at=NOW()
+               WHERE id=%s""",
+            (
+                psycopg2.extras.Json(coverage),
+                psycopg2.extras.Json(financial),
+                existing["id"],
+            ),
+        )
+    else:
+        cur.execute(
+            """INSERT INTO insurance_plans
+               (company_id, code, name_ar, name_en, status, priority, notes,
+                coverage_rules, financial_rules, limits, controls, restrictions)
+               VALUES (%s,'DEFAULT',%s,%s,'active',100,'Auto default plan',
+                       %s,%s,%s,%s,%s)""",
+            (
+                company_id,
+                name_ar or "الخطة الافتراضية",
+                name_en or "Standard Plan",
+                psycopg2.extras.Json(coverage),
+                psycopg2.extras.Json(financial),
+                psycopg2.extras.Json(DEFAULT_LIMITS),
+                psycopg2.extras.Json(DEFAULT_CONTROLS),
+                psycopg2.extras.Json(DEFAULT_RESTRICTIONS),
+            ),
+        )
 
 
 class PlanIn(BaseModel):
@@ -175,6 +236,15 @@ def create_company(body: CompanyIn, current_user=Depends(get_current_user)):
             ),
         )
         row = dict(cur.fetchone())
+        _upsert_default_plan(
+            cur,
+            company_id=row["id"],
+            name_en=body.name_en,
+            name_ar=body.name_ar,
+            local_drugs_pct=body.local_drugs_pct,
+            imported_drugs_pct=body.imported_drugs_pct,
+            patient_share_pct=body.patient_share_pct,
+        )
         log_insurance_audit(cur, entity_type="company", entity_id=row["id"], action="create",
                             user_id=current_user.get("user_id"), new_value=row)
         conn.commit()
@@ -217,6 +287,15 @@ def update_company(company_id: int, body: CompanyIn, current_user=Depends(get_cu
             ),
         )
         row = dict(cur.fetchone())
+        _upsert_default_plan(
+            cur,
+            company_id=company_id,
+            name_en=body.name_en,
+            name_ar=body.name_ar,
+            local_drugs_pct=body.local_drugs_pct,
+            imported_drugs_pct=body.imported_drugs_pct,
+            patient_share_pct=body.patient_share_pct,
+        )
         log_insurance_audit(cur, entity_type="company", entity_id=company_id, action="update",
                             user_id=current_user.get("user_id"), old_value=dict(old), new_value=row)
         conn.commit()
