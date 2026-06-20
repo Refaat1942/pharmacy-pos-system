@@ -25,7 +25,6 @@ export default function UserCards() {
   const [rows, setRows] = useState<UserRow[]>([])
   const [profile, setProfile] = useState<{ name_en?: string; name_ar?: string } | null>(null)
   const [printOnly, setPrintOnly] = useState<number | null>(null)
-  const printed = useRef(false)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -44,20 +43,21 @@ export default function UserCards() {
     })()
   }, [isAuthenticated])
 
+  // Wait for React to paint the selected card before opening print
+  // print-single hides every card and the preview is blank.
   useEffect(() => {
-    if (rows.length > 0 && !printed.current) {
-      printed.current = true
-      setTimeout(() => window.print(), 400)
+    if (printOnly == null) return
+    const run = () => window.print()
+    const raf = requestAnimationFrame(() => requestAnimationFrame(run))
+    const reset = () => setPrintOnly(null)
+    window.addEventListener('afterprint', reset, { once: true })
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('afterprint', reset)
     }
-  }, [rows])
+  }, [printOnly])
 
-  const printCard = (id: number) => {
-    setPrintOnly(id)
-    setTimeout(() => {
-      window.print()
-      setTimeout(() => setPrintOnly(null), 200)
-    }, 60)
-  }
+  const printCard = (id: number) => setPrintOnly(id)
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (user?.role !== 'admin') {
@@ -78,10 +78,25 @@ export default function UserCards() {
         @media print {
           @page { size: A4; margin: 12mm; }
           .no-print { display: none !important; }
-          .cards-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-          .id-card { break-inside: avoid; page-break-inside: avoid; box-shadow: none !important; }
-          .print-single .id-card.print-target { }
+          .cards-grid { display: block !important; }
+          .id-card {
+            display: block !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            box-shadow: none !important;
+            border: 1px solid #cbd5e1 !important;
+            margin-bottom: 10px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           .print-single .id-card:not(.print-target) { display: none !important; }
+          .print-single .id-card.print-target { display: block !important; }
+          .card-header {
+            background: #059669 !important;
+            color: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
         }
       `}</style>
 
@@ -132,7 +147,7 @@ function IdCard({ name, pharmaName, role, branch, code, scanLabel, isPrintTarget
       >
         <Printer size={14} />
       </button>
-      <div className="bg-pharma-600 text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-center">
+      <div className="card-header bg-pharma-600 text-white px-4 py-2 text-[11px] font-semibold uppercase tracking-widest text-center">
         {pharmaName}
       </div>
       <div className="px-4 py-3 flex flex-col items-center text-center">
