@@ -477,6 +477,7 @@ export default function Inventory() {
                 />
                 {t('inventory.show_all_items')}
               </label>
+              {hasFeatureOption('inventory', 'import_export') && (
               <button
                 onClick={() => setShowExcel(true)}
                 className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-medium"
@@ -484,6 +485,7 @@ export default function Inventory() {
                 <FileSpreadsheet size={15} />
                 {t('inventory.bulk_upload')}
               </button>
+              )}
               <ExcelExportButton onExport={exportItems} disabled={items.length === 0} />
               <button
                 onClick={() => setShowBulkPrint(true)}
@@ -883,113 +885,138 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   }
 
   return (
-    <Modal onClose={onClose} title={item ? t('inventory.edit_item') : t('inventory.add_item')}>
-      <form onSubmit={submit} className="grid grid-cols-2 gap-4">
-        <Field label={t('inventory.f_barcode')}>
-          <div className="flex gap-2">
-            <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" />
-            <button type="button" onClick={() => setShowBarcodeDesigner(true)}
-              className="px-3 py-2 text-xs rounded-lg border border-pharma-200 text-pharma-700 bg-pharma-50 hover:bg-pharma-100 inline-flex items-center gap-1 whitespace-nowrap">
-              <Wand2 size={13} /> {t('barcode_studio.open')}
-            </button>
+    <Modal wide onClose={onClose} title={item ? t('inventory.edit_item') : t('inventory.add_item')}>
+      <form onSubmit={submit} className="space-y-6">
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_basic')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <Field label={t('inventory.f_name_en') + ' *'}>
+              <input required value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} className="input" />
+            </Field>
+            <Field label={t('inventory.f_name_ar')}>
+              <input value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} className="input" dir="rtl" />
+            </Field>
+            <Field label={t('inventory.f_category')}>
+              <input
+                list="product-categories-list"
+                value={f.category}
+                onChange={e => setF({ ...f, category: e.target.value })}
+                className="input"
+                placeholder={t('inventory.cat_placeholder') as string}
+              />
+              <datalist id="product-categories-list">
+                {STANDARD_CATEGORIES.map(c => (
+                  <option key={c} value={t(`inventory.cat_${c}`, c) as string} />
+                ))}
+              </datalist>
+            </Field>
+            <Field label={t('inventory.f_barcode')}>
+              <div className="flex gap-2">
+                <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" />
+                <button type="button" onClick={() => setShowBarcodeDesigner(true)}
+                  className="px-3 py-2 text-xs rounded-lg border border-pharma-200 text-pharma-700 bg-pharma-50 hover:bg-pharma-100 inline-flex items-center gap-1 whitespace-nowrap">
+                  <Wand2 size={13} /> {t('barcode_studio.open')}
+                </button>
+              </div>
+            </Field>
+            <Field label={t('inventory.f_international_barcode')}>
+              <input value={f.international_barcode} onChange={e => setF({ ...f, international_barcode: e.target.value })} className="input" />
+            </Field>
+            <Field label={t('inventory.f_unit')}>
+              <select value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} className="input">
+                <option value="box">Box</option>
+                <option value="strip">Strip</option>
+                <option value="piece">Piece</option>
+                <option value="bottle">Bottle</option>
+                <option value="vial">Vial</option>
+                <option value="tube">Tube</option>
+                <option value="sachet">Sachet</option>
+                <option value="kg">Kg</option>
+                <option value="g">Gram</option>
+                <option value="ml">ml</option>
+                <option value="l">Liter</option>
+              </select>
+            </Field>
           </div>
-        </Field>
-        <Field label={t('inventory.f_international_barcode')}>
-          <input value={f.international_barcode} onChange={e => setF({ ...f, international_barcode: e.target.value })} className="input" />
-        </Field>
-        <Field label={t('inventory.f_category')}>
-          <input
-            list="product-categories-list"
-            value={f.category}
-            onChange={e => setF({ ...f, category: e.target.value })}
-            className="input"
-            placeholder={t('inventory.cat_placeholder') as string}
-          />
-          <datalist id="product-categories-list">
-            {STANDARD_CATEGORIES.map(c => (
-              <option key={c} value={t(`inventory.cat_${c}`, c) as string} />
-            ))}
-          </datalist>
-        </Field>
-        <Field label={t('inventory.f_name_en') + ' *'}>
-          <input required value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} className="input" />
-        </Field>
-        <Field label={t('inventory.f_name_ar')}>
-          <input value={f.name_ar} onChange={e => setF({ ...f, name_ar: e.target.value })} className="input" dir="rtl" />
-        </Field>
-        <Field label={t('inventory.f_unit')}>
-          <select value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} className="input">
-            <option value="box">Box</option>
-            <option value="strip">Strip</option>
-            <option value="piece">Piece</option>
-            <option value="bottle">Bottle</option>
-            <option value="vial">Vial</option>
-            <option value="tube">Tube</option>
-            <option value="sachet">Sachet</option>
-            <option value="kg">Kg</option>
-            <option value="g">Gram</option>
-            <option value="ml">ml</option>
-            <option value="l">Liter</option>
-          </select>
-        </Field>
-        {!item && (
-          <Field label={t('inventory.f_expiry')}>
-            <DateInput value={f.expiry_date} onChange={(v) => setF({ ...f, expiry_date: v })} className="input" />
-          </Field>
-        )}
-        {item && (
-          <ExpiryBatchesPanel
-            productId={item.id}
-            packSize={packSize}
-            unit={f.unit}
-            subUnit={f.sub_unit || t('inventory.sub_unit_word')}
-            onChanged={() => {}}
-          />
-        )}
-        <Field label={t('inventory.f_price') + ' *'}>
-          <input required type="number" step="0.01" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} className="input" />
-        </Field>
-        <Field label={t('inventory.f_cost')}>
-          <input type="number" step="0.01" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} className="input" />
-        </Field>
-        {!item && (
-          <Field label={t('inventory.f_initial_stock')}>
-            <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
-          </Field>
-        )}
-        {item && (
-          <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={f.stock}
-              onChange={e => setF({ ...f, stock: e.target.value })}
-              className="input"
-              placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
-            />
-            {packSize > 1 && f.stock && (
-              <p className="text-[11px] text-slate-500 mt-1">
-                {t('inventory.pack_stock_hint', {
-                  unit: f.unit,
-                  sub: f.sub_unit || t('inventory.sub_unit_word'),
-                  pack: packSize,
-                })}
-                {' '}
-                ({t('inventory.stock_tracked_in', { unit: f.sub_unit || t('inventory.sub_unit_word') })})
-              </p>
-            )}
-          </Field>
-        )}
-        <Field label={t('inventory.f_min_stock')}>
-          <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
-        </Field>
+        </section>
 
-        {/* ─── Packaging: 1 Box = N Strips (optional) ─── */}
-        <div className="col-span-2 mt-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
-          <div className="text-xs font-semibold text-slate-600 mb-2">
-            {t('inventory.pack_hint')}
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_pricing')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <Field label={t('inventory.f_price') + ' *'}>
+              <input required type="number" step="0.01" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} className="input" />
+            </Field>
+            <Field label={t('inventory.f_cost')}>
+              <input type="number" step="0.01" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} className="input" />
+            </Field>
+            <Field label={t('inventory.f_min_stock')}>
+              <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
+            </Field>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_stock')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {!item && (
+              <>
+                <Field label={t('inventory.f_initial_stock')}>
+                  <input type="number" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} className="input" />
+                </Field>
+                <Field label={t('inventory.f_expiry')}>
+                  <DateInput value={f.expiry_date} onChange={(v) => setF({ ...f, expiry_date: v })} className="input" />
+                </Field>
+              </>
+            )}
+            {item && (
+              <Field label={t('inventory.col_stock') + ((item as any).branch_name_en || (item as any).branch_name_ar ? ` — ${i18n.language === 'ar' ? ((item as any).branch_name_ar || (item as any).branch_name_en) : ((item as any).branch_name_en || (item as any).branch_name_ar)}` : '')}>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={f.stock}
+                  onChange={e => setF({ ...f, stock: e.target.value })}
+                  className="input"
+                  placeholder={packSize > 1 ? (t('inventory.pack_stock_ph') as string) : undefined}
+                />
+                {packSize > 1 && f.stock && (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {t('inventory.pack_stock_hint', {
+                      unit: f.unit,
+                      sub: f.sub_unit || t('inventory.sub_unit_word'),
+                      pack: packSize,
+                    })}
+                    {' '}
+                    ({t('inventory.stock_tracked_in', { unit: f.sub_unit || t('inventory.sub_unit_word') })})
+                  </p>
+                )}
+              </Field>
+            )}
+          </div>
+          {item && (
+            <div className="mt-4">
+              <ExpiryBatchesPanel
+                productId={item.id}
+                packSize={packSize}
+                unit={f.unit}
+                subUnit={f.sub_unit || t('inventory.sub_unit_word')}
+                onChanged={() => {}}
+              />
+            </div>
+          )}
+        </section>
+
+        <section className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">
+            {t('inventory.form_section_packaging')}
+          </h4>
+          <p className="text-xs text-slate-500 mb-3">{t('inventory.pack_hint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label={t('inventory.f_sub_unit')}>
               <select
                 value={f.sub_unit}
@@ -1025,10 +1052,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               )}
             </p>
           )}
-        </div>
+        </section>
 
-        {error && <div className="col-span-2 text-red-600 text-sm">{error}</div>}
-        <div className="col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-100">
+        {error && <div className="text-red-600 text-sm">{error}</div>}
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <button type="button" onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('common.cancel')}</button>
           <button type="submit" disabled={saving} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg disabled:opacity-50">
             {saving ? t('common.loading') : t('common.save')}
@@ -1538,25 +1565,33 @@ function AlertsTab() {
 
   return (
     <div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-sm text-amber-900">
+        {t('inventory.alerts_hint')}
+      </div>
       <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-4 items-center">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600">{t('inventory.based_on_days')}:</label>
-          <select value={days} onChange={e => setDays(parseInt(e.target.value))} className="input max-w-32">
-            <option value={7}>7</option>
-            <option value={14}>14</option>
-            <option value={30}>30</option>
-            <option value={60}>60</option>
-            <option value={90}>90</option>
-          </select>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-slate-600">{t('inventory.based_on_days')}:</label>
+            <select value={days} onChange={e => setDays(parseInt(e.target.value))} className="input max-w-32">
+              <option value={7}>7</option>
+              <option value={14}>14</option>
+              <option value={30}>30</option>
+              <option value={60}>60</option>
+              <option value={90}>90</option>
+            </select>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-600">{t('inventory.coverage_days')}:</label>
-          <select value={coverage} onChange={e => setCoverage(parseInt(e.target.value))} className="input max-w-32">
-            <option value={3}>3</option>
-            <option value={7}>7</option>
-            <option value={14}>14</option>
-            <option value={30}>30</option>
-          </select>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-slate-600">{t('inventory.coverage_days')}:</label>
+            <select value={coverage} onChange={e => setCoverage(parseInt(e.target.value))} className="input max-w-32">
+              <option value={3}>3</option>
+              <option value={7}>7</option>
+              <option value={14}>14</option>
+              <option value={30}>30</option>
+            </select>
+          </div>
+          <p className="text-[11px] text-slate-500 max-w-xs">{t('inventory.coverage_days_hint')}</p>
         </div>
         <TableFilter value={alertFilter.query} onChange={alertFilter.setQuery} placeholder={t('common.filter_placeholder') as string} className="flex-1 min-w-48" />
         <ExcelExportButton
@@ -1957,13 +1992,13 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
   }
 
   return (
-    <Modal onClose={onClose} title={t('inventory.bulk_upload')}>
+    <Modal wide onClose={onClose} title={t('inventory.bulk_upload')}>
       <div className="space-y-4 text-sm">
-        <div className="bg-slate-50 p-3 rounded-lg text-slate-700">
+        <div className="bg-slate-50 p-4 rounded-lg text-slate-700">
           <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
           <div>{t('inventory.excel_help_cols')}</div>
-          <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200">
-            Code, Material Name, International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
+          <code className="block mt-2 text-xs bg-white p-3 rounded border border-slate-200 leading-relaxed">
+            Code, Material Name, Name (Arabic), International Barcode, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
           </code>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}
@@ -2004,7 +2039,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
 function Modal({ children, onClose, title, wide }: any) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} max-h-[90vh] overflow-auto`} onClick={e => e.stopPropagation()}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-xl'} max-h-[92vh] overflow-auto`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h3 className="font-bold text-lg">{title}</h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700"><X size={20} /></button>

@@ -17,7 +17,6 @@ import Loyalty from './pages/Loyalty'
 import Clinics from './pages/Clinics'
 import ClinicPortal from './pages/ClinicPortal'
 import Dashboard from './pages/Dashboard'
-import Returns from './pages/Returns'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
 import FraudSurveillance from './pages/FraudSurveillance'
@@ -103,7 +102,7 @@ function AppRoutes() {
       <Route path="/loyalty" element={<ProtectedRoute feature="loyalty"><Loyalty /></ProtectedRoute>} />
       <Route path="/clinics" element={<ProtectedRoute feature="clinics"><Clinics /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute feature="dashboard"><Dashboard /></ProtectedRoute>} />
-      <Route path="/returns" element={<ProtectedRoute feature="returns"><Returns /></ProtectedRoute>} />
+      <Route path="/returns" element={<Navigate to="/sales" replace />} />
       <Route path="/settings" element={<ProtectedRoute feature="settings"><Settings /></ProtectedRoute>} />
       <Route path="/reports" element={<ProtectedRoute feature="reports"><Reports /></ProtectedRoute>} />
       <Route path="/fraud" element={<ProtectedRoute feature="fraud_surveillance"><FraudSurveillance /></ProtectedRoute>} />

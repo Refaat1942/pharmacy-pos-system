@@ -1360,14 +1360,14 @@ def bulk_template(current_user=Depends(get_current_user)):
     ws = wb.active
     ws.title = "Items"
     headers = [
-        "Code", "Material Name", "International Barcode", "Stock", "Unit",
+        "Code", "Material Name", "Name (Arabic)", "International Barcode", "Stock", "Unit",
         "Sub unit", "Subunit Quantity", "Sales Price", "Cost", "Category",
         "Min Stock", "Expiry Date",
     ]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 48 Tab", "5000112637922", 100,
+    ws.append(["1234567890123", "Panadol Extra 48 Tab", "بانادول اكسترا", "5000112637922", 100,
                "Box", "Strip", 4, 116.00, 80.00, "Painkillers", 10, "2027-12-31"])
-    ws.append(["7654321098765", "Augmentin 1g", "8901234567890", 50,
+    ws.append(["7654321098765", "Augmentin 1g", "أوجمنتين 1 جم", "8901234567890", 50,
                "Box", "Tablet", 14, 180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
     buf = io.BytesIO()
     wb.save(buf)

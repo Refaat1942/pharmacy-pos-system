@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download, Bike } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download, Bike, Sparkles } from 'lucide-react'
 import DigitalPlatformsSettings from '../components/DigitalPlatformsSettings'
+import FeatureOptionsPicker from '../components/FeatureOptionsPicker'
+import { buildFeatureOptionsState, type FeatureOptionGroup, type FeatureOptionsMap } from '../lib/featureOptions'
 import Layout from '../components/Layout'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
@@ -69,13 +71,14 @@ export default function Settings() {
     pharmacy: hasFeatureOption('settings', 'pharmacy'),
     platforms: hasFeatureOption('settings', 'digital_platforms'),
     manual: hasFeatureOption('settings', 'manual'),
+    features: hasFeatureOption('settings', 'features'),
   }
-  const defaultTab = (['users', 'branches', 'pharmacy', 'platforms', 'manual'] as const)
+  const defaultTab = (['users', 'branches', 'pharmacy', 'platforms', 'manual', 'features'] as const)
     .find((k) => tabOn[k]) ?? 'users'
-  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual'>(defaultTab)
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual' | 'features'>(defaultTab)
 
   const firstOpenTab = useCallback(() => {
-    const order = ['users', 'branches', 'pharmacy', 'platforms', 'manual'] as const
+    const order = ['users', 'branches', 'pharmacy', 'platforms', 'manual', 'features'] as const
     return order.find((k) => tabOn[k]) ?? 'users'
   }, [tabOn])
 
@@ -118,6 +121,9 @@ export default function Settings() {
           {tabOn.manual && (
             <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
           )}
+          {tabOn.features && (
+            <TabButton active={tab === 'features'} onClick={() => setTab('features')} icon={<Sparkles size={15} />} label={t('settings.features_tab')} />
+          )}
         </div>
 
         {tab === 'users' && tabOn.users && <UsersTab />}
@@ -125,6 +131,7 @@ export default function Settings() {
         {tab === 'pharmacy' && tabOn.pharmacy && <PharmacyTab />}
         {tab === 'platforms' && tabOn.platforms && <DigitalPlatformsSettings />}
         {tab === 'manual' && tabOn.manual && <ManualTab />}
+        {tab === 'features' && tabOn.features && <FeaturesTab />}
       </div>
     </Layout>
   )
@@ -1300,6 +1307,74 @@ function PharmacyTab() {
           <h3 className="font-semibold text-slate-800 mb-3 text-sm uppercase tracking-wide">{t('settings.pharma.preview')}</h3>
           <ReceiptPreview profile={p} />
         </div>
+      </div>
+    </div>
+  )
+}
+
+function FeaturesTab() {
+  const { t } = useTranslation()
+  const { refreshTenant } = useAuth()
+  const [catalog, setCatalog] = useState<FeatureOptionGroup[]>([])
+  const [enabledFeatures, setEnabledFeatures] = useState<string[]>([])
+  const [featureOptions, setFeatureOptions] = useState<FeatureOptionsMap>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    api.get('/settings/feature-options')
+      .then(({ data }) => {
+        setCatalog(data.catalog || [])
+        setEnabledFeatures(data.features || [])
+        setFeatureOptions(buildFeatureOptionsState(data.features || [], data.catalog || [], data.feature_options))
+      })
+      .catch((e: any) => setErr(e?.response?.data?.detail || 'Error'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const save = async () => {
+    setSaving(true)
+    setErr('')
+    setMsg('')
+    try {
+      await api.patch('/settings/feature-options', { feature_options: featureOptions })
+      await refreshTenant()
+      setMsg(t('settings.features_saved'))
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="text-sm text-slate-500 py-8 text-center">{t('common.loading')}</div>
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-sm text-indigo-900 mb-5">
+        {t('settings.features_hint')}
+      </div>
+      {err && <div className="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{err}</div>}
+      {msg && <div className="mb-4 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">{msg}</div>}
+      <FeatureOptionsPicker
+        catalog={catalog}
+        enabledFeatures={enabledFeatures}
+        value={featureOptions}
+        onChange={setFeatureOptions}
+      />
+      <div className="mt-5 flex justify-end">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="px-5 py-2.5 bg-pharma-600 hover:bg-pharma-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+        >
+          {saving ? t('common.loading') : t('common.save')}
+        </button>
       </div>
     </div>
   )

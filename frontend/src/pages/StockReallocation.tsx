@@ -116,18 +116,21 @@ export default function StockReallocation() {
           {t('reallocation.hint')}
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-end gap-3">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-end gap-4">
           <label className="text-sm">
-            <span className="block text-xs text-slate-500 mb-1">{t('reallocation.analysis_days')}</span>
-            <input type="number" min={7} max={365} className="border rounded-lg px-3 py-2 text-sm w-24" value={days} onChange={(e) => setDays(Number(e.target.value))} />
+            <span className="block text-xs font-medium text-slate-700 mb-1">{t('reallocation.analysis_days')}</span>
+            <input type="number" min={7} max={365} className="border rounded-lg px-3 py-2 text-sm w-28" value={days} onChange={(e) => setDays(Number(e.target.value))} />
+            <span className="block text-[11px] text-slate-500 mt-1 max-w-[11rem]">{t('reallocation.analysis_days_hint')}</span>
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-slate-500 mb-1">{t('reallocation.coverage_days')}</span>
-            <input type="number" min={1} max={60} className="border rounded-lg px-3 py-2 text-sm w-24" value={coverageDays} onChange={(e) => setCoverageDays(Number(e.target.value))} />
+            <span className="block text-xs font-medium text-slate-700 mb-1">{t('reallocation.coverage_days')}</span>
+            <input type="number" min={1} max={60} className="border rounded-lg px-3 py-2 text-sm w-28" value={coverageDays} onChange={(e) => setCoverageDays(Number(e.target.value))} />
+            <span className="block text-[11px] text-slate-500 mt-1 max-w-[14rem]">{t('reallocation.coverage_days_hint')}</span>
           </label>
           <label className="text-sm">
-            <span className="block text-xs text-slate-500 mb-1">{t('reallocation.surplus_factor')}</span>
-            <input type="number" min={1.2} max={5} step={0.1} className="border rounded-lg px-3 py-2 text-sm w-24" value={surplusFactor} onChange={(e) => setSurplusFactor(Number(e.target.value))} />
+            <span className="block text-xs font-medium text-slate-700 mb-1">{t('reallocation.surplus_factor')}</span>
+            <input type="number" min={1.2} max={5} step={0.1} className="border rounded-lg px-3 py-2 text-sm w-28" value={surplusFactor} onChange={(e) => setSurplusFactor(Number(e.target.value))} />
+            <span className="block text-[11px] text-slate-500 mt-1 max-w-[14rem]">{t('reallocation.surplus_factor_hint')}</span>
           </label>
           <button type="button" onClick={load} className="bg-pharma-600 hover:bg-pharma-700 text-white text-sm px-4 py-2 rounded-lg">
             {t('reports.apply')}

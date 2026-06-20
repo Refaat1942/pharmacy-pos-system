@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ShoppingCart, History, Package, ArrowRightLeft, Calendar, Truck,
-  FileText, Users, BarChart3, RotateCcw, Pill, Settings as SettingsIcon,
+  FileText, Users, BarChart3, Pill, Settings as SettingsIcon,
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
   ShieldAlert, Sparkles, Gift, Award,
 } from 'lucide-react'
@@ -26,71 +26,118 @@ interface NavItem {
   pinned?: boolean
 }
 
-const NAV: NavItem[] = [
-  { to: '/dashboard', labelKey: 'nav.dashboard', Icon: BarChart3,    feature: 'dashboard' },
-  { to: '/',          labelKey: 'nav.pos',        Icon: ShoppingCart, feature: 'pos' },
-  { to: '/sales',     labelKey: 'nav.sales',      Icon: History,      feature: 'sales' },
-  { to: '/deliveries', labelKey: 'nav.deliveries', Icon: Bike,        feature: 'sales', featureOption: 'deliveries' },
-  { to: '/returns',   labelKey: 'nav.returns',    Icon: RotateCcw,    feature: 'returns' },
-  { to: '/inventory', labelKey: 'nav.inventory',  Icon: Package,      feature: 'inventory' },
-  { to: '/transfers', labelKey: 'nav.transfers',  Icon: ArrowRightLeft, feature: 'transfers' },
-  { to: '/branches-stock', labelKey: 'nav.branches_stock', Icon: Layers, feature: 'branches_stock' },
-  { to: '/expiry',    labelKey: 'nav.expiry',     Icon: Calendar,     feature: 'expiry' },
-  { to: '/purchases', labelKey: 'nav.purchases',  Icon: FileText,     feature: 'purchases' },
-  { to: '/offers',    labelKey: 'nav.offers',     Icon: Gift,         feature: 'offers', adminOnly: true },
-  { to: '/customers', labelKey: 'nav.customers',  Icon: Users,        feature: 'customers' },
-  { to: '/loyalty',   labelKey: 'nav.loyalty',    Icon: Award,        feature: 'loyalty', adminOnly: true },
-  { to: '/clinics',   labelKey: 'nav.clinics',    Icon: Stethoscope,  feature: 'clinics', adminOnly: true },
-  { to: '/suppliers', labelKey: 'nav.suppliers',  Icon: Truck,        feature: 'suppliers' },
-  { to: '/reports',   labelKey: 'nav.reports',    Icon: LineChart,    feature: 'reports', roles: ['admin', 'pharmacist'] },
-  { to: '/shifts',    labelKey: 'nav.shifts',     Icon: DollarSign,   feature: 'shifts' },
-  { to: '/clock',     labelKey: 'nav.clock',      Icon: Clock,        feature: 'hr', featureOption: 'clock', clockScreen: true },
-  { to: '/hr',        labelKey: 'nav.hr',         Icon: UsersRound,   feature: 'hr',       roles: ['admin', 'branch'] },
-  { to: '/fraud',     labelKey: 'nav.fraud',      Icon: ShieldAlert,  feature: 'fraud_surveillance', adminOnly: true, pinned: true },
-  { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist'], pinned: true },
-  { to: '/settings',  labelKey: 'nav.settings',   Icon: SettingsIcon, feature: 'settings', adminOnly: true, pinned: true },
+interface NavSection {
+  sectionKey: string
+  items: NavItem[]
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  {
+    sectionKey: 'nav.section_overview',
+    items: [
+      { to: '/dashboard', labelKey: 'nav.dashboard', Icon: BarChart3, feature: 'dashboard' },
+    ],
+  },
+  {
+    sectionKey: 'nav.section_sales',
+    items: [
+      { to: '/', labelKey: 'nav.pos', Icon: ShoppingCart, feature: 'pos' },
+      { to: '/sales', labelKey: 'nav.sales', Icon: History, feature: 'sales' },
+      { to: '/deliveries', labelKey: 'nav.deliveries', Icon: Bike, feature: 'sales', featureOption: 'deliveries' },
+    ],
+  },
+  {
+    sectionKey: 'nav.section_stock',
+    items: [
+      { to: '/inventory', labelKey: 'nav.inventory', Icon: Package, feature: 'inventory' },
+      { to: '/transfers', labelKey: 'nav.transfers', Icon: ArrowRightLeft, feature: 'transfers' },
+      { to: '/branches-stock', labelKey: 'nav.branches_stock', Icon: Layers, feature: 'branches_stock' },
+      { to: '/expiry', labelKey: 'nav.expiry', Icon: Calendar, feature: 'expiry' },
+      { to: '/purchases', labelKey: 'nav.purchases', Icon: FileText, feature: 'purchases' },
+      { to: '/suppliers', labelKey: 'nav.suppliers', Icon: Truck, feature: 'suppliers' },
+    ],
+  },
+  {
+    sectionKey: 'nav.section_customers',
+    items: [
+      { to: '/customers', labelKey: 'nav.customers', Icon: Users, feature: 'customers' },
+      { to: '/loyalty', labelKey: 'nav.loyalty', Icon: Award, feature: 'loyalty', adminOnly: true },
+      { to: '/offers', labelKey: 'nav.offers', Icon: Gift, feature: 'offers', adminOnly: true },
+      { to: '/clinics', labelKey: 'nav.clinics', Icon: Stethoscope, feature: 'clinics', adminOnly: true },
+    ],
+  },
+  {
+    sectionKey: 'nav.section_operations',
+    items: [
+      { to: '/reports', labelKey: 'nav.reports', Icon: LineChart, feature: 'reports', roles: ['admin', 'pharmacist'] },
+      { to: '/shifts', labelKey: 'nav.shifts', Icon: DollarSign, feature: 'shifts' },
+      { to: '/clock', labelKey: 'nav.clock', Icon: Clock, feature: 'hr', featureOption: 'clock', clockScreen: true },
+      { to: '/hr', labelKey: 'nav.hr', Icon: UsersRound, feature: 'hr', roles: ['admin', 'branch'] },
+    ],
+  },
 ]
 
-const BRANCH_ALLOWED = new Set(['pos', 'sales', 'returns', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock'])
+const PINNED_NAV: NavItem[] = [
+  { to: '/fraud', labelKey: 'nav.fraud', Icon: ShieldAlert, feature: 'fraud_surveillance', adminOnly: true, pinned: true },
+  { to: '/stock-reallocation', labelKey: 'nav.stock_reallocation', Icon: Sparkles, feature: 'stock_reallocation', roles: ['admin', 'pharmacist'], pinned: true },
+  { to: '/settings', labelKey: 'nav.settings', Icon: SettingsIcon, feature: 'settings', adminOnly: true, pinned: true },
+]
+
+const BRANCH_ALLOWED = new Set(['pos', 'sales', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock'])
 const SIDEBAR_SCROLL_KEY = 'pharma_sidebar_scroll'
 
 function NavLinks({
+  sections,
   items,
   locationPath,
   t,
 }: {
-  items: NavItem[]
+  sections?: { sectionKey: string; items: NavItem[] }[]
+  items?: NavItem[]
   locationPath: string
   t: (key: string) => string
 }) {
-  return (
-    <>
-      {items.map(({ to, labelKey, Icon }) => {
-        const active = locationPath === to
-        return (
-          <Link
-            key={to}
-            to={to}
-            tabIndex={-1}
-            onMouseDown={(e) => e.preventDefault()}
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group ${
-              active
-                ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Icon
-              size={17}
-              strokeWidth={active ? 2.5 : 2}
-              className={active ? '' : 'group-hover:scale-110 transition-transform'}
-            />
-            <span className="truncate">{t(labelKey)}</span>
-            <span className={`ms-auto w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-white/80' : 'bg-transparent'}`} />
-          </Link>
-        )
-      })}
-    </>
-  )
+  const renderItem = ({ to, labelKey, Icon }: NavItem) => {
+    const active = locationPath === to
+    return (
+      <Link
+        key={to}
+        to={to}
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group ${
+          active
+            ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30'
+            : 'text-white/60 hover:text-white hover:bg-white/5'
+        }`}
+      >
+        <Icon
+          size={17}
+          strokeWidth={active ? 2.5 : 2}
+          className={active ? '' : 'group-hover:scale-110 transition-transform'}
+        />
+        <span className="truncate">{t(labelKey)}</span>
+        <span className={`ms-auto w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-white/80' : 'bg-transparent'}`} />
+      </Link>
+    )
+  }
+
+  if (sections?.length) {
+    return (
+      <>
+        {sections.map(({ sectionKey, items: sectionItems }) => (
+          <div key={sectionKey} className="mb-1">
+            <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              {t(sectionKey)}
+            </p>
+            {sectionItems.map(renderItem)}
+          </div>
+        ))}
+      </>
+    )
+  }
+
+  return <>{items?.map(renderItem)}</>
 }
 
 export default function Sidebar() {
@@ -102,7 +149,7 @@ export default function Sidebar() {
   const userPerms = !isAdmin && Array.isArray(user?.permissions) ? new Set(user!.permissions as string[]) : null
   const navRef = useRef<HTMLElement>(null)
 
-  const visibleNav = useMemo(() => NAV.filter((n) => {
+  const itemVisible = useCallback((n: NavItem) => {
     if (n.clockScreen) return true
     if (n.adminOnly && !isAdmin) return false
     if (n.roles && !n.roles.includes(user?.role || '')) {
@@ -122,10 +169,16 @@ export default function Sidebar() {
       }
     }
     return true
-  }), [isAdmin, isBranch, user, userPerms, hasFeature, hasFeatureOption])
+  }, [isAdmin, isBranch, user, userPerms, hasFeature, hasFeatureOption])
 
-  const scrollItems = useMemo(() => visibleNav.filter((n) => !n.pinned), [visibleNav])
-  const pinnedItems = useMemo(() => visibleNav.filter((n) => n.pinned), [visibleNav])
+  const visibleSections = useMemo(
+    () => NAV_SECTIONS
+      .map((sec) => ({ ...sec, items: sec.items.filter(itemVisible) }))
+      .filter((sec) => sec.items.length > 0),
+    [itemVisible],
+  )
+
+  const pinnedItems = useMemo(() => PINNED_NAV.filter(itemVisible), [itemVisible])
 
   const persistScroll = useCallback(() => {
     const el = navRef.current
@@ -156,10 +209,10 @@ export default function Sidebar() {
       {/* Scrollable main nav */}
       <nav
         ref={navRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-3 px-3 space-y-0.5 [overflow-anchor:none]"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-2 px-3 [overflow-anchor:none]"
         onScroll={persistScroll}
       >
-        <NavLinks items={scrollItems} locationPath={location.pathname} t={t} />
+        <NavLinks sections={visibleSections} locationPath={location.pathname} t={t} />
       </nav>
 
       {/* Pinned nav — fraud, stock reallocation, settings always visible */}

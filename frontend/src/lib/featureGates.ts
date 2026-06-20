@@ -44,6 +44,7 @@ export const SETTINGS_TAB_OPTION = {
   pharmacy: 'pharmacy',
   platforms: 'digital_platforms',
   manual: 'manual',
+  features: 'features',
 } as const
 
 export type FeatureOptionCheck = (feature: string, option: string) => boolean

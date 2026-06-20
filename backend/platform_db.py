@@ -227,6 +227,7 @@ FEATURE_OPTIONS_CATALOG = [
             {"key": "pharmacy", "label": "Pharmacy profile tab", "default": True},
             {"key": "digital_platforms", "label": "Digital platforms tab", "default": True},
             {"key": "manual", "label": "User manual tab", "default": True},
+            {"key": "features", "label": "Features & modules tab", "default": True},
             {"key": "login_cards", "label": "Login card printing", "default": True},
         ],
     },

@@ -595,3 +595,51 @@ def update_branch(branch_id: int, body: BranchIn, current_user: dict = Depends(g
     finally:
         cur.close()
         conn.close()
+
+
+class FeatureOptionsPatch(BaseModel):
+    feature_options: dict
+
+
+@router.get("/feature-options")
+def get_tenant_feature_options(current_user: dict = Depends(get_current_user)):
+    """Tenant admin: read sub-feature toggles for this pharmacy."""
+    _admin(current_user)
+    from platform_db import FEATURE_OPTIONS_CATALOG, get_tenant_by_slug
+
+    slug = current_user.get("tenant_slug")
+    if not slug:
+        raise HTTPException(400, "No tenant context")
+    tenant = get_tenant_by_slug(slug)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    return {
+        "catalog": FEATURE_OPTIONS_CATALOG,
+        "features": tenant.get("features") or [],
+        "feature_options": tenant.get("feature_options") or {},
+    }
+
+
+@router.patch("/feature-options")
+def patch_tenant_feature_options(
+    body: FeatureOptionsPatch,
+    current_user: dict = Depends(get_current_user),
+):
+    """Tenant admin: update sub-feature toggles (same catalog as Control Platform)."""
+    _admin(current_user)
+    from platform_db import get_tenant_by_slug, update_tenant
+
+    slug = current_user.get("tenant_slug")
+    if not slug:
+        raise HTTPException(400, "No tenant context")
+    tenant = get_tenant_by_slug(slug)
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    try:
+        updated = update_tenant(tenant["id"], feature_options=body.feature_options)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {
+        "ok": True,
+        "feature_options": updated.get("feature_options") or {},
+    }

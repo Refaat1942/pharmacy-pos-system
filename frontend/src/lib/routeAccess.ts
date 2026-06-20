@@ -3,7 +3,7 @@ import { canAccessHr } from './hrAccess'
 type UserLike = { role?: string; permissions?: string[] | null } | null | undefined
 
 const BRANCH_ALLOWED = new Set([
-  'pos', 'sales', 'returns', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock',
+  'pos', 'sales', 'expiry', 'shifts', 'hr', 'transfers', 'branches_stock',
 ])
 
 /** First landing route after login or when redirecting away from a forbidden page. */
@@ -12,7 +12,6 @@ export const FEATURE_HOME_ORDER: { path: string; feature?: string }[] = [
   { path: '/dashboard', feature: 'dashboard' },
   { path: '/sales', feature: 'sales' },
   { path: '/deliveries', feature: 'sales' },
-  { path: '/returns', feature: 'returns' },
   { path: '/inventory', feature: 'inventory' },
   { path: '/transfers', feature: 'transfers' },
   { path: '/expiry', feature: 'expiry' },
