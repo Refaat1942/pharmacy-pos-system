@@ -946,7 +946,7 @@
     "suggested_min": "Suggested Min",
     "excel_help_title": "Excel / CSV Bulk Upload",
     "excel_help_cols": "First row must be column headers. Items matched by Code/barcode are updated. All columns below are supported.",
-    "excel_help_auto": "Leave Code blank to auto-generate. Duplicate codes in the file are merged (highest sales price wins). Category is guessed from name or international barcode when empty.",
+    "excel_help_auto": "Leave Code blank to auto-generate. Duplicate codes are merged into one item (highest pack price wins; strip price sets sub-unit price). Stock is taken from the pack line only — not summed. Category is guessed from name or international barcode when empty.",
     "auto_codes": "{{count}} auto-generated codes",
     "auto_categories": "{{count}} auto-assigned categories",
     "download_template": "Download blank template",

@@ -1633,38 +1633,69 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         "sub_unit": sub_unit,
         "sub_price": sub_price,
         "stock": stock,
+        "qty_big": qty_big,
         "qty_provided": qty_provided,
         "expiry_date": expiry_date,
     }
 
 
+def _outer_qty_from_row(row: dict) -> float:
+    """Pack/box count from a parsed bulk row (stock column is outer units, not sub-units)."""
+    if not row.get("qty_provided"):
+        return 0.0
+    return float(row.get("qty_big") or 0)
+
+
 def _combine_bulk_duplicate_rows(rows: list) -> dict:
-    """Merge rows sharing a code/intl/name — highest sales price wins for item fields."""
+    """Merge duplicate codes — highest pack price wins; stock from that row only.
+
+    Supplier files often repeat the same code twice: once for the pack price (e.g. 52)
+    and once for the strip price (e.g. 26 with subunit qty 2). Those are price tiers,
+    not separate stock lines — never sum stock across duplicate codes.
+    """
     if len(rows) == 1:
         return {**rows[0], "source_rows": [rows[0]["source_idx"]]}
 
-    best_idx = 0
-    for i, row in enumerate(rows):
-        if float(row["price"] or 0) > float(rows[best_idx]["price"] or 0):
-            best_idx = i
+    best_idx = max(range(len(rows)), key=lambda i: float(rows[i]["price"] or 0))
+    best = rows[best_idx]
+    max_pack = max(int(r["pack_size"] or 1) for r in rows)
+    pack_price = max(float(r["price"] or 0) for r in rows)
+    sub_unit = next((r["sub_unit"] for r in rows if r.get("sub_unit")), best.get("sub_unit"))
 
-    merged = {**rows[best_idx]}
-    merged["source_rows"] = []
-    merged["stock"] = 0
-    merged["qty_provided"] = False
-    merged["min_stock"] = 0
-    merged["cost"] = None
+    merged = {**best}
+    merged["source_rows"] = [r["source_idx"] for r in rows]
+    merged["price"] = pack_price
+    merged["pack_size"] = max_pack
+    merged["sub_unit"] = sub_unit
+    merged["min_stock"] = max(int(r["min_stock"] or 0) for r in rows)
+    costs = [float(r["cost"]) for r in rows if r.get("cost") not in (None, "")]
+    merged["cost"] = max(costs) if costs else best.get("cost")
+
+    # Stock: outer-unit qty from the highest-price row only (typically the pack line).
+    qty_big = _outer_qty_from_row(best)
+    if best.get("qty_provided"):
+        merged["qty_provided"] = True
+        if max_pack > 1:
+            merged["sub_price"] = round(pack_price / max_pack, 2)
+            merged["stock"] = int(round(qty_big * max_pack))
+        else:
+            merged["sub_price"] = None
+            merged["stock"] = int(round(qty_big))
+        merged["qty_big"] = qty_big
+        # Prefer explicit strip price from the lower-price row when it matches pack÷strips.
+        strip_prices = sorted(
+            {float(r["price"]) for r in rows if float(r["price"] or 0) < pack_price},
+        )
+        if max_pack > 1 and strip_prices:
+            per_strip = strip_prices[0]
+            if abs(per_strip * max_pack - pack_price) <= max(1.0, pack_price * 0.05):
+                merged["sub_price"] = per_strip
+    else:
+        merged["qty_provided"] = False
+        merged["stock"] = 0
+        merged["qty_big"] = 0
 
     for row in rows:
-        merged["source_rows"].append(row["source_idx"])
-        if row["qty_provided"]:
-            merged["stock"] += int(row["stock"])
-            merged["qty_provided"] = True
-        merged["min_stock"] = max(int(merged["min_stock"]), int(row["min_stock"]))
-        merged["cost"] = max(
-            float(merged["cost"] or 0),
-            float(row["cost"] or 0),
-        ) or merged["cost"] or row["cost"]
         if not merged.get("intl_barcode") and row.get("intl_barcode"):
             merged["intl_barcode"] = row["intl_barcode"]
         if not merged.get("category") and row.get("category"):
@@ -1674,7 +1705,7 @@ def _combine_bulk_duplicate_rows(rows: list) -> dict:
         if not merged.get("barcode") and row.get("barcode"):
             merged["barcode"] = row["barcode"]
 
-    if merged["cost"] == 0:
+    if merged.get("cost") == 0:
         merged["cost"] = None
     return merged
 
@@ -1911,8 +1942,8 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
         existing = by_intl.get(ikey) if ikey else None
 
     if existing:
-        price = max(float(price or 0), float(existing.get("price") or 0))
-        if pack_size > 1 and price:
+        price = float(price or 0)
+        if pack_size > 1 and sub_price is None and price:
             sub_price = round(price / pack_size, 2)
         cur.execute(
             """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
