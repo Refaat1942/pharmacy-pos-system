@@ -18,8 +18,34 @@ def _admin_only(user):
         raise HTTPException(status_code=403, detail="Admins only")
 
 
+def _pharmacy_unit(public_price, sales_tax, discount_pct) -> float:
+    """Pharmacy/cost price per unit — ibn sina: (public − tax) × (1 − disc%)."""
+    pub = float(public_price or 0)
+    tax = float(sales_tax or 0)
+    base = (pub - tax) if tax > 0 else pub
+    return base * (1 - float(discount_pct or 0) / 100)
+
+
+def _line_ex_tax(qty, public_price, sales_tax, discount_pct, unit_cost=None) -> float:
+    """Line total ex-VAT (الاجمالي بدون ضريبة)."""
+    pub = float(public_price) if public_price is not None else float(unit_cost or 0)
+    if public_price is None and unit_cost and not sales_tax:
+        return int(qty) * float(unit_cost) * (1 - float(discount_pct or 0) / 100)
+    unit = _pharmacy_unit(pub, sales_tax, discount_pct)
+    return int(qty) * unit
+
+
+def _line_tax_amount(qty, sales_tax) -> float:
+    """Line sales tax total (ضريبة مبيعات)."""
+    return int(qty) * float(sales_tax or 0)
+
+
+def _line_gross(qty, public_price, sales_tax, discount_pct, unit_cost=None) -> float:
+    return _line_ex_tax(qty, public_price, sales_tax, discount_pct, unit_cost) + _line_tax_amount(qty, sales_tax)
+
+
 def _line_net(qty, unit_cost, discount_pct) -> float:
-    """Line amount ex-VAT after line discount (Egyptian distributor invoice)."""
+    """Legacy alias — prefer _line_ex_tax with public_price + sales_tax."""
     return int(qty) * float(unit_cost) * (1 - float(discount_pct or 0) / 100)
 
 
@@ -27,15 +53,19 @@ def _line_vat(net: float, vat_pct) -> float:
     return net * float(vat_pct or 0) / 100
 
 
-def _line_gross(qty, unit_cost, discount_pct, vat_pct) -> float:
-    net = _line_net(qty, unit_cost, discount_pct)
-    return net + _line_vat(net, vat_pct)
+def _resolve_line_pricing(it) -> tuple[float, float, float, float]:
+    """Returns (public_price, pharmacy_unit_cost, sales_tax, retail_price)."""
+    pub = float(it.public_price if it.public_price is not None else it.unit_cost or 0)
+    tax = float(getattr(it, "sales_tax", None) or 0)
+    disc = float(it.discount_pct or 0)
+    pharmacy = _pharmacy_unit(pub, tax, disc)
+    retail = float(it.public_price) if it.public_price is not None else pub
+    return pub, pharmacy, tax, retail
 
 
 def _eff_unit_cost(unit_cost, discount_pct, vat_pct):
-    """Landed cost per purchased unit (net + VAT), for inventory costing."""
-    u = float(unit_cost) * (1 - float(discount_pct or 0) / 100)
-    return u * (1 + float(vat_pct or 0) / 100)
+    """Inventory cost = pharmacy price (discount already applied; tax is separate on invoice)."""
+    return float(unit_cost or 0)
 
 
 # ─── SUPPLIERS ──────────────────────────────────────────────────────────
@@ -184,6 +214,7 @@ class POItemIn(BaseModel):
     unit_cost: float
     discount_pct: float = 0
     vat_pct: float = 0
+    sales_tax: float = 0
     public_price: Optional[float] = None
     expiry_date: Optional[date] = None
 
@@ -347,11 +378,11 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                     status_code=400,
                     detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
                 )
-        subtotal_net = sum(_line_net(i.quantity, i.unit_cost, i.discount_pct) for i in req.items)
-        total_vat = sum(
-            _line_vat(_line_net(i.quantity, i.unit_cost, i.discount_pct), i.vat_pct)
+        subtotal_net = sum(
+            _line_ex_tax(i.quantity, i.public_price, i.sales_tax, i.discount_pct, i.unit_cost)
             for i in req.items
         )
+        total_vat = sum(_line_tax_amount(i.quantity, i.sales_tax) for i in req.items)
         total = subtotal_net - req.discount + total_vat + req.tax
         if total < 0:
             raise HTTPException(status_code=400, detail="Discount cannot exceed invoice total")
@@ -393,16 +424,17 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 barcode = barcode or p["barcode"]
             if not pname_en:
                 raise HTTPException(status_code=400, detail="Product name required")
-            line_total = _line_gross(it.quantity, it.unit_cost, it.discount_pct, it.vat_pct)
+            pub, pharmacy, stax, retail = _resolve_line_pricing(it)
+            line_total = _line_gross(it.quantity, pub, stax, it.discount_pct, pharmacy)
             cur.execute(
                 """INSERT INTO purchase_order_items
                    (po_id, product_id, barcode, product_name_ar, product_name_en,
-                    quantity, bonus_qty, unit_cost, discount_pct, vat_pct, public_price,
+                    quantity, bonus_qty, unit_cost, discount_pct, vat_pct, sales_tax, public_price,
                     expiry_date, total)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (po_id, it.product_id, barcode, pname_ar, pname_en,
-                 it.quantity, it.bonus_qty, it.unit_cost, it.discount_pct, it.vat_pct,
-                 it.public_price, it.expiry_date, line_total),
+                 it.quantity, it.bonus_qty, pharmacy, it.discount_pct, 0, stax,
+                 retail, it.expiry_date, line_total),
             )
 
         po_row = {"id": po_id, "po_number": po_number, "branch_id": req.branch_id}

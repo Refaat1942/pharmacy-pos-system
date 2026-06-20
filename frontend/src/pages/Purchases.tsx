@@ -11,6 +11,7 @@ import DateInput from '../components/DateInput'
 import { formatDateTime } from '../lib/formatDate'
 import i18n from '../lib/i18n'
 import { formatMoney, formatInt, formatNumber } from '../lib/formatNumber'
+import { lineExTax, lineSalesTax, pharmacyUnit } from '../lib/poCalc'
 
 function FieldWithHint({
   label,
@@ -36,7 +37,7 @@ type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
 
 type POExpiryLot = { expiry_date: string; quantity: number }
 
-type POItemDraft = POItem & { expiry_lots: POExpiryLot[] }
+type POItemDraft = POItem & { expiry_lots: POExpiryLot[]; sales_tax?: number }
 
 function defaultExpiryLots(qty = 1): POExpiryLot[] {
   return [{ expiry_date: '', quantity: qty }]
@@ -378,7 +379,8 @@ function CreatePOModal({
           bonus_qty: 0,
           unit_cost: p.cost || 0,
           discount_pct: 0,
-          vat_pct: 14,
+          sales_tax: 0,
+          vat_pct: 0,
           public_price: p.price ?? null,
           expiry_date: null,
           expiry_lots: defaultExpiryLots(1),
@@ -397,7 +399,8 @@ function CreatePOModal({
         bonus_qty: 0,
         unit_cost: 0,
         discount_pct: 0,
-        vat_pct: 14,
+        sales_tax: 0,
+        vat_pct: 0,
         public_price: null,
         expiry_date: null,
         expiry_lots: defaultExpiryLots(1),
@@ -439,12 +442,10 @@ function CreatePOModal({
   const remove = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i))
 
   const lineNet = (i: POItemDraft) =>
-    i.quantity * i.unit_cost * (1 - (i.discount_pct || 0) / 100)
-  const lineVat = (i: POItemDraft) => lineNet(i) * ((i.vat_pct || 0) / 100)
-  const lineGross = (i: POItemDraft) => lineNet(i) + lineVat(i)
+    lineExTax(i.quantity, i.public_price, i.sales_tax ?? 0, i.discount_pct || 0, i.unit_cost)
+  const totalSalesTax = items.reduce((s, i) => s + lineSalesTax(i.quantity, i.sales_tax ?? 0), 0)
   const subtotalNet = items.reduce((s, i) => s + lineNet(i), 0)
-  const totalVat = items.reduce((s, i) => s + lineVat(i), 0)
-  const total = subtotalNet - invoiceDiscount + totalVat + invoiceExtraTax
+  const total = subtotalNet - invoiceDiscount + totalSalesTax + invoiceExtraTax
 
   const submit = async (receiveImmediately: boolean) => {
     if (!supplierId || !branchId || items.length === 0) { alert(t('purchases.fill_required')); return }
@@ -464,22 +465,27 @@ function CreatePOModal({
         supplier_invoice_number: invNum || undefined,
         supplier_invoice_date: invDate || undefined,
         discount: invoiceDiscount,
-        tax: totalVat + invoiceExtraTax,
+        tax: totalSalesTax + invoiceExtraTax,
         notes: notes || undefined,
         receive_immediately: receiveImmediately,
-        items: flat.map((i) => ({
+        items: flat.map((i) => {
+          const pub = i.public_price ?? i.unit_cost
+          const stax = i.sales_tax ?? 0
+          const pharmacy = pharmacyUnit(Number(pub) || 0, stax, i.discount_pct || 0)
+          return {
           product_id: i.product_id ?? undefined,
           barcode: i.barcode || undefined,
           product_name_ar: i.product_name_ar || undefined,
           product_name_en: i.product_name_en || undefined,
           quantity: i.quantity,
           bonus_qty: i.bonus_qty || 0,
-          unit_cost: i.unit_cost,
+          unit_cost: pharmacy,
           discount_pct: i.discount_pct || 0,
-          vat_pct: i.vat_pct || 0,
+          sales_tax: stax,
+          vat_pct: 0,
           public_price: i.public_price ?? undefined,
           expiry_date: i.expiry_date || undefined,
-        })),
+        }}),
       })
       onSaved({ poId: res.data.po_id, received: receiveImmediately })
     } catch (e: any) {
@@ -489,7 +495,7 @@ function CreatePOModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="po-form bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col border-2 border-slate-300">
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{t('purchases.new')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -501,33 +507,33 @@ function CreatePOModal({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.supplier')}</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input w-full mt-1">
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value ? Number(e.target.value) : '')} className="input po-field w-full mt-1">
                 <option value="">--</option>
                 {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.branch')}</label>
-              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input w-full mt-1">
+              <select value={branchId} onChange={(e) => { setBranchId(e.target.value ? Number(e.target.value) : ''); setItems([]) }} disabled={!isAdmin} className="input po-field w-full mt-1">
                 <option value="">--</option>
                 {branches.map((b) => <option key={b.id} value={b.id}>{i18n.language === 'ar' ? b.name_ar : b.name_en}</option>)}
               </select>
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_number')}</label>
-              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input w-full mt-1" />
+              <input value={invNum} onChange={(e) => setInvNum(e.target.value)} className="input po-field w-full mt-1" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_date')}</label>
-              <DateInput value={invDate} onChange={setInvDate} className="input w-full mt-1" />
+              <DateInput value={invDate} onChange={setInvDate} className="input po-field w-full mt-1" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.invoice_discount_egp')}</label>
-              <input type="number" min={0} step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Math.max(0, Number(e.target.value)))} className="input w-full mt-1" />
+              <input type="number" min={0} step="0.01" value={invoiceDiscount} onChange={(e) => setInvoiceDiscount(Math.max(0, Number(e.target.value)))} className="input po-field w-full mt-1" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600">{t('purchases.extra_charges_egp')}</label>
-              <input type="number" min={0} step="0.01" value={invoiceExtraTax} onChange={(e) => setInvoiceExtraTax(Math.max(0, Number(e.target.value)))} className="input w-full mt-1" />
+              <input type="number" min={0} step="0.01" value={invoiceExtraTax} onChange={(e) => setInvoiceExtraTax(Math.max(0, Number(e.target.value)))} className="input po-field w-full mt-1" />
             </div>
           </div>
 
@@ -548,7 +554,7 @@ function CreatePOModal({
                 hideTimerRef.current = setTimeout(() => setShowResults(false), 200)
               }}
               disabled={!branchId}
-              className="input w-full mb-2"
+              className="input po-field w-full mb-2"
               placeholder={branchId ? (t('purchases.search_existing') as string) : (t('purchases.select_branch_first') as string)}
             />
             {!branchId && (
@@ -581,16 +587,16 @@ function CreatePOModal({
             )}
             <div className="space-y-2">
               {items.length > 0 && (
-                <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-500 font-semibold border-b border-slate-200 pb-1">
+                <div className="grid grid-cols-12 gap-2 px-2 text-[10px] uppercase tracking-wide text-slate-600 font-semibold border-b-2 border-slate-300 pb-1">
                   <div className="col-span-2">{t('purchases.col_name')}</div>
-                  <div className="col-span-2">{t('purchases.col_barcode')}</div>
-                  <div className="col-span-1 text-end" title={t('purchases.qty_packs_hint') as string}>{t('purchases.qty')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.qty')}</div>
                   <div className="col-span-1 text-end">{t('purchases.bonus_qty')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.cost')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.vat_pct')}</div>
                   <div className="col-span-1 text-end">{t('purchases.public_price')}</div>
-                  <div className="col-span-1 text-end">{t('purchases.line_total')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.sales_tax_unit')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.discount_pct')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.pharmacy_price')}</div>
+                  <div className="col-span-1 text-end">{t('purchases.line_ex_tax')}</div>
+                  <div className="col-span-2">{t('purchases.col_barcode')}</div>
                   <div className="col-span-1" />
                 </div>
               )}
@@ -598,28 +604,29 @@ function CreatePOModal({
                 const lotSum = lotsTotal(it.expiry_lots)
                 const qtyMismatch = lotSum > 0 && lotSum !== it.quantity
                 return (
-                <div key={i} className="bg-slate-50 p-2 rounded-lg space-y-2 border border-slate-100">
+                <div key={i} className="bg-white p-2 rounded-lg space-y-2 border-2 border-slate-200">
                   <div className="grid grid-cols-12 gap-2 items-center">
-                    <input className="input col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
+                    <input className="input po-field col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
                            value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
-                    <input className="input col-span-2 text-xs" placeholder={t('purchases.col_barcode') as string}
-                           value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
-                    <input type="number" min={1} className="input col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
+                    <input type="number" min={1} className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
+                           title={t('purchases.qty_packs_hint') as string}
                            value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
-                    <input type="number" min={0} className="input col-span-1 text-xs text-end" placeholder={t('purchases.bonus_qty') as string}
-                           title={t('purchases.bonus_qty_hint') as string}
+                    <input type="number" min={0} className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.bonus_qty') as string}
                            value={it.bonus_qty ?? 0} onChange={(e) => update(i, { bonus_qty: Math.max(0, Number(e.target.value)) })} />
-                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.cost') as string}
-                           value={it.unit_cost} onChange={(e) => update(i, { unit_cost: Math.max(0, Number(e.target.value)) })} />
-                    <input type="number" min={0} max={100} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
+                    <input type="number" min={0} step="0.0001" className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
+                           value={it.public_price ?? it.unit_cost ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
+                    <input type="number" min={0} step="0.0001" className="input po-field col-span-1 text-xs text-end" placeholder="0"
+                           value={it.sales_tax ?? 0} onChange={(e) => update(i, { sales_tax: Math.max(0, Number(e.target.value)) })} />
+                    <input type="number" min={0} max={100} step="0.01" className="input po-field col-span-1 text-xs text-end" placeholder="%"
                            value={it.discount_pct ?? 0} onChange={(e) => update(i, { discount_pct: Math.min(100, Math.max(0, Number(e.target.value))) })} />
-                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder="%"
-                           value={it.vat_pct ?? 0} onChange={(e) => update(i, { vat_pct: Math.max(0, Number(e.target.value)) })} />
-                    <input type="number" min={0} step="0.01" className="input col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
-                           value={it.public_price ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
-                    <div className="col-span-1 text-xs text-end font-semibold text-slate-700 tabular-nums">
-                      {formatMoney(lineGross(it))}
+                    <div className="col-span-1 text-xs text-end font-medium text-slate-600 tabular-nums">
+                      {formatMoney(pharmacyUnit(Number(it.public_price ?? it.unit_cost) || 0, it.sales_tax ?? 0, it.discount_pct ?? 0))}
                     </div>
+                    <div className="col-span-1 text-xs text-end font-semibold text-slate-800 tabular-nums">
+                      {formatMoney(lineNet(it))}
+                    </div>
+                    <input className="input po-field col-span-2 text-xs font-mono" placeholder={t('purchases.col_barcode') as string}
+                           value={it.barcode || ''} onChange={(e) => update(i, { barcode: e.target.value })} />
                     <button onClick={() => remove(i)} className="p-1 hover:bg-red-100 rounded text-red-600 col-span-1 justify-self-end">
                       <Trash2 size={14} />
                     </button>
@@ -672,12 +679,12 @@ function CreatePOModal({
               {invoiceDiscount > 0 && (
                 <div>{t('purchases.invoice_discount_egp')}: <b>-{formatMoney(invoiceDiscount)}</b></div>
               )}
-              <div>{t('purchases.vat_total')}: <b>{formatMoney(totalVat)}</b></div>
+              <div>{t('purchases.drug_sales_tax')}: <b>{formatMoney(totalSalesTax)}</b></div>
               {invoiceExtraTax > 0 && (
                 <div>{t('purchases.extra_charges_egp')}: <b>{formatMoney(invoiceExtraTax)}</b></div>
               )}
-              <div className="text-base border-t border-slate-200 pt-1 mt-1">
-                {t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(total)}</b>
+              <div className="text-base border-t-2 border-slate-300 pt-1 mt-1">
+                {t('purchases.net_total')}: <b className="text-pharma-700">{formatMoney(total)}</b>
               </div>
             </div>
           </div>
@@ -743,12 +750,10 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
                 <SortTh k="barcode" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_barcode')}</SortTh>
                 <SortTh k="quantity" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.qty')}</SortTh>
                 <SortTh k="bonus_qty" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.bonus_qty')}</SortTh>
-                <SortTh k="unit_cost" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.cost')}</SortTh>
-                <SortTh k="discount_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.discount_pct')}</SortTh>
-                <SortTh k="vat_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.vat_pct')}</SortTh>
                 <SortTh k="public_price" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.public_price')}</SortTh>
-                <SortTh k="expiry_date" sort={poItemSort} onToggle={poItemToggle} align="start">{t('purchases.col_expiry')}</SortTh>
-                <SortTh k="total" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.col_total')}</SortTh>
+                <SortTh k="unit_cost" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.pharmacy_price')}</SortTh>
+                <SortTh k="discount_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.discount_pct')}</SortTh>
+                <SortTh k="total" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.line_ex_tax')}</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -758,11 +763,9 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
                   <td className="px-3 py-2 text-end">{formatInt(it.quantity)}</td>
                   <td className="px-3 py-2 text-end text-emerald-700">{formatInt(it.bonus_qty || 0)}</td>
+                  <td className="px-3 py-2 text-end">{it.public_price != null ? formatMoney(it.public_price) : formatMoney(it.unit_cost)}</td>
                   <td className="px-3 py-2 text-end">{formatMoney(it.unit_cost)}</td>
                   <td className="px-3 py-2 text-end">{formatNumber(it.discount_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
-                  <td className="px-3 py-2 text-end">{formatNumber(it.vat_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
-                  <td className="px-3 py-2 text-end">{it.public_price != null ? formatMoney(it.public_price) : '—'}</td>
-                  <td className="px-3 py-2 text-xs font-medium text-slate-800">{it.expiry_date || '—'}</td>
                   <td className="px-3 py-2 text-end font-semibold">{formatMoney(it.total)}</td>
                 </tr>
               ))}
@@ -775,9 +778,9 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
               {Number(po.discount) > 0 && (
                 <div>{t('purchases.invoice_discount_egp')}: <b>-{formatMoney(po.discount)}</b></div>
               )}
-              <div>{t('purchases.vat_total')}: <b>{formatMoney(po.tax)}</b></div>
-              <div className="text-base border-t border-slate-200 pt-1 mt-1">
-                {t('purchases.col_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b>
+              <div>{t('purchases.drug_sales_tax')}: <b>{formatMoney(po.tax)}</b></div>
+              <div className="text-base border-t-2 border-slate-300 pt-1 mt-1">
+                {t('purchases.net_total')}: <b className="text-pharma-700">{formatMoney(po.total)}</b>
               </div>
             </div>
           </div>

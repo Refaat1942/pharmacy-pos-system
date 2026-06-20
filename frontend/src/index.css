@@ -6,6 +6,13 @@
   .input {
     @apply w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-pharma-500 focus:border-pharma-500 outline-none;
   }
+  .po-field {
+    @apply border-2 border-slate-400 bg-white focus:border-pharma-600 focus:ring-2 focus:ring-pharma-500/25;
+  }
+  .po-form .input,
+  .po-form select.po-field {
+    @apply border-2 border-slate-400;
+  }
 }
 
 :root {
@@ -247,6 +254,23 @@ body {
     left: 0; top: 0;
     width: 100%;
     font-family: 'Inter', 'Cairo', sans-serif;
+  }
+  .shift-report-print, .shift-report-print * { visibility: visible !important; }
+  .shift-report-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 210mm;
+    padding: 12mm;
+    font-family: 'Inter', 'Cairo', sans-serif;
+    font-size: 12px;
+    color: #000 !important;
+    background: #fff !important;
+  }
+  .shift-report-print * {
+    color: #000 !important;
+    box-shadow: none !important;
   }
   .print-only { display: block !important; }
   .no-print { display: none !important; }

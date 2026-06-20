@@ -1486,7 +1486,12 @@
     "subtotal_ex_vat": "Subtotal (ex VAT)",
     "vat_total": "VAT",
     "qty_packs_hint": "Quantity in boxes / outer packs (not strips)",
-    "calc_explanation": "Egyptian distributor invoice: unit cost is before discount & VAT. Line total = (qty × cost × (1 − disc%)) × (1 + VAT%). Example: 1 box @ 52, disc 20%, VAT 14% → net 41.60 + VAT 5.82 = 47.42. PO qty adds boxes to stock."
+    "calc_explanation": "ibn sina invoice: Pharmacy price = (Public price − sales tax per unit) × (1 − disc%). Line ex-tax = Qty × pharmacy price. Drug sales tax = Qty × tax per unit. Net = sum ex-tax + sum tax. Example: public 16.20, tax 0.459, disc 25% → pharmacy 11.81.",
+    "sales_tax_unit": "Sales tax",
+    "pharmacy_price": "Pharm. price",
+    "line_ex_tax": "Ex-tax",
+    "drug_sales_tax": "Drug sales tax",
+    "net_total": "Net total"
   },
   "customers": {
     "title": "Customers",

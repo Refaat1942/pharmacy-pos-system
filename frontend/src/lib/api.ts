@@ -594,6 +594,7 @@ export interface POItem {
   unit_cost: number
   discount_pct?: number
   vat_pct?: number
+  sales_tax?: number
   public_price?: number | null
   expiry_date?: string | null
   total?: number

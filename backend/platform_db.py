@@ -237,8 +237,6 @@ FEATURE_OPTIONS_CATALOG = [
         "options": [
             {"key": "widget", "label": "Floating assistant widget", "default": True},
             {"key": "openai", "label": "OpenAI answers (not FAQ only)", "default": True},
-            {"key": "dose_calculator", "label": "Dose calculator (adult & pediatric)", "default": True},
-            {"key": "drug_database", "label": "Active ingredient drug lookup", "default": True},
         ],
     },
     {

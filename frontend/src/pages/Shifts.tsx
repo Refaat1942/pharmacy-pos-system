@@ -408,7 +408,7 @@ export default function Shifts() {
         {/* Report modal */}
         {reportShift && (
           <Modal onClose={() => setReportShift(null)} title={`${reportShift.report_type} ${t('shifts.report')} — #${reportShift.shift.id}`} wide>
-            <div className="space-y-3" id="shift-report-printable">
+            <div className="space-y-3 shift-report-print" id="shift-report-printable">
               <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                 <div><span className="text-slate-400">{t('shifts.user')}:</span> {reportShift.shift.user_name}</div>
                 <div><span className="text-slate-400">{t('shifts.branch')}:</span> {i18n.language === 'ar' ? reportShift.shift.branch_name_ar : reportShift.shift.branch_name_en}</div>
