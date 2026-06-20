@@ -1959,18 +1959,46 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState<{ processed?: number; total?: number; message?: string } | null>(null)
+
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
   const submit = async () => {
     if (!file) return
-    setError(''); setUploading(true)
+    setError('')
+    setProgress(null)
+    setResult(null)
+    setUploading(true)
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const { data } = await api.post('/inventory/bulk-upload', fd, { timeout: 300000 })
-      setResult(data)
+      const { data: start } = await api.post('/inventory/bulk-upload', fd, { timeout: 120000 })
+      const jobId = start.job_id as string
+      setProgress({ message: t('inventory.upload_queued') as string })
+
+      for (let i = 0; i < 600; i++) {
+        await sleep(1500)
+        const { data: st } = await api.get(`/inventory/bulk-upload/status/${jobId}`)
+        setProgress({
+          processed: st.processed,
+          total: st.total,
+          message: st.message || (t('inventory.upload_processing') as string),
+        })
+        if (st.status === 'done') {
+          setResult(st)
+          break
+        }
+        if (st.status === 'failed') {
+          setError(st.error || st.message || (t('inventory.upload_failed') as string))
+          break
+        }
+      }
     } catch (e: any) {
       setError(formatApiError(e, t('inventory.upload_failed') as string))
-    } finally { setUploading(false) }
+    } finally {
+      setUploading(false)
+      setProgress(null)
+    }
   }
 
   const downloadTemplate = async () => {
@@ -2007,6 +2035,16 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)}
           className="w-full p-2 border border-dashed border-slate-300 rounded-lg" />
         {error && <div className="text-red-600 text-sm whitespace-pre-wrap">{error}</div>}
+        {uploading && progress && (
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900">
+            <div className="font-medium">{progress.message}</div>
+            {progress.total != null && progress.total > 0 && (
+              <div className="text-xs mt-1">
+                {progress.processed ?? 0} / {progress.total} {t('inventory.upload_items')}
+              </div>
+            )}
+          </div>
+        )}
         {result && (
           <div className="p-3 bg-emerald-50 rounded-lg text-emerald-800">
             ✅ {result.inserted} {t('inventory.imported')}, {result.updated} {t('inventory.updated_count')}, {result.errors} {t('inventory.errors')}

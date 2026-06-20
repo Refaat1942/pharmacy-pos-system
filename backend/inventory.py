@@ -7,6 +7,9 @@ from datetime import date, datetime
 import io
 import math
 import re
+import threading
+import uuid
+from datetime import datetime, timezone
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, requires_feature
@@ -1676,10 +1679,10 @@ def _load_bulk_rows_from_bytes(content: bytes, filename: str) -> list:
             ws = wb.active
             header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
             if not header_row:
-                raise HTTPException(status_code=400, detail="First row must contain column headers")
+                raise ValueError("First row must contain column headers")
             headers = [str(c).strip().lower() if c is not None else "" for c in header_row]
             if not any(headers):
-                raise HTTPException(status_code=400, detail="First row must contain column headers")
+                raise ValueError("First row must contain column headers")
             for r in ws.iter_rows(min_row=2, values_only=True):
                 if not any(v not in (None, "") for v in r):
                     continue
@@ -1811,54 +1814,63 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
 
 BULK_COMMIT_EVERY = 50
 
+_bulk_jobs: dict = {}
+_bulk_jobs_lock = threading.Lock()
 
-@router.post("/bulk-upload")
-def bulk_upload(file: UploadFile = File(...),
-                current_user=Depends(get_current_user),
-                active_branch=Depends(get_active_branch_id)):
-    """Bulk import items from Excel/CSV. Duplicates in the file are merged (highest price wins)."""
-    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
-    if branch_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Select a specific branch before uploading items (use the branch selector in the top bar).",
-        )
 
-    conn = None
+def _bulk_job_update(job_id: str, **fields):
+    with _bulk_jobs_lock:
+        if job_id in _bulk_jobs:
+            _bulk_jobs[job_id].update(fields)
+
+
+def _bulk_job_prune_old():
+    """Drop finished jobs older than 2 hours to limit memory use."""
+    cutoff = datetime.now(timezone.utc).timestamp() - 7200
+    with _bulk_jobs_lock:
+        stale = [
+            jid for jid, j in _bulk_jobs.items()
+            if j.get("status") in ("done", "failed") and j.get("finished_at", 0) < cutoff
+        ]
+        for jid in stale:
+            del _bulk_jobs[jid]
+
+
+def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id, job_id: Optional[str] = None) -> dict:
+    """Parse and import rows. Updates job_id progress when provided."""
+    def progress(**kw):
+        if job_id:
+            _bulk_job_update(job_id, **kw)
+
+    progress(status="processing", message="Reading spreadsheet…")
     try:
-        content = file.file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        raw_rows = _load_bulk_rows_from_bytes(content, filename)
+    except Exception as e:
+        raise ValueError(f"Could not read upload file: {e}") from e
+    if not raw_rows:
+        raise ValueError("No data rows found below the header row")
 
+    parsed = []
+    parse_errors = []
+    for idx, r in enumerate(raw_rows, start=2):
         try:
-            raw_rows = _load_bulk_rows_from_bytes(content, file.filename or "")
-        except HTTPException:
-            raise
+            row = _parse_bulk_row(r, idx)
+            if not row["name_en"]:
+                raise ValueError("Material Name is required")
+            parsed.append(row)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Could not read upload file: {e}") from e
+            parse_errors.append(f"Row {idx}: {e}")
 
-        if not raw_rows:
-            raise HTTPException(status_code=400, detail="No data rows found below the header row")
+    merged_rows = _merge_bulk_rows(parsed)
+    total = len(merged_rows)
+    progress(total=total, processed=0, message=f"Importing {total} items…")
 
-        parsed = []
-        parse_errors = []
-        for idx, r in enumerate(raw_rows, start=2):
-            try:
-                row = _parse_bulk_row(r, idx)
-                if not row["name_en"]:
-                    raise ValueError("Material Name is required")
-                parsed.append(row)
-            except Exception as e:
-                parse_errors.append(f"Row {idx}: {e}")
-
-        merged_rows = _merge_bulk_rows(parsed)
-
-        inserted = updated = errors = len(parse_errors)
-        error_details = list(parse_errors)
-        auto_codes = auto_categories = 0
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        user_id = current_user.get("user_id")
+    inserted = updated = errors = len(parse_errors)
+    error_details = list(parse_errors)
+    auto_codes = auto_categories = 0
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
         by_barcode, by_intl = _prefetch_existing_products(cur, branch_id)
         auto_seq = {"next": None}
 
@@ -1880,6 +1892,14 @@ def bulk_upload(file: UploadFile = File(...),
                 error_details.append(f"Rows {','.join(map(str, src))}: {e}")
             if n % BULK_COMMIT_EVERY == 0:
                 conn.commit()
+            if job_id and (n % 10 == 0 or n == total):
+                progress(
+                    processed=n,
+                    inserted=inserted,
+                    updated=updated,
+                    errors=errors,
+                    message=f"Imported {n} / {total}…",
+                )
 
         conn.commit()
         return {
@@ -1888,29 +1908,83 @@ def bulk_upload(file: UploadFile = File(...),
             "errors": errors,
             "auto_codes": auto_codes,
             "auto_categories": auto_categories,
-            "merged_rows": len(merged_rows),
+            "merged_rows": total,
             "error_details": error_details[:50],
         }
-    except HTTPException:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        raise
-    except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        raise HTTPException(status_code=500, detail=f"Bulk upload failed: {e}") from e
     finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, user_id):
+    try:
+        result = _execute_bulk_import(content, filename, branch_id, user_id, job_id=job_id)
+        _bulk_job_update(
+            job_id,
+            status="done",
+            finished_at=datetime.now(timezone.utc).timestamp(),
+            message="Import complete",
+            **result,
+        )
+    except Exception as e:
+        _bulk_job_update(
+            job_id,
+            status="failed",
+            finished_at=datetime.now(timezone.utc).timestamp(),
+            error=str(e),
+            message=str(e),
+        )
+
+
+@router.post("/bulk-upload")
+def bulk_upload(file: UploadFile = File(...),
+                current_user=Depends(get_current_user),
+                active_branch=Depends(get_active_branch_id)):
+    """Start bulk import in background; poll GET /bulk-upload/status/{job_id} for results."""
+    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+    if branch_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Select a specific branch before uploading items (use the branch selector in the top bar).",
+        )
+
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    _bulk_job_prune_old()
+    job_id = str(uuid.uuid4())
+    with _bulk_jobs_lock:
+        _bulk_jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "processed": 0,
+            "total": 0,
+            "inserted": 0,
+            "updated": 0,
+            "errors": 0,
+            "message": "Queued…",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    thread = threading.Thread(
+        target=_run_bulk_job,
+        args=(job_id, content, file.filename or "", branch_id, current_user.get("user_id")),
+        daemon=True,
+    )
+    thread.start()
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/bulk-upload/status/{job_id}")
+def bulk_upload_status(job_id: str, current_user=Depends(get_current_user)):
+    with _bulk_jobs_lock:
+        job = _bulk_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Import job not found or expired")
+    return job
 
 
 @router.get("/consumption-alerts")
