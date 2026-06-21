@@ -96,7 +96,7 @@ export default function StockReallocation() {
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <h1 className="feature-page-title flex items-center gap-2">
               <Sparkles className="text-pharma-600" size={28} />
               {t('reallocation.title')}
             </h1>

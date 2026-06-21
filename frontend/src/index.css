@@ -50,6 +50,68 @@ body {
 }
 .cart-item-enter { animation: slideIn 0.15s ease-out; }
 
+/* Feature page titles (top bar + page headers) */
+@keyframes featureTitleIn {
+  from { opacity: 0; transform: translateY(6px); letter-spacing: 0.05em; }
+  to { opacity: 1; transform: translateY(0); letter-spacing: -0.015em; }
+}
+.feature-page-title {
+  @apply text-2xl sm:text-[1.65rem] font-extrabold text-slate-900 tracking-tight leading-tight;
+  animation: featureTitleIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.feature-title-anim {
+  animation: featureTitleIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Sidebar nav label motion */
+.nav-feature-label {
+  display: inline-block;
+}
+.nav-feature-label-active {
+  animation: navLabelGlow 0.4s ease both;
+}
+@keyframes navLabelGlow {
+  0% { opacity: 0.85; filter: brightness(1.1); }
+  100% { opacity: 1; filter: brightness(1); }
+}
+
+@keyframes pulseSoft {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.1); }
+}
+.animate-pulse-soft {
+  animation: pulseSoft 2.2s ease-in-out infinite;
+}
+
+/* POS action buttons */
+.pos-action-btn {
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease, background-color 0.15s ease;
+}
+.pos-action-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+}
+.pos-action-btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+@keyframes posCheckoutPulse {
+  0%, 100% { box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.35); }
+  50% { box-shadow: 0 16px 34px -4px rgba(13, 148, 136, 0.48); }
+}
+.pos-action-checkout:not(:disabled) {
+  animation: posCheckoutPulse 2.8s ease-in-out infinite;
+}
+.pos-action-checkout:not(:disabled):hover {
+  animation: none;
+}
+.pos-action-held-badge {
+  animation: heldBadgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes heldBadgePop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
 @keyframes pharmacyNameIn {
   0%   { opacity: 0; transform: translateY(-6px) scale(0.96); letter-spacing: 0.15em; filter: blur(4px); }
   60%  { opacity: 1; transform: translateY(0) scale(1.02); letter-spacing: 0.02em; filter: blur(0); }

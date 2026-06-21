@@ -107,18 +107,27 @@ function NavLinks({
         to={to}
         tabIndex={-1}
         onMouseDown={(e) => e.preventDefault()}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors group ${
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 group ${
           active
-            ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30'
-            : 'text-white/60 hover:text-white hover:bg-white/5'
+            ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30 font-bold'
+            : 'text-white/60 hover:text-white hover:bg-white/5 font-medium'
         }`}
       >
         <Icon
           size={17}
           strokeWidth={active ? 2.5 : 2}
-          className={active ? '' : 'group-hover:scale-110 transition-transform'}
+          className={`shrink-0 transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:-rotate-3'}`}
         />
-        <span className="truncate">{t(labelKey)}</span>
+        <span
+          key={active ? `${to}-on` : to}
+          className={`truncate nav-feature-label transition-all duration-300 ${
+            active
+              ? 'font-bold nav-feature-label-active'
+              : 'group-hover:font-semibold group-hover:tracking-wide'
+          }`}
+        >
+          {t(labelKey)}
+        </span>
         <span className={`ms-auto w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'bg-white/80' : 'bg-transparent'}`} />
       </Link>
     )
@@ -129,7 +138,7 @@ function NavLinks({
       <>
         {sections.map(({ sectionKey, items: sectionItems }) => (
           <div key={sectionKey} className="mb-1">
-            <p className="px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+            <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-white/45">
               {t(sectionKey)}
             </p>
             {sectionItems.map(renderItem)}

@@ -697,7 +697,7 @@ export default function Reports() {
     <Layout>
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full space-y-5">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">{t('reports.title')}</h1>
+          <h1 className="feature-page-title">{t('reports.title')}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{t('reports.subtitle')}</p>
         </div>
 

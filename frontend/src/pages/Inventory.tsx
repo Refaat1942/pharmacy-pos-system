@@ -412,7 +412,7 @@ export default function Inventory() {
       <div className="flex-1 overflow-auto p-6 max-w-screen-2xl mx-auto w-full">
         {/* Title */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">{t('inventory.title')}</h1>
+          <h1 className="feature-page-title">{t('inventory.title')}</h1>
         </div>
 
         {/* Tabs */}

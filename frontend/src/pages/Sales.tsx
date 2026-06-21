@@ -374,7 +374,7 @@ export default function Sales() {
           {/* Page header */}
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{t('sales.title')}</h1>
+              <h1 className="feature-page-title">{t('sales.title')}</h1>
               <p className="text-sm text-gray-500 mt-0.5">
                 {invoices.length} {t('payment.items')}
               </p>

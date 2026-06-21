@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { pageTitleKey } from '../lib/pageTitles'
 import { LogOut, Globe, Clock } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useEffect, useState } from 'react'
@@ -10,6 +11,8 @@ export default function Topbar() {
   const { t } = useTranslation()
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const currentTitleKey = pageTitleKey(location.pathname)
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -33,14 +36,21 @@ export default function Topbar() {
 
   return (
     <header className="bg-white border-b border-slate-200 h-14 flex items-center px-5 gap-3 flex-shrink-0 shadow-sm">
-      <div className="flex items-center gap-1.5 text-slate-400 text-xs font-mono tabular-nums">
-        <Clock size={13} />
-        {time.toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
-          hour: '2-digit', minute: '2-digit', second: '2-digit',
-        })}
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-slate-400 text-xs font-mono tabular-nums shrink-0">
+          <Clock size={13} />
+          {time.toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+          })}
+        </div>
+        {currentTitleKey && (
+          <div key={location.pathname} className="hidden sm:block border-s border-slate-200 ps-4 min-w-0">
+            <h1 className="feature-title-anim text-base lg:text-lg font-extrabold text-slate-900 tracking-tight truncate">
+              {t(currentTitleKey)}
+            </h1>
+          </div>
+        )}
       </div>
-
-      <div className="flex-1" />
 
       <BranchSwitcher />
 

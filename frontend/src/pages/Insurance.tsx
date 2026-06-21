@@ -150,7 +150,7 @@ export default function Insurance() {
     <Layout>
       <main className="flex-1 overflow-auto p-6 max-w-6xl mx-auto w-full">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+          <h1 className="feature-page-title flex items-center gap-2">
             <Shield className="text-pharma-600" /> {t('insurance.title')}
           </h1>
           <p className="text-sm text-slate-500 mt-1">{t('insurance.subtitle')}</p>

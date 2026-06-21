@@ -28,7 +28,7 @@ export default function Loyalty() {
       <main className="flex-1 overflow-auto p-6">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <h1 className="feature-page-title flex items-center gap-2">
               <Award className="text-pharma-600" />
               {t('loyalty.title')}
             </h1>

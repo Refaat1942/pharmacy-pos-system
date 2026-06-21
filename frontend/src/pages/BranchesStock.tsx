@@ -391,7 +391,7 @@ export default function BranchesStock() {
               <Layers size={22} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-800">{t('nav.branches_stock')}</h1>
+              <h1 className="feature-page-title">{t('nav.branches_stock')}</h1>
               <p className="text-sm text-slate-500 mt-0.5 max-w-xl">{t('inventory.bs_hint')}</p>
             </div>
           </div>

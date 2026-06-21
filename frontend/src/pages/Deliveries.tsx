@@ -121,7 +121,7 @@ export default function Deliveries() {
       <div className="flex-1 overflow-auto p-6 w-full min-w-0 space-y-5">
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">{t('deliveries.title')}</h1>
+            <h1 className="feature-page-title">{t('deliveries.title')}</h1>
             <p className="text-sm text-slate-500 mt-0.5">{t('deliveries.subtitle')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">

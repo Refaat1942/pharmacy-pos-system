@@ -8,6 +8,7 @@ import { useAuth } from '../lib/auth'
 import { platformDisplayLabel } from '../lib/digitalPlatforms'
 import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 import InsurancePosPanel from './InsurancePosPanel'
+import SellerPicker from './SellerPicker'
 import type { InsuranceCalculateResult } from '../lib/insurance'
 
 interface Props {
@@ -19,6 +20,8 @@ interface Props {
   offerSavings?: number
   offerNames?: string
   selectedSeller: Employee | null
+  onSellerChange: (seller: Employee | null) => void
+  employees?: Employee[]
   selectedCustomer: Customer | null
   clinicId?: number | null
   prescriptionId?: number | null
@@ -34,7 +37,8 @@ type CheckoutStep = 'type' | 'setup' | 'pay'
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
   offerIds, offerSavings, offerNames,
-  selectedSeller, selectedCustomer, clinicId, prescriptionId,
+  selectedSeller, onSellerChange, employees: employeesProp,
+  selectedCustomer, clinicId, prescriptionId,
   initialSaleType,
   onClose, onSuccess,
 }: Props) {
@@ -79,9 +83,18 @@ export default function PaymentModal({
   })
   const [cashTouched, setCashTouched] = useState(false)
   const [hybridTouched, setHybridTouched] = useState(false)
+  const [modalEmployees, setModalEmployees] = useState<Employee[]>(employeesProp ?? [])
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
+
+  useEffect(() => {
+    if (employeesProp?.length) {
+      setModalEmployees(employeesProp)
+      return
+    }
+    employeesAPI.list().then((r) => setModalEmployees(r.data)).catch(() => {})
+  }, [employeesProp])
 
   useEffect(() => {
     const load = () => {
@@ -474,16 +487,19 @@ export default function PaymentModal({
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* ── Left: payment form ── */}
           <div className="flex-1 p-6 overflow-y-auto space-y-5">
-            {/* Salesperson confirmation */}
-            <div className={`p-3 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
-              <p className={`text-xs font-semibold uppercase tracking-wider mb-1 ${selectedSeller ? 'text-emerald-700' : 'text-red-700'}`}>
-                {t('payment.salesperson')}
-              </p>
-              <p className={`text-base font-bold ${selectedSeller ? 'text-emerald-900' : 'text-red-900'}`}>
-                {selectedSeller
-                  ? (lang === 'ar' ? selectedSeller.name_ar : selectedSeller.name_en)
-                  : t('payment.seller_required')}
-              </p>
+            {/* Salesperson — select or scan if missing from POS */}
+            <div className={`p-4 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50/80 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
+              <SellerPicker
+                employees={modalEmployees}
+                selectedSeller={selectedSeller}
+                onSellerChange={(seller) => {
+                  onSellerChange(seller)
+                  if (seller) setError('')
+                }}
+                onEmployeesChange={setModalEmployees}
+                autoFocusScan={!selectedSeller}
+                compact
+              />
             </div>
 
             {checkoutStep === 'pay' && loyaltyOn && selectedCustomer && !isInsurance && (

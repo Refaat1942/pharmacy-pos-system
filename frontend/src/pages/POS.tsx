@@ -9,7 +9,6 @@ import {
   Tag,
   ScanLine,
   User,
-  UserCircle2,
   UserPlus,
   Trash2,
   CornerDownLeft,
@@ -23,6 +22,7 @@ import type { ComponentType } from 'react'
 import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
+import SellerPicker from '../components/SellerPicker'
 import PosSaleTypePicker, { type PosSaleType } from '../components/PosSaleTypePicker'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
@@ -171,11 +171,8 @@ export default function POS() {
   const [highlight, setHighlight] = useState(0)
   const [searching, setSearching] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-  const sellerScanRef = useRef<HTMLInputElement>(null)
 
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [sellerScanCode, setSellerScanCode] = useState('')
-  const [sellerScanFeedback, setSellerScanFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedSeller, setSelectedSeller] = useState<Employee | null>(() => loadJSON<Employee | null>(SELLER_KEY, null))
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
@@ -396,37 +393,6 @@ export default function POS() {
   useEffect(() => {
     employeesAPI.list().then((r) => setEmployees(r.data))
   }, [])
-
-  const applySellerScan = useCallback(async () => {
-    const code = sellerScanCode.trim()
-    if (!code) return
-    try {
-      const { data } = await employeesAPI.lookupByCode(code)
-      setSelectedSeller(data)
-      setEmployees((prev) => (prev.some((e) => e.id === data.id) ? prev : [...prev, data]))
-      setSellerScanCode('')
-      setSellerScanFeedback({ type: 'ok', text: t('pos.seller_scan_ok') as string })
-      sellerScanRef.current?.focus()
-      window.setTimeout(() => setSellerScanFeedback(null), 2500)
-    } catch (err: unknown) {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setSellerScanFeedback({
-        type: 'err',
-        text: typeof detail === 'string' ? detail : (t('pos.seller_scan_fail') as string),
-      })
-      sellerScanRef.current?.select()
-    }
-  }, [sellerScanCode, t])
-
-  const selectSelfAsSeller = useCallback(() => {
-    if (!user) return
-    const me = employees.find((e) => e.id === user.id)
-    if (me) {
-      setSelectedSeller(me)
-      setSellerScanFeedback({ type: 'ok', text: t('pos.seller_scan_ok') as string })
-      window.setTimeout(() => setSellerScanFeedback(null), 2000)
-    }
-  }, [user, employees, t])
 
   useEffect(() => {
     customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
@@ -746,7 +712,7 @@ export default function POS() {
                     </h1>
                   </div>
                 ) : (
-                  <h1 className="text-lg font-bold text-slate-800 leading-tight">{t('nav.pos')}</h1>
+                  <h1 className="feature-page-title text-lg sm:text-xl">{t('nav.pos')}</h1>
                 )}
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   {pharmacyName ? `${t('nav.pos')} • ${t('pos.header_hint')}` : t('pos.header_hint')}
@@ -1104,96 +1070,12 @@ export default function POS() {
           <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Seller / Customer */}
           <div className="px-5 py-4 space-y-3 border-b border-slate-100">
-            <div>
-              <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
-                <UserCircle2 size={13} /> {t('pos.seller')}
-              </label>
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedSeller?.id ?? ''}
-                  onChange={(e) => {
-                    const emp = employees.find((em) => em.id === parseInt(e.target.value))
-                    setSelectedSeller(emp || null)
-                    setSellerScanFeedback(null)
-                  }}
-                  className={`flex-1 min-w-0 text-sm rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-pharma-100 ${
-                    selectedSeller
-                      ? 'border border-slate-200 bg-slate-50 text-slate-700 focus:border-pharma-400'
-                      : 'border-2 border-red-300 bg-red-50 text-red-800 font-semibold focus:border-red-400'
-                  }`}
-                >
-                  <option value="">{t('pos.select_seller')}</option>
-                  {employees.map((e) => {
-                    const display = lang === 'ar'
-                      ? (e.name_ar || e.name_en || `#${e.id}`)
-                      : (e.name_en || e.name_ar || `#${e.id}`)
-                    return (
-                      <option key={e.id} value={e.id}>
-                        {display}
-                      </option>
-                    )
-                  })}
-                </select>
-                {user && employees.some((e) => e.id === user.id) && (
-                  <button
-                    type="button"
-                    onClick={selectSelfAsSeller}
-                    className="flex-shrink-0 text-xs font-semibold px-2.5 py-2.5 rounded-xl border border-pharma-200 bg-pharma-50 text-pharma-700 hover:bg-pharma-100"
-                    title={t('pos.seller_me') as string}
-                  >
-                    {t('pos.seller_me')}
-                  </button>
-                )}
-                {selectedSeller && (
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedSeller(null); setSellerScanFeedback(null) }}
-                    className="flex-shrink-0 text-slate-400 hover:text-red-500 p-2"
-                    title={t('pos.clear_seller') as string}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1.5 mb-1">{t('pos.scan_seller_or')}</p>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <ScanLine size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <input
-                    ref={sellerScanRef}
-                    type="text"
-                    value={sellerScanCode}
-                    onChange={(e) => { setSellerScanCode(e.target.value); setSellerScanFeedback(null) }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        void applySellerScan()
-                      }
-                    }}
-                    placeholder={t('pos.scan_seller_placeholder') as string}
-                    aria-label={t('pos.scan_seller') as string}
-                    className="w-full text-sm border border-slate-200 rounded-xl ps-9 pe-3 py-2 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-white text-slate-700 font-mono"
-                    autoComplete="off"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void applySellerScan()}
-                  disabled={!sellerScanCode.trim()}
-                  className="flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-                >
-                  {t('pos.scan_seller_apply')}
-                </button>
-              </div>
-              {sellerScanFeedback && (
-                <p
-                  className={`text-xs mt-1.5 ${sellerScanFeedback.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}
-                  role="status"
-                >
-                  {sellerScanFeedback.text}
-                </p>
-              )}
-            </div>
+            <SellerPicker
+              employees={employees}
+              selectedSeller={selectedSeller}
+              onSellerChange={setSelectedSeller}
+              onEmployeesChange={setEmployees}
+            />
 
             <div className="relative">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
@@ -1359,17 +1241,17 @@ export default function POS() {
               <button
                 onClick={suspendCurrent}
                 disabled={cartItems.length === 0}
-                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-sm transition-all"
+                className="pos-action-btn flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-sm"
               >
                 <Pause size={15} /> {t('pos.suspend')}
               </button>
               <button
                 onClick={() => setShowHeld(true)}
-                className="relative flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-semibold text-sm transition-all"
+                className="pos-action-btn relative flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-slate-300 text-slate-700 bg-white hover:bg-slate-50 font-semibold text-sm"
               >
                 <ClipboardList size={15} /> {t('pos.held')}
                 {held.length > 0 && (
-                  <span className="absolute -top-1.5 -end-1.5 bg-pharma-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px]">
+                  <span className="pos-action-held-badge absolute -top-1.5 -end-1.5 bg-pharma-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5 min-w-[18px]">
                     {held.length}
                   </span>
                 )}
@@ -1382,7 +1264,9 @@ export default function POS() {
               onClick={tryCheckout}
               disabled={cartItems.length === 0 || !canCheckout}
               title={!canCheckout ? (t('pos.shift_required') as string) : undefined}
-              className="w-full bg-gradient-to-br from-pharma-600 to-pharma-700 hover:from-pharma-700 hover:to-pharma-800 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-pharma-500/30 text-base tracking-wide"
+              className={`pos-action-btn pos-action-checkout w-full bg-gradient-to-br from-pharma-600 to-pharma-700 hover:from-pharma-700 hover:to-pharma-800 active:scale-[0.98] disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-lg shadow-pharma-500/30 text-base tracking-wide ${
+                cartItems.length > 0 && canCheckout ? '' : ''
+              }`}
             >
               {checkoutButtonLabel} →
             </button>
@@ -1455,6 +1339,8 @@ export default function POS() {
           offerSavings={pricedCart.offerSavings}
           offerNames={pricedCart.offerNames}
           selectedSeller={selectedSeller}
+          onSellerChange={setSelectedSeller}
+          employees={employees}
           selectedCustomer={selectedCustomer}
           clinicId={rxClinic?.id ?? null}
           prescriptionId={rxId}

@@ -81,7 +81,7 @@ export default function DiscountCards() {
   return (
     <Layout>
       <main className="flex-1 overflow-auto p-6 max-w-5xl mx-auto w-full">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2 mb-6">
+        <h1 className="feature-page-title flex items-center gap-2 mb-6">
           <CreditCard className="text-pharma-600" /> {t('discount_cards.title')}
         </h1>
         {error && <p className="text-sm text-red-600 mb-3">{error}</p>}

@@ -103,7 +103,7 @@ export default function Settings() {
     <Layout>
       <div className="flex-1 overflow-auto p-6 max-w-screen-xl mx-auto w-full">
         <div className="mb-5">
-          <h1 className="text-2xl font-bold text-slate-800">{t('settings.title')}</h1>
+          <h1 className="feature-page-title">{t('settings.title')}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{t('settings.subtitle')}</p>
         </div>
 

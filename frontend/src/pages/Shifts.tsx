@@ -201,7 +201,7 @@ export default function Shifts() {
       <div className="flex-1 overflow-auto p-6 max-w-screen-xl mx-auto w-full space-y-5">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">{t('shifts.title')}</h1>
+            <h1 className="feature-page-title">{t('shifts.title')}</h1>
             <p className="text-sm text-slate-500 mt-0.5">{t('shifts.subtitle')}</p>
           </div>
           {!current ? (
