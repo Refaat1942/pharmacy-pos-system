@@ -153,6 +153,37 @@ def set_batch_quantity(
     return {"product_id": product_id, "new_stock": new_stock}
 
 
+def _apply_oversell_deficit(cur, product_id: int, qty: int) -> None:
+    """Record sale shortfall as a negative batch so stock can go below zero."""
+    if qty <= 0:
+        return
+    cur.execute("SELECT branch_id FROM products WHERE id=%s", (product_id,))
+    p = cur.fetchone()
+    branch_id = p["branch_id"] if p else None
+    cur.execute(
+        """SELECT id, quantity FROM product_batches
+           WHERE product_id = %s AND expiry_date IS NULL AND quantity < 0
+           LIMIT 1 FOR UPDATE""",
+        (product_id,),
+    )
+    row = cur.fetchone()
+    if row:
+        new_q = int(row["quantity"]) - qty
+        if new_q == 0:
+            cur.execute("DELETE FROM product_batches WHERE id=%s", (row["id"],))
+        else:
+            cur.execute(
+                "UPDATE product_batches SET quantity=%s, updated_at=NOW() WHERE id=%s",
+                (new_q, row["id"]),
+            )
+    else:
+        cur.execute(
+            """INSERT INTO product_batches (product_id, branch_id, expiry_date, quantity)
+               VALUES (%s, %s, NULL, %s)""",
+            (product_id, branch_id, -qty),
+        )
+
+
 def deduct_stock_fefo(
     cur,
     product_id: int,
@@ -164,11 +195,9 @@ def deduct_stock_fefo(
 ) -> None:
     """Deduct stock from batches (FEFO). When sellable_only, skip expired lots.
 
-    When allow_negative is True (POS sales), overselling is permitted: all
-    available (unexpired) stock is consumed instead of refusing the sale with
-    "Insufficient stock". Batch quantities are constrained to be >= 0, so any
-    shortfall beyond what is in stock is not deducted and stock floors at the
-    available quantity.
+    When allow_negative is True (POS sales), overselling is permitted. Any
+    quantity not covered by sellable batches is recorded as a negative oversell
+    batch so products.stock reflects the true deficit (e.g. -2 + PO 5 = 3).
     """
     if qty <= 0:
         return
@@ -222,9 +251,8 @@ def deduct_stock_fefo(
                 (new_q, b["id"]),
             )
         remaining -= take
-    # When allow_negative (POS sales) and stock was short, any remaining shortfall is
-    # simply not deducted from batches (quantities are constrained to be >= 0). The sale
-    # still completes; product stock lands at the available floor instead of being refused.
+    if remaining > 0 and allow_negative:
+        _apply_oversell_deficit(cur, product_id, remaining)
     sync_product_from_batches(cur, product_id)
 
 

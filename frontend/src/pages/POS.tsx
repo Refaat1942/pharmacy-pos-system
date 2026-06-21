@@ -10,6 +10,7 @@ import {
   ScanLine,
   User,
   UserCircle2,
+  UserPlus,
   Trash2,
   CornerDownLeft,
   RotateCcw,
@@ -180,6 +181,10 @@ export default function POS() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerList, setShowCustomerList] = useState(false)
+  const [showQuickCustomer, setShowQuickCustomer] = useState(false)
+  const [quickCustomerName, setQuickCustomerName] = useState('')
+  const [quickCustomerPhone, setQuickCustomerPhone] = useState('')
+  const [quickCustomerSaving, setQuickCustomerSaving] = useState(false)
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => normalizeItems(loadJSON<CartItem[]>(CART_KEY, [])))
   const [rxClinic, setRxClinic] = useState<{ id: number; name: string } | null>(() => loadJSON<{ id: number; name: string } | null>(RXCLINIC_KEY, null))
@@ -427,6 +432,33 @@ export default function POS() {
     customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
     searchRef.current?.focus()
   }, [])
+
+  const reloadCustomers = useCallback(() => {
+    customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
+  }, [])
+
+  const saveQuickCustomer = useCallback(async () => {
+    const name = quickCustomerName.trim()
+    if (!name) return
+    setQuickCustomerSaving(true)
+    try {
+      const r = await customersAPI.create({
+        name,
+        phone: quickCustomerPhone.trim() || undefined,
+      })
+      setSelectedCustomer(r.data)
+      setCustomerSearch('')
+      setShowQuickCustomer(false)
+      setQuickCustomerName('')
+      setQuickCustomerPhone('')
+      reloadCustomers()
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      alert(detail || t('common.error'))
+    } finally {
+      setQuickCustomerSaving(false)
+    }
+  }, [quickCustomerName, quickCustomerPhone, reloadCustomers, t])
 
   const clearSearch = useCallback(() => {
     setSearch('')
@@ -805,8 +837,9 @@ export default function POS() {
                   ) : (
                     results.map((p, idx) => {
                       const name = lang === 'ar' ? p.name_ar : p.name_en
-                      const isOut = p.stock <= 0
-                      const isLow = !isOut && p.stock <= p.min_stock
+                      const isNegative = p.stock < 0
+                      const isOut = p.stock <= 0 && !isNegative
+                      const isLow = !isOut && !isNegative && p.stock <= p.min_stock
                       return (
                         <button
                           key={p.id}
@@ -828,10 +861,12 @@ export default function POS() {
                               )}
                               <span
                                 className={`font-medium ${
-                                  isOut ? 'text-red-500' : isLow ? 'text-amber-600' : 'text-slate-400'
+                                  isNegative ? 'text-red-600' : isOut ? 'text-red-500' : isLow ? 'text-amber-600' : 'text-slate-400'
                                 }`}
                               >
-                                {isOut
+                                {isNegative
+                                  ? `${p.stock} ${t('pos.negative_stock')}`
+                                  : isOut
                                   ? t('pos.out_of_stock')
                                   : `${formatStockInline(p.stock, p.pack_size, p.unit, p.sub_unit)} ${t('pos.in_stock')}`}
                               </span>
@@ -914,13 +949,17 @@ export default function POS() {
                               {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
                             </p>
                             <p className={`text-[11px] font-semibold tabular-nums ${
-                              item.product.stock <= 0
+                              item.product.stock < 0
+                                ? 'text-red-600'
+                                : item.product.stock <= 0
                                 ? 'text-red-500'
                                 : item.product.stock <= (item.product.min_stock || 0)
                                   ? 'text-amber-600'
                                   : 'text-emerald-600'
                             }`}>
-                              {item.product.stock <= 0
+                              {item.product.stock < 0
+                                ? `${item.product.stock} ${t('pos.negative_stock')}`
+                                : item.product.stock <= 0
                                 ? t('pos.out_of_stock')
                                 : `${formatStockInline(item.product.stock, item.product.pack_size, item.product.unit, item.product.sub_unit)} ${t('pos.in_stock')}`}
                             </p>
@@ -1159,6 +1198,7 @@ export default function POS() {
             <div className="relative">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
                 <User size={13} /> {t('pos.customer')}
+                <span className="normal-case font-normal text-slate-400">({t('pos.customer_optional_cash')})</span>
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -1174,6 +1214,18 @@ export default function POS() {
                   placeholder={t('pos.walk_in') as string}
                   className="flex-1 text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-pharma-400 focus:ring-2 focus:ring-pharma-100 bg-slate-50 text-slate-700"
                 />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickCustomerName(customerSearch.trim())
+                    setQuickCustomerPhone('')
+                    setShowQuickCustomer(true)
+                  }}
+                  className="flex-shrink-0 p-2.5 rounded-xl border border-pharma-200 bg-pharma-50 text-pharma-700 hover:bg-pharma-100"
+                  title={t('pos.quick_add_customer') as string}
+                >
+                  <UserPlus size={16} />
+                </button>
                 {selectedCustomer && (
                   <button
                     type="button"
@@ -1338,6 +1390,53 @@ export default function POS() {
         </aside>
       </div>
       </div>
+
+      {showQuickCustomer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200">
+            <div className="px-5 py-4 border-b flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">{t('pos.quick_add_customer')}</h3>
+              <button type="button" onClick={() => setShowQuickCustomer(false)} className="p-1 hover:bg-slate-100 rounded">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">{t('pos.customer_name')}</label>
+                <input
+                  type="text"
+                  value={quickCustomerName}
+                  onChange={(e) => setQuickCustomerName(e.target.value)}
+                  className="input w-full mt-1"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600">{t('pos.customer_phone_optional')}</label>
+                <input
+                  type="tel"
+                  value={quickCustomerPhone}
+                  onChange={(e) => setQuickCustomerPhone(e.target.value)}
+                  className="input w-full mt-1"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowQuickCustomer(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600">
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveQuickCustomer()}
+                  disabled={!quickCustomerName.trim() || quickCustomerSaving}
+                  className="flex-1 py-2.5 rounded-xl bg-pharma-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {quickCustomerSaving ? t('common.saving') : t('common.save')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {doseLabelItems && (
         <DoseLabelPrint

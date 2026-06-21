@@ -567,16 +567,16 @@ class CustomerCreate(BaseModel):
 
 @app.post("/api/customers")
 def create_customer(req: CustomerCreate, current_user=Depends(get_current_user)):
-    """Quick-create from POS — admin only. Non-admins must request the admin
-    to open a customer account (which authorizes specific branches)."""
-    if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create customers")
+    """Quick-create from POS — name required, phone optional."""
+    name = (req.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Customer name is required")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     branch_id = current_user.get("branch_id")
     cur.execute(
-        "INSERT INTO customers (name, phone, notes, branch_id, active) VALUES (%s,%s,%s,%s,true) RETURNING *",
-        (req.name, req.phone, req.notes, branch_id),
+        "INSERT INTO customers (name, phone, notes, branch_id, active, sale_type) VALUES (%s,%s,%s,%s,true,'cash') RETURNING *",
+        (name, (req.phone or "").strip() or None, req.notes, branch_id),
     )
     customer = cur.fetchone()
     if branch_id is not None:
@@ -803,7 +803,7 @@ def create_sale(req: SaleRequest,
         insurance_totals = None
         invoice_discount = req.discount
 
-        if req.type != "return" and net_total > 100 and req.type != "insurance" and not req.customer_id and not (req.delivery_customer_name or "").strip():
+        if req.type not in ("return", "cash", "insurance") and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
 
         cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")

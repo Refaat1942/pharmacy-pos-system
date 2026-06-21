@@ -77,6 +77,8 @@ export default function PaymentModal({
     if (!initialSaleType) return 'type'
     return initialSaleType === 'cash' ? 'pay' : 'setup'
   })
+  const [cashTouched, setCashTouched] = useState(false)
+  const [hybridTouched, setHybridTouched] = useState(false)
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
@@ -204,6 +206,49 @@ export default function PaymentModal({
   const effectiveTotal = insuranceDue != null ? insuranceDue : Math.max(0, cartTotal - loyaltyDiscount)
 
   useEffect(() => {
+    setCashTouched(false)
+    setHybridTouched(false)
+    setCashAmount('')
+    setCashPart('')
+    setCardPart('')
+  }, [checkoutStep, saleType, paymentMethod])
+
+  useEffect(() => {
+    if (checkoutStep !== 'pay') return
+    if (paymentMethod === 'cash' && !cashTouched) {
+      setCashAmount(effectiveTotal.toFixed(2))
+    }
+    if (paymentMethod === 'hybrid' && !hybridTouched) {
+      setCashPart(effectiveTotal.toFixed(2))
+      setCardPart('0')
+    }
+  }, [checkoutStep, paymentMethod, effectiveTotal, cashTouched, hybridTouched])
+
+  const handleCashPartChange = (raw: string) => {
+    setHybridTouched(true)
+    setCashPart(raw)
+    if (raw.trim() === '') {
+      setCardPart('')
+      return
+    }
+    const cash = parseFloat(raw)
+    if (Number.isNaN(cash)) return
+    setCardPart(Math.max(0, effectiveTotal - cash).toFixed(2))
+  }
+
+  const handleCardPartChange = (raw: string) => {
+    setHybridTouched(true)
+    setCardPart(raw)
+    if (raw.trim() === '') {
+      setCashPart('')
+      return
+    }
+    const card = parseFloat(raw)
+    if (Number.isNaN(card)) return
+    setCashPart(Math.max(0, effectiveTotal - card).toFixed(2))
+  }
+
+  useEffect(() => {
     if (!loyaltyOn || !selectedCustomer?.id || isInsurance) {
       setLoyaltyPreview(null)
       setLoyaltyRedeem('')
@@ -224,7 +269,8 @@ export default function PaymentModal({
   }, [
     loyaltyOn, selectedCustomer?.id, cartTotal, loyaltyRedeem, paymentMethod, accountPaidNow,
   ])
-  const requiresCustomerInfo = !isInsurance && effectiveTotal > 100
+  const requiresCustomerInfo =
+    !isInsurance && saleType !== 'cash' && effectiveTotal > 100
   const hasDeliveryCustomerDetails =
     deliveryCustomerName.trim() !== '' && deliveryCustomerPhone.trim() !== ''
   const hasCustomerForShipment =
@@ -682,11 +728,14 @@ export default function PaymentModal({
                   <input
                     type="number"
                     value={cashAmount}
-                    onChange={(e) => setCashAmount(e.target.value)}
+                    onChange={(e) => {
+                      setCashTouched(true)
+                      setCashAmount(e.target.value)
+                    }}
                     className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-4 py-3 text-2xl font-bold text-gray-900 focus:outline-none transition-all"
                     placeholder={effectiveTotal.toFixed(2)}
                     autoFocus
-                    min={effectiveTotal}
+                    min={0}
                     step={0.5}
                   />
                 </div>
@@ -728,10 +777,11 @@ export default function PaymentModal({
                     <input
                       type="number"
                       value={cashPart}
-                      onChange={(e) => setCashPart(e.target.value)}
+                      onChange={(e) => handleCashPartChange(e.target.value)}
                       className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-3 py-2.5 text-lg font-semibold focus:outline-none transition-all"
                       placeholder="0.00"
                       min={0}
+                      step={0.5}
                     />
                   </div>
                   <div>
@@ -741,10 +791,11 @@ export default function PaymentModal({
                     <input
                       type="number"
                       value={cardPart}
-                      onChange={(e) => setCardPart(e.target.value)}
+                      onChange={(e) => handleCardPartChange(e.target.value)}
                       className="w-full border-2 border-gray-200 focus:border-pharma-400 rounded-xl px-3 py-2.5 text-lg font-semibold focus:outline-none transition-all"
                       placeholder="0.00"
                       min={0}
+                      step={0.5}
                     />
                   </div>
                 </div>
