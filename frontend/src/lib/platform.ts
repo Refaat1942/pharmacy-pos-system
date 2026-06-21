@@ -170,6 +170,8 @@ export const platformAPI = {
     slug_prefix?: string
   }) => platformApi.post<DemoPack>('/demo-packs', data),
   revokeDemoPack: (id: number) => platformApi.post(`/demo-packs/${id}/revoke`),
+  extendDemoPack: (id: number, extra_days: number) =>
+    platformApi.post<DemoPack>(`/demo-packs/${id}/extend`, { extra_days }),
 }
 
 export interface DemoPackUser {
@@ -183,7 +185,8 @@ export interface DemoPackAccount {
   tenant_id?: number
   name: string
   slug: string
-  login_url: string
+  access_path?: string
+  access_url?: string
   subscription_end: string
   users: DemoPackUser[]
 }

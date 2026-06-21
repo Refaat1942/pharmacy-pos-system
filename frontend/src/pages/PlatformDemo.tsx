@@ -41,12 +41,13 @@ export default function PlatformDemo() {
   const [created, setCreated] = useState<DemoPack | null>(null)
   const [form, setForm] = useState({
     label: 'POS demo — all features enabled',
-    count: 3,
-    expiry_days: 14,
+    count: 1,
+    expiry_days: 2,
     slug_prefix: 'demo',
   })
   const [busy, setBusy] = useState(false)
   const [revoking, setRevoking] = useState<number | null>(null)
+  const [extending, setExtending] = useState<number | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -96,6 +97,19 @@ export default function PlatformDemo() {
     }
   }
 
+  const extend = async (id: number, extraDays: number) => {
+    setExtending(id)
+    try {
+      await platformAPI.extendDemoPack(id, extraDays)
+      await load()
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      alert(typeof detail === 'string' ? detail : 'Extend failed')
+    } finally {
+      setExtending(null)
+    }
+  }
+
   const createdShareUrl = useMemo(
     () => (created ? fullShareUrl(created.share_url || created.share_path) : ''),
     [created],
@@ -142,8 +156,8 @@ export default function PlatformDemo() {
               <Plus size={18} className="text-indigo-600" /> Generate demo pack
             </h2>
             <p className="text-sm text-slate-600 leading-relaxed">
-              Creates separate demo pharmacies with <strong>every module and sub-option enabled</strong>,
-              sample products, an open cash shift, and role logins (admin, pharmacist, cashier, assistant).
+              Creates an isolated demo pharmacy with <strong>every module enabled</strong>, sample products,
+              and an open cash shift. The customer opens your link and is signed in automatically as <strong>admin</strong> — no typing credentials.
             </p>
 
             <div>
@@ -177,8 +191,9 @@ export default function PlatformDemo() {
                   max={365}
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
                   value={form.expiry_days}
-                  onChange={(e) => setForm({ ...form, expiry_days: parseInt(e.target.value, 10) || 14 })}
+                  onChange={(e) => setForm({ ...form, expiry_days: parseInt(e.target.value, 10) || 2 })}
                 />
+                <p className="text-[10px] text-slate-400 mt-1">Standard: 2 days — increase anytime below</p>
               </div>
             </div>
 
@@ -205,14 +220,14 @@ export default function PlatformDemo() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <h2 className="text-lg font-bold text-slate-900">How it works</h2>
             <ol className="text-sm text-slate-600 space-y-2 list-decimal ps-5">
-              <li>Generate a pack with one or more demo pharmacies.</li>
-              <li>Copy the public link and send it to your prospect.</li>
-              <li>They open the link, pick their demo pharmacy, and sign in with the listed credentials.</li>
-              <li>Revoke the link anytime — demo pharmacies are suspended automatically.</li>
+              <li>Create a link (default valid <strong>2 days</strong>).</li>
+              <li>Send the link to your prospect — they click once and land in POS as admin.</li>
+              <li>No pharmacy code or password to type; demo safety limits still apply.</li>
+              <li>Extend validity (+2 / +7 / +30 days) or revoke anytime.</li>
             </ol>
             <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-sm text-indigo-900">
               <ShieldCheck size={16} className="inline me-1.5 -mt-0.5" />
-              Each demo is a fully isolated tenant. Passwords are random and only shown on the share page.
+              Demo mode blocks exports, bulk import, and password changes. Admin credentials stay on the server.
             </div>
           </div>
         </div>
@@ -235,8 +250,23 @@ export default function PlatformDemo() {
               </a>
             </div>
             <p className="text-xs text-emerald-800">
-              Expires {created.expires_at || '—'} · {created.accounts?.length ?? 0} demo pharmacies
+              Valid until {created.expires_at || '—'} · Admin auto-login · {created.accounts?.length ?? 0} demo(s)
             </p>
+            {(created.accounts?.length ?? 0) > 1 && (
+              <div className="space-y-2 pt-2 border-t border-emerald-200">
+                <p className="text-xs font-semibold text-emerald-900">Per-customer links:</p>
+                {created.accounts.map((acc, i) => {
+                  const url = fullShareUrl(acc.access_url || `${created.share_path}?a=${i}`)
+                  return (
+                    <div key={i} className="flex flex-wrap items-center gap-2 text-xs">
+                      <span className="font-medium text-emerald-900 shrink-0">{acc.name}:</span>
+                      <code className="flex-1 min-w-0 bg-white border border-emerald-200 rounded px-2 py-1 break-all">{url}</code>
+                      <CopyBtn text={url} />
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -278,12 +308,28 @@ export default function PlatformDemo() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
                           {!revoked && <CopyBtn text={share} />}
                           {!revoked && (
                             <a href={share} target="_blank" rel="noopener noreferrer" className="p-1.5 hover:bg-slate-100 rounded" title="Open">
                               <ExternalLink size={14} />
                             </a>
+                          )}
+                          {!revoked && (
+                            <>
+                              <button type="button" disabled={extending === p.id} onClick={() => void extend(p.id, 2)}
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 hover:bg-slate-50" title="+2 days">
+                                +2d
+                              </button>
+                              <button type="button" disabled={extending === p.id} onClick={() => void extend(p.id, 7)}
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 hover:bg-slate-50" title="+7 days">
+                                +7d
+                              </button>
+                              <button type="button" disabled={extending === p.id} onClick={() => void extend(p.id, 30)}
+                                className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 hover:bg-slate-50" title="+30 days">
+                                +30d
+                              </button>
+                            </>
                           )}
                           {!revoked && (
                             <button

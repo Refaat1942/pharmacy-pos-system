@@ -14,11 +14,7 @@ from auth import hash_password
 from db import get_platform_connection, get_raw_connection
 import platform_db
 
-DEMO_EXTRA_USERS = [
-    ("pharmacist", "Demo Pharmacist", "صيدلي تجريبي", "pharmacist"),
-    ("cashier", "Demo Cashier", "كاشير تجريبي", "cashier"),
-    ("assistant", "Demo Assistant", "مساعد تجريبي", "assistant"),
-]
+DEMO_EXTRA_USERS: list = []  # demo links use admin only
 
 DEMO_PRODUCTS = [
     ("6223001001", "باراسيتامول 500 مجم", "Paracetamol 500mg", "Analgesics", "strip", 5.00, 3.00, 120, 20, "2026-06-30"),
@@ -64,7 +60,7 @@ def _unique_demo_slug(prefix: str = "demo") -> str:
     raise ValueError("Could not generate a unique demo pharmacy code")
 
 
-def _seed_demo_content(schema_name: str, admin_username: str, user_passwords: dict[str, str]) -> None:
+def _seed_demo_content(schema_name: str, admin_username: str) -> None:
     conn = get_raw_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -82,21 +78,6 @@ def _seed_demo_content(schema_name: str, admin_username: str, user_passwords: di
                 """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 [barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry, branch_id],
-            )
-
-        for username, name_en, name_ar, role in DEMO_EXTRA_USERS:
-            pwd = user_passwords.get(username) or _gen_password()
-            user_passwords[username] = pwd
-            cur.execute(
-                "SELECT 1 FROM users WHERE username = %s",
-                [username],
-            )
-            if cur.fetchone():
-                continue
-            cur.execute(
-                """INSERT INTO users(username, password_hash, name_ar, name_en, role, branch_id, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'active')""",
-                [username, hash_password(pwd), name_ar, name_en, role, branch_id],
             )
 
         cur.execute(
@@ -129,11 +110,127 @@ def _login_path(slug: str, username: str | None = None) -> str:
     return q
 
 
+def _access_path(token: str, account_index: int = 0) -> str:
+    if account_index <= 0:
+        return f"/demo/{token}"
+    return f"/demo/{token}?a={account_index}"
+
+
+def _get_valid_pack_row(token: str) -> Optional[dict]:
+    conn = get_platform_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM demo_packs WHERE token = %s", [token.strip()])
+        row = cur.fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("revoked_at"):
+            return None
+        exp = d.get("expires_at")
+        if exp and exp < date.today():
+            return None
+        return d
+    finally:
+        conn.close()
+
+
+def _admin_credential(account: dict) -> tuple[str, str]:
+    users = account.get("users") or []
+    admin = next((u for u in users if u.get("role") == "admin"), users[0] if users else None)
+    if not admin:
+        raise ValueError("Demo account has no admin user")
+    return admin["username"], admin["password"]
+
+
+def demo_auto_login(token: str, account_index: int = 0) -> dict:
+    """One-click demo login — credentials never sent to the browser."""
+    pack = _get_valid_pack_row(token)
+    if not pack:
+        raise ValueError("Demo link not found or expired")
+
+    accounts = pack.get("accounts") or []
+    if account_index < 0 or account_index >= len(accounts):
+        raise ValueError("Invalid demo account")
+
+    acc = accounts[account_index]
+    slug = acc.get("slug") or ""
+    username, password = _admin_credential(acc)
+
+    tenant = platform_db.get_tenant_by_slug(slug)
+    if not tenant or not tenant.get("is_demo"):
+        raise ValueError("Invalid demo pharmacy")
+
+    from platform_db import (
+        is_tenant_live,
+        normalize_features,
+        resolve_feature_options,
+        get_tenant_stats,
+        tenant_limits_payload,
+    )
+    from auth import verify_password, create_token
+    from db import get_db_connection
+
+    live, reason = is_tenant_live(tenant)
+    if not live:
+        raise ValueError(reason or "Demo pharmacy is not active")
+
+    conn = get_db_connection(schema=tenant["schema_name"])
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT * FROM users WHERE username = %s AND status = 'active'",
+            [username],
+        )
+        user = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not user or not verify_password(password, user["password_hash"]):
+        raise ValueError("Demo login failed")
+
+    jwt = create_token({
+        "scope": "tenant",
+        "tenant_slug": tenant["slug"],
+        "user_id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "name_ar": user["name_ar"],
+        "name_en": user["name_en"],
+        "branch_id": user["branch_id"],
+        "permissions": user.get("permissions"),
+    })
+
+    return {
+        "token": jwt,
+        "user": {
+            "id": user["id"],
+            "username": user["username"],
+            "name_ar": user["name_ar"],
+            "name_en": user["name_en"],
+            "role": user["role"],
+            "branch_id": user["branch_id"],
+            "permissions": user.get("permissions"),
+        },
+        "tenant": {
+            "slug": tenant["slug"],
+            "name": tenant["name"],
+            "plan": tenant.get("plan"),
+            "is_demo": True,
+            "features": normalize_features(tenant.get("features")),
+            "feature_options": resolve_feature_options(tenant),
+            "subscription_start": tenant.get("subscription_start").isoformat() if tenant.get("subscription_start") else None,
+            "subscription_end": tenant.get("subscription_end").isoformat() if tenant.get("subscription_end") else None,
+            "limits": tenant_limits_payload(tenant, get_tenant_stats(tenant)),
+        },
+    }
+
+
 def create_demo_pack(
     *,
     label: str,
     count: int = 1,
-    expiry_days: int = 14,
+    expiry_days: int = 2,
     slug_prefix: str = "demo",
     app_origin: str = "",
 ) -> dict:
@@ -152,7 +249,6 @@ def create_demo_pack(
         slug = _unique_demo_slug(slug_prefix)
         name = f"Demo Pharmacy {i + 1}" if count > 1 else "Demo Pharmacy"
         admin_password = _gen_password()
-        user_passwords = {"admin": admin_password}
 
         tenant = platform_db.create_tenant(
             slug=slug,
@@ -172,36 +268,30 @@ def create_demo_pack(
         )
 
         schema_name = tenant["schema_name"]
-        _seed_demo_content(schema_name, "admin", user_passwords)
+        _seed_demo_content(schema_name, "admin")
 
-        users = [
-            {
-                "role": "admin",
-                "username": "admin",
-                "password": user_passwords["admin"],
-                "name_en": "Administrator",
-            },
-        ]
-        for username, name_en, _name_ar, role in DEMO_EXTRA_USERS:
-            users.append({
-                "role": role,
-                "username": username,
-                "password": user_passwords[username],
-                "name_en": name_en,
-            })
+        users = [{
+            "role": "admin",
+            "username": "admin",
+            "password": admin_password,
+            "name_en": "Administrator",
+        }]
 
-        login_url = f"{origin}{_login_path(slug)}" if origin else _login_path(slug)
         accounts.append({
             "tenant_id": tenant["id"],
             "name": name,
             "slug": slug,
-            "login_url": login_url,
             "subscription_end": sub_end.isoformat(),
             "users": users,
         })
 
     token = secrets.token_urlsafe(18)
-    share_url = f"{origin}/demo/{token}" if origin else f"/demo/{token}"
+    for i, acc in enumerate(accounts):
+        path = _access_path(token, i)
+        acc["access_path"] = path
+        acc["access_url"] = f"{origin}{path}" if origin else path
+
+    share_url = f"{origin}{_access_path(token, 0)}" if origin else _access_path(token, 0)
 
     conn = get_platform_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -257,39 +347,68 @@ def get_demo_pack_by_id(pack_id: int) -> Optional[dict]:
 
 
 def get_demo_pack_public(token: str) -> Optional[dict]:
+    pack = _get_valid_pack_row(token)
+    if not pack:
+        return None
+    exp = pack.get("expires_at")
+    accounts = pack.get("accounts") or []
+    public_accounts = []
+    for i, acc in enumerate(accounts):
+        public_accounts.append({
+            "index": i,
+            "name": acc.get("name"),
+            "access_path": acc.get("access_path") or _access_path(token, i),
+            "role": "admin",
+        })
+    return {
+        "label": pack.get("label"),
+        "expires_at": exp.isoformat() if exp else None,
+        "created_at": pack.get("created_at").isoformat() if pack.get("created_at") else None,
+        "account_count": len(public_accounts),
+        "accounts": public_accounts,
+        "all_features": True,
+        "auto_login": True,
+    }
+
+
+def extend_demo_pack(pack_id: int, extra_days: int) -> dict:
+    extra_days = max(1, min(int(extra_days), 365))
+    pack = get_demo_pack_by_id(pack_id)
+    if not pack:
+        raise ValueError("Demo pack not found")
+    if pack.get("revoked_at"):
+        raise ValueError("Cannot extend a revoked demo pack")
+
+    exp = pack.get("expires_at")
+    if isinstance(exp, str):
+        exp = date.fromisoformat(exp)
+    base = max(date.today(), exp) if exp else date.today()
+    new_exp = base + timedelta(days=extra_days)
+
+    accounts = list(pack.get("accounts") or [])
+    for acc in accounts:
+        tid = acc.get("tenant_id")
+        if tid:
+            platform_db.update_tenant(tid, {"subscription_end": new_exp.isoformat()})
+        acc["subscription_end"] = new_exp.isoformat()
+
     conn = get_platform_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT * FROM demo_packs WHERE token = %s", [token.strip()])
-        row = cur.fetchone()
-        if not row:
-            return None
-        d = dict(row)
-        if d.get("revoked_at"):
-            return None
-        exp = d.get("expires_at")
-        if exp and exp < date.today():
-            return None
-        accounts = d.get("accounts") or []
-        public_accounts = []
-        for acc in accounts:
-            public_accounts.append({
-                "name": acc.get("name"),
-                "slug": acc.get("slug"),
-                "login_path": _login_path(acc.get("slug", "")),
-                "subscription_end": acc.get("subscription_end"),
-                "users": acc.get("users") or [],
-            })
-        return {
-            "label": d.get("label"),
-            "expires_at": exp.isoformat() if exp else None,
-            "created_at": d.get("created_at").isoformat() if d.get("created_at") else None,
-            "account_count": len(public_accounts),
-            "accounts": public_accounts,
-            "all_features": True,
-        }
+        cur.execute(
+            """UPDATE demo_packs SET expires_at = %s, accounts = %s::jsonb
+               WHERE id = %s RETURNING *""",
+            [new_exp.isoformat(), json.dumps(accounts), pack_id],
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
     finally:
         conn.close()
+
+    row["share_path"] = f"/demo/{row['token']}"
+    if accounts:
+        row["share_url"] = accounts[0].get("access_url") or row["share_path"]
+    return row
 
 
 def revoke_demo_pack(pack_id: int) -> dict:

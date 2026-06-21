@@ -284,8 +284,12 @@ def migrate_all(admin=Depends(get_super_admin)):
 class DemoPackCreateIn(BaseModel):
     label: str = "POS demo — all features"
     count: int = Field(default=1, ge=1, le=25)
-    expiry_days: int = Field(default=14, ge=1, le=365)
+    expiry_days: int = Field(default=2, ge=1, le=365)
     slug_prefix: str = "demo"
+
+
+class DemoPackExtendIn(BaseModel):
+    extra_days: int = Field(default=2, ge=1, le=365)
 
 
 @router.get("/demo-packs")
@@ -330,3 +334,12 @@ def revoke_demo_pack(pack_id: int, admin=Depends(get_super_admin)):
         return platform_demo.revoke_demo_pack(pack_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@router.post("/demo-packs/{pack_id}/extend")
+def extend_demo_pack(pack_id: int, body: DemoPackExtendIn, admin=Depends(get_super_admin)):
+    import platform_demo
+    try:
+        return platform_demo.extend_demo_pack(pack_id, body.extra_days)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
