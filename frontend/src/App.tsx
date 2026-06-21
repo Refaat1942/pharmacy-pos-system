@@ -32,6 +32,8 @@ import UserCards from './pages/UserCards'
 import PlatformLogin from './pages/PlatformLogin'
 import Platform from './pages/Platform'
 import PlatformBlueprint from './pages/PlatformBlueprint'
+import PlatformDemo from './pages/PlatformDemo'
+import DemoAccess from './pages/DemoAccess'
 import LockScreen from './components/LockScreen'
 import { canAccessFeature, getDefaultHomePath } from './lib/routeAccess'
 
@@ -91,6 +93,7 @@ function AppRoutes() {
       {isAuthenticated && isLocked && <LockScreen />}
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/demo/:token" element={<DemoAccess />} />
       <Route path="/" element={<ProtectedRoute feature="pos"><POS /></ProtectedRoute>} />
       <Route path="/sales" element={<ProtectedRoute feature="sales"><Sales /></ProtectedRoute>} />
       <Route path="/deliveries" element={<ProtectedRoute feature="sales" featureOption="deliveries"><Deliveries /></ProtectedRoute>} />
@@ -121,6 +124,7 @@ function AppRoutes() {
       <Route path="/platform/login" element={<PlatformLogin />} />
       <Route path="/platform" element={<PlatformProtectedRoute><Platform /></PlatformProtectedRoute>} />
       <Route path="/platform/blueprint" element={<PlatformProtectedRoute><PlatformBlueprint /></PlatformProtectedRoute>} />
+      <Route path="/platform/demo" element={<PlatformProtectedRoute><PlatformDemo /></PlatformProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>

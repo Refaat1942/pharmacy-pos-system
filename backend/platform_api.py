@@ -261,3 +261,56 @@ def update_plan(plan_key: str, body: PlanUpdateIn, admin=Depends(get_super_admin
 def migrate_all(admin=Depends(get_super_admin)):
     """Re-apply init_db.SQL to every tenant schema (idempotent)."""
     return platform_db.apply_schema_to_all_tenants()
+
+
+# ─── Demo test links ────────────────────────────────────────────────────────
+
+class DemoPackCreateIn(BaseModel):
+    label: str = "POS demo — all features"
+    count: int = Field(default=1, ge=1, le=25)
+    expiry_days: int = Field(default=14, ge=1, le=365)
+    slug_prefix: str = "demo"
+
+
+@router.get("/demo-packs")
+def list_demo_packs(admin=Depends(get_super_admin)):
+    import platform_demo
+    return platform_demo.list_demo_packs()
+
+
+@router.get("/demo-packs/{pack_id}")
+def get_demo_pack(pack_id: int, admin=Depends(get_super_admin)):
+    import platform_demo
+    pack = platform_demo.get_demo_pack_by_id(pack_id)
+    if not pack:
+        raise HTTPException(404, "Demo pack not found")
+    return pack
+
+
+@router.post("/demo-packs")
+def create_demo_pack(body: DemoPackCreateIn, request: Request, admin=Depends(get_super_admin)):
+    import platform_demo
+    origin = str(request.base_url).rstrip("/")
+    if origin.endswith("/api/platform"):
+        origin = origin[: -len("/api/platform")]
+    try:
+        return platform_demo.create_demo_pack(
+            label=body.label,
+            count=body.count,
+            expiry_days=body.expiry_days,
+            slug_prefix=body.slug_prefix,
+            app_origin=origin,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Demo provisioning failed: {e}")
+
+
+@router.post("/demo-packs/{pack_id}/revoke")
+def revoke_demo_pack(pack_id: int, admin=Depends(get_super_admin)):
+    import platform_demo
+    try:
+        return platform_demo.revoke_demo_pack(pack_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))

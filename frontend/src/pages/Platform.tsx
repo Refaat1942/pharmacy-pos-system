@@ -240,6 +240,10 @@ export default function Platform() {
               className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
               <FileText size={14} /> Features PDF
             </a>
+            <Link to="/platform/demo"
+              className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
+              <Sparkles size={14} /> Demo Links
+            </Link>
             <Link to="/platform/blueprint"
               className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
               <FileText size={14} /> Sales Blueprint

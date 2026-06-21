@@ -157,6 +157,8 @@ from offers import router as offers_router
 app.include_router(offers_router)
 from platform_api import router as platform_router
 app.include_router(platform_router)
+from demo_api import router as demo_router
+app.include_router(demo_router)
 from ai_assistant import router as ai_assistant_router
 app.include_router(ai_assistant_router)
 from loyalty import router as loyalty_router

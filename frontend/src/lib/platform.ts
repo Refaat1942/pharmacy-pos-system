@@ -160,6 +160,49 @@ export const platformAPI = {
     a.remove()
     URL.revokeObjectURL(url)
   },
+
+  listDemoPacks: () => platformApi.get<DemoPackSummary[]>('/demo-packs'),
+  getDemoPack: (id: number) => platformApi.get<DemoPack>('/demo-packs/' + id),
+  createDemoPack: (data: {
+    label?: string
+    count?: number
+    expiry_days?: number
+    slug_prefix?: string
+  }) => platformApi.post<DemoPack>('/demo-packs', data),
+  revokeDemoPack: (id: number) => platformApi.post(`/demo-packs/${id}/revoke`),
+}
+
+export interface DemoPackUser {
+  role: string
+  username: string
+  password: string
+  name_en?: string
+}
+
+export interface DemoPackAccount {
+  tenant_id?: number
+  name: string
+  slug: string
+  login_url: string
+  subscription_end: string
+  users: DemoPackUser[]
+}
+
+export interface DemoPackSummary {
+  id: number
+  token: string
+  label: string
+  expires_at: string | null
+  created_at: string
+  revoked_at: string | null
+  account_count: number
+  share_path: string
+}
+
+export interface DemoPack extends DemoPackSummary {
+  share_url?: string
+  accounts: DemoPackAccount[]
+  features_enabled?: string[]
 }
 
 export default platformApi

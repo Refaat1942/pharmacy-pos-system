@@ -1,5 +1,5 @@
-import { useState, FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, FormEvent, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Eye, EyeOff, Loader2, Globe, Pill, Building2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -12,14 +12,22 @@ export default function Login() {
   const { t } = useTranslation()
   const { login } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [tenantSlug, setTenantSlug] = useState(
-    localStorage.getItem('pharma_tenant_slug') || 'fratelanza'
+    searchParams.get('tenant') || localStorage.getItem('pharma_tenant_slug') || 'fratelanza'
   )
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(searchParams.get('user') || '')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    const t = searchParams.get('tenant')
+    const u = searchParams.get('user')
+    if (t) setTenantSlug(t)
+    if (u) setUsername(u)
+  }, [searchParams])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

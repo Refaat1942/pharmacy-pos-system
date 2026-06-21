@@ -504,6 +504,17 @@ CREATE TABLE IF NOT EXISTS platform.super_admins (
     created_at    TIMESTAMP DEFAULT NOW(),
     last_login_at TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS platform.demo_packs (
+    id            SERIAL PRIMARY KEY,
+    token         VARCHAR(64) UNIQUE NOT NULL,
+    label         VARCHAR(200) NOT NULL,
+    expires_at    DATE,
+    accounts      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at    TIMESTAMP DEFAULT NOW(),
+    revoked_at    TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS demo_packs_token_idx ON platform.demo_packs(token);
 """
 
 
