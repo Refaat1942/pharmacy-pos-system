@@ -14,6 +14,7 @@ const POLL_MS = 15000
 const REPEAT_MS = 60000
 
 function recurrenceLabel(rem: CustomerTreatmentPlan, t: TFunction): string {
+  if (rem.recurrence === 'once') return t('treatment.repeat_once')
   if (rem.recurrence === 'weekly') return t('treatment.repeat_weekly')
   if (rem.recurrence === 'custom') {
     return t('treatment.repeat_custom_days', { days: rem.recurrence_days || 30 })

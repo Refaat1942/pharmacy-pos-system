@@ -37,13 +37,15 @@ def _add_months(d: date, months: int = 1) -> date:
     return date(y, m, min(d.day, dim))
 
 
-VALID_RECURRENCE = ("weekly", "monthly", "custom")
+VALID_RECURRENCE = ("once", "weekly", "monthly", "custom")
 
 
 def _validate_recurrence(recurrence: str, recurrence_days: int | None) -> tuple[str, int | None]:
     rec = (recurrence or "monthly").strip().lower()
     if rec not in VALID_RECURRENCE:
         raise HTTPException(status_code=400, detail="Invalid recurrence")
+    if rec == "once":
+        return rec, None
     if rec == "custom":
         days = int(recurrence_days or 0)
         if days < 1 or days > 365:
@@ -54,6 +56,8 @@ def _validate_recurrence(recurrence: str, recurrence_days: int | None) -> tuple[
 
 def _advance_reminder_date(from_date: date, recurrence: str, recurrence_days: int | None) -> date:
     rec = (recurrence or "monthly").strip().lower()
+    if rec == "once":
+        return from_date
     if rec == "weekly":
         return from_date + timedelta(days=7)
     if rec == "custom":
@@ -514,24 +518,43 @@ def update_treatment_status(
         new_status = status
 
         if status == "loaded":
-            next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
-            new_status = "pending"
-            cur.execute(
-                """UPDATE customer_treatment_plans
-                      SET status=%s, next_reminder_date=%s, active=true,
-                          handled_by=%s, handled_at=%s, last_loaded_at=%s, updated_at=NOW()
-                    WHERE id=%s""",
-                [new_status, next_date, _user_id(current_user), now, now, plan_id],
-            )
+            if recurrence == "once":
+                cur.execute(
+                    """UPDATE customer_treatment_plans
+                          SET status='loaded', active=false,
+                              handled_by=%s, handled_at=%s, last_loaded_at=%s, updated_at=NOW()
+                        WHERE id=%s""",
+                    [_user_id(current_user), now, now, plan_id],
+                )
+                new_status = "loaded"
+            else:
+                next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
+                new_status = "pending"
+                cur.execute(
+                    """UPDATE customer_treatment_plans
+                          SET status=%s, next_reminder_date=%s, active=true,
+                              handled_by=%s, handled_at=%s, last_loaded_at=%s, updated_at=NOW()
+                        WHERE id=%s""",
+                    [new_status, next_date, _user_id(current_user), now, now, plan_id],
+                )
         elif status == "dismissed":
-            next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
-            cur.execute(
-                """UPDATE customer_treatment_plans
-                      SET status='pending', next_reminder_date=%s,
-                          handled_by=%s, handled_at=%s, updated_at=NOW()
-                    WHERE id=%s""",
-                [next_date, _user_id(current_user), now, plan_id],
-            )
+            if recurrence == "once":
+                cur.execute(
+                    """UPDATE customer_treatment_plans
+                          SET status='dismissed', active=false,
+                              handled_by=%s, handled_at=%s, updated_at=NOW()
+                        WHERE id=%s""",
+                    [_user_id(current_user), now, plan_id],
+                )
+            else:
+                next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
+                cur.execute(
+                    """UPDATE customer_treatment_plans
+                          SET status='pending', next_reminder_date=%s,
+                              handled_by=%s, handled_at=%s, updated_at=NOW()
+                        WHERE id=%s""",
+                    [next_date, _user_id(current_user), now, plan_id],
+                )
         else:
             cur.execute(
                 """UPDATE customer_treatment_plans

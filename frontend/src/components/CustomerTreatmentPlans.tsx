@@ -31,6 +31,7 @@ function suggestReminderDate(recurrence: RecurrenceKind, customDays: number): st
 }
 
 function recurrenceLabel(rem: CustomerTreatmentPlan, t: TFunction): string {
+  if (rem.recurrence === 'once') return t('treatment.repeat_once')
   if (rem.recurrence === 'weekly') return t('treatment.repeat_weekly')
   if (rem.recurrence === 'custom') {
     return t('treatment.repeat_custom_days', { days: rem.recurrence_days || 30 })
@@ -48,6 +49,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
   const [showForm, setShowForm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [reminderDate, setReminderDate] = useState(() => suggestReminderDate('monthly', 30))
+  const [isRepeating, setIsRepeating] = useState(true)
   const [recurrence, setRecurrence] = useState<RecurrenceKind>('monthly')
   const [customDays, setCustomDays] = useState(30)
   const [note, setNote] = useState('')
@@ -79,6 +81,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
   }, [searchQ])
 
   const resetForm = () => {
+    setIsRepeating(true)
     setRecurrence('monthly')
     setCustomDays(30)
     setReminderDate(suggestReminderDate('monthly', 30))
@@ -147,7 +150,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
       alert(t('treatment.form_incomplete'))
       return
     }
-    if (recurrence === 'custom' && (customDays < 1 || customDays > 365)) {
+    if (isRepeating && recurrence === 'custom' && (customDays < 1 || customDays > 365)) {
       alert(t('treatment.custom_days_invalid'))
       return
     }
@@ -156,8 +159,8 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
       const payload = {
         title: t('treatment.default_title') as string,
         next_reminder_date: reminderDate,
-        recurrence,
-        recurrence_days: recurrence === 'custom' ? customDays : null,
+        recurrence: isRepeating ? recurrence : 'once',
+        recurrence_days: isRepeating && recurrence === 'custom' ? customDays : null,
         notes: note.trim() || undefined,
         items: toPayloadItems(),
       }
@@ -179,6 +182,8 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
     if (!isAdmin) return
     setEditId(rem.id)
     setReminderDate(rem.next_reminder_date)
+    const once = rem.recurrence === 'once'
+    setIsRepeating(!once)
     setRecurrence((rem.recurrence === 'weekly' || rem.recurrence === 'custom' ? rem.recurrence : 'monthly'))
     setCustomDays(rem.recurrence_days || 30)
     setNote(rem.notes || '')
@@ -236,36 +241,59 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
               />
             </div>
             <div>
-              <label className="text-xs text-slate-600 font-medium">{t('treatment.repeat_every')}</label>
+              <label className="text-xs text-slate-600 font-medium">{t('treatment.repeat_mode')}</label>
               <select
-                value={recurrence}
+                value={isRepeating ? 'repeat' : 'once'}
                 onChange={(e) => {
-                  const next = e.target.value as RecurrenceKind
-                  setRecurrence(next)
-                  if (!editId) setReminderDate(suggestReminderDate(next, customDays))
+                  const repeating = e.target.value === 'repeat'
+                  setIsRepeating(repeating)
+                  if (!editId) {
+                    setReminderDate(
+                      repeating
+                        ? suggestReminderDate(recurrence, customDays)
+                        : new Date().toISOString().slice(0, 10),
+                    )
+                  }
                 }}
                 className="input mt-1 w-full text-sm"
               >
-                <option value="weekly">{t('treatment.repeat_weekly')}</option>
-                <option value="monthly">{t('treatment.repeat_monthly')}</option>
-                <option value="custom">{t('treatment.repeat_custom')}</option>
+                <option value="once">{t('treatment.repeat_once')}</option>
+                <option value="repeat">{t('treatment.repeat_yes')}</option>
               </select>
-              {recurrence === 'custom' && (
-                <div className="flex items-center gap-2 mt-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={customDays}
+              {isRepeating && (
+                <>
+                  <label className="text-xs text-slate-600 font-medium mt-2 block">{t('treatment.repeat_every')}</label>
+                  <select
+                    value={recurrence}
                     onChange={(e) => {
-                      const days = Math.max(1, Math.min(365, Number(e.target.value) || 30))
-                      setCustomDays(days)
-                      if (!editId) setReminderDate(suggestReminderDate('custom', days))
+                      const next = e.target.value as RecurrenceKind
+                      setRecurrence(next)
+                      if (!editId) setReminderDate(suggestReminderDate(next, customDays))
                     }}
-                    className="input w-20 text-sm py-1"
-                  />
-                  <span className="text-xs text-slate-500">{t('treatment.custom_days_label')}</span>
-                </div>
+                    className="input mt-1 w-full text-sm"
+                  >
+                    <option value="weekly">{t('treatment.repeat_weekly')}</option>
+                    <option value="monthly">{t('treatment.repeat_monthly')}</option>
+                    <option value="custom">{t('treatment.repeat_custom')}</option>
+                  </select>
+                  {recurrence === 'custom' && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={customDays}
+                        onChange={(e) => {
+                          const days = Math.max(1, Math.min(365, Number(e.target.value) || 30))
+                          setCustomDays(days)
+                          if (!editId) setReminderDate(suggestReminderDate('custom', days))
+                        }}
+                        className="input w-20 text-sm py-1"
+                      />
+                      <span className="text-xs text-slate-500">{t('treatment.custom_days_label')}</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
