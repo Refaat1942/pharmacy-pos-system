@@ -109,7 +109,7 @@ export default function EmployeeCards() {
               key={e.id}
               {...card}
               onPrintIdCard={() => openEmployeeIdCardPrint(card, printLabels)}
-              onPrintBarcodeLabel={() => openEmployeeBarcodeLabelPrint(card, printLabels)}
+              onPrintBarcodeLabel={() => openEmployeeBarcodeLabelPrint(card, printLabels, i18n.language === 'ar')}
               printIdCardTitle={t('common.print_id_card')}
               printBarcodeLabelTitle={t('common.print_barcode_label')}
             />

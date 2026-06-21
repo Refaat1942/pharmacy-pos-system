@@ -1,6 +1,10 @@
 import JsBarcode from 'jsbarcode'
-
-const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
+import {
+  expandLabelPrintList,
+  loadEffectiveLabelPrintConfig,
+  openLabelPrintWindow,
+  type LabelEntry,
+} from './labelPrint'
 
 export interface EmployeeCardData {
   name: string
@@ -28,21 +32,18 @@ export function barcodeScanValue(code: string): string {
   return code.replace(/[^A-Za-z0-9]/g, '')
 }
 
-async function renderCode128Png(
-  value: string,
-  opts?: { width?: number; height?: number; displayValue?: boolean; fontSize?: number },
-): Promise<string | null> {
+async function renderCode128Png(value: string): Promise<string | null> {
   if (!value) return null
   try {
     const canvas = document.createElement('canvas')
     JsBarcode(canvas, value, {
       format: 'CODE128',
-      width: opts?.width ?? 2,
-      height: opts?.height ?? 60,
-      displayValue: opts?.displayValue ?? false,
+      width: 2,
+      height: 60,
+      displayValue: false,
       margin: 4,
       font: 'monospace',
-      fontSize: opts?.fontSize ?? 14,
+      fontSize: 14,
       lineColor: '#000000',
       background: '#ffffff',
     })
@@ -65,68 +66,6 @@ function waitForImages(doc: Document): Promise<void> {
         }),
     ),
   ).then(() => undefined)
-}
-
-function loadLabelDims(): { wMm: number; hMm: number } {
-  try {
-    const raw = localStorage.getItem(LABEL_PREFS_KEY)
-    const p = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
-    const size = String(p.size || 'strip38')
-    if (size === 'strip38' || size === 'thermal') return { wMm: 38, hMm: 12 }
-    if (size === 'small' || size === 'sm') return { wMm: 40, hMm: 20 }
-    if (size === 'medium') return { wMm: 50, hMm: 25 }
-    if (size === 'large' || size === 'lg' || size === 'zebra2x3') return { wMm: 80, hMm: 50 }
-    if (size === 'custom') {
-      const w = Number(p.customW)
-      const h = Number(p.customH)
-      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
-        return { wMm: Math.min(200, Math.max(5, w)), hMm: Math.min(200, Math.max(5, h)) }
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return { wMm: 38, hMm: 12 }
-}
-
-function loadLabelStyle(dims: { wMm: number; hMm: number }) {
-  const short = dims.hMm < 16
-  let overrides: Record<string, number> = {}
-  try {
-    const raw = localStorage.getItem(LABEL_PREFS_KEY)
-    const p = raw ? (JSON.parse(raw) as { overrides?: Record<string, number> }) : {}
-    if (p.overrides && typeof p.overrides === 'object') overrides = p.overrides
-  } catch {
-    /* ignore */
-  }
-  return {
-    barcodeHeightMm: overrides.barcodeHeightMm ?? (short ? 5 : 10),
-    barcodeScaleMm: overrides.barcodeScaleMm ?? (short ? 0.3 : 0.5),
-    fontSizeMm: overrides.fontSizeMm ?? (short ? 1.5 : 2.5),
-    paddingMm: overrides.paddingMm ?? (short ? 0 : 1.5),
-  }
-}
-
-async function renderLabelBarcodePng(value: string, style: ReturnType<typeof loadLabelStyle>): Promise<string | null> {
-  try {
-    const canvas = document.createElement('canvas')
-    JsBarcode(canvas, value, {
-      format: 'CODE128',
-      displayValue: true,
-      width: Math.max(1, style.barcodeScaleMm * 3.8),
-      height: Math.max(10, style.barcodeHeightMm * 3.8),
-      margin: 0,
-      font: 'Arial Black, Arial, sans-serif',
-      fontSize: Math.max(6, style.fontSizeMm * 3.8),
-      fontOptions: 'bold',
-      textMargin: 1,
-      lineColor: '#000000',
-      background: '#ffffff',
-    })
-    return canvas.toDataURL('image/png')
-  } catch {
-    return null
-  }
 }
 
 const ID_CARD_STYLES = `
@@ -169,43 +108,6 @@ const ID_CARD_STYLES = `
     @page { size: A4; margin: 12mm; }
   }
 `
-
-function buildLabelStyles(dims: { wMm: number; hMm: number }, style: ReturnType<typeof loadLabelStyle>): string {
-  const w = `${dims.wMm}mm`
-  const h = `${dims.hMm}mm`
-  const imgMaxH = `${Math.max(4, dims.hMm - style.paddingMm * 2 - style.fontSizeMm * 2)}mm`
-  return `
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; font-family: Arial Black, Arial, sans-serif; background: #f8fafc; }
-    #print-toolbar {
-      position: sticky; top: 0; z-index: 99; padding: 12px 16px; background: #ecfdf5;
-      border-bottom: 2px solid #10b981; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    }
-    #print-toolbar button {
-      padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none;
-      border-radius: 8px; cursor: pointer; font-size: 14px;
-    }
-    .sheet { padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-    .cell {
-      direction: ltr; width: ${w}; height: ${h}; overflow: hidden; padding: ${style.paddingMm}mm;
-      background: #fff; border: 1px dashed #cbd5e1; display: flex; flex-direction: column;
-      align-items: stretch; justify-content: space-between; gap: 0.5mm;
-      break-inside: avoid; page-break-inside: avoid;
-    }
-    .top-row { display: flex; justify-content: space-between; width: 100%; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 0.9; }
-    .top-row span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 100%; }
-    .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
-    .bc-wrap img { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
-    .bottom-row { font-size: ${Math.max(1, style.fontSizeMm - 0.3)}mm; font-weight: 900; text-align: center; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: uppercase; }
-    @media print {
-      #print-toolbar { display: none !important; }
-      html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
-      .sheet { padding: 0 !important; gap: 0 !important; }
-      .cell { border: none !important; margin: 0 !important; }
-      @page { size: ${w} ${h}; margin: 0; }
-    }
-  `
-}
 
 async function buildIdCardBlock(card: EmployeeCardData): Promise<string | null> {
   const scanVal = barcodeScanValue(card.code)
@@ -284,27 +186,20 @@ export async function openAllEmployeeIdCardsPrint(cards: EmployeeCardData[], lab
   w.focus()
 }
 
-export async function openEmployeeBarcodeLabelPrint(card: EmployeeCardData, labels: CardPrintLabels): Promise<void> {
+export async function openEmployeeBarcodeLabelPrint(
+  card: EmployeeCardData,
+  labels: CardPrintLabels,
+  isAr: boolean,
+): Promise<void> {
   const scanVal = barcodeScanValue(card.code)
   if (!scanVal) return
-  const dims = loadLabelDims()
-  const style = loadLabelStyle(dims)
-  const barcodeUrl = await renderLabelBarcodePng(scanVal, style)
-  if (!barcodeUrl) return
-  const labelStyles = buildLabelStyles(dims, style)
-  const bodyHtml = `
-    <div id="print-toolbar"><button type="button" id="print-btn">${escapeHtml(labels.printToolbar)}</button></div>
-    <div class="sheet">
-      <div class="cell">
-        <div class="top-row"><span>${escapeHtml(card.name)}</span></div>
-        <div class="bc-wrap"><img src="${barcodeUrl}" alt="" /></div>
-        <div class="bottom-row">${escapeHtml(card.pharmaName)}</div>
-      </div>
-    </div>
-  `
-  const w = openPrintDocument('PRINT_EMP_BARCODE', `<style>${labelStyles}</style>`, bodyHtml, labels)
-  if (!w) return
-  await waitForImages(w.document)
-  wirePrintToolbar(w, labels)
-  w.focus()
+  const config = await loadEffectiveLabelPrintConfig(isAr, card.pharmaName)
+  const entry: LabelEntry = {
+    barcode: scanVal,
+    name: card.name,
+    price: null,
+    expiryDate: null,
+  }
+  const printList = expandLabelPrintList([entry], [1], config.gridOpts)
+  await openLabelPrintWindow(printList, config, labels, false, 'PRINT_EMP_BARCODE')
 }
