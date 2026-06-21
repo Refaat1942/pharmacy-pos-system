@@ -1181,6 +1181,8 @@
     "refresh": "Refresh",
     "no_data": "No data",
     "print": "Print",
+    "print_id_card": "Print ID card (PDF)",
+    "print_barcode_label": "Print barcode label (thermal)",
     "admins_only": "Admins only",
     "export": "Export",
     "filter_placeholder": "Filter results…"
