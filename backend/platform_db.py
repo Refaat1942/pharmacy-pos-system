@@ -302,42 +302,25 @@ assert _catalog_features == ALL_FEATURE_KEYS, (
 
 # Default feature bundles per plan (used when seeding platform.plans).
 _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
-    "test": list(ALL_FEATURE_KEYS),
     "basic": [
         "dashboard", "pos", "sales", "returns", "inventory", "customers", "shifts", "settings",
     ],
     "pro": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "shifts", "settings",
+        "purchases", "suppliers", "customers", "shifts", "settings", "clinics", "offers",
     ],
-    "enterprise": [
-        "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "reports", "fraud_surveillance",
-        "stock_reallocation", "shifts", "hr", "settings", "offers", "loyalty",
-        "insurance", "discount_cards",
-    ],
-    "pilot": list(ALL_FEATURE_KEYS),
+    "enterprise": list(ALL_FEATURE_KEYS),
 }
 
 # Seed defaults for platform.plans (editable via Control Platform).
 DEFAULT_PLANS = [
-    {
-        "key": "test",
-        "label": "Test",
-        "max_users": None,
-        "max_branches": None,
-        "price_le": 0,
-        "notes": "For me to test before deploy to customers",
-        "features": _PLAN_FEATURE_PRESETS["test"],
-        "sort_order": 0,
-    },
     {
         "key": "basic",
         "label": "Basic",
         "max_users": 3,
         "max_branches": 1,
         "price_le": 1000,
-        "notes": "",
+        "notes": "Core POS, inventory, customers, shifts",
         "features": _PLAN_FEATURE_PRESETS["basic"],
         "sort_order": 1,
     },
@@ -347,7 +330,7 @@ DEFAULT_PLANS = [
         "max_users": 60,
         "max_branches": 5,
         "price_le": 2000,
-        "notes": "",
+        "notes": "Multi-branch stock, purchases, clinics, offers",
         "features": _PLAN_FEATURE_PRESETS["pro"],
         "sort_order": 2,
     },
@@ -357,19 +340,9 @@ DEFAULT_PLANS = [
         "max_users": 100,
         "max_branches": 10,
         "price_le": 4500,
-        "notes": "",
+        "notes": "All modules — insurance, HR, fraud, loyalty, AI assistant",
         "features": _PLAN_FEATURE_PRESETS["enterprise"],
         "sort_order": 3,
-    },
-    {
-        "key": "pilot",
-        "label": "Pilot",
-        "max_users": None,
-        "max_branches": None,
-        "price_le": 90000,
-        "notes": "",
-        "features": _PLAN_FEATURE_PRESETS["pilot"],
-        "sort_order": 4,
     },
 ]
 _PENDING_FEATURE_BACKFILL = {"clinics", "ai_assistant", "offers", "loyalty", "pos_counseling"}
@@ -449,6 +422,7 @@ def serialize_tenant_row(row: dict) -> dict:
     d = dict(row)
     d["features"] = normalize_features(d.get("features"))
     d["feature_options"] = resolve_feature_options(d)
+    d["is_demo"] = bool(d.get("is_demo"))
     return d
 
 
@@ -484,6 +458,7 @@ ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_users         INT;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS max_branches      INT;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS price_le          INT;
 ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS feature_options   JSONB;
+ALTER TABLE platform.tenants ADD COLUMN IF NOT EXISTS is_demo           BOOLEAN DEFAULT false;
 
 CREATE TABLE IF NOT EXISTS platform.plans (
     key           VARCHAR(50) PRIMARY KEY,
@@ -601,6 +576,9 @@ def bootstrap_platform() -> None:
             cur.execute("SELECT pg_advisory_unlock(%s)", [_FEATURE_ROLLOUT_LOCK])
 
         _seed_plans(cur)
+        cur.execute(
+            "UPDATE platform.tenants SET is_demo = true WHERE notes ILIKE 'Auto demo pack%'"
+        )
     finally:
         conn.close()
 
@@ -608,6 +586,14 @@ def bootstrap_platform() -> None:
 def _seed_plans(cur) -> None:
     """Insert default plans; update label/price/notes on existing rows but preserve edited limits."""
     import json as _json
+    # Retire legacy plan keys; move customers to enterprise.
+    cur.execute(
+        """UPDATE platform.tenants SET plan = 'enterprise'
+           WHERE plan IS NOT NULL AND plan NOT IN ('basic', 'pro', 'enterprise')"""
+    )
+    cur.execute(
+        "DELETE FROM platform.plans WHERE key NOT IN ('basic', 'pro', 'enterprise')"
+    )
     for p in DEFAULT_PLANS:
         cur.execute(
             """INSERT INTO platform.plans(key, label, max_users, max_branches, price_le, notes, features, sort_order)
@@ -632,7 +618,9 @@ def list_plans() -> list:
     conn = get_platform_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT * FROM plans ORDER BY sort_order, key")
+        cur.execute(
+            "SELECT * FROM plans WHERE key IN ('basic', 'pro', 'enterprise') ORDER BY sort_order, key"
+        )
         rows = []
         for r in cur.fetchall():
             d = dict(r)
@@ -843,6 +831,7 @@ def create_tenant(
     max_branches: Optional[int] = None,
     price_le: Optional[int] = None,
     feature_options: Optional[dict] = None,
+    is_demo: bool = False,
 ) -> dict:
     """Race-safe atomic tenant provisioning.
 
@@ -890,9 +879,9 @@ def create_tenant(
                 """INSERT INTO tenants(slug, name, schema_name, status, plan,
                                         contact_name, contact_email, contact_phone, notes,
                                         features, feature_options, subscription_start, subscription_end,
-                                        max_users, max_branches, price_le)
+                                        max_users, max_branches, price_le, is_demo)
                    VALUES (%s, %s, %s, 'provisioning', %s, %s, %s, %s, %s,
-                           %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s)
+                           %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, %s)
                    RETURNING *""",
                 [slug, name, schema_name, plan,
                  contact_name, contact_email, contact_phone, notes,
@@ -900,7 +889,7 @@ def create_tenant(
                  _json.dumps(feature_options_norm),
                  subscription_start or None,
                  subscription_end or None,
-                 max_users, max_branches, price_le],
+                 max_users, max_branches, price_le, bool(is_demo)],
             )
         except psycopg2.errors.UniqueViolation:
             pconn.rollback()

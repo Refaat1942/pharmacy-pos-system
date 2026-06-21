@@ -70,19 +70,21 @@ BLUEPRINT_SECTIONS = [
         "summary_ar": "بيع سريع مصمم لكاونتر الصيدلية المزدحم.",
         "bullets_en": [
             "Barcode scan or search by name / international barcode",
-            "Sell by box or sub-unit (strip, tablet)",
-            "Cash, Visa, mixed, on-account, and digital platform sales",
-            "Line and invoice discounts; delivery orders",
+            "Sell by box or sub-unit (strip, tablet); negative stock allowed when needed",
+            "Cash, Visa, hybrid, InstaPay, Vodafone Cash, on-account, insurance & digital sales",
+            "Select or scan seller (login card QR); optional walk-in customer on cash sales",
+            "Promo offers, loyalty redeem, suspend / recall carts",
             "Load clinic prescriptions into the cart",
-            "Customizable receipts with logo and tax ID",
+            "Dose labels & customizable receipts with logo and tax ID",
         ],
         "bullets_ar": [
             "مسح الباركود أو البحث بالاسم / الباركود الدولي",
-            "البيع بالعلبة أو الوحدة الفرعية (شريط، قرص)",
-            "نقدي، فيزا، مختلط، آجل، ومبيعات المنصات الرقمية",
-            "خصومات على السطر والفاتورة؛ طلبات التوصيل",
+            "البيع بالعلبة أو الوحدة الفرعية؛ السماح بالمخزون السالب عند الحاجة",
+            "نقدي، فيزا، مختلط، InstaPay، فودافون كاش، آجل، تأمين ومبيعات المنصات",
+            "اختيار أو مسح البائع (QR بطاقة الدخول)； عميل اختياري في البيع النقدي",
+            "عروض ترويجية، استبدال نقاط الولاء، تعليق / استرجاع السلة",
             "تحميل روشتات العيادات إلى السلة",
-            "إيصالات قابلة للتخصيص مع الشعار والرقم الضريبي",
+            "ملصقات الجرعات وإيصالات قابلة للتخصيص",
         ],
     },
     {
@@ -254,32 +256,86 @@ BLUEPRINT_SECTIONS = [
         "summary_ar": "الموظفون والحضور وكشوف المرتبات.",
         "bullets_en": [
             "Employee records linked to users",
-            "QR clock-in attendance",
-            "Printable salary slips",
+            "QR clock-in attendance & employee login cards",
+            "Payroll, performance, printable salary slips",
         ],
         "bullets_ar": [
             "سجلات موظفين مربوطة بالمستخدمين",
-            "حضور بمسح QR",
-            "كشوف مرتبات قابلة للطباعة",
+            "حضور بمسح QR وبطاقات دخول الموظفين",
+            "مرتبات، أداء، كشوف مرتبات قابلة للطباعة",
+        ],
+    },
+    {
+        "id": "insurance",
+        "feature_keys": ["insurance"],
+        "title_en": "12. Insurance billing",
+        "title_ar": "١٢. فواتير التأمين",
+        "summary_en": "Egyptian insurance companies, claims, and POS billing.",
+        "summary_ar": "شركات التأمين المصرية والمطالبات والفوترة من نقطة البيع.",
+        "bullets_en": [
+            "Manage companies, coverage rules & patient share",
+            "Insurance checkout at POS with bilingual claim PDFs",
+            "Claims queue, audit log, insurance reports",
+        ],
+        "bullets_ar": [
+            "إدارة الشركات وقواعد التغطية وحصة المريض",
+            "إتمام بيع التأمين من نقطة البيع مع PDF مطالبات ثنائي",
+            "قائمة المطالبات، سجل تدقيق، تقارير التأمين",
+        ],
+    },
+    {
+        "id": "loyalty_offers",
+        "feature_keys": ["loyalty", "offers", "discount_cards"],
+        "title_en": "13. Loyalty, offers & discount cards",
+        "title_ar": "١٣. الولاء والعروض وبطاقات الخصم",
+        "summary_en": "Grow repeat business and controlled promotions.",
+        "summary_ar": "زيادة العملاء المتكررين والعروض المضبوطة.",
+        "bullets_en": [
+            "Points earn/redeem at POS",
+            "Auto-applied promo offers & offer sales reports",
+            "Corporate / card-based discount rules",
+        ],
+        "bullets_ar": [
+            "كسب واستبدال النقاط في نقطة البيع",
+            "عروض تطبّق تلقائياً وتقارير مبيعات العروض",
+            "خصومات بطاقات / شركات",
+        ],
+    },
+    {
+        "id": "ai",
+        "feature_keys": ["ai_assistant", "pos_counseling"],
+        "title_en": "14. Smart assistant & counseling",
+        "title_ar": "١٤. المساعد الذكي والنصائح",
+        "summary_en": "In-app help and optional AI guidance at the counter.",
+        "summary_ar": "مساعدة داخل النظام وإرشاد اختياري عند الكاونتر.",
+        "bullets_en": [
+            "Floating bilingual assistant widget",
+            "POS counseling tips for related products",
+        ],
+        "bullets_ar": [
+            "ودجت مساعد ثنائي اللغة",
+            "نصائح استشارة في نقطة البيع لمنتجات مرتبطة",
         ],
     },
     {
         "id": "platform",
         "always_show": True,
-        "title_en": "12. Hosting & support",
-        "title_ar": "١٢. الاستضافة والدعم",
+        "title_en": "15. Hosting, plans & support",
+        "title_ar": "١٥. الاستضافة والباقات والدعم",
         "summary_en": "We run the servers; you run the pharmacy.",
         "summary_ar": "نحن نشغّل السيرفرات؛ أنت تشغّل الصيدلية.",
         "bullets_en": [
             "Secure HTTPS with your pharmacy code",
-            "Automatic updates",
-            "Daily backups; isolated data",
+            "Plans: Basic, Pro, Enterprise — modules scale with you",
+            "Shareable demo links for trials (all features, read-only exports)",
+            "Automatic updates, daily backups, isolated data",
             "Training and onboarding support",
         ],
         "bullets_ar": [
             "اتصال آمن HTTPS بكود صيدليتك",
-            "تحديثات تلقائية",
-            "نسخ احتياطي يومي؛ بيانات معزولة",
+            "باقات: Basic و Pro و Enterprise — الوحدات تنمو معك",
+            "روابط تجريبية قابلة للمشاركة (كل المميزات، بدون تصدير حساس)",
+            "تحديثات تلقائية، نسخ احتياطي يومي، بيانات معزولة",
             "تدريب ودعم عند التشغيل",
         ],
     },
@@ -290,13 +346,22 @@ POS_VIDEO_SCRIPT = [
         "time": "0:00–0:45",
         "scene_en": "Introduction & login",
         "scene_ar": "المقدمة وتسجيل الدخول",
-        "script_en": "Welcome to Fratelanza Pharmacy ERP. Every pharmacy has its own private system. Enter your pharmacy code, username, and password. Switch language Arabic/English anytime. Show the clean POS home screen.",
-        "script_ar": "مرحباً بكم في نظام فراتيلانزا للصيدليات. كل صيدلية لها نظام خاص معزول. أدخل كود الصيدلية واسم المستخدم وكلمة المرور. يمكن التبديل بين العربية والإنجليزية في أي وقت. اعرض شاشة نقطة البيع الرئيسية.",
-        "steps_en": ["Open erp.fratelanza.com", "Enter pharmacy code (e.g. dms)", "Login as cashier", "Toggle AR/EN language"],
-        "steps_ar": ["افتح erp.fratelanza.com", "أدخل كود الصيدلية", "سجّل دخول ككاشير", "بدّل اللغة عربي/إنجليزي"],
+        "script_en": "Welcome to Fratelanza Pharmacy ERP. Every pharmacy has its own private system. Enter your pharmacy code, username, and password — or use a demo link from your sales contact. Switch language Arabic/English anytime.",
+        "script_ar": "مرحباً بكم في نظام فراتيلانزا للصيدليات. كل صيدلية لها نظام خاص معزول. أدخل كود الصيدلية واسم المستخدم وكلمة المرور — أو استخدم رابط تجريبي من فريق المبيعات. بدّل اللغة في أي وقت.",
+        "steps_en": ["Open erp.fratelanza.com", "Enter pharmacy code or demo link", "Login as cashier", "Toggle AR/EN language"],
+        "steps_ar": ["افتح erp.fratelanza.com", "أدخل كود الصيدلية أو رابط التجربة", "سجّل دخول ككاشير", "بدّل اللغة"],
     },
     {
-        "time": "0:45–1:30",
+        "time": "0:45–1:15",
+        "scene_en": "Select seller",
+        "scene_ar": "اختيار البائع",
+        "script_en": "Before scanning products, select the seller from the list or scan their login card QR. If you forgot, you can still assign the seller in the payment window.",
+        "script_ar": "قبل مسح الأصناف، اختر البائع من القائمة أو امسح QR بطاقة الدخول. إذا نسيت، يمكنك تعيين البائع في نافذة الدفع.",
+        "steps_en": ["Open POS sidebar", "Pick seller or scan card", "Optional: Me button", "Continue to sale"],
+        "steps_ar": ["افتح شريط نقطة البيع", "اختر البائع أو امسح البطاقة", "زر «أنا» اختياري", "تابع البيع"],
+    },
+    {
+        "time": "1:15–2:00",
         "scene_en": "Open cash shift",
         "scene_ar": "فتح وردية النقدية",
         "script_en": "Before selling, open a cash shift. Choose morning, evening, or night. Enter opening float. Explain that all sales in this session link to this shift for Z report at close.",
@@ -502,6 +567,43 @@ def video_script_markdown() -> str:
         lines.append("---")
         lines.append("")
     lines.append("© 2026 Fratelanza. All rights reserved.")
+    return "\n".join(lines)
+
+
+def features_overview_markdown() -> str:
+    """Printable feature list aligned with FEATURES_CATALOG and subscription plans."""
+    plans = platform_db.list_plans()
+    lines = [
+        "# Fratelanza Pharmacy ERP — Features Overview",
+        "# نظام فراتيلانزا — عرض المميزات",
+        "",
+        f"Updated {BLUEPRINT_META['version']} · Bilingual cloud POS for Egyptian pharmacies.",
+        "",
+        "## Subscription plans · الباقات",
+        "",
+        "| Plan | Max users | Max branches | Price (LE/mo) |",
+        "|------|-----------|--------------|---------------|",
+    ]
+    for p in plans:
+        mu = "∞" if p.get("max_users") is None else str(p["max_users"])
+        mb = "∞" if p.get("max_branches") is None else str(p["max_branches"])
+        lines.append(f"| {p['label']} | {mu} | {mb} | {p.get('price_le', 0):,} |")
+    lines.extend(["", "## Modules · الوحدات", ""])
+    for sec in BLUEPRINT_SECTIONS:
+        if sec.get("id") == "platform":
+            continue
+        lines.append(f"### {sec['title_en']} / {sec['title_ar']}")
+        lines.append(sec["summary_en"])
+        for b in sec.get("bullets_en", []):
+            lines.append(f"- {b}")
+        lines.append("")
+    lines.extend([
+        "## Demo trials",
+        "- Superadmin can generate shareable demo links with all modules enabled.",
+        "- Demo accounts cannot export master data, bulk import, or change passwords.",
+        "",
+        "© 2026 Fratelanza. All rights reserved.",
+    ])
     return "\n".join(lines)
 
 

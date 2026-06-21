@@ -14,6 +14,7 @@ export interface TenantInfo {
   slug: string
   name: string
   plan: string | null
+  is_demo?: boolean
   features: string[]
   feature_options?: Record<string, Record<string, boolean>>
   subscription_start: string | null
@@ -141,6 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           slug: data.tenant.slug,
           name: data.tenant.name,
           plan: data.tenant.plan,
+          is_demo: data.tenant.is_demo,
           features: data.tenant.features || [],
           feature_options: data.tenant.feature_options || {},
           subscription_start: data.tenant.subscription_start,

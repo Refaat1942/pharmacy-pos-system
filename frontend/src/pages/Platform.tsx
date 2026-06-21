@@ -236,9 +236,9 @@ export default function Platform() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <a href="/Fratelanza_POS_Features.pdf" target="_blank" rel="noopener noreferrer"
+            <a href="/Fratelanza_POS_Features.html" target="_blank" rel="noopener noreferrer"
               className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
-              <FileText size={14} /> Features PDF
+              <FileText size={14} /> Features guide
             </a>
             <Link to="/platform/demo"
               className="bg-white/10 hover:bg-white/20 px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
@@ -484,6 +484,7 @@ function Field({ label, children, hint }: { label: string; children: React.React
 }
 
 const inputCls = "w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none"
+const planInputCls = "w-full border border-slate-200 rounded-md px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 focus:outline-none"
 
 function todayPlus(months: number): string {
   const d = new Date()
@@ -631,29 +632,29 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
   if (!plans.length) return null
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Subscription Plans</h2>
-          <p className="text-xs text-slate-500">Edit plan defaults for users, branches, and pricing. Per-customer overrides are set when editing a pharmacy.</p>
+          <h2 className="text-sm font-bold text-slate-800">Subscription Plans</h2>
+          <p className="text-[11px] text-slate-500">Basic · Pro · Enterprise — per-pharmacy overrides when editing a customer.</p>
         </div>
         <button type="button" onClick={downloadPlans} disabled={downloading}
-          className="shrink-0 inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-          <Download size={16} />
-          {downloading ? 'Downloading…' : 'Download plans'}
+          className="shrink-0 inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          <Download size={14} />
+          {downloading ? '…' : 'Download'}
         </button>
       </div>
-      {err && <div className="mx-5 mt-3 bg-red-50 border border-red-200 text-red-700 p-2 rounded text-sm">{err}</div>}
+      {err && <div className="mx-4 mt-2 bg-red-50 border border-red-200 text-red-700 p-2 rounded text-xs">{err}</div>}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-2.5 text-start">Plan</th>
-              <th className="px-4 py-2.5 text-center">Max users</th>
-              <th className="px-4 py-2.5 text-center">Max branches</th>
-              <th className="px-4 py-2.5 text-center">Price (LE)</th>
-              <th className="px-4 py-2.5 text-start">Notes</th>
-              <th className="px-4 py-2.5 text-center">Actions</th>
+              <th className="px-3 py-2 text-start w-[9rem]">Plan</th>
+              <th className="px-2 py-2 text-center w-[5.5rem]">Users</th>
+              <th className="px-2 py-2 text-center w-[5.5rem]">Branches</th>
+              <th className="px-2 py-2 text-center w-[5rem]">LE/mo</th>
+              <th className="px-3 py-2 text-start">Notes</th>
+              <th className="px-2 py-2 text-center w-[4.5rem]"> </th>
             </tr>
           </thead>
           <tbody>
@@ -661,35 +662,35 @@ function PlansPanel({ plans, onUpdated }: { plans: PlanDef[]; onUpdated: () => v
               const row = getRow(p)
               const dirty = editing[p.key] != null
               return (
-                <tr key={p.key} className="border-t border-slate-100">
-                  <td className="px-4 py-2">
-                    <input className={inputCls + ' font-medium capitalize'} value={row.label}
+                <tr key={p.key} className="border-t border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-3 py-1.5">
+                    <input className={planInputCls + ' font-semibold capitalize'} value={row.label}
                       onChange={(e) => setRow(p.key, { label: e.target.value })} />
-                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">{p.key}</div>
+                    <div className="text-[9px] text-slate-400 font-mono mt-0.5">{p.key}</div>
                   </td>
-                  <td className="px-4 py-2">
-                    <input className={inputCls + ' text-center font-mono'} value={row.max_users}
-                      placeholder="unlimited"
+                  <td className="px-2 py-1.5">
+                    <input className={planInputCls + ' text-center font-mono'} value={row.max_users}
+                      placeholder="∞"
                       onChange={(e) => setRow(p.key, { max_users: e.target.value })} />
                   </td>
-                  <td className="px-4 py-2">
-                    <input className={inputCls + ' text-center font-mono'} value={row.max_branches}
-                      placeholder="unlimited"
+                  <td className="px-2 py-1.5">
+                    <input className={planInputCls + ' text-center font-mono'} value={row.max_branches}
+                      placeholder="∞"
                       onChange={(e) => setRow(p.key, { max_branches: e.target.value })} />
                   </td>
-                  <td className="px-4 py-2">
-                    <input className={inputCls + ' text-center font-mono'} type="number" min={0} value={row.price_le}
+                  <td className="px-2 py-1.5">
+                    <input className={planInputCls + ' text-center font-mono'} type="number" min={0} value={row.price_le}
                       onChange={(e) => setRow(p.key, { price_le: e.target.value })} />
                   </td>
-                  <td className="px-4 py-2">
-                    <input className={inputCls} value={row.notes}
+                  <td className="px-3 py-1.5">
+                    <input className={planInputCls} value={row.notes}
                       onChange={(e) => setRow(p.key, { notes: e.target.value })} />
                   </td>
-                  <td className="px-4 py-2 text-center">
+                  <td className="px-2 py-1.5 text-center">
                     <button type="button" disabled={!dirty || busyKey === p.key}
                       onClick={() => save(p)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-700">
-                      {busyKey === p.key ? 'Saving…' : 'Save'}
+                      className="text-[10px] px-2 py-1 rounded-md bg-indigo-600 text-white disabled:opacity-30 hover:bg-indigo-700">
+                      {busyKey === p.key ? '…' : 'Save'}
                     </button>
                   </td>
                 </tr>

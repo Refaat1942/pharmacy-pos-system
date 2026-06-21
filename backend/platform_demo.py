@@ -80,8 +80,7 @@ def _seed_demo_content(schema_name: str, admin_username: str, user_passwords: di
         for barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry in DEMO_PRODUCTS:
             cur.execute(
                 """INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                   ON CONFLICT (barcode, branch_id) DO NOTHING""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 [barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry, branch_id],
             )
 
@@ -89,9 +88,14 @@ def _seed_demo_content(schema_name: str, admin_username: str, user_passwords: di
             pwd = user_passwords.get(username) or _gen_password()
             user_passwords[username] = pwd
             cur.execute(
+                "SELECT 1 FROM users WHERE username = %s",
+                [username],
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
                 """INSERT INTO users(username, password_hash, name_ar, name_en, role, branch_id, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, 'active')
-                   ON CONFLICT (username) DO NOTHING""",
+                   VALUES (%s, %s, %s, %s, %s, %s, 'active')""",
                 [username, hash_password(pwd), name_ar, name_en, role, branch_id],
             )
 
@@ -153,7 +157,7 @@ def create_demo_pack(
         tenant = platform_db.create_tenant(
             slug=slug,
             name=name,
-            plan="pilot",
+            plan="enterprise",
             notes=f"Auto demo pack — {label}",
             admin_username="admin",
             admin_password=admin_password,
@@ -164,6 +168,7 @@ def create_demo_pack(
             max_users=None,
             max_branches=3,
             price_le=0,
+            is_demo=True,
         )
 
         schema_name = tenant["schema_name"]

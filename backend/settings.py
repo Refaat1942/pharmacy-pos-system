@@ -479,6 +479,8 @@ def delete_user(user_id: int, current_user: dict = Depends(get_current_user)):
 @router.put("/users/{user_id}/password")
 def reset_password(user_id: int, body: PasswordReset, current_user: dict = Depends(get_current_user)):
     _admin(current_user)
+    from demo_guard import assert_not_demo_user
+    assert_not_demo_user(current_user)
     if not body.password or len(body.password) < 4:
         raise HTTPException(400, "Password too short")
     pw = hash_password(body.password)

@@ -44,6 +44,17 @@ if os.getenv("ENVIRONMENT") == "production":
     if _trusted_hosts:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts + ["localhost", "127.0.0.1"])
 
+
+@app.middleware("http")
+async def demo_tenant_guard_middleware(request: Request, call_next):
+    from demo_guard import demo_guard_for_request
+    from starlette.responses import JSONResponse
+
+    blocked = demo_guard_for_request(request)
+    if blocked:
+        return JSONResponse(status_code=blocked.status_code, content={"detail": blocked.detail})
+    return await call_next(request)
+
 # Simple in-memory login throttle (per IP+username): 8 failed attempts → 15-min lockout.
 # Resets on successful login. For multi-worker setups this is per-worker (fine for 4 workers).
 _LOGIN_FAILURES: dict = defaultdict(list)  # key -> list[timestamp]
@@ -253,6 +264,7 @@ def login(req: LoginRequest, request: Request):
             "slug": tenant["slug"],
             "name": tenant["name"],
             "plan": tenant.get("plan"),
+            "is_demo": bool(tenant.get("is_demo")),
             "features": normalize_features(tenant.get("features")),
             "feature_options": resolve_feature_options(tenant),
             "subscription_start": tenant.get("subscription_start").isoformat() if tenant.get("subscription_start") else None,
@@ -280,6 +292,7 @@ def get_me(current_user=Depends(get_current_user)):
                 "slug": t["slug"],
                 "name": t["name"],
                 "plan": t.get("plan"),
+                "is_demo": bool(t.get("is_demo")),
                 "features": normalize_features(t.get("features")),
                 "feature_options": resolve_feature_options(t),
                 "subscription_start": t["subscription_start"].isoformat() if t.get("subscription_start") else None,

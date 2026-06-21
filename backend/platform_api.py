@@ -221,6 +221,22 @@ def download_pos_video_script(admin=Depends(get_super_admin)):
     )
 
 
+@router.get("/features-doc/download")
+def download_features_doc(admin=Depends(get_super_admin)):
+    """Download current features overview (Markdown — print to PDF from browser)."""
+    from fastapi.responses import Response
+    import platform_blueprint
+    from datetime import date
+
+    body = platform_blueprint.features_overview_markdown()
+    filename = f"fratelanza_features_{date.today().isoformat()}.md"
+    return Response(
+        content=body.encode("utf-8"),
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/plans")
 def list_plans(admin=Depends(get_super_admin)):
     return platform_db.list_plans()
