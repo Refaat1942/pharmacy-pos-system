@@ -34,33 +34,48 @@ INSURANCE_FIELD_KEYS = [
     "transaction_notes",
 ]
 
-# Always core to an insurance transaction at POS (MetLife / RMS-style)
+# Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
+DEFAULT_FIELD_CONFIG = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
+for _k in (
+    "patient_first_name",
+    "patient_last_name",
+    "mobile_number",
+    "insurance_card_number",
+    "membership_number",
+    "policy_number",
+    "approval_number",
+):
+    DEFAULT_FIELD_CONFIG[_k] = "optional"
+DEFAULT_FIELD_CONFIG["patient_first_name"] = "required"
+DEFAULT_FIELD_CONFIG["patient_last_name"] = "required"
+DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
+DEFAULT_FIELD_CONFIG["mobile_country_code"] = "hidden"
+
 INSURANCE_TRANSACTION_CORE_KEYS = [
-    "child_customer_id",
     "insurance_card_number",
     "patient_first_name",
     "patient_last_name",
-    "mobile_country_code",
     "mobile_number",
-    "receipt_limit",
-    "exceeding_amount",
-    "additional_amount",
+    "membership_number",
+    "policy_number",
     "approval_number",
-    "patient_share_pct",
-    "employer_name",
-    "max_patient_share",
-    "treatment_type",
-    "transaction_notes",
-    "attachment_upload",
 ]
 
-DEFAULT_FIELD_CONFIG = {k: "optional" for k in INSURANCE_FIELD_KEYS}
-DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
-DEFAULT_FIELD_CONFIG["patient_first_name"] = "required"
-DEFAULT_FIELD_CONFIG["patient_last_name"] = "required"
-DEFAULT_FIELD_CONFIG["approval_number"] = "optional"
-DEFAULT_FIELD_CONFIG["patient_share_pct"] = "optional"
-DEFAULT_FIELD_CONFIG["treatment_type"] = "required"
+
+def merge_field_config_for_pos(stored: dict | None) -> dict:
+    """POS: core patient fields only; extras stay hidden unless saved in company advanced settings."""
+    stored = stored or {}
+    cfg = dict(DEFAULT_FIELD_CONFIG)
+    for key in INSURANCE_TRANSACTION_CORE_KEYS:
+        if key in stored:
+            cfg[key] = stored[key]
+    for key in INSURANCE_FIELD_KEYS:
+        if key in INSURANCE_TRANSACTION_CORE_KEYS:
+            continue
+        mode = stored.get(key)
+        if mode in ("required", "optional"):
+            cfg[key] = mode
+    return cfg
 
 DEFAULT_COVERAGE_RULES = {
     "local_drugs_pct": 80,
@@ -74,7 +89,7 @@ DEFAULT_COVERAGE_RULES = {
 
 DEFAULT_FINANCIAL_RULES = {
     "insurance_coverage_pct": 80,
-    "patient_share_pct": 20,
+    "patient_share_pct": 0,
     "patient_share_timing": "after_discount",
     "additional_amount_pct": 0,
     "fixed_copayment": 0,

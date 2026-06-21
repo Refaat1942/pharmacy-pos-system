@@ -1803,6 +1803,7 @@
     "local_pct": "Local discount %",
     "imported_pct": "Imported discount %",
     "default_patient_share_pct": "Default patient share %",
+    "patient_share_optional_ph": "Leave blank — enter per transaction",
     "patient_share_timing": "Patient share applied",
     "patient_share_before_discount": "Before insurance discount (on gross)",
     "patient_share_after_discount": "After insurance discount",

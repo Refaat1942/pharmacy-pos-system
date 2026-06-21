@@ -25,30 +25,22 @@ export const INSURANCE_FIELD_KEYS = [
   'employer_name',
   'receipt_limit',
   'exceeding_amount',
+  'additional_amount',
   'patient_share_pct',
   'max_patient_share',
   'treatment_type',
   'transaction_notes',
 ] as const
 
-/** Fixed POS insurance transaction form (RMS-style). */
+/** Default visible fields on insurance POS transaction. */
 export const INSURANCE_TRANSACTION_CORE_KEYS = [
-  'child_customer_id',
   'insurance_card_number',
   'patient_first_name',
   'patient_last_name',
-  'mobile_country_code',
   'mobile_number',
-  'receipt_limit',
-  'exceeding_amount',
-  'additional_amount',
+  'membership_number',
+  'policy_number',
   'approval_number',
-  'patient_share_pct',
-  'employer_name',
-  'max_patient_share',
-  'treatment_type',
-  'transaction_notes',
-  'attachment_upload',
 ] as const
 
 export const INSURANCE_EXTRA_FIELD_KEYS = INSURANCE_FIELD_KEYS.filter(
@@ -90,7 +82,7 @@ export const DEFAULT_COVERAGE_RULES = {
 
 export const DEFAULT_FINANCIAL_RULES = {
   insurance_coverage_pct: 80,
-  patient_share_pct: 20,
+  patient_share_pct: 0,
   additional_amount_pct: 0,
   fixed_copayment: 0,
 }

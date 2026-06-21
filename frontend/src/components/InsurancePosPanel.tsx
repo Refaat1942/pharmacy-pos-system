@@ -6,6 +6,7 @@ import { insuranceAPI } from '../lib/api'
 import type { InsuranceCalculateResult, InsuranceCompany, InsurancePlan, InsuranceProfile } from '../lib/insurance'
 import {
   INSURANCE_EXTRA_FIELD_KEYS,
+  INSURANCE_TRANSACTION_CORE_KEYS,
   fieldMode,
   insuranceFieldLabel,
   splitCustomerName,
@@ -54,14 +55,7 @@ export default function InsurancePosPanel({
   const [profiles, setProfiles] = useState<InsuranceProfile[]>([])
   const [companyId, setCompanyId] = useState<number | ''>('')
   const [planId, setPlanId] = useState<number | ''>('')
-  const [patientFields, setPatientFields] = useState<Record<string, string>>({
-    mobile_country_code: '+20',
-    treatment_type: 'chronic',
-    receipt_limit: '0',
-    exceeding_amount: '0',
-    additional_amount: '0',
-    max_patient_share: '0',
-  })
+  const [patientFields, setPatientFields] = useState<Record<string, string>>({})
   const [attachmentName, setAttachmentName] = useState('')
   const [preview, setPreview] = useState<InsuranceCalculateResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -157,12 +151,6 @@ export default function InsurancePosPanel({
   const showPlanPicker = !hidePlanSelect && plans.length > 1
 
   useEffect(() => {
-    if (!selectedPlan?.financial_rules?.patient_share_pct) return
-    const planPct = String(selectedPlan.financial_rules.patient_share_pct)
-    setPatientFields((f) => (f.patient_share_pct ? f : { ...f, patient_share_pct: planPct }))
-  }, [selectedPlan?.id, selectedPlan?.financial_rules?.patient_share_pct])
-
-  useEffect(() => {
     onCompanyChange(companyId ? Number(companyId) : null)
     onPlanChange(planId ? Number(planId) : null)
   }, [companyId, planId, onCompanyChange, onPlanChange])
@@ -226,10 +214,104 @@ export default function InsurancePosPanel({
     reader.readAsDataURL(file)
   }
 
-  const visibleExtraFields = useMemo(
+  const optionalFields = useMemo(
     () => INSURANCE_EXTRA_FIELD_KEYS.filter((k) => fieldMode(k, fieldConfig) !== 'hidden'),
     [fieldConfig],
   )
+
+  const renderOptionalField = (key: string) => {
+    if (key === 'child_customer_id') {
+      return (
+        <div key={key}>
+          {renderLabel(key, fieldMode(key, fieldConfig) === 'required')}
+          <select
+            value={patientFields.child_customer_id || ''}
+            onChange={(e) => {
+              const id = e.target.value
+              if (!id) {
+                applyProfile(null)
+                return
+              }
+              const p = profiles.find((x) => String(x.id) === id)
+              if (p) applyProfile(p)
+            }}
+            className="w-full border border-sky-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+          >
+            <option value="">{t('insurance.child_self')}</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>{profileLabel(p)}</option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+    if (key === 'treatment_type') {
+      return (
+        <div key={key} className="md:col-span-2">
+          {renderLabel(key, fieldMode(key, fieldConfig) === 'required')}
+          <div className="flex gap-4 mt-1">
+            {(['chronic', 'acute'] as const).map((v) => (
+              <label key={v} className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  name="treatment_type"
+                  checked={(patientFields.treatment_type || 'chronic') === v}
+                  onChange={() => setField('treatment_type', v)}
+                  className="accent-sky-600"
+                />
+                {t(`insurance.treatment_${v}`)}
+              </label>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    if (key === 'transaction_notes') {
+      return (
+        <div key={key} className="md:col-span-2">
+          {renderLabel(key)}
+          <textarea
+            value={patientFields.transaction_notes || ''}
+            onChange={(e) => setField('transaction_notes', e.target.value)}
+            rows={2}
+            className="w-full border border-sky-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+          />
+        </div>
+      )
+    }
+    if (key === 'attachment_upload') {
+      return (
+        <div key={key} className="md:col-span-2 border border-dashed border-sky-300 rounded-lg p-3 bg-white">
+          {renderLabel(key)}
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <label className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg cursor-pointer">
+              <Paperclip size={12} />
+              {t('insurance.browse_file')}
+              <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => onAttachment(e.target.files?.[0] || null)} />
+            </label>
+            {attachmentName && (
+              <>
+                <span className="text-xs text-sky-800 truncate max-w-[180px]">{attachmentName}</span>
+                <button type="button" onClick={() => onAttachment(null)} className="text-xs text-red-600 flex items-center gap-0.5">
+                  <X size={12} /> {t('insurance.remove_file')}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )
+    }
+    if (key === 'patient_name') {
+      return (
+        <div key={key} className="md:col-span-2">
+          {renderInput(key)}
+        </div>
+      )
+    }
+    const wide = ['address', 'diagnosis'].includes(key)
+    const type = key === 'date_of_birth' || key === 'prescription_date' ? 'date' : undefined
+    return renderInput(key, { className: wide ? 'md:col-span-2' : undefined, type })
+  }
 
   const renderLabel = (key: string, required?: boolean) => (
     <label className="text-[10px] font-semibold text-sky-700 uppercase block mb-0.5">
@@ -239,15 +321,18 @@ export default function InsurancePosPanel({
 
   const renderInput = (key: string, opts?: { className?: string; type?: string }) => {
     const required = fieldMode(key, fieldConfig) === 'required'
+    const isNum = NUMERIC_KEYS.has(key)
+    const raw = patientFields[key] || ''
+    const display = isNum && (raw === '0' || raw === '') ? '' : raw
     return (
       <div className={opts?.className}>
         {renderLabel(key, required)}
         <input
-          type={opts?.type || (NUMERIC_KEYS.has(key) ? 'number' : 'text')}
-          step={NUMERIC_KEYS.has(key) ? '0.01' : undefined}
-          value={patientFields[key] || ''}
+          type={opts?.type || (isNum ? 'number' : 'text')}
+          step={isNum ? '0.01' : undefined}
+          value={display}
           onChange={(e) => setField(key, e.target.value)}
-          className="w-full border border-sky-200 rounded-lg px-2 py-1.5 text-sm bg-white"
+          className="w-full border border-sky-200 rounded-lg px-3 py-2.5 text-sm bg-white"
         />
       </div>
     )
@@ -259,7 +344,7 @@ export default function InsurancePosPanel({
   const planImportedPct = selectedPlan?.coverage_rules?.imported_drugs_pct ?? coverageSummary?.imported_drugs_pct
 
   return (
-    <div className="space-y-3 p-4 bg-sky-50 border-2 border-sky-200 rounded-xl max-h-[70vh] overflow-y-auto">
+    <div className="space-y-4 p-5 bg-sky-50 border-2 border-sky-200 rounded-xl">
       <div className="sticky top-0 bg-sky-50 py-1 z-10 space-y-1">
         <p className="text-xs font-bold uppercase tracking-wider text-sky-800 flex items-center gap-2">
           <Shield size={14} />
@@ -301,120 +386,23 @@ export default function InsurancePosPanel({
         )}
       </div>
 
-      {fieldMode('child_customer_id', fieldConfig) !== 'hidden' && (
-        <div>
-          {renderLabel('child_customer_id', fieldMode('child_customer_id', fieldConfig) === 'required')}
-          <select
-            value={patientFields.child_customer_id || ''}
-            onChange={(e) => {
-              const id = e.target.value
-              if (!id) {
-                applyProfile(null)
-                return
-              }
-              const p = profiles.find((x) => String(x.id) === id)
-              if (p) applyProfile(p)
-            }}
-            className="w-full border border-sky-200 rounded-lg px-3 py-2 text-sm bg-white"
-          >
-            <option value="">{t('insurance.child_self')}</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>{profileLabel(p)}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2">
-        {fieldMode('insurance_card_number', fieldConfig) !== 'hidden' && renderInput('insurance_card_number')}
-        {fieldMode('patient_first_name', fieldConfig, 'required') !== 'hidden' && renderInput('patient_first_name')}
-        {fieldMode('patient_last_name', fieldConfig, 'required') !== 'hidden' && renderInput('patient_last_name')}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {INSURANCE_TRANSACTION_CORE_KEYS.map((key) => {
+          if (fieldMode(key, fieldConfig) === 'hidden') return null
+          if (key === 'mobile_number') {
+            return (
+              <div key={key} className="md:col-span-2">
+                {renderInput(key)}
+              </div>
+            )
+          }
+          return <div key={key}>{renderInput(key)}</div>
+        })}
       </div>
 
-      {fieldMode('mobile_number', fieldConfig) !== 'hidden' && (
-        <div className="grid grid-cols-[88px_1fr] gap-2">
-          {fieldMode('mobile_country_code', fieldConfig) !== 'hidden' && renderInput('mobile_country_code', { className: '' })}
-          {renderInput('mobile_number')}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2">
-        {fieldMode('receipt_limit', fieldConfig) !== 'hidden' && renderInput('receipt_limit')}
-        {fieldMode('exceeding_amount', fieldConfig) !== 'hidden' && renderInput('exceeding_amount')}
-        {fieldMode('additional_amount', fieldConfig) !== 'hidden' && renderInput('additional_amount')}
-        {fieldMode('approval_number', fieldConfig) !== 'hidden' && renderInput('approval_number')}
-        {fieldMode('patient_share_pct', fieldConfig) !== 'hidden' && renderInput('patient_share_pct')}
-        {fieldMode('employer_name', fieldConfig) !== 'hidden' && renderInput('employer_name')}
-        {fieldMode('max_patient_share', fieldConfig) !== 'hidden' && renderInput('max_patient_share')}
-      </div>
-
-      {fieldMode('treatment_type', fieldConfig, 'required') !== 'hidden' && (
-        <div>
-          {renderLabel('treatment_type', fieldMode('treatment_type', fieldConfig, 'required') === 'required')}
-          <div className="flex gap-4 mt-1">
-            {(['chronic', 'acute'] as const).map((v) => (
-              <label key={v} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="treatment_type"
-                  checked={(patientFields.treatment_type || 'chronic') === v}
-                  onChange={() => setField('treatment_type', v)}
-                  className="accent-sky-600"
-                />
-                {t(`insurance.treatment_${v}`)}
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {fieldMode('transaction_notes', fieldConfig) !== 'hidden' && (
-        <div>
-          {renderLabel('transaction_notes')}
-          <textarea
-            value={patientFields.transaction_notes || ''}
-            onChange={(e) => setField('transaction_notes', e.target.value)}
-            rows={2}
-            className="w-full border border-sky-200 rounded-lg px-2 py-1.5 text-sm bg-white"
-          />
-        </div>
-      )}
-
-      {fieldMode('attachment_upload', fieldConfig) !== 'hidden' && (
-        <div className="border border-dashed border-sky-300 rounded-lg p-3 bg-white">
-          {renderLabel('attachment_upload')}
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <label className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-emerald-600 text-white rounded-lg cursor-pointer">
-              <Paperclip size={12} />
-              {t('insurance.browse_file')}
-              <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => onAttachment(e.target.files?.[0] || null)} />
-            </label>
-            {attachmentName && (
-              <>
-                <span className="text-xs text-sky-800 truncate max-w-[180px]">{attachmentName}</span>
-                <button type="button" onClick={() => onAttachment(null)} className="text-xs text-red-600 flex items-center gap-0.5">
-                  <X size={12} /> {t('insurance.remove_file')}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {visibleExtraFields.length > 0 && (
-        <div className="grid grid-cols-2 gap-2 border-t border-sky-200 pt-2">
-          {visibleExtraFields.map((key) => {
-            if (key === 'patient_name') {
-              return (
-                <div key={key} className="col-span-2">
-                  {renderInput(key)}
-                </div>
-              )
-            }
-            const wide = ['address', 'diagnosis'].includes(key)
-            const type = key === 'date_of_birth' || key === 'prescription_date' ? 'date' : undefined
-            return renderInput(key, { className: wide ? 'col-span-2' : undefined, type })
-          })}
+      {optionalFields.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-sky-200 pt-4">
+          {optionalFields.map((key) => renderOptionalField(key))}
         </div>
       )}
 

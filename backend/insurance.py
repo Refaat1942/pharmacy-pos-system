@@ -16,6 +16,7 @@ from insurance_constants import (
     DEFAULT_CONTROLS,
     DEFAULT_COVERAGE_RULES,
     DEFAULT_FIELD_CONFIG,
+    merge_field_config_for_pos,
     DEFAULT_FINANCIAL_RULES,
     DEFAULT_LIMITS,
     DEFAULT_RESTRICTIONS,
@@ -212,7 +213,12 @@ def list_active_companies(current_user=Depends(get_current_user)):
             """SELECT id, code, name_ar, name_en, field_config, custom_field_defs
                FROM insurance_companies WHERE status = 'active' ORDER BY name_en"""
         )
-        return [dict(r) for r in cur.fetchall()]
+        rows = []
+        for r in cur.fetchall():
+            row = dict(r)
+            row["field_config"] = merge_field_config_for_pos(row.get("field_config"))
+            rows.append(row)
+        return rows
     finally:
         conn.close()
 
@@ -612,7 +618,7 @@ def calculate(body: CalculateIn, current_user=Depends(get_current_user)):
 
 
 def _validate_patient_fields(field_config: dict, patient_fields: dict) -> None:
-    cfg = {**DEFAULT_FIELD_CONFIG, **(field_config or {})}
+    cfg = merge_field_config_for_pos(field_config)
     pf = dict(patient_fields or {})
     if not str(pf.get("patient_name") or "").strip():
         combined = f"{pf.get('patient_first_name', '').strip()} {pf.get('patient_last_name', '').strip()}".strip()

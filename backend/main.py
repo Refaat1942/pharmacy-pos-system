@@ -1127,19 +1127,10 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {prod['name_en']} belongs to a different branch",
                 )
-            # Resolve how many *stock units* this line consumes.
-            # Stock is tracked in sub-units when pack_size > 1; otherwise pack_size = 1
-            # and "pack" and "sub" are identical.
-            pack_size = max(1, int(prod["pack_size"] or 1))
-            unit_type = (item.unit_type or "pack").lower()
-            if unit_type == "sub" and pack_size > 1:
-                stock_used = item.quantity
-                unit_label = prod["sub_unit"] or "unit"
-                line_pack = 1
-            else:
-                stock_used = item.quantity * pack_size
-                unit_label = prod["unit"] or "unit"
-                line_pack = pack_size
+            # Deduct the same quantity shown on the invoice (1 pack sold = 1 stock unit).
+            stock_used = item.quantity
+            unit_label = prod["unit"] or "unit"
+            line_pack = max(1, int(prod["pack_size"] or 1))
             offer_disc = float(item.offer_discount or 0)
             line_discount = float(item.discount or 0)
             if int(item.product_id) in offer_product_ids:

@@ -17,7 +17,6 @@ type Tab = 'companies' | 'claims' | 'dashboard' | 'reports' | 'templates'
 const emptyCompany = (): Partial<InsuranceCompany> => ({
   code: '', name_ar: '', name_en: '', status: 'active', field_config: {},
   local_drugs_pct: 80, imported_drugs_pct: 70,
-  default_patient_share_pct: 20,
   patient_share_timing: 'after_discount',
 })
 
@@ -45,7 +44,7 @@ function companyPayload(c: Partial<InsuranceCompany>) {
     field_config: c.field_config || {},
     local_drugs_pct: c.local_drugs_pct ?? 80,
     imported_drugs_pct: c.imported_drugs_pct ?? 70,
-    default_patient_share_pct: c.default_patient_share_pct ?? 20,
+    default_patient_share_pct: c.default_patient_share_pct ?? undefined,
     patient_share_timing: c.patient_share_timing || 'after_discount',
   }
 }
@@ -210,7 +209,9 @@ export default function Insurance() {
                             field_config: c.field_config || {},
                             local_drugs_pct: plan?.coverage_rules?.local_drugs_pct ?? 80,
                             imported_drugs_pct: plan?.coverage_rules?.imported_drugs_pct ?? 70,
-                            default_patient_share_pct: Number(plan?.financial_rules?.patient_share_pct ?? 20),
+                            default_patient_share_pct: plan?.financial_rules?.patient_share_pct != null
+                              ? Number(plan.financial_rules.patient_share_pct)
+                              : undefined,
                             patient_share_timing: String(plan?.financial_rules?.patient_share_timing || 'after_discount'),
                           })
                         }}
@@ -400,8 +401,13 @@ export default function Insurance() {
                   </label>
                   <label className="text-sm">
                     <span className="block text-slate-600 mb-1 font-medium">{t('insurance.default_patient_share_pct')}</span>
-                    <input type="number" min={0} max={100} value={editCompany.default_patient_share_pct ?? 20}
-                      onChange={(e) => setEditCompany({ ...editCompany, default_patient_share_pct: Number(e.target.value) })}
+                    <input type="number" min={0} max={100}
+                      value={editCompany.default_patient_share_pct ?? ''}
+                      placeholder={t('insurance.patient_share_optional_ph') as string}
+                      onChange={(e) => setEditCompany({
+                        ...editCompany,
+                        default_patient_share_pct: e.target.value === '' ? undefined : Number(e.target.value),
+                      })}
                       className="w-full border rounded-lg px-3 py-2.5 text-sm text-end" />
                   </label>
                   <label className="text-sm">

@@ -193,6 +193,7 @@ export default function POS() {
   const [doseLabelItems, setDoseLabelItems] = useState<DoseLabelItem[] | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [posSaleType, setPosSaleType] = useState<PosSaleType>('cash')
+  const isInsurancePos = posSaleType === 'insurance'
   const [checkoutHint, setCheckoutHint] = useState('')
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [lastSale, setLastSale] = useState<SaleResponse | null>(null)
@@ -343,6 +344,16 @@ export default function POS() {
   useEffect(() => { try { localStorage.setItem(DISCMODE_KEY, JSON.stringify(invoiceDiscountMode)) } catch { /* ignore */ } }, [invoiceDiscountMode, DISCMODE_KEY])
   useEffect(() => { try { localStorage.setItem(SELLER_KEY, JSON.stringify(selectedSeller)) } catch { /* ignore */ } }, [selectedSeller, SELLER_KEY])
   useEffect(() => { try { localStorage.setItem(CUSTOMER_KEY, JSON.stringify(selectedCustomer)) } catch { /* ignore */ } }, [selectedCustomer, CUSTOMER_KEY])
+  useEffect(() => {
+    if (!isInsurancePos) return
+    setInvoiceDiscount(0)
+    setCartItems((prev) => prev.map((i) => ({
+      ...i,
+      discount: 0,
+      discount_value: 0,
+      dose_text: undefined,
+    })))
+  }, [isInsurancePos])
   useEffect(() => { try { localStorage.setItem(RXCLINIC_KEY, JSON.stringify(rxClinic)) } catch { /* ignore */ } }, [rxClinic, RXCLINIC_KEY])
   useEffect(() => { try { localStorage.setItem(RXID_KEY, JSON.stringify(rxId)) } catch { /* ignore */ } }, [rxId, RXID_KEY])
   useEffect(() => { try { localStorage.setItem(HELD_KEY, JSON.stringify(held)) } catch { /* ignore */ } }, [held, HELD_KEY])
@@ -918,7 +929,7 @@ export default function POS() {
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
                               </span>
                             )}
-                            {doseLabelsOn && (
+                            {doseLabelsOn && !isInsurancePos && (
                               <PosItemDoseLabel
                                 productId={item.product.id}
                                 productName={name || item.product.name_en}
@@ -955,7 +966,7 @@ export default function POS() {
                               <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
                                 {t('pos.offer_no_manual_discount')}
                               </p>
-                            ) : (
+                            ) : !isInsurancePos ? (
                             <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
                               <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">
                                 {t('pos.item_discount')}
@@ -996,7 +1007,7 @@ export default function POS() {
                                 )}
                               </div>
                             </div>
-                            )}
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
                             <button
@@ -1241,6 +1252,7 @@ export default function POS() {
               </div>
             )}
 
+            {!isInsurancePos && (
             <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-3 space-y-2.5">
               <label className="flex items-center gap-2 text-sm font-bold text-amber-900">
                 <Tag size={16} className="text-amber-600 shrink-0" />
@@ -1265,7 +1277,8 @@ export default function POS() {
                 />
               </div>
             </div>
-            {invoiceDiscountMode === 'percent' && effectiveInvoiceDiscount > 0 && (
+            )}
+            {!isInsurancePos && invoiceDiscountMode === 'percent' && effectiveInvoiceDiscount > 0 && (
               <div className="flex justify-between text-xs text-slate-400">
                 <span>{t('pos.discount')} ({invoiceDiscount}%)</span>
                 <span className="tabular-nums">- {t('pos.egp')} {formatMoney(effectiveInvoiceDiscount)}</span>

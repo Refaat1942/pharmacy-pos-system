@@ -306,9 +306,9 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
         pid = p["id"]
         pack_size = max(1, int(p.get("pack_size") or 1))
 
-    # PO qty is in outer units (box/pac). Internal stock tracks sub-units when pack_size > 1.
+    # PO qty is in packs/boxes — stock moves 1:1 with entered quantity.
     outer_qty = stock_qty
-    stock_qty_sub = outer_qty * pack_size if pack_size > 1 else outer_qty
+    stock_qty_sub = outer_qty
     add_batch_stock(cur, pid, branch_id, stock_qty_sub, it["expiry_date"])
     new_stock = sync_product_from_batches(cur, pid)
     sets = ["cost=%s"]

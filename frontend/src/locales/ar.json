@@ -1803,6 +1803,7 @@
     "local_pct": "خصم محلي %",
     "imported_pct": "خصم مستورد %",
     "default_patient_share_pct": "حصة المريض الافتراضية %",
+    "patient_share_optional_ph": "اتركه فارغاً — أدخل لكل معاملة",
     "patient_share_timing": "تطبيق حصة المريض",
     "patient_share_before_discount": "قبل خصم التأمين (على الإجمالي)",
     "patient_share_after_discount": "بعد خصم التأمين",

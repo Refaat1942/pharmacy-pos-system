@@ -174,7 +174,7 @@ export default function PaymentModal({
     else setCheckoutStep('setup')
   }
 
-  const modalMaxWidth = checkoutStep === 'setup' && saleType === 'insurance' ? 'max-w-4xl' : 'max-w-2xl'
+  const modalMaxWidth = checkoutStep === 'setup' && saleType === 'insurance' ? 'max-w-6xl' : 'max-w-2xl'
   const stepTitle = checkoutStep === 'type'
     ? t('payment.step_sale_type')
     : checkoutStep === 'setup'
@@ -339,7 +339,7 @@ export default function PaymentModal({
           unit_type: item.unit_type || 'pack',
           dose_text: item.dose_text || undefined,
         })),
-        discount: invoiceDiscount,
+        discount: isInsurance ? 0 : invoiceDiscount,
         offer_ids: offerIds?.length ? offerIds : undefined,
         offer_savings: offerSavings || 0,
         offer_names: offerNames || undefined,
@@ -886,7 +886,7 @@ export default function PaymentModal({
                 <span>{t('payment.subtotal')}</span>
                 <span className="tabular-nums">{subtotal.toFixed(2)}</span>
               </div>
-              {invoiceDiscount > 0 && (
+              {invoiceDiscount > 0 && !isInsurance && (
                 <div className="flex justify-between text-xs text-green-600">
                   <span>- {t('payment.discount')}</span>
                   <span className="tabular-nums">{invoiceDiscount.toFixed(2)}</span>

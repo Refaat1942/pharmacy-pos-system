@@ -35,11 +35,16 @@ function FieldWithHint({
 
 type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
 
-type POExpiryLot = { expiry_date: string; quantity: number }
+type POExpiryLot = { expiry_date: string; quantity: number | '' }
 
-type POItemDraft = POItem & { expiry_lots: POExpiryLot[]; sales_tax?: number }
+type POItemDraft = Omit<POItem, 'quantity' | 'bonus_qty'> & {
+  quantity: number | ''
+  bonus_qty?: number | ''
+  expiry_lots: POExpiryLot[]
+  sales_tax?: number
+}
 
-function defaultExpiryLots(qty = 1): POExpiryLot[] {
+function defaultExpiryLots(qty: number | '' = ''): POExpiryLot[] {
   return [{ expiry_date: '', quantity: qty }]
 }
 
@@ -50,10 +55,12 @@ function lotsTotal(lots: POExpiryLot[]): number {
 function flattenPOItemsForApi(items: POItemDraft[]): POItem[] {
   return items.flatMap((it) => {
     const bonus = Math.max(0, Number(it.bonus_qty) || 0)
+    const lineQty = Number(it.quantity) || 0
     const lots = (it.expiry_lots || []).filter((l) => (Number(l.quantity) || 0) > 0)
     if (lots.length === 0) {
       return [{
         ...it,
+        quantity: lineQty,
         bonus_qty: bonus,
         expiry_date: it.expiry_date || undefined,
       }]
@@ -61,7 +68,7 @@ function flattenPOItemsForApi(items: POItemDraft[]): POItem[] {
     if (lots.length === 1 && !lots[0].expiry_date?.trim()) {
       return [{
         ...it,
-        quantity: lots[0].quantity || it.quantity,
+        quantity: Number(lots[0].quantity) || lineQty,
         bonus_qty: bonus,
         expiry_date: undefined,
       }]
@@ -359,13 +366,14 @@ function CreatePOModal({
         if (existing) {
           return prev.map((i) => {
             if (i.product_id !== p.id) return i
+            const baseQty = Number(i.quantity) || 0
             const lots = i.expiry_lots?.length
               ? i.expiry_lots.map((l, li, arr) =>
                   li === arr.length - 1
                     ? { ...l, quantity: (Number(l.quantity) || 0) + 1 }
                     : l,
                 )
-              : defaultExpiryLots(i.quantity + 1)
+              : defaultExpiryLots(baseQty + 1)
             const quantity = lotsTotal(lots)
             return { ...i, quantity, expiry_lots: lots }
           })
@@ -375,15 +383,15 @@ function CreatePOModal({
           barcode: p.barcode,
           product_name_en: p.name_en,
           product_name_ar: p.name_ar,
-          quantity: 1,
-          bonus_qty: 0,
+          quantity: '',
+          bonus_qty: '',
           unit_cost: p.cost || 0,
           discount_pct: 0,
           sales_tax: 0,
           vat_pct: 0,
           public_price: p.price ?? null,
           expiry_date: null,
-          expiry_lots: defaultExpiryLots(1),
+          expiry_lots: defaultExpiryLots(''),
         }]
       })
       setSearch('')
@@ -395,15 +403,15 @@ function CreatePOModal({
         barcode: '',
         product_name_en: '',
         product_name_ar: '',
-        quantity: 1,
-        bonus_qty: 0,
+        quantity: '',
+        bonus_qty: '',
         unit_cost: 0,
         discount_pct: 0,
         sales_tax: 0,
         vat_pct: 0,
         public_price: null,
         expiry_date: null,
-        expiry_lots: defaultExpiryLots(1),
+        expiry_lots: defaultExpiryLots(''),
       }])
     }
   }
@@ -411,7 +419,7 @@ function CreatePOModal({
     setItems((prev) => prev.map((it, idx) => {
       if (idx !== i) return it
       const next = { ...it, ...patch }
-      if (patch.quantity != null && next.expiry_lots?.length === 1) {
+      if (patch.quantity != null && patch.quantity !== '' && next.expiry_lots?.length === 1) {
         next.expiry_lots = [{ ...next.expiry_lots[0], quantity: patch.quantity }]
       }
       return next
@@ -427,31 +435,36 @@ function CreatePOModal({
   const addLot = (itemIdx: number) => {
     setItems((prev) => prev.map((it, idx) => {
       if (idx !== itemIdx) return it
-      return { ...it, expiry_lots: [...it.expiry_lots, { expiry_date: '', quantity: 1 }] }
+      return { ...it, expiry_lots: [...it.expiry_lots, { expiry_date: '', quantity: '' }] }
     }))
   }
   const removeLot = (itemIdx: number, lotIdx: number) => {
     setItems((prev) => prev.map((it, idx) => {
       if (idx !== itemIdx) return it
       const lots = it.expiry_lots.filter((_, li) => li !== lotIdx)
-      const nextLots = lots.length > 0 ? lots : defaultExpiryLots(1)
+      const nextLots = lots.length > 0 ? lots : defaultExpiryLots('')
       const qty = lotsTotal(nextLots)
-      return { ...it, expiry_lots: nextLots, quantity: qty > 0 ? qty : 1 }
+      return { ...it, expiry_lots: nextLots, quantity: qty > 0 ? qty : '' }
     }))
   }
   const remove = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i))
 
   const lineNet = (i: POItemDraft) =>
-    lineExTax(i.quantity, i.public_price, i.sales_tax ?? 0, i.discount_pct || 0, i.unit_cost)
-  const totalSalesTax = items.reduce((s, i) => s + lineSalesTax(i.quantity, i.sales_tax ?? 0), 0)
+    lineExTax(Number(i.quantity) || 0, i.public_price, i.sales_tax ?? 0, i.discount_pct || 0, i.unit_cost)
+  const totalSalesTax = items.reduce((s, i) => s + lineSalesTax(Number(i.quantity) || 0, i.sales_tax ?? 0), 0)
   const subtotalNet = items.reduce((s, i) => s + lineNet(i), 0)
   const total = subtotalNet - invoiceDiscount + totalSalesTax + invoiceExtraTax
 
   const submit = async (receiveImmediately: boolean) => {
     if (!supplierId || !branchId || items.length === 0) { alert(t('purchases.fill_required')); return }
     for (const it of items) {
+      const qty = Number(it.quantity)
+      if (!Number.isFinite(qty) || qty <= 0) {
+        alert(t('purchases.fill_required'))
+        return
+      }
       const lt = lotsTotal(it.expiry_lots)
-      if (lt > 0 && lt !== it.quantity) {
+      if (lt > 0 && lt !== qty) {
         alert(t('purchases.expiry_lots_qty_mismatch', { name: it.product_name_en || it.barcode || '#' }) as string)
         return
       }
@@ -601,8 +614,9 @@ function CreatePOModal({
                 </div>
               )}
               {items.map((it, i) => {
+                const lineQty = Number(it.quantity) || 0
                 const lotSum = lotsTotal(it.expiry_lots)
-                const qtyMismatch = lotSum > 0 && lotSum !== it.quantity
+                const qtyMismatch = lotSum > 0 && lineQty > 0 && lotSum !== lineQty
                 return (
                 <div key={i} className="bg-white p-2 rounded-lg space-y-2 border-2 border-slate-200">
                   <div className="grid grid-cols-12 gap-2 items-center">
@@ -610,9 +624,17 @@ function CreatePOModal({
                            value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
                     <input type="number" min={1} className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
                            title={t('purchases.qty_packs_hint') as string}
-                           value={it.quantity} onChange={(e) => update(i, { quantity: Math.max(1, Number(e.target.value)) })} />
+                           value={it.quantity === '' ? '' : it.quantity}
+                           onChange={(e) => {
+                             const v = e.target.value
+                             update(i, { quantity: v === '' ? '' : Math.max(1, Number(v)) })
+                           }} />
                     <input type="number" min={0} className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.bonus_qty') as string}
-                           value={it.bonus_qty ?? 0} onChange={(e) => update(i, { bonus_qty: Math.max(0, Number(e.target.value)) })} />
+                           value={it.bonus_qty === '' || it.bonus_qty == null ? '' : it.bonus_qty}
+                           onChange={(e) => {
+                             const v = e.target.value
+                             update(i, { bonus_qty: v === '' ? '' : Math.max(0, Number(v)) })
+                           }} />
                     <input type="number" min={0} step="0.0001" className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.public_price') as string}
                            value={it.public_price ?? it.unit_cost ?? ''} onChange={(e) => update(i, { public_price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })} />
                     <input type="number" min={0} step="0.0001" className="input po-field col-span-1 text-xs text-end" placeholder="0"
@@ -637,7 +659,7 @@ function CreatePOModal({
                         {t('purchases.expiry_lots_title')}
                         {' · '}
                         <span className={qtyMismatch ? 'text-red-600' : 'text-slate-500'}>
-                          {t('purchases.expiry_lots_sum')}: {formatInt(lotSum)} / {formatInt(it.quantity)}
+                          {t('purchases.expiry_lots_sum')}: {formatInt(lotSum)} / {lineQty > 0 ? formatInt(lineQty) : '—'}
                         </span>
                       </span>
                       <button type="button" onClick={() => addLot(i)}
@@ -651,8 +673,11 @@ function CreatePOModal({
                           value={lot.expiry_date || ''}
                           onChange={(v) => updateLot(i, li, { expiry_date: v })} />
                         <input type="number" min={1} className="input text-xs w-20 text-end"
-                          value={lot.quantity}
-                          onChange={(e) => updateLot(i, li, { quantity: Math.max(1, Number(e.target.value)) })} />
+                          value={lot.quantity === '' ? '' : lot.quantity}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            updateLot(i, li, { quantity: v === '' ? '' : Math.max(1, Number(v)) })
+                          }} />
                         <span className="text-[10px] text-slate-500">{t('purchases.qty')}</span>
                         {it.expiry_lots.length > 1 && (
                           <button type="button" onClick={() => removeLot(i, li)}
