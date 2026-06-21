@@ -329,22 +329,28 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
         now_t = datetime.now().time().replace(microsecond=0)
         actor_id = current_user.get("id") if isinstance(current_user, dict) else getattr(current_user, "id", None)
         cur.execute(
-            """INSERT INTO attendance(employee_id, work_date, check_in, status, punched_by_user_id, punched_at)
-               VALUES (%s, %s, %s, 'present', %s, now())
-               ON CONFLICT (employee_id, work_date) DO NOTHING
-               RETURNING *""",
-            [emp["id"], today, now_t, actor_id],
+            "SELECT * FROM attendance WHERE employee_id=%s AND work_date=%s FOR UPDATE",
+            [emp["id"], today],
         )
-        inserted = cur.fetchone()
-        if inserted:
-            row = dict(inserted)
-            action = "check_in"
-        else:
+        existing = cur.fetchone()
+        if not existing:
             cur.execute(
-                "SELECT * FROM attendance WHERE employee_id=%s AND work_date=%s FOR UPDATE",
-                [emp["id"], today],
+                """INSERT INTO attendance(employee_id, work_date, check_in, status, punched_by_user_id, punched_at)
+                   VALUES (%s, %s, %s, 'present', %s, now()) RETURNING *""",
+                [emp["id"], today, now_t, actor_id],
             )
-            existing = cur.fetchone()
+            row = dict(cur.fetchone())
+            action = "check_in"
+        elif existing["check_in"] is None:
+            cur.execute(
+                """UPDATE attendance
+                      SET check_in=%s, status='present', punched_by_user_id=%s, punched_at=now()
+                    WHERE id=%s RETURNING *""",
+                [now_t, actor_id, existing["id"]],
+            )
+            row = dict(cur.fetchone())
+            action = "check_in"
+        elif existing["check_out"] is None:
             hours = _calc_hours(existing["check_in"], now_t)
             cur.execute(
                 """UPDATE attendance
@@ -353,7 +359,17 @@ def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
                 [now_t, hours, actor_id, existing["id"]],
             )
             row = dict(cur.fetchone())
-            action = "check_out" if existing["check_out"] is None else "check_out_updated"
+            action = "check_out"
+        else:
+            hours = _calc_hours(existing["check_in"], now_t)
+            cur.execute(
+                """UPDATE attendance
+                      SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=now()
+                    WHERE id=%s RETURNING *""",
+                [now_t, hours, actor_id, existing["id"]],
+            )
+            row = dict(cur.fetchone())
+            action = "check_out_updated"
         conn.commit()
         return {
             "action": action,

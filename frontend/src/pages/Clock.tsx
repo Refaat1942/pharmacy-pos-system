@@ -13,6 +13,12 @@ type Result = {
   message?: string
 }
 
+function clockActionKind(action: string | undefined): Result['kind'] {
+  if (action === 'check_in') return 'in'
+  if (action === 'check_out' || action === 'check_out_updated') return 'out'
+  return 'error'
+}
+
 export default function Clock() {
   const { t, i18n } = useTranslation()
   const { isAuthenticated, logout } = useAuth()
@@ -40,8 +46,12 @@ export default function Clock() {
     setBusy(true)
     try {
       const { data } = await api.post('/hr/clock', { code: value })
-      const kind: Result['kind'] = data.action === 'check_in' ? 'in' : 'out'
-      setResult({ kind, name: data.employee?.name, role: data.employee?.role, time: data.time })
+      const kind = clockActionKind(data.action)
+      if (kind === 'error') {
+        setResult({ kind: 'error', message: t('clock.unknown_code') })
+      } else {
+        setResult({ kind, name: data.employee?.name, role: data.employee?.role, time: data.time })
+      }
     } catch (e: any) {
       setResult({ kind: 'error', message: e?.response?.data?.detail || t('clock.unknown_code') })
     } finally {
@@ -58,8 +68,8 @@ export default function Clock() {
   const timeStr = now.toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour12: false })
 
   const bg =
-    result?.kind === 'in' ? 'from-emerald-500 to-emerald-700'
-    : result?.kind === 'out' ? 'from-sky-500 to-sky-700'
+    result?.kind === 'in' ? 'from-green-500 to-green-700'
+    : result?.kind === 'out' ? 'from-blue-600 to-blue-800'
     : result?.kind === 'error' ? 'from-rose-500 to-rose-700'
     : 'from-slate-700 to-slate-900'
 
@@ -102,20 +112,28 @@ export default function Clock() {
           </button>
         </form>
 
-        <div className="mt-6 min-h-[120px] flex items-center justify-center">
+        <div className="mt-6 min-h-[140px] flex items-center justify-center">
           {!result && <p className="text-white/60 text-sm">{t('clock.waiting')}</p>}
           {result?.kind === 'in' && (
             <div className="text-center">
-              <CheckCircle2 size={48} className="mx-auto mb-2" />
+              <div className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-green-700 font-extrabold text-lg uppercase tracking-wide shadow-lg mb-3">
+                <CheckCircle2 size={24} />
+                {t('clock.check_in')}
+              </div>
               <div className="text-2xl font-bold">{result.name}</div>
-              <div className="text-white/80 mt-1">{t('clock.checked_in_at', { time: result.time })}</div>
+              {result.role ? <div className="text-white/70 text-sm capitalize mt-0.5">{result.role}</div> : null}
+              <div className="text-white/90 mt-2 font-medium">{t('clock.checked_in_at', { time: result.time })}</div>
             </div>
           )}
           {result?.kind === 'out' && (
             <div className="text-center">
-              <LogOut size={48} className="mx-auto mb-2" />
+              <div className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2 text-blue-700 font-extrabold text-lg uppercase tracking-wide shadow-lg mb-3">
+                <LogOut size={24} />
+                {t('clock.check_out')}
+              </div>
               <div className="text-2xl font-bold">{result.name}</div>
-              <div className="text-white/80 mt-1">{t('clock.checked_out_at', { time: result.time })}</div>
+              {result.role ? <div className="text-white/70 text-sm capitalize mt-0.5">{result.role}</div> : null}
+              <div className="text-white/90 mt-2 font-medium">{t('clock.checked_out_at', { time: result.time })}</div>
             </div>
           )}
           {result?.kind === 'error' && (

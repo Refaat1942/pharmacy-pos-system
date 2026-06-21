@@ -389,6 +389,8 @@
     "placeholder": "Scan card or type code / ID…",
     "submit": "Punch in / out",
     "waiting": "Waiting for scan…",
+    "check_in": "Check in",
+    "check_out": "Check out",
     "checked_in_at": "Checked in at {{time}}",
     "checked_out_at": "Checked out at {{time}}",
     "unknown_code": "Unknown employee code",
