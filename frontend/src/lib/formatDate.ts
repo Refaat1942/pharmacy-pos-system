@@ -80,3 +80,23 @@ export function isIsoInRange(iso: string, min?: string, max?: string): boolean {
   if (max && iso > max) return false
   return true
 }
+
+const DEFAULT_REMINDER_TIME = '09:00'
+
+/** Normalize API/UI time to HH:mm for `<input type="time">`. */
+export function normalizeReminderTime(time?: string | null): string {
+  if (!time) return DEFAULT_REMINDER_TIME
+  const m = String(time).match(/^(\d{2}):(\d{2})/)
+  return m ? `${m[1]}:${m[2]}` : DEFAULT_REMINDER_TIME
+}
+
+/** Display reminder schedule as dd/mm/yy HH:mm */
+export function formatReminderSchedule(
+  dateIso: string | null | undefined,
+  time?: string | null,
+): string {
+  const date = formatDate(dateIso)
+  if (date === '—') return '—'
+  const tm = normalizeReminderTime(time)
+  return `${date} ${tm}`
+}

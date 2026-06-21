@@ -1,7 +1,7 @@
 """Customer treatment reminders and staff notes."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as dt_time, timedelta
 from typing import Optional
 
 import psycopg2.extras
@@ -65,6 +65,26 @@ def _advance_reminder_date(from_date: date, recurrence: str, recurrence_days: in
     return _add_months(from_date, 1)
 
 
+def _parse_reminder_time(value: str | None) -> dt_time | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    parts = s.split(":")
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid reminder time")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+        second = int(parts[2]) if len(parts) > 2 else 0
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid reminder time") from exc
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        raise HTTPException(status_code=400, detail="Invalid reminder time")
+    return dt_time(hour, minute, second)
+
+
 def _can_access_customer(cur, customer_id: int, user) -> bool:
     if _is_admin(user):
         return True
@@ -101,6 +121,11 @@ def _serialize_plan(row: dict, items: list[dict]) -> dict:
     out = dict(row)
     if out.get("next_reminder_date"):
         out["next_reminder_date"] = out["next_reminder_date"].isoformat()
+    if out.get("next_reminder_time"):
+        t = out["next_reminder_time"]
+        out["next_reminder_time"] = t.strftime("%H:%M") if hasattr(t, "strftime") else str(t)[:5]
+    else:
+        out["next_reminder_time"] = None
     for k in ("created_at", "updated_at", "handled_at", "last_loaded_at"):
         if out.get(k):
             out[k] = out[k].isoformat()
@@ -126,6 +151,7 @@ class TreatmentItemIn(BaseModel):
 class TreatmentPlanIn(BaseModel):
     title: str = Field(default="Monthly treatment", min_length=1, max_length=200)
     next_reminder_date: date
+    next_reminder_time: Optional[str] = Field(default="09:00", max_length=8)
     recurrence: str = Field(default="monthly", max_length=20)
     recurrence_days: Optional[int] = Field(default=None, ge=1, le=365)
     notes: Optional[str] = Field(default=None, max_length=2000)
@@ -135,6 +161,7 @@ class TreatmentPlanIn(BaseModel):
 class TreatmentPlanUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     next_reminder_date: Optional[date] = None
+    next_reminder_time: Optional[str] = Field(default=None, max_length=8)
     recurrence: Optional[str] = Field(default=None, max_length=20)
     recurrence_days: Optional[int] = Field(default=None, ge=1, le=365)
     notes: Optional[str] = Field(default=None, max_length=2000)
@@ -259,7 +286,7 @@ def list_customer_treatments(customer_id: int, current_user=Depends(get_current_
                  FROM customer_treatment_plans p
                  JOIN customers c ON c.id = p.customer_id
                 WHERE p.customer_id=%s
-                ORDER BY p.next_reminder_date ASC, p.id DESC""",
+                ORDER BY p.next_reminder_date ASC, p.next_reminder_time ASC NULLS FIRST, p.id DESC""",
             [customer_id],
         )
         rows = [dict(r) for r in cur.fetchall()]
@@ -287,14 +314,16 @@ def create_treatment_plan(
     try:
         _require_customer_access(cur, customer_id, current_user)
         recurrence, recurrence_days = _validate_recurrence(body.recurrence, body.recurrence_days)
+        reminder_time = _parse_reminder_time(body.next_reminder_time)
         cur.execute(
             """INSERT INTO customer_treatment_plans
-               (customer_id, title, next_reminder_date, recurrence, recurrence_days, notes, branch_id, created_by)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+               (customer_id, title, next_reminder_date, next_reminder_time, recurrence, recurrence_days, notes, branch_id, created_by)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             [
                 customer_id,
                 body.title.strip(),
                 body.next_reminder_date,
+                reminder_time,
                 recurrence,
                 recurrence_days,
                 body.notes,
@@ -347,6 +376,9 @@ def update_treatment_plan(plan_id: int, body: TreatmentPlanUpdate, current_user=
         if body.next_reminder_date is not None:
             fields.append("next_reminder_date=%s")
             params.append(body.next_reminder_date)
+        if body.next_reminder_time is not None:
+            fields.append("next_reminder_time=%s")
+            params.append(_parse_reminder_time(body.next_reminder_time))
         if body.recurrence is not None:
             rec, rec_days = _validate_recurrence(body.recurrence, body.recurrence_days)
             fields.append("recurrence=%s")
@@ -416,7 +448,16 @@ def _due_where(user, active_branch):
     where = [
         "p.active = true",
         "p.status = 'pending'",
-        "p.next_reminder_date <= CURRENT_DATE",
+        """(
+            p.next_reminder_date < CURRENT_DATE
+            OR (
+                p.next_reminder_date = CURRENT_DATE
+                AND (
+                    p.next_reminder_time IS NULL
+                    OR p.next_reminder_time <= CURRENT_TIME
+                )
+            )
+        )""",
     ]
     params: list = []
     if not _is_admin(user):
@@ -452,7 +493,7 @@ def list_due_treatments(
                   FROM customer_treatment_plans p
                   JOIN customers c ON c.id = p.customer_id
                  WHERE {' AND '.join(where)}
-                 ORDER BY p.next_reminder_date ASC, p.id ASC
+                 ORDER BY p.next_reminder_date ASC, p.next_reminder_time ASC NULLS FIRST, p.id ASC
                  LIMIT 100""",
             params,
         )

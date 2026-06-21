@@ -12,6 +12,9 @@ import {
 import { useAuth } from '../lib/auth'
 import { barcodeSearchQueries, matchProductByBarcode } from '../lib/barcodeSearch'
 import i18n from '../lib/i18n'
+import { formatReminderSchedule, normalizeReminderTime } from '../lib/formatDate'
+
+const DEFAULT_REMINDER_TIME = '09:00'
 
 type TreatmentLine = {
   product_id: number
@@ -49,6 +52,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
   const [showForm, setShowForm] = useState(false)
   const [busy, setBusy] = useState(false)
   const [reminderDate, setReminderDate] = useState(() => suggestReminderDate('monthly', 30))
+  const [reminderTime, setReminderTime] = useState(DEFAULT_REMINDER_TIME)
   const [isRepeating, setIsRepeating] = useState(true)
   const [recurrence, setRecurrence] = useState<RecurrenceKind>('monthly')
   const [customDays, setCustomDays] = useState(30)
@@ -84,6 +88,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
     setIsRepeating(true)
     setRecurrence('monthly')
     setCustomDays(30)
+    setReminderTime(DEFAULT_REMINDER_TIME)
     setReminderDate(suggestReminderDate('monthly', 30))
     setNote('')
     setLines([])
@@ -159,6 +164,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
       const payload = {
         title: t('treatment.default_title') as string,
         next_reminder_date: reminderDate,
+        next_reminder_time: reminderTime,
         recurrence: isRepeating ? recurrence : 'once',
         recurrence_days: isRepeating && recurrence === 'custom' ? customDays : null,
         notes: note.trim() || undefined,
@@ -182,6 +188,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
     if (!isAdmin) return
     setEditId(rem.id)
     setReminderDate(rem.next_reminder_date)
+    setReminderTime(normalizeReminderTime(rem.next_reminder_time))
     const once = rem.recurrence === 'once'
     setIsRepeating(!once)
     setRecurrence((rem.recurrence === 'weekly' || rem.recurrence === 'custom' ? rem.recurrence : 'monthly'))
@@ -228,7 +235,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
 
       {showForm && (
         <div className="border border-amber-300 rounded-lg p-3 mb-3 bg-white space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-slate-600 font-medium flex items-center gap-1">
                 <Calendar size={13} /> {t('treatment.reminder_date')}
@@ -237,6 +244,15 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
                 type="date"
                 value={reminderDate}
                 onChange={(e) => setReminderDate(e.target.value)}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('treatment.reminder_time')}</label>
+              <input
+                type="time"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value || DEFAULT_REMINDER_TIME)}
                 className="input mt-1 w-full text-sm"
               />
             </div>
@@ -413,7 +429,9 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-[11px] font-semibold text-amber-800 inline-flex items-center gap-1">
-                    <Calendar size={12} /> {t('treatment.next_on', { date: rem.next_reminder_date })}
+                    <Calendar size={12} /> {t('treatment.next_on', {
+                      date: formatReminderSchedule(rem.next_reminder_date, rem.next_reminder_time),
+                    })}
                   </div>
                   <div className="text-[10px] text-slate-500 mt-0.5">{recurrenceLabel(rem, t)}</div>
                 </div>

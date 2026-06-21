@@ -4,7 +4,7 @@ import type { TFunction } from 'i18next'
 import { Bell, CalendarHeart, ShoppingCart, Trash2, X } from 'lucide-react'
 import { customerTreatmentsAPI, type CustomerTreatmentPlan } from '../lib/api'
 import { useTabLeader } from '../lib/tabLeader'
-import { formatDateTime } from '../lib/formatDate'
+import { formatReminderSchedule } from '../lib/formatDate'
 
 interface Props {
   onLoad: (plan: CustomerTreatmentPlan) => Promise<string[]>
@@ -201,11 +201,13 @@ export default function TreatmentReminderBell({ onLoad }: Props) {
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="min-w-0">
                   <div className="font-semibold text-slate-800 text-sm truncate">{plan.customer_name}</div>
-                  <div className="text-[11px] text-amber-700 font-medium">{plan.next_reminder_date}</div>
+                  <div className="text-[11px] text-amber-700 font-medium">
+                    {formatReminderSchedule(plan.next_reminder_date, plan.next_reminder_time)}
+                  </div>
                   <div className="text-[10px] text-slate-500">{recurrenceLabel(plan, t)}</div>
                     </div>
                     <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 whitespace-nowrap">
-                      {plan.next_reminder_date}
+                      {formatReminderSchedule(plan.next_reminder_date, plan.next_reminder_time)}
                     </span>
                   </div>
                   {(plan.discount_percent != null && Number(plan.discount_percent) > 0) && (

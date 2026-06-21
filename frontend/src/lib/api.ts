@@ -321,6 +321,7 @@ export interface CustomerTreatmentPlan {
   customer_phone?: string | null
   title: string
   next_reminder_date: string
+  next_reminder_time?: string | null
   recurrence: string
   recurrence_days?: number | null
   notes?: string | null
@@ -346,6 +347,7 @@ export const customerTreatmentsAPI = {
   create: (customerId: number, data: {
     title: string
     next_reminder_date: string
+    next_reminder_time?: string | null
     recurrence?: string
     recurrence_days?: number | null
     notes?: string
@@ -354,6 +356,7 @@ export const customerTreatmentsAPI = {
   update: (planId: number, data: Partial<{
     title: string
     next_reminder_date: string
+    next_reminder_time?: string | null
     recurrence: string
     recurrence_days?: number | null
     notes: string

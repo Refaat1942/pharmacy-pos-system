@@ -898,6 +898,7 @@ CREATE INDEX IF NOT EXISTS idx_treatment_reminder_due
     WHERE active = true;
 
 ALTER TABLE customer_treatment_plans ADD COLUMN IF NOT EXISTS recurrence_days INTEGER;
+ALTER TABLE customer_treatment_plans ADD COLUMN IF NOT EXISTS next_reminder_time TIME;
 
 CREATE TABLE IF NOT EXISTS customer_treatment_items (
     id SERIAL PRIMARY KEY,
