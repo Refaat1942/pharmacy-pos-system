@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bell, CalendarHeart, ShoppingCart, Trash2, User, X } from 'lucide-react'
+import { Bell, CalendarHeart, ShoppingCart, Trash2, X } from 'lucide-react'
 import { customerTreatmentsAPI, type CustomerTreatmentPlan } from '../lib/api'
 import { useTabLeader } from '../lib/tabLeader'
 import { formatDateTime } from '../lib/formatDate'
@@ -190,12 +190,8 @@ export default function TreatmentReminderBell({ onLoad }: Props) {
                 <div key={plan.id} className="p-3">
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="min-w-0">
-                      <div className="font-semibold text-slate-800 text-sm truncate">{plan.title}</div>
-                      <div className="text-[11px] text-slate-500 inline-flex items-center gap-1 mt-0.5">
-                        <User size={11} />
-                        {plan.customer_name}
-                        {plan.customer_code ? ` · ${plan.customer_code}` : ''}
-                      </div>
+                  <div className="font-semibold text-slate-800 text-sm truncate">{plan.customer_name}</div>
+                  <div className="text-[11px] text-amber-700 font-medium">{plan.next_reminder_date}</div>
                     </div>
                     <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 whitespace-nowrap">
                       {plan.next_reminder_date}

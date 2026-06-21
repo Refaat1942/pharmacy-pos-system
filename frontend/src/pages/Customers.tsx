@@ -400,10 +400,13 @@ function CustomerCardModal({
               {!isAdmin && <p className="text-[10px] text-slate-500 mt-1">{t('customers.admin_notes_readonly')}</p>}
             </div>
           )}
-          <CustomerStaffNotes customerId={customer.id} />
           {showTreatments && <CustomerTreatmentPlans customerId={customer.id} />}
+          <CustomerStaffNotes customerId={customer.id} />
           {showInsurance && (
-            <CustomerInsuranceProfiles customerId={customer.id} compact />
+            <div className="pt-2 border-t border-slate-200">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-2">{t('insurance.title')}</p>
+              <CustomerInsuranceProfiles customerId={customer.id} compact />
+            </div>
           )}
         </div>
         <div className="px-5 py-3 border-t flex justify-end gap-2">
