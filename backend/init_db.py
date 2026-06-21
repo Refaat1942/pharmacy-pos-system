@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS product_batches (
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     branch_id INTEGER REFERENCES branches(id),
     expiry_date DATE,
-    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0 OR (quantity < 0 AND expiry_date IS NULL)),
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -903,11 +903,17 @@ SEARCH_INDEX_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_products_name_ar_trgm ON products USING gin (name_ar gin_trgm_ops)",
 ]
 
+BATCH_OVERSELL_MIGRATIONS = [
+    "ALTER TABLE product_batches DROP CONSTRAINT IF EXISTS product_batches_quantity_check",
+    """ALTER TABLE product_batches ADD CONSTRAINT product_batches_quantity_check
+       CHECK (quantity >= 0 OR (quantity < 0 AND expiry_date IS NULL))""",
+]
+
 
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
-    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS:
+    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS + BATCH_OVERSELL_MIGRATIONS:
         try:
             cur.execute(stmt)
             conn.commit()

@@ -7,3 +7,5 @@ python-jose[cryptography]
 python-multipart
 openpyxl
 reportlab
+arabic-reshaper
+python-bidi
