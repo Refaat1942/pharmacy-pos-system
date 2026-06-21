@@ -1,7 +1,7 @@
 """Customer treatment reminders and staff notes."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import psycopg2.extras
@@ -35,6 +35,30 @@ def _add_months(d: date, months: int = 1) -> date:
     m = m % 12 + 1
     dim = [31, 29 if (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]
     return date(y, m, min(d.day, dim))
+
+
+VALID_RECURRENCE = ("weekly", "monthly", "custom")
+
+
+def _validate_recurrence(recurrence: str, recurrence_days: int | None) -> tuple[str, int | None]:
+    rec = (recurrence or "monthly").strip().lower()
+    if rec not in VALID_RECURRENCE:
+        raise HTTPException(status_code=400, detail="Invalid recurrence")
+    if rec == "custom":
+        days = int(recurrence_days or 0)
+        if days < 1 or days > 365:
+            raise HTTPException(status_code=400, detail="Custom interval must be 1–365 days")
+        return rec, days
+    return rec, None
+
+
+def _advance_reminder_date(from_date: date, recurrence: str, recurrence_days: int | None) -> date:
+    rec = (recurrence or "monthly").strip().lower()
+    if rec == "weekly":
+        return from_date + timedelta(days=7)
+    if rec == "custom":
+        return from_date + timedelta(days=max(1, int(recurrence_days or 30)))
+    return _add_months(from_date, 1)
 
 
 def _can_access_customer(cur, customer_id: int, user) -> bool:
@@ -99,6 +123,7 @@ class TreatmentPlanIn(BaseModel):
     title: str = Field(default="Monthly treatment", min_length=1, max_length=200)
     next_reminder_date: date
     recurrence: str = Field(default="monthly", max_length=20)
+    recurrence_days: Optional[int] = Field(default=None, ge=1, le=365)
     notes: Optional[str] = Field(default=None, max_length=2000)
     items: list[TreatmentItemIn] = Field(min_length=1)
 
@@ -107,6 +132,7 @@ class TreatmentPlanUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
     next_reminder_date: Optional[date] = None
     recurrence: Optional[str] = Field(default=None, max_length=20)
+    recurrence_days: Optional[int] = Field(default=None, ge=1, le=365)
     notes: Optional[str] = Field(default=None, max_length=2000)
     active: Optional[bool] = None
     items: Optional[list[TreatmentItemIn]] = None
@@ -256,18 +282,17 @@ def create_treatment_plan(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         _require_customer_access(cur, customer_id, current_user)
-        recurrence = (body.recurrence or "monthly").strip().lower()
-        if recurrence not in ("monthly", "once"):
-            raise HTTPException(status_code=400, detail="Invalid recurrence")
+        recurrence, recurrence_days = _validate_recurrence(body.recurrence, body.recurrence_days)
         cur.execute(
             """INSERT INTO customer_treatment_plans
-               (customer_id, title, next_reminder_date, recurrence, notes, branch_id, created_by)
-               VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+               (customer_id, title, next_reminder_date, recurrence, recurrence_days, notes, branch_id, created_by)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             [
                 customer_id,
                 body.title.strip(),
                 body.next_reminder_date,
                 recurrence,
+                recurrence_days,
                 body.notes,
                 active_branch,
                 _user_id(current_user),
@@ -319,11 +344,19 @@ def update_treatment_plan(plan_id: int, body: TreatmentPlanUpdate, current_user=
             fields.append("next_reminder_date=%s")
             params.append(body.next_reminder_date)
         if body.recurrence is not None:
-            rec = body.recurrence.strip().lower()
-            if rec not in ("monthly", "once"):
-                raise HTTPException(status_code=400, detail="Invalid recurrence")
+            rec, rec_days = _validate_recurrence(body.recurrence, body.recurrence_days)
             fields.append("recurrence=%s")
             params.append(rec)
+            fields.append("recurrence_days=%s")
+            params.append(rec_days)
+        elif body.recurrence_days is not None:
+            cur.execute("SELECT recurrence FROM customer_treatment_plans WHERE id=%s", [plan_id])
+            existing_rec = (cur.fetchone() or {}).get("recurrence") or "monthly"
+            if existing_rec != "custom":
+                raise HTTPException(status_code=400, detail="recurrence_days only applies to custom recurrence")
+            _, rec_days = _validate_recurrence("custom", body.recurrence_days)
+            fields.append("recurrence_days=%s")
+            params.append(rec_days)
         if body.notes is not None:
             fields.append("notes=%s")
             params.append(body.notes)
@@ -476,25 +509,22 @@ def update_treatment_status(
         _require_customer_access(cur, plan["customer_id"], current_user)
 
         now = datetime.now()
-        next_date = plan["next_reminder_date"]
-        active = plan["active"]
+        recurrence = plan.get("recurrence") or "monthly"
+        recurrence_days = plan.get("recurrence_days")
         new_status = status
 
         if status == "loaded":
-            if (plan.get("recurrence") or "monthly") == "monthly":
-                next_date = _add_months(plan["next_reminder_date"], 1)
-            else:
-                active = False
+            next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
             new_status = "pending"
             cur.execute(
                 """UPDATE customer_treatment_plans
-                      SET status=%s, next_reminder_date=%s, active=%s,
+                      SET status=%s, next_reminder_date=%s, active=true,
                           handled_by=%s, handled_at=%s, last_loaded_at=%s, updated_at=NOW()
                     WHERE id=%s""",
-                [new_status, next_date, active, _user_id(current_user), now, now, plan_id],
+                [new_status, next_date, _user_id(current_user), now, now, plan_id],
             )
         elif status == "dismissed":
-            next_date = _add_months(plan["next_reminder_date"], 1)
+            next_date = _advance_reminder_date(plan["next_reminder_date"], recurrence, recurrence_days)
             cur.execute(
                 """UPDATE customer_treatment_plans
                       SET status='pending', next_reminder_date=%s,

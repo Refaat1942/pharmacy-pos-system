@@ -322,6 +322,7 @@ export interface CustomerTreatmentPlan {
   title: string
   next_reminder_date: string
   recurrence: string
+  recurrence_days?: number | null
   notes?: string | null
   status: string
   active: boolean
@@ -346,6 +347,7 @@ export const customerTreatmentsAPI = {
     title: string
     next_reminder_date: string
     recurrence?: string
+    recurrence_days?: number | null
     notes?: string
     items: CustomerTreatmentItem[]
   }) => api.post<CustomerTreatmentPlan>(`/customers/v2/${customerId}/treatments`, data),
@@ -353,6 +355,7 @@ export const customerTreatmentsAPI = {
     title: string
     next_reminder_date: string
     recurrence: string
+    recurrence_days?: number | null
     notes: string
     active: boolean
     items: CustomerTreatmentItem[]

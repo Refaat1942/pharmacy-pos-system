@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Calendar, Pill, Plus, ScanLine, Search, Trash2, Pencil, X } from 'lucide-react'
 import api from '../lib/api'
 import {
@@ -19,10 +20,22 @@ type TreatmentLine = {
   quantity: number
 }
 
-function defaultReminderDate(): string {
+type RecurrenceKind = 'weekly' | 'monthly' | 'custom'
+
+function suggestReminderDate(recurrence: RecurrenceKind, customDays: number): string {
   const d = new Date()
-  d.setMonth(d.getMonth() + 1)
+  if (recurrence === 'weekly') d.setDate(d.getDate() + 7)
+  else if (recurrence === 'custom') d.setDate(d.getDate() + Math.max(1, customDays))
+  else d.setMonth(d.getMonth() + 1)
   return d.toISOString().slice(0, 10)
+}
+
+function recurrenceLabel(rem: CustomerTreatmentPlan, t: TFunction): string {
+  if (rem.recurrence === 'weekly') return t('treatment.repeat_weekly')
+  if (rem.recurrence === 'custom') {
+    return t('treatment.repeat_custom_days', { days: rem.recurrence_days || 30 })
+  }
+  return t('treatment.repeat_monthly')
 }
 
 export default function CustomerTreatmentPlans({ customerId }: { customerId: number }) {
@@ -34,7 +47,9 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [reminderDate, setReminderDate] = useState(defaultReminderDate())
+  const [reminderDate, setReminderDate] = useState(() => suggestReminderDate('monthly', 30))
+  const [recurrence, setRecurrence] = useState<RecurrenceKind>('monthly')
+  const [customDays, setCustomDays] = useState(30)
   const [note, setNote] = useState('')
   const [lines, setLines] = useState<TreatmentLine[]>([])
   const [searchQ, setSearchQ] = useState('')
@@ -64,7 +79,9 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
   }, [searchQ])
 
   const resetForm = () => {
-    setReminderDate(defaultReminderDate())
+    setRecurrence('monthly')
+    setCustomDays(30)
+    setReminderDate(suggestReminderDate('monthly', 30))
     setNote('')
     setLines([])
     setSearchQ('')
@@ -130,12 +147,17 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
       alert(t('treatment.form_incomplete'))
       return
     }
+    if (recurrence === 'custom' && (customDays < 1 || customDays > 365)) {
+      alert(t('treatment.custom_days_invalid'))
+      return
+    }
     setBusy(true)
     try {
       const payload = {
         title: t('treatment.default_title') as string,
         next_reminder_date: reminderDate,
-        recurrence: 'monthly',
+        recurrence,
+        recurrence_days: recurrence === 'custom' ? customDays : null,
         notes: note.trim() || undefined,
         items: toPayloadItems(),
       }
@@ -157,6 +179,8 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
     if (!isAdmin) return
     setEditId(rem.id)
     setReminderDate(rem.next_reminder_date)
+    setRecurrence((rem.recurrence === 'weekly' || rem.recurrence === 'custom' ? rem.recurrence : 'monthly'))
+    setCustomDays(rem.recurrence_days || 30)
     setNote(rem.notes || '')
     setLines(rem.items.filter((it) => it.product_id).map((it) => ({
       product_id: it.product_id!,
@@ -199,16 +223,51 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
 
       {showForm && (
         <div className="border border-amber-300 rounded-lg p-3 mb-3 bg-white space-y-3">
-          <div>
-            <label className="text-xs text-slate-600 font-medium flex items-center gap-1">
-              <Calendar size={13} /> {t('treatment.reminder_date')}
-            </label>
-            <input
-              type="date"
-              value={reminderDate}
-              onChange={(e) => setReminderDate(e.target.value)}
-              className="input mt-1 w-full sm:w-56 text-sm"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-600 font-medium flex items-center gap-1">
+                <Calendar size={13} /> {t('treatment.reminder_date')}
+              </label>
+              <input
+                type="date"
+                value={reminderDate}
+                onChange={(e) => setReminderDate(e.target.value)}
+                className="input mt-1 w-full text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('treatment.repeat_every')}</label>
+              <select
+                value={recurrence}
+                onChange={(e) => {
+                  const next = e.target.value as RecurrenceKind
+                  setRecurrence(next)
+                  if (!editId) setReminderDate(suggestReminderDate(next, customDays))
+                }}
+                className="input mt-1 w-full text-sm"
+              >
+                <option value="weekly">{t('treatment.repeat_weekly')}</option>
+                <option value="monthly">{t('treatment.repeat_monthly')}</option>
+                <option value="custom">{t('treatment.repeat_custom')}</option>
+              </select>
+              {recurrence === 'custom' && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={customDays}
+                    onChange={(e) => {
+                      const days = Math.max(1, Math.min(365, Number(e.target.value) || 30))
+                      setCustomDays(days)
+                      if (!editId) setReminderDate(suggestReminderDate('custom', days))
+                    }}
+                    className="input w-20 text-sm py-1"
+                  />
+                  <span className="text-xs text-slate-500">{t('treatment.custom_days_label')}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -328,6 +387,7 @@ export default function CustomerTreatmentPlans({ customerId }: { customerId: num
                   <div className="text-[11px] font-semibold text-amber-800 inline-flex items-center gap-1">
                     <Calendar size={12} /> {t('treatment.next_on', { date: rem.next_reminder_date })}
                   </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{recurrenceLabel(rem, t)}</div>
                 </div>
                 {isAdmin && (
                   <div className="flex gap-1">

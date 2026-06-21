@@ -881,6 +881,7 @@ CREATE TABLE IF NOT EXISTS customer_treatment_plans (
     title VARCHAR(200) NOT NULL DEFAULT 'Monthly treatment',
     next_reminder_date DATE NOT NULL,
     recurrence VARCHAR(20) DEFAULT 'monthly',
+    recurrence_days INTEGER,
     notes TEXT,
     status VARCHAR(20) DEFAULT 'pending',
     active BOOLEAN DEFAULT true,
@@ -895,6 +896,8 @@ CREATE TABLE IF NOT EXISTS customer_treatment_plans (
 CREATE INDEX IF NOT EXISTS idx_treatment_reminder_due
     ON customer_treatment_plans(next_reminder_date, status)
     WHERE active = true;
+
+ALTER TABLE customer_treatment_plans ADD COLUMN IF NOT EXISTS recurrence_days INTEGER;
 
 CREATE TABLE IF NOT EXISTS customer_treatment_items (
     id SERIAL PRIMARY KEY,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import { Bell, CalendarHeart, ShoppingCart, Trash2, X } from 'lucide-react'
 import { customerTreatmentsAPI, type CustomerTreatmentPlan } from '../lib/api'
 import { useTabLeader } from '../lib/tabLeader'
@@ -11,6 +12,14 @@ interface Props {
 
 const POLL_MS = 15000
 const REPEAT_MS = 60000
+
+function recurrenceLabel(rem: CustomerTreatmentPlan, t: TFunction): string {
+  if (rem.recurrence === 'weekly') return t('treatment.repeat_weekly')
+  if (rem.recurrence === 'custom') {
+    return t('treatment.repeat_custom_days', { days: rem.recurrence_days || 30 })
+  }
+  return t('treatment.repeat_monthly')
+}
 
 export default function TreatmentReminderBell({ onLoad }: Props) {
   const { t } = useTranslation()
@@ -192,6 +201,7 @@ export default function TreatmentReminderBell({ onLoad }: Props) {
                     <div className="min-w-0">
                   <div className="font-semibold text-slate-800 text-sm truncate">{plan.customer_name}</div>
                   <div className="text-[11px] text-amber-700 font-medium">{plan.next_reminder_date}</div>
+                  <div className="text-[10px] text-slate-500">{recurrenceLabel(plan, t)}</div>
                     </div>
                     <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 rounded-full px-2 py-0.5 whitespace-nowrap">
                       {plan.next_reminder_date}
