@@ -578,7 +578,8 @@ export default function Inventory() {
                       </tr>
                     )}
                     {sortedItems.map(it => {
-                      const isZero = it.stock <= 0
+                      const isNegative = it.stock < 0
+                      const isZero = it.stock <= 0 && !isNegative
                       return (
                         <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50">
                           <td className="px-3 py-2 text-center">
@@ -599,6 +600,7 @@ export default function Inventory() {
                           <td className="px-3 py-2 text-end text-slate-600">{it.cost ? formatMoney(it.cost) : '—'}</td>
                           <td className="px-3 py-2 text-center">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              isNegative ? 'bg-red-200 text-red-900' :
                               isZero ? 'bg-red-100 text-red-700' :
                               'bg-emerald-100 text-emerald-700'
                             }`}>
@@ -2543,7 +2545,9 @@ function BranchStockTab() {
                     const pack = row.pack_size && row.pack_size > 1 ? row.pack_size : 1
                     const cls = missing
                       ? 'text-slate-300'
-                      : stock <= 0
+                      : stock < 0
+                        ? 'text-red-700 font-bold'
+                        : stock <= 0
                         ? 'text-red-600 font-bold'
                         : stock <= min
                           ? 'text-amber-600 font-semibold'

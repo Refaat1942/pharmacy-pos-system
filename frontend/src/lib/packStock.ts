@@ -16,9 +16,14 @@ function trimDecimals(n: number, maxPlaces = 3): string {
   return s || '0'
 }
 
-/** Decimal box count for display (e.g. 5 strips ÷ 3 → "1.667"). */
+function roundStockSubUnits(stockSubUnits: number): number {
+  if (!Number.isFinite(stockSubUnits)) return 0
+  return Math.round(stockSubUnits)
+}
+
+/** Decimal box count for display (e.g. 5 strips ÷ 3 → "1.667"; -1 → "-1" or "-0.042"). */
 export function formatDecimalBoxes(stockSubUnits: number, packSize: number): string {
-  const n = Math.max(0, Math.round(stockSubUnits))
+  const n = roundStockSubUnits(stockSubUnits)
   if (packSize <= 1) return String(n)
   return trimDecimals(n / packSize)
 }
@@ -76,8 +81,9 @@ export function formatPackStockLabel(
   unit: string,
   subUnit: string,
 ): string {
-  const n = Math.max(0, Math.round(stockSubUnits))
-  if (packSize <= 1) return String(n)
+  const n = roundStockSubUnits(stockSubUnits)
+  if (packSize <= 1) return unit ? `${n} ${unit}` : String(n)
+  if (n < 0) return `${formatDecimalBoxes(n, packSize)} ${unit} (${n} ${subUnit})`
   const dec = formatDecimalBoxes(n, packSize)
   const fullBoxes = Math.floor(n / packSize)
   const loose = n % packSize
@@ -104,9 +110,10 @@ export function formatMajorSubLabel(
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
   if (pack <= 1) return ''
-  const n = Math.max(0, Math.round(stockSubUnits))
+  const n = roundStockSubUnits(stockSubUnits)
   const u = unit || 'box'
   const su = subUnit || 'unit'
+  if (n < 0) return `${n} ${su}`
   const fullBoxes = Math.floor(n / pack)
   const loose = n % pack
   if (fullBoxes > 0 && loose > 0) return `${fullBoxes} ${u} + ${loose} ${su}`
@@ -125,10 +132,10 @@ export function formatStockInline(
   subUnit?: string | null,
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
-  const n = Math.max(0, Math.round(stockSubUnits))
+  const n = roundStockSubUnits(stockSubUnits)
   if (pack <= 1) return String(n)
   const breakdown = formatMajorSubLabel(n, pack, unit, subUnit)
-  return `${formatDecimalBoxes(n, pack)} (${breakdown})`
+  return breakdown ? `${formatDecimalBoxes(n, pack)} (${breakdown})` : formatDecimalBoxes(n, pack)
 }
 
 /**
@@ -144,7 +151,7 @@ export function formatStockDisplay(
   subUnit?: string | null,
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
-  const n = Math.max(0, Math.round(stockSubUnits))
+  const n = roundStockSubUnits(stockSubUnits)
   if (pack <= 1) return unit ? `${n} ${unit}` : String(n)
   if (unit && subUnit) return formatPackStockLabel(n, pack, unit, subUnit)
   return formatDecimalBoxes(n, pack)
@@ -158,7 +165,7 @@ export function stockBreakdownTitle(
   subUnit?: string | null,
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
-  const n = Math.max(0, Math.round(stockSubUnits))
+  const n = roundStockSubUnits(stockSubUnits)
   if (pack <= 1) return unit ? `${n} ${unit}` : String(n)
   const label = unit && subUnit ? formatPackStockLabel(n, pack, unit, subUnit) : formatDecimalBoxes(n, pack)
   const sub = subUnit || 'sub-units'

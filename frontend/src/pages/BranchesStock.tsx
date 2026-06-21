@@ -67,6 +67,7 @@ function BarcodePill({
 
 function stockStatus(stock: number, min: number, missing: boolean) {
   if (missing) return 'missing' as const
+  if (stock < 0) return 'oversold' as const
   if (stock <= 0) return 'out' as const
   if (stock <= min) return 'low' as const
   return 'ok' as const
@@ -86,7 +87,9 @@ function StockCell({
   const pack = row.pack_size && row.pack_size > 1 ? row.pack_size : 1
   const st = stockStatus(stock, min, missing)
   const cls =
-    st === 'out'
+    st === 'oversold'
+      ? 'text-red-700 font-bold'
+      : st === 'out'
       ? 'text-red-600 font-bold'
       : st === 'low'
         ? 'text-amber-600 font-semibold'
@@ -358,6 +361,13 @@ export default function BranchesStock() {
       return (
         <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700 border border-red-100">
           {t('inventory.filter_zero')}
+        </span>
+      )
+    }
+    if (st === 'oversold') {
+      return (
+        <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-800 border border-red-200">
+          {t('pos.negative_stock')}
         </span>
       )
     }
