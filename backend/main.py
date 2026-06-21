@@ -15,6 +15,7 @@ from tenant_ctx import set_current_schema
 from inventory import router as inventory_router, log_movement
 from stock_batches import add_batch_stock, assert_sellable, deduct_stock_fefo, sync_product_from_batches
 from purchasing import router as purchasing_router
+from customer_treatments import router as customer_treatments_router
 from customers import router as customers_router
 from clinics import router as clinics_router
 
@@ -153,6 +154,7 @@ from deps import requires_feature
 app.include_router(inventory_router, dependencies=[Depends(requires_feature("inventory"))])
 app.include_router(purchasing_router, dependencies=[Depends(requires_feature("purchases"))])
 app.include_router(customers_router, dependencies=[Depends(requires_feature("customers"))])
+app.include_router(customer_treatments_router, dependencies=[Depends(requires_feature("customers"))])
 app.include_router(clinics_router)
 from settings import router as settings_router
 app.include_router(settings_router, dependencies=[Depends(requires_feature("settings"))])

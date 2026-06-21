@@ -26,11 +26,12 @@ import SellerPicker from '../components/SellerPicker'
 import PosSaleTypePicker, { type PosSaleType } from '../components/PosSaleTypePicker'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
+import TreatmentReminderBell from '../components/TreatmentReminderBell'
 import PosCounselingTips, { type CounselingTip } from '../components/PosCounselingTips'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { productsAPI, employeesAPI, customersAPI, posCounselingAPI } from '../lib/api'
 import api from '../lib/api'
-import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription } from '../lib/api'
+import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription, CustomerTreatmentPlan } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
 import { formatStockInline } from '../lib/packStock'
@@ -213,6 +214,7 @@ export default function POS() {
   const doseLabelsOn = hasFeature('pos') && hasFeatureOption('pos', 'dose_labels')
   const quickItemsOn = hasFeature('pos') && hasFeatureOption('pos', 'quick_items')
   const clinicsRxOn = hasFeature('clinics') && hasFeatureOption('clinics', 'pos_prescriptions')
+  const treatmentRemindersOn = hasFeature('customers') && hasFeatureOption('customers', 'treatment_reminders')
   const inlineRefundOn = hasFeature('sales') && hasFeatureOption('sales', 'inline_refund')
 
   const pricedCart = useMemo(() => {
@@ -547,6 +549,73 @@ export default function POS() {
     return unmatched
   }, [])
 
+  const loadTreatment = useCallback(async (plan: CustomerTreatmentPlan): Promise<string[]> => {
+    const customer: Customer = {
+      id: plan.customer_id,
+      name: plan.customer_name || '',
+      phone: plan.customer_phone || null,
+      notes: null,
+      balance: 0,
+      discount_percent: plan.discount_percent,
+      discount_notes: plan.discount_notes,
+    }
+    setSelectedCustomer(customer)
+    const unmatched: string[] = []
+    for (const it of plan.items) {
+      const qty = Math.max(1, it.quantity || 1)
+      let product: Product | undefined
+      try {
+        if (it.product_id) {
+          const r = await productsAPI.search(String(it.product_id))
+          product = r.data.find((p) => p.id === it.product_id)
+        }
+        if (!product) {
+          const r = await productsAPI.search(it.product_name)
+          const items = r.data || []
+          product = items.find((p) =>
+            p.name_en?.toLowerCase() === it.product_name.toLowerCase()
+            || p.name_ar === it.product_name,
+          ) || (items.length === 1 ? items[0] : undefined)
+        }
+      } catch { /* ignore */ }
+      if (!product) {
+        unmatched.push(`${qty}× ${it.product_name}`)
+        continue
+      }
+      const found = product
+      setCartItems((prev) => {
+        const existing = prev.find((i) => i.product.id === found.id)
+        if (existing) {
+          const q = existing.quantity + qty
+          return prev.map((i) =>
+            i.product.id === found.id
+              ? {
+                  ...i,
+                  quantity: q,
+                  dose_text: it.dose_text || i.dose_text,
+                  discount: calcLineDiscount(q * i.unit_price, i.discount_mode, i.discount_value),
+                }
+              : i,
+          )
+        }
+        return [
+          ...prev,
+          {
+            product: found,
+            quantity: qty,
+            unit_price: found.price,
+            discount: 0,
+            discount_mode: 'amount' as const,
+            discount_value: 0,
+            unit_type: 'pack' as const,
+            dose_text: it.dose_text || undefined,
+          },
+        ]
+      })
+    }
+    return unmatched
+  }, [])
+
   // Toggle a cart line between "pack" and "sub" units.
   const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
     setCartItems((prev) => prev.map((i) => {
@@ -732,6 +801,7 @@ export default function POS() {
                   />
                 )}
                 {clinicsRxOn && <PrescriptionBell onLoad={loadPrescription} />}
+                {treatmentRemindersOn && <TreatmentReminderBell onLoad={loadTreatment} />}
                 <button
                   type="button"
                   onClick={() => window.open('/', '_blank', 'noopener,noreferrer')}
@@ -1123,6 +1193,14 @@ export default function POS() {
                 <p className="text-xs text-indigo-700 mt-1.5 font-medium">
                   {t('loyalty.pos_balance', { points: selectedCustomer.loyalty_points ?? 0 })}
                 </p>
+              )}
+              {selectedCustomer && ((selectedCustomer.discount_percent != null && Number(selectedCustomer.discount_percent) > 0) || selectedCustomer.discount_notes) && (
+                <div className="text-[11px] rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-2.5 py-1.5 mt-2">
+                  {selectedCustomer.discount_percent != null && Number(selectedCustomer.discount_percent) > 0 && (
+                    <div className="font-semibold">{t('customers.discount_percent_value', { pct: Number(selectedCustomer.discount_percent).toFixed(1) })}</div>
+                  )}
+                  {selectedCustomer.discount_notes && <div className="mt-0.5">{selectedCustomer.discount_notes}</div>}
+                </div>
               )}
               {showCustomerList && !selectedCustomer && (
                 <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">

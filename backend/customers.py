@@ -331,6 +331,8 @@ class CustomerIn(BaseModel):
     tax_number: Optional[str] = None
     credit_limit: float = 0
     notes: Optional[str] = None
+    discount_percent: Optional[float] = None
+    discount_notes: Optional[str] = None
     active: bool = True
     branch_ids: Optional[list[int]] = None
     sale_type: Optional[str] = "cash"
@@ -400,11 +402,11 @@ def create_customer_v2(req: CustomerIn, current_user=Depends(get_current_user)):
         cur.execute(
             """INSERT INTO customers
                (name, phone, email, region, address_details, tax_number,
-                credit_limit, notes, active, sale_type)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                credit_limit, notes, discount_percent, discount_notes, active, sale_type)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (req.name, req.phone, req.email, req.region, req.address_details,
-             req.tax_number, req.credit_limit, req.notes, req.active,
-             (req.sale_type or "cash")),
+             req.tax_number, req.credit_limit, req.notes, req.discount_percent,
+             req.discount_notes, req.active, (req.sale_type or "cash")),
         )
         row = cur.fetchone()
         final_code = _ensure_customer_code(cur, row["id"], req.code)
@@ -448,12 +450,13 @@ def update_customer_v2(customer_id: int, req: CustomerIn,
             final_code = (existing_code_row.get("code") or "").strip() or _default_customer_code(customer_id)
         cur.execute(
             """UPDATE customers SET code=%s, name=%s, phone=%s, email=%s, region=%s,
-               address_details=%s, tax_number=%s, credit_limit=%s, notes=%s, active=%s,
+               address_details=%s, tax_number=%s, credit_limit=%s, notes=%s,
+               discount_percent=%s, discount_notes=%s, active=%s,
                sale_type=COALESCE(%s, sale_type)
                WHERE id=%s RETURNING *""",
             (final_code, req.name, req.phone, req.email, req.region, req.address_details,
-             req.tax_number, req.credit_limit, req.notes, req.active,
-             req.sale_type, customer_id),
+             req.tax_number, req.credit_limit, req.notes, req.discount_percent,
+             req.discount_notes, req.active, req.sale_type, customer_id),
         )
         row = cur.fetchone()
         if not row:

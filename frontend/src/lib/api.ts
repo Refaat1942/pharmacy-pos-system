@@ -87,6 +87,8 @@ export interface Customer {
   credit_limit?: number
   active?: boolean
   notes: string | null
+  discount_percent?: number | null
+  discount_notes?: string | null
   balance: number
   total_charged?: number
   total_paid?: number
@@ -291,6 +293,75 @@ export const customersAPI = {
   pay: (id: number, data: { amount: number; payment_method?: string; invoice_id?: number; reference?: string; notes?: string }) =>
     api.post(`/customers/v2/${id}/payments`, data),
   branches: (id: number) => api.get<{ branch_id: number; name_en: string; name_ar: string }[]>(`/customers/v2/${id}/branches`),
+}
+
+export interface CustomerStaffNote {
+  id: number
+  customer_id: number
+  body: string
+  created_by?: number | null
+  author_name?: string | null
+  created_at: string
+  updated_at?: string | null
+}
+
+export interface CustomerTreatmentItem {
+  id?: number
+  product_id?: number | null
+  product_name: string
+  quantity: number
+  dose_text?: string | null
+}
+
+export interface CustomerTreatmentPlan {
+  id: number
+  customer_id: number
+  customer_name?: string
+  customer_code?: string | null
+  customer_phone?: string | null
+  title: string
+  next_reminder_date: string
+  recurrence: string
+  notes?: string | null
+  status: string
+  active: boolean
+  discount_percent?: number | null
+  discount_notes?: string | null
+  items: CustomerTreatmentItem[]
+}
+
+export const customerStaffNotesAPI = {
+  list: (customerId: number) => api.get<CustomerStaffNote[]>(`/customers/v2/${customerId}/staff-notes`),
+  add: (customerId: number, body: string) =>
+    api.post<CustomerStaffNote>(`/customers/v2/${customerId}/staff-notes`, { body }),
+  update: (noteId: number, body: string) =>
+    api.put<CustomerStaffNote>(`/customers/v2/staff-notes/${noteId}`, { body }),
+  remove: (noteId: number) => api.delete(`/customers/v2/staff-notes/${noteId}`),
+}
+
+export const customerTreatmentsAPI = {
+  listForCustomer: (customerId: number) =>
+    api.get<CustomerTreatmentPlan[]>(`/customers/v2/${customerId}/treatments`),
+  create: (customerId: number, data: {
+    title: string
+    next_reminder_date: string
+    recurrence?: string
+    notes?: string
+    items: CustomerTreatmentItem[]
+  }) => api.post<CustomerTreatmentPlan>(`/customers/v2/${customerId}/treatments`, data),
+  update: (planId: number, data: Partial<{
+    title: string
+    next_reminder_date: string
+    recurrence: string
+    notes: string
+    active: boolean
+    items: CustomerTreatmentItem[]
+  }>) => api.put<CustomerTreatmentPlan>(`/customer-treatments/${planId}`, data),
+  remove: (planId: number) => api.delete(`/customer-treatments/${planId}`),
+  due: () => api.get<CustomerTreatmentPlan[]>('/customer-treatments/due'),
+  dueCount: () => api.get<{ count: number; new: number }>('/customer-treatments/due/count'),
+  setStatus: (planId: number, status: 'pending' | 'loaded' | 'dismissed') =>
+    api.patch(`/customer-treatments/${planId}/status`, null, { params: { status } }),
 }
 
 export const employeesAPI = {

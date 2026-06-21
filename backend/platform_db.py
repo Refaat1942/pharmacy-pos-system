@@ -158,6 +158,7 @@ FEATURE_OPTIONS_CATALOG = [
             {"key": "payments", "label": "Record payments", "default": True},
             {"key": "whatsapp", "label": "WhatsApp button", "default": True},
             {"key": "bulk_import", "label": "Bulk Excel import", "default": True},
+            {"key": "treatment_reminders", "label": "Treatment reminders & POS bell", "default": True},
         ],
     },
     {

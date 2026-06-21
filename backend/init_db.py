@@ -857,6 +857,54 @@ CREATE TABLE IF NOT EXISTS insurance_audit_log (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_insurance_audit_created ON insurance_audit_log(created_at DESC);
+
+-- Customer discount profile (admin-managed on customer record)
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS discount_percent DECIMAL(6,2);
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS discount_notes TEXT;
+
+-- Append-only staff notes (employees add; admin may edit/delete)
+CREATE TABLE IF NOT EXISTS customer_staff_notes (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    author_name VARCHAR(150),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_customer_staff_notes_customer ON customer_staff_notes(customer_id, created_at DESC);
+
+-- Monthly / recurring treatment reminders
+CREATE TABLE IF NOT EXISTS customer_treatment_plans (
+    id SERIAL PRIMARY KEY,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL DEFAULT 'Monthly treatment',
+    next_reminder_date DATE NOT NULL,
+    recurrence VARCHAR(20) DEFAULT 'monthly',
+    notes TEXT,
+    status VARCHAR(20) DEFAULT 'pending',
+    active BOOLEAN DEFAULT true,
+    branch_id INTEGER REFERENCES branches(id),
+    created_by INTEGER REFERENCES users(id),
+    handled_by INTEGER REFERENCES users(id),
+    handled_at TIMESTAMP,
+    last_loaded_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_treatment_reminder_due
+    ON customer_treatment_plans(next_reminder_date, status)
+    WHERE active = true;
+
+CREATE TABLE IF NOT EXISTS customer_treatment_items (
+    id SERIAL PRIMARY KEY,
+    plan_id INTEGER NOT NULL REFERENCES customer_treatment_plans(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id),
+    product_name VARCHAR(200) NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    dose_text TEXT,
+    sort_order INTEGER DEFAULT 0
+);
 """
 
 # Applied one statement at a time so a failure in the big SQL blob cannot roll these back.

@@ -5,6 +5,8 @@ import Layout from '../components/Layout'
 import GovernorateRegionSelect from '../components/GovernorateRegionSelect'
 import CustomerInfoCard from '../components/CustomerInfoCard'
 import CustomerInsuranceProfiles from '../components/CustomerInsuranceProfiles'
+import CustomerStaffNotes from '../components/CustomerStaffNotes'
+import CustomerTreatmentPlans from '../components/CustomerTreatmentPlans'
 import CustomerWhatsAppButton from '../components/CustomerWhatsAppButton'
 import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
 import PhoneField from '../components/PhoneField'
@@ -333,14 +335,15 @@ function CustomerCardModal({
   onEdit: () => void
 }) {
   const { t } = useTranslation()
-  const { user, hasFeature } = useAuth()
+  const { user, hasFeature, hasFeatureOption } = useAuth()
   const isAdmin = user?.role === 'admin'
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const showInsurance = hasFeature('insurance')
+  const showTreatments = hasFeatureOption('customers', 'treatment_reminders')
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{t('customers.customer_card')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -380,6 +383,25 @@ function CustomerCardModal({
               </>
             )}
           </dl>
+          {(customer.discount_percent != null && Number(customer.discount_percent) > 0) || customer.discount_notes ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-sm">
+              <div className="text-xs font-bold text-emerald-800 uppercase tracking-wide mb-1">{t('customers.discount_profile')}</div>
+              {customer.discount_percent != null && Number(customer.discount_percent) > 0 && (
+                <div className="text-emerald-900 font-semibold">{t('customers.discount_percent_value', { pct: Number(customer.discount_percent).toFixed(1) })}</div>
+              )}
+              {customer.discount_notes && <p className="text-emerald-800 mt-1 whitespace-pre-wrap">{customer.discount_notes}</p>}
+              {!isAdmin && <p className="text-[10px] text-emerald-700/80 mt-1">{t('customers.admin_notes_readonly')}</p>}
+            </div>
+          ) : null}
+          {customer.notes && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-1">{t('customers.admin_notes')}</div>
+              <p className="text-slate-700 whitespace-pre-wrap">{customer.notes}</p>
+              {!isAdmin && <p className="text-[10px] text-slate-500 mt-1">{t('customers.admin_notes_readonly')}</p>}
+            </div>
+          )}
+          <CustomerStaffNotes customerId={customer.id} />
+          {showTreatments && <CustomerTreatmentPlans customerId={customer.id} />}
           {showInsurance && (
             <CustomerInsuranceProfiles customerId={customer.id} compact />
           )}
@@ -500,6 +522,29 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('common.notes')}</label>
             <input value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} className="input mt-1 w-full" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.discount_percent')}</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.1"
+                value={f.discount_percent ?? ''}
+                onChange={(e) => setF({ ...f, discount_percent: e.target.value === '' ? null : Number(e.target.value) })}
+                className="input mt-1 w-full"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-slate-600 font-medium">{t('customers.discount_notes')}</label>
+              <input
+                value={f.discount_notes || ''}
+                onChange={(e) => setF({ ...f, discount_notes: e.target.value })}
+                placeholder={t('customers.discount_notes_placeholder') as string}
+                className="input mt-1 w-full"
+              />
+            </div>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />
