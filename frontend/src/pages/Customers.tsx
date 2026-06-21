@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet } from 'lucide-react'
+import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet, Contact } from 'lucide-react'
 import Layout from '../components/Layout'
 import GovernorateRegionSelect from '../components/GovernorateRegionSelect'
 import CustomerInfoCard from '../components/CustomerInfoCard'
@@ -102,6 +102,7 @@ export default function Customers() {
               {t('customers.title')}
             </h1>
             <p className="text-sm text-slate-500 mt-1 max-w-2xl">{t('customers.subtitle')}</p>
+            <p className="text-xs text-pharma-700 mt-1 max-w-2xl">{t('customers.card_hint')}</p>
           </div>
           {isAdmin && (
             <div className="flex items-center gap-2">
@@ -188,6 +189,14 @@ export default function Customers() {
                     </td>
                     <td className="px-3 py-2 text-end">
                       <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setViewing(c)}
+                          className="p-1.5 hover:bg-pharma-50 rounded text-pharma-700 border border-transparent hover:border-pharma-200"
+                          title={t('customers.view_card') as string}
+                        >
+                          <Contact size={14} />
+                        </button>
                         <button onClick={() => customersAPI.statement(c.id).then((r) => setStatement(r.data))}
                           className="p-1.5 hover:bg-slate-100 rounded text-slate-600" title={t('customers.statement') as string}>
                           <FileText size={14} />
@@ -424,8 +433,9 @@ function CustomerCardModal({
 
 function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()
-  const { hasFeature } = useAuth()
+  const { hasFeature, hasFeatureOption } = useAuth()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
+  const showTreatments = hasFeatureOption('customers', 'treatment_reminders')
   const [f, setF] = useState<Partial<Customer>>(initial)
   const [saving, setSaving] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
@@ -456,7 +466,7 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
   }
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+      <div className={`bg-white rounded-xl shadow-2xl w-full overflow-hidden ${f.id && showTreatments ? 'max-w-2xl' : 'max-w-lg'}`}>
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{f.id ? t('customers.edit') : t('customers.new')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -565,6 +575,16 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
               ))}
             </div>
           </div>
+          {f.id && showTreatments && (
+            <div className="pt-2 border-t">
+              <CustomerTreatmentPlans customerId={f.id} />
+            </div>
+          )}
+          {f.id && (
+            <div className="pt-2 border-t">
+              <CustomerStaffNotes customerId={f.id} />
+            </div>
+          )}
           {f.id && hasFeature('insurance') && (
             <div className="pt-2 border-t">
               <CustomerInsuranceProfiles customerId={f.id} compact />
