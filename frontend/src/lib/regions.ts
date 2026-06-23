@@ -190,16 +190,26 @@ export const EGYPT_GOVERNORATES: GovernorateOption[] = [
 /** @deprecated use EGYPT_GOVERNORATES — kept for imports that expect flat Ismailia list */
 export const ISMAILIA_REGIONS = EGYPT_GOVERNORATES.find((g) => g.key === 'ismailia')!.regions
 
-export function encodeRegion(governorate: string, region: string): string {
+export function encodeRegion(governorate: string, region: string, customLabel?: string): string {
   if (!governorate || !region) return region || governorate || ''
+  if (region === 'other' && customLabel?.trim()) {
+    return `${governorate}:other:${customLabel.trim()}`
+  }
   return `${governorate}:${region}`
 }
 
-export function parseRegionValue(value: string | null | undefined): { governorate: string; region: string } {
+export function parseRegionValue(value: string | null | undefined): {
+  governorate: string
+  region: string
+  custom?: string
+} {
   if (!value) return { governorate: '', region: '' }
   if (value.includes(':')) {
-    const [governorate, region] = value.split(':', 2)
-    return { governorate, region }
+    const parts = value.split(':')
+    const governorate = parts[0] || ''
+    const region = parts[1] || ''
+    const custom = parts.length > 2 ? parts.slice(2).join(':').trim() : undefined
+    return { governorate, region, custom: custom || undefined }
   }
   const legacy = ISMAILIA_REGIONS.find((r) => r.value === value)
   if (legacy) return { governorate: 'ismailia', region: value }
@@ -208,16 +218,21 @@ export function parseRegionValue(value: string | null | undefined): { governorat
 
 export function regionLabel(value: string | null | undefined, lang: 'en' | 'ar' = 'en'): string {
   if (!value) return ''
-  const { governorate, region } = parseRegionValue(value)
+  const { governorate, region, custom } = parseRegionValue(value)
   const gov = EGYPT_GOVERNORATES.find((g) => g.key === governorate)
   const reg = gov?.regions.find((r) => r.value === region)
     ?? ISMAILIA_REGIONS.find((r) => r.value === region || r.value === value)
   if (gov && reg) {
     const gName = lang === 'ar' ? gov.ar : gov.en
+    if (region === 'other' && custom) return `${gName} — ${custom}`
     const rName = lang === 'ar' ? reg.ar : reg.en
     return `${gName} — ${rName}`
   }
   if (reg) return lang === 'ar' ? reg.ar : reg.en
+  if (gov && custom) {
+    const gName = lang === 'ar' ? gov.ar : gov.en
+    return `${gName} — ${custom}`
+  }
   return value
 }
 

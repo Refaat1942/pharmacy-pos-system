@@ -1679,7 +1679,9 @@
     "select_governorate": "Select governorate",
     "select_region": "Select region",
     "markaz": "City / Markaz",
-    "areas": "Areas (Ismailia City)"
+    "areas": "Areas (Ismailia City)",
+    "other_specify": "Specify area / region",
+    "other_specify_ph": "Type the area or district name"
   },
   "clinics": {
     "title": "Clinics",

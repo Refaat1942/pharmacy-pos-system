@@ -52,15 +52,18 @@ for r in REGIONS:
 _MATCH_TERMS.sort(key=lambda x: -len(x[1]))
 
 
-def parse_region_value(value: str | None) -> tuple[str, str]:
+def parse_region_value(value: str | None) -> tuple[str, str, str]:
     if not value:
-        return "", ""
+        return "", "", ""
     if ":" in value:
-        governorate, region = value.split(":", 1)
-        return governorate.strip(), region.strip()
+        parts = value.split(":")
+        governorate = parts[0].strip()
+        region = parts[1].strip() if len(parts) > 1 else ""
+        custom = ":".join(parts[2:]).strip() if len(parts) > 2 else ""
+        return governorate, region, custom
     if value in REGION_BY_KEY:
-        return "ismailia", value
-    return "", value
+        return "ismailia", value, ""
+    return "", value, ""
 
 
 def resolve_region_key(*texts: str | None, customer_region: str | None = None) -> str:
@@ -88,16 +91,20 @@ def resolve_region_key(*texts: str | None, customer_region: str | None = None) -
 def region_display(key: str, lang: str = "en") -> str:
     if key == "unknown":
         return "Unknown / Other" if lang == "en" else "غير محدد / أخرى"
-    governorate, region = parse_region_value(key)
+    governorate, region, custom = parse_region_value(key)
     gov = GOVERNORATE_NAMES.get(governorate)
     reg = REGION_BY_KEY.get(region) or REGION_BY_KEY.get(key)
     if gov and reg:
         gname = gov["ar"] if lang == "ar" else gov["en"]
+        if region == "other" and custom:
+            return f"{gname} — {custom}"
         rname = reg["ar"] if lang == "ar" else reg["en"]
         return f"{gname} — {rname}"
     if reg:
         return reg["ar"] if lang == "ar" else reg["en"]
     if gov:
         gname = gov["ar"] if lang == "ar" else gov["en"]
+        if custom:
+            return f"{gname} — {custom}"
         return f"{gname} — {region}" if region else gname
     return key
