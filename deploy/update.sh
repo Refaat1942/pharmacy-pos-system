@@ -32,6 +32,10 @@ pip install -q -r "$APP_DIR/backend/requirements.txt" 2>/dev/null || true
 
 info "Applying database schema migrations..."
 cd "$APP_DIR/backend"
+set -a
+# shellcheck disable=SC1091
+[ -f /etc/pharmapos.env ] && . /etc/pharmapos.env
+set +a
 python init_db.py
 
 info "Building frontend..."

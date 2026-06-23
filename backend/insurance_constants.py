@@ -34,16 +34,6 @@ INSURANCE_FIELD_KEYS = [
     "transaction_notes",
 ]
 
-# Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
-DEFAULT_FIELD_CONFIG = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
-for _k in INSURANCE_STANDARD_POS_FIELDS:
-    DEFAULT_FIELD_CONFIG[_k] = "optional"
-DEFAULT_FIELD_CONFIG["patient_name"] = "required"
-DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
-DEFAULT_FIELD_CONFIG["mobile_country_code"] = "hidden"
-DEFAULT_FIELD_CONFIG["patient_first_name"] = "hidden"
-DEFAULT_FIELD_CONFIG["patient_last_name"] = "hidden"
-
 # Standard POS insurance transaction fields (always shown unless hidden in company settings)
 INSURANCE_STANDARD_POS_FIELDS = [
     "patient_name",
@@ -59,6 +49,16 @@ INSURANCE_STANDARD_POS_FIELDS = [
 ]
 
 INSURANCE_TRANSACTION_CORE_KEYS = list(INSURANCE_STANDARD_POS_FIELDS)
+
+# Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
+DEFAULT_FIELD_CONFIG = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
+for _k in INSURANCE_STANDARD_POS_FIELDS:
+    DEFAULT_FIELD_CONFIG[_k] = "optional"
+DEFAULT_FIELD_CONFIG["patient_name"] = "required"
+DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
+DEFAULT_FIELD_CONFIG["mobile_country_code"] = "hidden"
+DEFAULT_FIELD_CONFIG["patient_first_name"] = "hidden"
+DEFAULT_FIELD_CONFIG["patient_last_name"] = "hidden"
 
 
 def merge_field_config_for_pos(stored: dict | None) -> dict:
