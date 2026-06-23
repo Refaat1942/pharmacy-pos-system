@@ -5,7 +5,8 @@ import Layout from '../components/Layout'
 import { insuranceAPI } from '../lib/api'
 import type { InsuranceCompany, InsurancePlan, InsuranceClaim } from '../lib/insurance'
 import {
-  INSURANCE_FIELD_KEYS, insuranceFieldLabel, type FieldMode,
+  INSURANCE_FIELD_KEYS, INSURANCE_POS_SECTION_ORDER, INSURANCE_POS_SECTIONS,
+  insuranceFieldLabel, type FieldMode,
 } from '../lib/insurance'
 import { useAuth } from '../lib/auth'
 import i18n from '../lib/i18n'
@@ -421,23 +422,40 @@ export default function Insurance() {
                   </label>
                 </div>
                 <div>
+                  <p className="text-sm font-semibold text-slate-800 mb-1">{t('insurance.pos_field_layout')}</p>
+                  <p className="text-xs text-slate-500 mb-3">{t('insurance.pos_field_layout_hint')}</p>
                   <button type="button" onClick={() => setShowFieldConfig((v) => !v)}
                     className="text-sm text-pharma-600 hover:underline font-medium">
                     {showFieldConfig ? t('insurance.hide_advanced') : t('insurance.show_advanced')}
                   </button>
                   {showFieldConfig && (
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[45vh] overflow-y-auto border rounded-xl p-3 bg-slate-50">
-                      {INSURANCE_FIELD_KEYS.map((key) => (
-                        <div key={key} className="flex items-center justify-between gap-2 text-xs bg-white border rounded-lg px-2 py-2">
-                          <span className="truncate">{insuranceFieldLabel(key, t)}</span>
-                          <select value={editCompany.field_config?.[key] || 'optional'} onChange={(e) => setFieldMode(key, e.target.value as FieldMode)}
-                            className="border rounded px-2 py-1 text-[11px] shrink-0">
-                            <option value="required">{t('insurance.mode_required')}</option>
-                            <option value="optional">{t('insurance.mode_optional')}</option>
-                            <option value="hidden">{t('insurance.mode_hidden')}</option>
-                          </select>
-                        </div>
-                      ))}
+                    <div className="mt-3 space-y-4 max-h-[45vh] overflow-y-auto border rounded-xl p-3 bg-slate-50">
+                      {INSURANCE_POS_SECTION_ORDER.map((sectionKey) => {
+                        const keys = (INSURANCE_POS_SECTIONS[sectionKey] || []).filter((k) =>
+                          INSURANCE_FIELD_KEYS.includes(k as typeof INSURANCE_FIELD_KEYS[number]),
+                        )
+                        if (!keys.length) return null
+                        return (
+                          <div key={sectionKey}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                              {t(`insurance.section_${sectionKey}`)}
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {keys.map((key) => (
+                                <div key={key} className="flex items-center justify-between gap-2 text-xs bg-white border rounded-lg px-2 py-2">
+                                  <span className="truncate">{insuranceFieldLabel(key, t)}</span>
+                                  <select value={editCompany.field_config?.[key] || 'optional'} onChange={(e) => setFieldMode(key, e.target.value as FieldMode)}
+                                    className="border rounded px-2 py-1 text-[11px] shrink-0">
+                                    <option value="required">{t('insurance.mode_required')}</option>
+                                    <option value="optional">{t('insurance.mode_optional')}</option>
+                                    <option value="hidden">{t('insurance.mode_hidden')}</option>
+                                  </select>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

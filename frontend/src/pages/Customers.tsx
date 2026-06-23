@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet, Contact } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -8,7 +9,7 @@ import CustomerInsuranceProfiles from '../components/CustomerInsuranceProfiles'
 import CustomerStaffNotes from '../components/CustomerStaffNotes'
 import CustomerTreatmentPlans from '../components/CustomerTreatmentPlans'
 import CustomerWhatsAppButton from '../components/CustomerWhatsAppButton'
-import { customersAPI, branchesAPI, Customer, Branch } from '../lib/api'
+import { customersAPI, branchesAPI, Customer, CustomerPhone, Branch } from '../lib/api'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
@@ -22,6 +23,7 @@ import api from '../lib/api'
 export default function Customers() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const isAdmin = user?.role === 'admin'
   const [list, setList] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
@@ -78,6 +80,18 @@ export default function Customers() {
     return () => clearTimeout(id)
   }, [q])
 
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return
+    const name = searchParams.get('name') || ''
+    setEditing({
+      name,
+      active: true,
+      credit_limit: 0,
+      phones: [{ phone: '', is_primary: true }],
+    })
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
+
   const exportList = () => {
     exportCSV(`customers-${new Date().toISOString().slice(0, 10)}.csv`, list, [
       { label: t('customers.col_code'), value: (c) => c.code || '' },
@@ -116,7 +130,7 @@ export default function Customers() {
                 <Download size={16} />
                 {t('common.export')}
               </button>
-              <button onClick={() => setEditing({ name: '', active: true, credit_limit: 0 })}
+              <button onClick={() => setEditing({ name: '', active: true, credit_limit: 0, phones: [{ phone: '', is_primary: true }] })}
                 className="bg-pharma-600 hover:bg-pharma-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
                 <Plus size={16} />
                 {t('customers.new')}
@@ -437,6 +451,11 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const showTreatments = hasFeatureOption('customers', 'treatment_reminders')
   const [f, setF] = useState<Partial<Customer>>(initial)
+  const [phones, setPhones] = useState<CustomerPhone[]>(() => {
+    if (initial.phones?.length) return initial.phones.map((p) => ({ ...p }))
+    if (initial.phone) return [{ phone: initial.phone, is_primary: true }]
+    return [{ phone: '', is_primary: true }]
+  })
   const [saving, setSaving] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
   const [selectedBranches, setSelectedBranches] = useState<Set<number>>(new Set())
@@ -453,10 +472,26 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
   }
   const save = async () => {
     if (!f.name?.trim()) { alert(t('customers.name_required')); return }
-    if (!isValidPhone(f.phone)) { alert(t('validation.phone_invalid')); return }
+    const validPhones = phones.filter((p) => (p.phone || '').trim())
+    for (const p of validPhones) {
+      if (!isValidPhone(p.phone)) { alert(t('validation.phone_invalid')); return }
+    }
+    const normalized = validPhones.map((p, idx) => ({
+      ...p,
+      is_primary: p.is_primary || (validPhones.length === 1 && idx === 0),
+    }))
+    if (normalized.length && !normalized.some((p) => p.is_primary)) {
+      normalized[0] = { ...normalized[0], is_primary: true }
+    }
+    const primary = normalized.find((p) => p.is_primary) || normalized[0]
     setSaving(true)
     try {
-      const payload = { ...f, branch_ids: Array.from(selectedBranches) }
+      const payload = {
+        ...f,
+        phone: primary?.phone || f.phone || null,
+        phones: normalized,
+        branch_ids: Array.from(selectedBranches),
+      }
       if (f.id) await customersAPI.updateV2(f.id, payload)
       else await customersAPI.createV2(payload)
       onSaved()
@@ -500,15 +535,61 @@ function EditModal({ initial, onClose, onSaved }: { initial: Partial<Customer>; 
               </select>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-1">
               <label className="text-xs text-slate-600 font-medium">{t('customers.col_phone')}</label>
-              <PhoneField value={f.phone || ''} onChange={(v) => setF({ ...f, phone: v })} />
+              <button
+                type="button"
+                onClick={() => setPhones((prev) => [...prev, { phone: '', is_primary: prev.length === 0 }])}
+                className="text-[11px] font-semibold text-pharma-600 hover:underline"
+              >
+                + {t('customers.add_phone')}
+              </button>
             </div>
-            <div>
-              <label className="text-xs text-slate-600 font-medium">{t('customers.col_email')}</label>
-              <input value={f.email || ''} onChange={(e) => setF({ ...f, email: e.target.value })} className="input mt-1 w-full" />
+            <div className="space-y-2">
+              {phones.map((p, idx) => (
+                <div key={idx} className="flex items-start gap-2 rounded-lg border border-slate-200 p-2">
+                  <div className="flex-1 min-w-0">
+                    <PhoneField
+                      value={p.phone || ''}
+                      onChange={(v) => setPhones((prev) => prev.map((row, i) => (i === idx ? { ...row, phone: v } : row)))}
+                    />
+                    <input
+                      value={p.label || ''}
+                      onChange={(e) => setPhones((prev) => prev.map((row, i) => (i === idx ? { ...row, label: e.target.value } : row)))}
+                      placeholder={t('customers.phone_label_ph') as string}
+                      className="input mt-1 w-full text-xs"
+                    />
+                  </div>
+                  <label className="flex items-center gap-1 text-[10px] text-slate-600 whitespace-nowrap pt-2">
+                    <input
+                      type="radio"
+                      name="primary_phone"
+                      checked={!!p.is_primary}
+                      onChange={() => setPhones((prev) => prev.map((row, i) => ({ ...row, is_primary: i === idx })))}
+                    />
+                    {t('customers.phone_primary')}
+                  </label>
+                  {phones.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setPhones((prev) => {
+                        const next = prev.filter((_, i) => i !== idx)
+                        if (next.length && !next.some((x) => x.is_primary)) next[0] = { ...next[0], is_primary: true }
+                        return next
+                      })}
+                      className="text-slate-400 hover:text-red-500 p-1"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
+          </div>
+          <div>
+            <label className="text-xs text-slate-600 font-medium">{t('customers.col_email')}</label>
+            <input value={f.email || ''} onChange={(e) => setF({ ...f, email: e.target.value })} className="input mt-1 w-full" />
           </div>
           <div>
             <label className="text-xs text-slate-600 font-medium">{t('customers.col_region')}</label>

@@ -47,6 +47,52 @@ def _norm_phone(phone: str | None) -> str | None:
     return digits or None
 
 
+def _attach_phones(cur, rows: list[dict]) -> list[dict]:
+    if not rows:
+        return rows
+    ids = [r["id"] for r in rows]
+    cur.execute(
+        "SELECT id, customer_id, phone, label, is_primary, sort_order "
+        "FROM customer_phones WHERE customer_id = ANY(%s) ORDER BY sort_order, id",
+        (ids,),
+    )
+    by_customer: dict[int, list[dict]] = {}
+    for p in cur.fetchall():
+        by_customer.setdefault(p["customer_id"], []).append(dict(p))
+    for r in rows:
+        r["phones"] = by_customer.get(r["id"], [])
+    return rows
+
+
+def _sync_customer_phones(cur, customer_id: int, phones: list[dict] | None, fallback_phone: str | None = None) -> str | None:
+    cur.execute("DELETE FROM customer_phones WHERE customer_id=%s", (customer_id,))
+    entries: list[tuple[str, str | None, bool, int]] = []
+    primary_phone: str | None = None
+    raw_list = phones or []
+    if not raw_list and fallback_phone:
+        raw_list = [{"phone": fallback_phone, "is_primary": True}]
+    for idx, item in enumerate(raw_list):
+        phone = _norm_phone(item.get("phone") if isinstance(item, dict) else None)
+        if not phone:
+            continue
+        label = (item.get("label") or "").strip() or None if isinstance(item, dict) else None
+        is_primary = bool(item.get("is_primary")) if isinstance(item, dict) else False
+        entries.append((phone, label, is_primary, idx))
+    if entries and not any(e[2] for e in entries):
+        entries[0] = (entries[0][0], entries[0][1], True, entries[0][3])
+    for phone, label, is_primary, sort_order in entries:
+        cur.execute(
+            "INSERT INTO customer_phones (customer_id, phone, label, is_primary, sort_order) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (customer_id, phone, label, is_primary, sort_order),
+        )
+        if is_primary or primary_phone is None:
+            primary_phone = phone
+    if primary_phone:
+        cur.execute("UPDATE customers SET phone=%s WHERE id=%s", (primary_phone, customer_id))
+    return primary_phone
+
+
 def _parse_bool(v) -> bool:
     if v in (None, ""):
         return True
@@ -325,6 +371,7 @@ class CustomerIn(BaseModel):
     name: str
     code: Optional[str] = None
     phone: Optional[str] = None
+    phones: Optional[list[dict]] = None
     email: Optional[str] = None
     region: Optional[str] = None
     address_details: Optional[str] = None
@@ -359,9 +406,12 @@ def list_customers_v2(
     if active_only:
         where.append("c.active = true")
     if q:
-        where.append("(c.name ILIKE %s OR c.phone ILIKE %s OR c.email ILIKE %s OR c.code ILIKE %s)")
+        where.append(
+            "(c.name ILIKE %s OR c.phone ILIKE %s OR c.email ILIKE %s OR c.code ILIKE %s "
+            "OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone ILIKE %s))"
+        )
         like = f"%{q}%"
-        params += [like, like, like, like]
+        params += [like, like, like, like, like]
     # Non-admin: row-level branch-scope — only customers with at least one
     # invoice in the user's branch are visible; aggregates also branch-scoped.
     if current_user.get("role") != "admin":
@@ -387,6 +437,7 @@ def list_customers_v2(
     sql += " ORDER BY c.name ASC LIMIT 500"
     cur.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]
+    _attach_phones(cur, rows)
     for r in rows:
         r["balance"] = float(r["total_charged"]) - float(r["total_paid"])
     conn.close()
@@ -412,6 +463,9 @@ def create_customer_v2(req: CustomerIn, current_user=Depends(get_current_user)):
         final_code = _ensure_customer_code(cur, row["id"], req.code)
         cur.execute("UPDATE customers SET code=%s WHERE id=%s RETURNING *", (final_code, row["id"]))
         row = cur.fetchone()
+        _sync_customer_phones(cur, row["id"], req.phones, req.phone)
+        cur.execute("SELECT * FROM customers WHERE id=%s", (row["id"],))
+        row = cur.fetchone()
         if req.branch_ids:
             for bid in set(req.branch_ids):
                 cur.execute(
@@ -420,7 +474,9 @@ def create_customer_v2(req: CustomerIn, current_user=Depends(get_current_user)):
                     (row["id"], bid, current_user.get("user_id")),
                 )
         conn.commit()
-        return dict(row)
+        out = dict(row)
+        _attach_phones(cur, [out])
+        return out
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -461,6 +517,9 @@ def update_customer_v2(customer_id: int, req: CustomerIn,
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Customer not found")
+        _sync_customer_phones(cur, customer_id, req.phones, req.phone)
+        cur.execute("SELECT * FROM customers WHERE id=%s", (customer_id,))
+        row = cur.fetchone()
         if req.branch_ids is not None:
             # Replace authorization set
             cur.execute("DELETE FROM customer_branches WHERE customer_id=%s", (customer_id,))
@@ -471,7 +530,9 @@ def update_customer_v2(customer_id: int, req: CustomerIn,
                     (customer_id, bid, current_user.get("user_id")),
                 )
         conn.commit()
-        return dict(row)
+        out = dict(row)
+        _attach_phones(cur, [out])
+        return out
     except HTTPException:
         conn.rollback()
         raise

@@ -266,6 +266,9 @@ def calculate_insurance_sale(
             is_service=product.get("is_service"),
             category=product.get("category"),
         )
+        line_additional = Decimal(str(item.get("additional_amount") or 0))
+        if line_additional < 0:
+            line_additional = Decimal("0")
         line_results.append({
             "product_id": pid,
             "product_name": product.get("name_en") or product.get("name_ar") or "",
@@ -278,7 +281,7 @@ def calculate_insurance_sale(
             "line_after_discount": _money(line_after),
             "covered_amount": 0.0,
             "patient_share": 0.0,
-            "additional_amount": 0.0,
+            "additional_amount": _money(line_additional),
         })
 
     gross_f = _money(gross)
@@ -329,9 +332,10 @@ def calculate_insurance_sale(
             lr["patient_share"] = lr["line_after_discount"]
 
     copayment = Decimal(str(financial.get("fixed_copayment") or 0))
-    additional = exceeding_amount
-    if _pf_float(pf, "additional_amount") > 0:
-        additional += Decimal(str(_pf_float(pf, "additional_amount")))
+    line_additional_total = sum(
+        Decimal(str(lr.get("additional_amount") or 0)) for lr in line_results
+    )
+    additional = exceeding_amount + line_additional_total
 
     final_patient = patient_share_amt + receipt_limit_excess + additional + copayment
     if max_patient_share > 0 and final_patient > Decimal(str(max_patient_share)):

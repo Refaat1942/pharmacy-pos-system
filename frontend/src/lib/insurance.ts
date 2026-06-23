@@ -25,7 +25,6 @@ export const INSURANCE_FIELD_KEYS = [
   'employer_name',
   'receipt_limit',
   'exceeding_amount',
-  'additional_amount',
   'patient_share_pct',
   'max_patient_share',
   'treatment_type',
@@ -52,6 +51,27 @@ export const INSURANCE_TRANSACTION_CORE_KEYS = INSURANCE_STANDARD_POS_FIELDS
 export const INSURANCE_EXTRA_FIELD_KEYS = INSURANCE_FIELD_KEYS.filter(
   (k) => !INSURANCE_STANDARD_POS_FIELDS.includes(k as (typeof INSURANCE_STANDARD_POS_FIELDS)[number]),
 )
+
+/** Section groupings for POS transaction layout (saved via company field_config). */
+export const INSURANCE_POS_SECTIONS: Record<string, readonly string[]> = {
+  patient: [
+    'patient_name', 'mobile_number', 'patient_first_name', 'patient_last_name',
+    'date_of_birth', 'gender', 'mobile_country_code', 'national_id', 'address', 'child_customer_id',
+  ],
+  policy: [
+    'insurance_card_number', 'policy_number', 'membership_number', 'approval_number',
+    'referral_number', 'employee_number', 'employer_name',
+  ],
+  financial: [
+    'patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount',
+  ],
+  clinical: [
+    'doctor_name', 'doctor_specialty', 'diagnosis', 'prescription_number',
+    'prescription_date', 'treatment_type', 'transaction_notes', 'attachment_upload',
+  ],
+}
+
+export const INSURANCE_POS_SECTION_ORDER = ['patient', 'policy', 'financial', 'clinical'] as const
 
 export type InsuranceFieldKey = (typeof INSURANCE_FIELD_KEYS)[number]
 export type FieldMode = 'required' | 'optional' | 'hidden'
@@ -146,6 +166,7 @@ export interface InsuranceLineResult {
   insurance_discount?: number
   covered_amount: number
   patient_share: number
+  additional_amount?: number
 }
 
 export interface InsuranceCalculateResult {

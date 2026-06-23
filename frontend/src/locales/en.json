@@ -141,7 +141,8 @@
     "print_toolbar_hint": "Use your thermal label printer (38mm). Scale 100%.",
     "pos_btn": "Dose label",
     "pos_more": "More options",
-    "include_on_receipt": "Include dose on customer receipt"
+    "include_on_receipt": "Include dose on customer receipt",
+    "on_receipt_short": "Receipt"
   },
   "nav": {
     "pos": "Point of Sale",
@@ -1556,6 +1557,9 @@
     "col_code": "Code",
     "code_auto": "Auto-generated if left blank",
     "col_phone": "Phone",
+    "add_phone": "Add phone",
+    "phone_primary": "Main",
+    "phone_label_ph": "Label (e.g. home, work)",
     "col_sale_type": "Sale type",
     "col_email": "Email",
     "col_region": "Area / Region",
@@ -1914,7 +1918,11 @@
     "section_patient": "Patient",
     "section_policy": "Policy & authorization",
     "section_financial": "Patient share & limits",
+    "section_clinical": "Clinical & notes",
     "section_extra": "Additional fields",
+    "pos_field_layout": "POS transaction fields",
+    "pos_field_layout_hint": "Choose required, optional, or hidden for each field. Save the company to apply on insurance POS.",
+    "item_additional": "Additional amount",
     "child_self": "Self (account holder)",
     "treatment_chronic": "Chronic",
     "treatment_acute": "Acute",

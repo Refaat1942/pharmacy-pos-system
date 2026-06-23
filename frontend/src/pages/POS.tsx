@@ -17,7 +17,7 @@ import {
   ClipboardList,
   ExternalLink,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { ComponentType } from 'react'
 import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
@@ -149,8 +149,17 @@ function getPosWindowId(): string {
   }
 }
 
+function customerMatchesQuery(c: Customer, q: string): boolean {
+  if (!q) return true
+  const needle = q.toLowerCase()
+  if ((c.name || '').toLowerCase().includes(needle)) return true
+  if ((c.phone || '').toLowerCase().includes(needle)) return true
+  return (c.phones || []).some((p) => (p.phone || '').toLowerCase().includes(needle))
+}
+
 export default function POS() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const lang = i18n.language
   const { user, tenant, hasFeature, hasFeatureOption } = useAuth()
 
@@ -179,10 +188,6 @@ export default function POS() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerList, setShowCustomerList] = useState(false)
-  const [showQuickCustomer, setShowQuickCustomer] = useState(false)
-  const [quickCustomerName, setQuickCustomerName] = useState('')
-  const [quickCustomerPhone, setQuickCustomerPhone] = useState('')
-  const [quickCustomerSaving, setQuickCustomerSaving] = useState(false)
 
   const [cartItems, setCartItems] = useState<CartItem[]>(() => normalizeItems(loadJSON<CartItem[]>(CART_KEY, [])))
   const [rxClinic, setRxClinic] = useState<{ id: number; name: string } | null>(() => loadJSON<{ id: number; name: string } | null>(RXCLINIC_KEY, null))
@@ -355,8 +360,6 @@ export default function POS() {
       ...i,
       discount: 0,
       discount_value: 0,
-      dose_text: undefined,
-      dose_on_receipt: false,
     })))
   }, [isInsurancePos])
   useEffect(() => { try { localStorage.setItem(RXCLINIC_KEY, JSON.stringify(rxClinic)) } catch { /* ignore */ } }, [rxClinic, RXCLINIC_KEY])
@@ -405,29 +408,6 @@ export default function POS() {
   const reloadCustomers = useCallback(() => {
     customersAPI.listV2({}).then((r) => setCustomers(r.data)).catch(() => setCustomers([]))
   }, [])
-
-  const saveQuickCustomer = useCallback(async () => {
-    const name = quickCustomerName.trim()
-    if (!name) return
-    setQuickCustomerSaving(true)
-    try {
-      const r = await customersAPI.create({
-        name,
-        phone: quickCustomerPhone.trim() || undefined,
-      })
-      setSelectedCustomer(r.data)
-      setCustomerSearch('')
-      setShowQuickCustomer(false)
-      setQuickCustomerName('')
-      setQuickCustomerPhone('')
-      reloadCustomers()
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      alert(detail || t('common.error'))
-    } finally {
-      setQuickCustomerSaving(false)
-    }
-  }, [quickCustomerName, quickCustomerPhone, reloadCustomers, t])
 
   const clearSearch = useCallback(() => {
     setSearch('')
@@ -672,6 +652,16 @@ export default function POS() {
       })
     )
   }, [offersEnabled, activeOffers])
+
+  const setItemAdditionalAmount = useCallback((productId: number, amount: number) => {
+    setCartItems((prev) =>
+      prev.map((i) =>
+        i.product.id === productId
+          ? { ...i, additional_amount: Math.max(0, amount) }
+          : i,
+      ),
+    )
+  }, [])
 
   const resolveScanToProduct = useCallback(async (code: string) => {
     const raw = code.trim()
@@ -987,9 +977,10 @@ export default function POS() {
                       const max = maxQty(item.product, ut)
                       const unitLabel = ut === 'sub' ? item.product.sub_unit : item.product.unit
                       return (
-                        <div key={item.product.id} className="px-5 py-3 flex items-center gap-4 hover:bg-slate-50/60 transition-colors">
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-slate-800 text-sm truncate">{name}</p>
+                        <div key={item.product.id} className="px-5 py-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 transition-colors">
+                          <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
+                            <div className="flex-1 min-w-0 space-y-2">
+                              <p className="font-semibold text-slate-800 text-sm leading-snug">{name}</p>
                             <p className="text-[11px] text-slate-400 tabular-nums">
                               {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
                             </p>
@@ -1013,7 +1004,7 @@ export default function POS() {
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
                               </span>
                             )}
-                            {doseLabelsOn && !isInsurancePos && (
+                            {doseLabelsOn && (
                               <PosItemDoseLabel
                                 productId={item.product.id}
                                 productName={name || item.product.name_en}
@@ -1048,16 +1039,20 @@ export default function POS() {
                                 </button>
                               </div>
                             )}
-                            {offersEnabled && isOfferProduct(item.product.id, activeOffers) ? (
-                              <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                            {offersEnabled && isOfferProduct(item.product.id, activeOffers) && (
+                              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
                                 {t('pos.offer_no_manual_discount')}
                               </p>
-                            ) : !isInsurancePos ? (
-                            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
-                              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">
+                            )}
+                            </div>
+
+                            <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 sm:min-w-[11rem]">
+                            {!isInsurancePos && !(offersEnabled && isOfferProduct(item.product.id, activeOffers)) && (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 w-full sm:w-auto">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5 text-end">
                                 {t('pos.item_discount')}
                               </p>
-                              <div className="flex flex-wrap items-stretch gap-2">
+                              <div className="flex flex-wrap items-stretch gap-2 justify-end">
                                 <input
                                   type="number"
                                   min={0}
@@ -1083,18 +1078,39 @@ export default function POS() {
                                   }
                                 />
                                 {(item.discount_value || 0) > 0 && (
-                                  <span className="self-center text-xs text-emerald-700 font-bold tabular-nums px-1">
+                                  <p className="text-xs text-emerald-700 font-bold tabular-nums text-end mt-1 w-full">
                                     − {formatMoney(calcLineDiscount(
                                       item.quantity * item.unit_price,
                                       item.discount_mode,
                                       item.discount_value,
                                     ))} {t('pos.egp')}
-                                  </span>
+                                  </p>
                                 )}
                               </div>
                             </div>
-                            ) : null}
-                          </div>
+                            )}
+                            {isInsurancePos && (
+                              <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-2 w-full sm:w-auto">
+                                <label className="text-[10px] font-bold uppercase tracking-wide text-sky-800 block mb-1 text-end">
+                                  {t('insurance.item_additional')}
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={item.additional_amount || ''}
+                                  onChange={(e) =>
+                                    setItemAdditionalAmount(
+                                      item.product.id,
+                                      Math.max(0, parseFloat(e.target.value) || 0),
+                                    )
+                                  }
+                                  placeholder="0.00"
+                                  className="w-full min-h-[36px] text-sm text-end font-semibold border-2 border-sky-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-sky-500 bg-white tabular-nums"
+                                />
+                              </div>
+                            )}
+                          <div className="flex items-center justify-between sm:justify-end gap-2 w-full">
                           <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
                             <button
                               onClick={() => updateQty(item.product.id, item.quantity - 1)}
@@ -1121,15 +1137,18 @@ export default function POS() {
                               <Plus size={13} />
                             </button>
                           </div>
-                          <div className="w-24 text-end font-bold text-pharma-700 tabular-nums text-sm">
+                          <div className="text-end font-bold text-pharma-700 tabular-nums text-sm min-w-[5.5rem]">
                             {t('pos.egp')} {formatMoney(itemTotal)}
                           </div>
                           <button
                             onClick={() => removeFromCart(item.product.id)}
                             className="text-slate-300 hover:text-red-500 transition-colors p-1"
                           >
-                            <X size={15} />
+                            <Trash2 size={15} />
                           </button>
+                          </div>
+                          </div>
+                          </div>
                         </div>
                       )
                     })}
@@ -1179,11 +1198,7 @@ export default function POS() {
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    setQuickCustomerName(customerSearch.trim())
-                    setQuickCustomerPhone('')
-                    setShowQuickCustomer(true)
-                  }}
+                  onClick={() => navigate(`/customers?new=1&name=${encodeURIComponent(customerSearch.trim())}`)}
                   className="flex-shrink-0 p-2.5 rounded-xl border border-pharma-200 bg-pharma-50 text-pharma-700 hover:bg-pharma-100"
                   title={t('pos.quick_add_customer') as string}
                 >
@@ -1216,11 +1231,7 @@ export default function POS() {
               {showCustomerList && !selectedCustomer && (
                 <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                   {customers
-                    .filter((c) => {
-                      const q = customerSearch.trim().toLowerCase()
-                      if (!q) return true
-                      return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q)
-                    })
+                    .filter((c) => customerMatchesQuery(c, customerSearch.trim()))
                     .slice(0, 30)
                     .map((c) => (
                       <button
@@ -1241,11 +1252,7 @@ export default function POS() {
                         {c.phone && <div className="text-xs text-slate-500 font-mono">{c.phone}</div>}
                       </button>
                     ))}
-                  {customers.filter((c) => {
-                    const q = customerSearch.trim().toLowerCase()
-                    if (!q) return false
-                    return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q)
-                  }).length === 0 && customerSearch.trim() && (
+                  {customers.filter((c) => customerMatchesQuery(c, customerSearch.trim())).length === 0 && customerSearch.trim() && (
                     <div className="px-3 py-3 text-xs text-slate-400 text-center">{t('customers.empty')}</div>
                   )}
                 </div>
@@ -1363,53 +1370,6 @@ export default function POS() {
         </aside>
       </div>
       </div>
-
-      {showQuickCustomer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200">
-            <div className="px-5 py-4 border-b flex items-center justify-between">
-              <h3 className="font-bold text-slate-900">{t('pos.quick_add_customer')}</h3>
-              <button type="button" onClick={() => setShowQuickCustomer(false)} className="p-1 hover:bg-slate-100 rounded">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="p-5 space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-600">{t('pos.customer_name')}</label>
-                <input
-                  type="text"
-                  value={quickCustomerName}
-                  onChange={(e) => setQuickCustomerName(e.target.value)}
-                  className="input w-full mt-1"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">{t('pos.customer_phone_optional')}</label>
-                <input
-                  type="tel"
-                  value={quickCustomerPhone}
-                  onChange={(e) => setQuickCustomerPhone(e.target.value)}
-                  className="input w-full mt-1"
-                />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowQuickCustomer(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600">
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void saveQuickCustomer()}
-                  disabled={!quickCustomerName.trim() || quickCustomerSaving}
-                  className="flex-1 py-2.5 rounded-xl bg-pharma-600 text-white text-sm font-semibold disabled:opacity-50"
-                >
-                  {quickCustomerSaving ? t('common.saving') : t('common.save')}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {doseLabelItems && (
         <DoseLabelPrint

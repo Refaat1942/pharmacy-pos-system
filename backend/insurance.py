@@ -1238,6 +1238,7 @@ def process_insurance_sale(cur, req, branch_id: int, items: list, current_user: 
             "unit_price": i.unit_price,
             "discount": i.discount,
             "offer_discount": i.offer_discount or 0,
+            "additional_amount": i.additional_amount or 0,
         }
         for i in items
     ]

@@ -210,6 +210,13 @@ export default function PaymentModal({
   }
 
   const isInsurance = saleType === 'insurance'
+
+  useEffect(() => {
+    if (isInsurance && !['cash', 'visa', 'hybrid'].includes(paymentMethod)) {
+      setPaymentMethod('cash')
+    }
+  }, [isInsurance, paymentMethod])
+
   const needsDelivery = saleType === 'delivery' || saleType === 'digital'
   const deliveryFeeNum = parseFloat(deliveryFee) || 0
   const cartTotal = netTotal + (needsDelivery ? deliveryFeeNum : 0)
@@ -395,6 +402,7 @@ export default function PaymentModal({
           discount: item.discount,
           offer_id: item.offer_id,
           offer_discount: item.offer_discount || 0,
+          additional_amount: isInsurance ? (item.additional_amount || 0) : 0,
           unit_type: item.unit_type || 'pack',
           dose_text: item.dose_on_receipt && item.dose_text ? item.dose_text : undefined,
         })),
@@ -654,15 +662,22 @@ export default function PaymentModal({
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
                   {t('payment.payment_method')}
                 </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'cash', label: t('payment.cash') },
-                    { value: 'visa', label: t('payment.visa') },
-                    { value: 'hybrid', label: t('payment.hybrid') },
-                    { value: 'instapay', label: t('payment.instapay') },
-                    { value: 'vodafone_cash', label: t('payment.vodafone_cash') },
-                    { value: 'account', label: t('payment.account') },
-                  ].map(({ value, label }) => (
+                <div className={`grid gap-2 ${isInsurance ? 'grid-cols-3' : 'grid-cols-3'}`}>
+                  {(isInsurance
+                    ? [
+                        { value: 'cash', label: t('payment.cash') },
+                        { value: 'visa', label: t('payment.visa') },
+                        { value: 'hybrid', label: t('payment.hybrid') },
+                      ]
+                    : [
+                        { value: 'cash', label: t('payment.cash') },
+                        { value: 'visa', label: t('payment.visa') },
+                        { value: 'hybrid', label: t('payment.hybrid') },
+                        { value: 'instapay', label: t('payment.instapay') },
+                        { value: 'vodafone_cash', label: t('payment.vodafone_cash') },
+                        { value: 'account', label: t('payment.account') },
+                      ]
+                  ).map(({ value, label }) => (
                     <button
                       key={value}
                       onClick={() => setPaymentMethod(value)}

@@ -961,11 +961,29 @@ BATCH_OVERSELL_MIGRATIONS = [
        CHECK (quantity >= 0 OR (quantity < 0 AND expiry_date IS NULL))""",
 ]
 
+CUSTOMER_PHONE_MIGRATIONS = [
+    """CREATE TABLE IF NOT EXISTS customer_phones (
+        id SERIAL PRIMARY KEY,
+        customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        phone VARCHAR(20) NOT NULL,
+        label VARCHAR(40),
+        is_primary BOOLEAN DEFAULT false,
+        sort_order INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_customer_phones_customer ON customer_phones(customer_id)",
+    "CREATE INDEX IF NOT EXISTS idx_customer_phones_phone ON customer_phones(phone)",
+    """INSERT INTO customer_phones (customer_id, phone, is_primary, sort_order)
+       SELECT c.id, TRIM(c.phone), true, 0 FROM customers c
+       WHERE c.phone IS NOT NULL AND TRIM(c.phone) <> ''
+         AND NOT EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id = c.id)""",
+]
+
 
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
-    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS + BATCH_OVERSELL_MIGRATIONS:
+    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS + BATCH_OVERSELL_MIGRATIONS + CUSTOMER_PHONE_MIGRATIONS:
         try:
             cur.execute(stmt)
             conn.commit()

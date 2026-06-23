@@ -75,11 +75,19 @@ export interface Employee {
   status: string
 }
 
+export interface CustomerPhone {
+  id?: number
+  phone: string
+  label?: string | null
+  is_primary?: boolean
+}
+
 export interface Customer {
   id: number
   code?: string | null
   name: string
   phone: string | null
+  phones?: CustomerPhone[]
   email?: string | null
   region?: string | null
   address_details?: string | null
@@ -162,6 +170,8 @@ export interface CartItem {
   dose_text?: string
   /** Print dose direction on customer receipt when checked. */
   dose_on_receipt?: boolean
+  /** Insurance POS: extra amount patient pays on this line. */
+  additional_amount?: number
 }
 
 export interface InvoiceItem {

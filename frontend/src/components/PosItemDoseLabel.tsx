@@ -145,6 +145,9 @@ export default function PosItemDoseLabel({
       >
         <Printer size={12} />
         {t('dose_labels.pos_btn')}
+        {includeOnReceipt && (
+          <span className="bg-white/25 rounded px-1 text-[9px] uppercase tracking-wide">{t('dose_labels.on_receipt_short')}</span>
+        )}
         <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -226,13 +229,14 @@ export default function PosItemDoseLabel({
             </div>
           </div>
 
-          {activeDoseText && onReceiptToggle && (
+          {onReceiptToggle && (
             <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer pt-1 border-t border-slate-100">
               <input
                 type="checkbox"
                 checked={includeOnReceipt}
+                disabled={!activeDoseText}
                 onChange={(e) => onReceiptToggle(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
               />
               {t('dose_labels.include_on_receipt')}
             </label>

@@ -554,10 +554,11 @@ def list_customers(q: str = "", current_user=Depends(get_current_user)):
     partner_filter = sql_exclude_platform_partner_customers("c")
     if current_user.get("role") == "admin":
         cur.execute(
-            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
+            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s "
+            f"OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone ILIKE %s)) "
             f"AND COALESCE(c.active, true)=true AND ({partner_filter}) "
             f"ORDER BY c.name LIMIT 30",
-            (like, like),
+            (like, like, like),
         )
     else:
         ub = current_user.get("branch_id")
@@ -565,11 +566,12 @@ def list_customers(q: str = "", current_user=Depends(get_current_user)):
             conn.close()
             return []
         cur.execute(
-            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s) "
+            f"SELECT * FROM customers c WHERE (c.name ILIKE %s OR c.phone ILIKE %s "
+            f"OR EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id=c.id AND cp.phone ILIKE %s)) "
             f"AND COALESCE(c.active, true)=true AND ({partner_filter}) AND EXISTS "
             f"(SELECT 1 FROM customer_branches cb WHERE cb.customer_id=c.id AND cb.branch_id=%s) "
             f"ORDER BY c.name LIMIT 30",
-            (like, like, ub),
+            (like, like, like, ub),
         )
     customers = cur.fetchall()
     conn.close()
@@ -596,6 +598,9 @@ def create_customer(req: CustomerCreate, current_user=Depends(get_current_user))
         (name, (req.phone or "").strip() or None, req.notes, branch_id),
     )
     customer = cur.fetchone()
+    from customers import _sync_customer_phones, _attach_phones
+    if req.phone:
+        _sync_customer_phones(cur, customer["id"], [{"phone": req.phone, "is_primary": True}], req.phone)
     if branch_id is not None:
         cur.execute(
             "INSERT INTO customer_branches (customer_id, branch_id, authorized_by) "
@@ -603,8 +608,10 @@ def create_customer(req: CustomerCreate, current_user=Depends(get_current_user))
             (customer["id"], branch_id, current_user.get("user_id")),
         )
     conn.commit()
+    out = dict(customer)
+    _attach_phones(cur, [out])
     conn.close()
-    return dict(customer)
+    return out
 
 
 # ─── EMPLOYEES ───────────────────────────────────────────────────────────────
@@ -752,6 +759,7 @@ class InvoiceItemInput(BaseModel):
     discount: float = 0.0
     offer_id: Optional[int] = None
     offer_discount: float = 0.0
+    additional_amount: float = 0.0
     # "pack" (main unit, default) or "sub" (inner unit when pack_size > 1)
     unit_type: Optional[str] = "pack"
     dose_text: Optional[str] = None

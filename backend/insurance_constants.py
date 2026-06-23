@@ -27,7 +27,6 @@ INSURANCE_FIELD_KEYS = [
     "employer_name",
     "receipt_limit",
     "exceeding_amount",
-    "additional_amount",
     "patient_share_pct",
     "max_patient_share",
     "treatment_type",
@@ -49,6 +48,25 @@ INSURANCE_STANDARD_POS_FIELDS = [
 ]
 
 INSURANCE_TRANSACTION_CORE_KEYS = list(INSURANCE_STANDARD_POS_FIELDS)
+
+# Grouping for admin layout editor and POS panel (additional_amount is per cart line, not a field)
+INSURANCE_POS_SECTIONS: dict[str, list[str]] = {
+    "patient": [
+        "patient_name", "mobile_number", "patient_first_name", "patient_last_name",
+        "date_of_birth", "gender", "mobile_country_code", "national_id", "address", "child_customer_id",
+    ],
+    "policy": [
+        "insurance_card_number", "policy_number", "membership_number", "approval_number",
+        "referral_number", "employee_number", "employer_name",
+    ],
+    "financial": [
+        "patient_share_pct", "receipt_limit", "max_patient_share", "exceeding_amount",
+    ],
+    "clinical": [
+        "doctor_name", "doctor_specialty", "diagnosis", "prescription_number",
+        "prescription_date", "treatment_type", "transaction_notes", "attachment_upload",
+    ],
+}
 
 # Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
 DEFAULT_FIELD_CONFIG = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
@@ -74,6 +92,7 @@ def merge_field_config_for_pos(stored: dict | None) -> dict:
         mode = stored.get(key)
         if mode in ("required", "optional"):
             cfg[key] = mode
+    cfg["additional_amount"] = "hidden"
     return cfg
 
 DEFAULT_COVERAGE_RULES = {
