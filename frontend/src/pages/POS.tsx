@@ -360,6 +360,8 @@ export default function POS() {
       ...i,
       discount: 0,
       discount_value: 0,
+      dose_text: undefined,
+      dose_on_receipt: false,
     })))
   }, [isInsurancePos])
   useEffect(() => { try { localStorage.setItem(RXCLINIC_KEY, JSON.stringify(rxClinic)) } catch { /* ignore */ } }, [rxClinic, RXCLINIC_KEY])
@@ -1004,7 +1006,7 @@ export default function POS() {
                                 <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
                               </span>
                             )}
-                            {doseLabelsOn && (
+                            {doseLabelsOn && !isInsurancePos && (
                               <PosItemDoseLabel
                                 productId={item.product.id}
                                 productName={name || item.product.name_en}

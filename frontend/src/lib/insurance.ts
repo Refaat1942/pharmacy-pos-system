@@ -73,6 +73,47 @@ export const INSURANCE_POS_SECTIONS: Record<string, readonly string[]> = {
 
 export const INSURANCE_POS_SECTION_ORDER = ['patient', 'policy', 'financial', 'clinical'] as const
 
+/** Logical data-entry order within each section (unknown keys append at end). */
+export const INSURANCE_POS_FIELD_ORDER: Record<string, readonly string[]> = {
+  patient: [
+    'patient_name', 'mobile_number', 'national_id',
+    'patient_first_name', 'patient_last_name', 'date_of_birth', 'gender',
+    'mobile_country_code', 'address', 'child_customer_id',
+  ],
+  policy: [
+    'insurance_card_number', 'membership_number', 'policy_number', 'approval_number',
+    'referral_number', 'employee_number', 'employer_name',
+  ],
+  financial: [
+    'patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount',
+  ],
+  clinical: [
+    'doctor_name', 'doctor_specialty', 'diagnosis',
+    'prescription_number', 'prescription_date', 'treatment_type',
+    'transaction_notes', 'attachment_upload',
+  ],
+}
+
+/** Grid span in a 2-column section (2 = full row). */
+export const INSURANCE_FIELD_COL_SPAN: Record<string, 1 | 2> = {
+  patient_name: 2,
+  address: 2,
+  diagnosis: 2,
+  transaction_notes: 2,
+  attachment_upload: 2,
+  treatment_type: 2,
+  child_customer_id: 2,
+}
+
+export function orderInsuranceFields(sectionKey: string, keys: string[]): string[] {
+  const order = INSURANCE_POS_FIELD_ORDER[sectionKey] || []
+  return [...keys].sort((a, b) => {
+    const ia = order.indexOf(a)
+    const ib = order.indexOf(b)
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib)
+  })
+}
+
 export type InsuranceFieldKey = (typeof INSURANCE_FIELD_KEYS)[number]
 export type FieldMode = 'required' | 'optional' | 'hidden'
 
