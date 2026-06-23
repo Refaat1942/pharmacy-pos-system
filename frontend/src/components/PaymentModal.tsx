@@ -189,7 +189,9 @@ export default function PaymentModal({
     else setCheckoutStep('setup')
   }
 
-  const modalMaxWidth = checkoutStep === 'setup' && saleType === 'insurance' ? 'max-w-6xl' : 'max-w-2xl'
+  const modalMaxWidth = checkoutStep === 'setup' && saleType === 'insurance'
+    ? 'max-w-[min(1600px,98vw)]'
+    : 'max-w-2xl'
   const stepTitle = checkoutStep === 'type'
     ? t('payment.step_sale_type')
     : checkoutStep === 'setup'
@@ -457,7 +459,7 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${modalMaxWidth} flex flex-col max-h-[min(92vh,calc(100dvh-2rem))] my-2 sm:my-4 overflow-hidden`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${modalMaxWidth} flex flex-col max-h-[min(96vh,calc(100dvh-1rem))] my-1 sm:my-2 overflow-hidden`}>
         {/* Header */}
         <div className="shrink-0 border-b border-gray-100">
           <div className="flex items-center justify-between px-6 py-4">
@@ -494,8 +496,9 @@ export default function PaymentModal({
 
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* ── Left: payment form ── */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-5">
-            {/* Salesperson — select or scan if missing from POS */}
+          <div className={`flex-1 min-h-0 space-y-5 ${checkoutStep === 'setup' && isInsurance ? 'p-4 overflow-hidden flex flex-col' : 'p-6 overflow-y-auto'}`}>
+            {/* Salesperson — hidden on insurance setup (already chosen on POS) */}
+            {!(checkoutStep === 'setup' && isInsurance) && (
             <div className={`p-4 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50/80 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
               <SellerPicker
                 employees={modalEmployees}
@@ -509,6 +512,7 @@ export default function PaymentModal({
                 compact
               />
             </div>
+            )}
 
             {checkoutStep === 'pay' && loyaltyOn && selectedCustomer && !isInsurance && (
               <div className="p-3 rounded-xl border-2 border-indigo-100 bg-indigo-50/80 space-y-2">
@@ -577,8 +581,9 @@ export default function PaymentModal({
             )}
 
             {checkoutStep === 'setup' && isInsurance && (
-              <>
+              <div className="flex-1 min-h-0 overflow-hidden rounded-xl border-2 border-sky-200 bg-sky-50/50 p-3">
                 <InsurancePosPanel
+                  singleScreen
                   cartItems={cartItems}
                   selectedCustomer={selectedCustomer}
                   onPreviewChange={(p, fields) => { setInsurancePreview(p); setInsurancePatientFields(fields) }}
@@ -586,7 +591,7 @@ export default function PaymentModal({
                   onPlanChange={setInsurancePlanId}
                   onReadyChange={setInsuranceReady}
                 />
-              </>
+              </div>
             )}
 
             {checkoutStep === 'pay' && isInsurance && insurancePreview?.totals && (
@@ -981,7 +986,7 @@ export default function PaymentModal({
           </div>
 
           {/* ── Right: order summary ── */}
-          <div className="w-60 xl:w-64 flex-shrink-0 border-s border-gray-100 flex flex-col bg-gray-50">
+          <div className={`${checkoutStep === 'setup' && isInsurance ? 'w-72 xl:w-80' : 'w-60 xl:w-64'} flex-shrink-0 border-s border-gray-100 flex flex-col bg-gray-50 min-h-0`}>
             <div className="p-4 border-b border-gray-100">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 {t('payment.summary')}
@@ -1000,7 +1005,30 @@ export default function PaymentModal({
                 )
               })}
             </div>
-            <div className="p-4 border-t border-gray-200 space-y-2">
+            <div className="p-4 border-t border-gray-200 space-y-2 shrink-0">
+              {isInsurance && insurancePreview?.totals && checkoutStep === 'setup' && (
+                <>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-sky-800 mb-1">
+                    {t('insurance.transaction_title')}
+                  </p>
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between text-slate-600">
+                      <span>{t('insurance.covered')}</span>
+                      <span className="font-semibold tabular-nums">{insurancePreview.totals.insurance_covered.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>{t('insurance.patient_share')}</span>
+                      <span className="font-semibold tabular-nums">{insurancePreview.totals.patient_share.toFixed(2)}</span>
+                    </div>
+                    {(insurancePreview.totals.additional_amount ?? 0) > 0 && (
+                      <div className="flex justify-between text-slate-600">
+                        <span>{t('insurance.additional_amount')}</span>
+                        <span className="font-semibold tabular-nums">{insurancePreview.totals.additional_amount.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-xs text-gray-500">
                 <span>{t('payment.subtotal')}</span>
                 <span className="tabular-nums">{subtotal.toFixed(2)}</span>
@@ -1024,9 +1052,12 @@ export default function PaymentModal({
                 </div>
               )}
               <div className="flex justify-between text-sm font-bold text-gray-900 pt-2 border-t border-gray-200">
-                <span>{t('payment.total')}</span>
+                <span>{isInsurance ? t('insurance.final_due') : t('payment.total')}</span>
                 <span className="text-pharma-700 tabular-nums">
-                  {t('receipt.egp')} {effectiveTotal.toFixed(2)}
+                  {t('receipt.egp')} {(isInsurance && insurancePreview?.totals
+                    ? insurancePreview.totals.final_patient_paid
+                    : effectiveTotal
+                  ).toFixed(2)}
                 </span>
               </div>
             </div>

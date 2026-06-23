@@ -23,12 +23,17 @@ interface Props {
   onPlanChange: (id: number | null) => void
   onReadyChange?: (ready: boolean) => void
   hidePlanSelect?: boolean
+  /** Wide checkout: all field columns on one screen, no inner scroll. */
+  singleScreen?: boolean
 }
 
 const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'patient_share_pct', 'max_patient_share'])
 
-const INPUT_CLASS =
-  'w-full border-2 border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100'
+function inputClass(compact: boolean) {
+  return compact
+    ? 'w-full border border-slate-300 rounded-md px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-200'
+    : 'w-full border-2 border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100'
+}
 
 function fieldColSpan(key: string): string {
   return (INSURANCE_FIELD_COL_SPAN[key] || 1) === 2 ? 'sm:col-span-2' : ''
@@ -63,8 +68,10 @@ export default function InsurancePosPanel({
   onPlanChange,
   onReadyChange,
   hidePlanSelect = true,
+  singleScreen = false,
 }: Props) {
   const { t } = useTranslation()
+  const ic = inputClass(singleScreen)
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const [companies, setCompanies] = useState<InsuranceCompany[]>([])
   const [plans, setPlans] = useState<InsurancePlan[]>([])
@@ -249,6 +256,20 @@ export default function InsurancePosPanel({
       visibleSectionFields(sectionKey),
     )
     if (!keys.length) return null
+
+    if (singleScreen) {
+      return (
+        <div key={sectionKey} className="min-w-0 flex flex-col gap-1.5">
+          <h4 className="text-[11px] font-bold text-sky-900 uppercase tracking-wide border-b-2 border-sky-200 pb-1">
+            {sectionTitle(sectionKey)}
+          </h4>
+          {keys.map((key) => (
+            <div key={key} className="min-w-0">{renderOptionalField(key)}</div>
+          ))}
+        </div>
+      )
+    }
+
     const hintKey = `insurance.section_${sectionKey}_hint`
     const hint = t(hintKey)
     const showHint = hint !== hintKey
@@ -292,7 +313,7 @@ export default function InsurancePosPanel({
               const p = profiles.find((x) => String(x.id) === id)
               if (p) applyProfile(p)
             }}
-            className={INPUT_CLASS}
+            className={ic}
           >
             <option value="">{t('insurance.child_self')}</option>
             {profiles.map((p) => (
@@ -306,11 +327,13 @@ export default function InsurancePosPanel({
       return (
         <>
           {renderLabel(key, fieldMode(key, fieldConfig) === 'required')}
-          <div className="flex flex-wrap gap-3 mt-1">
+          <div className={`flex flex-wrap gap-2 ${singleScreen ? '' : 'mt-1'}`}>
             {(['chronic', 'acute'] as const).map((v) => (
               <label
                 key={v}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 cursor-pointer text-sm font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 rounded-md border cursor-pointer font-semibold transition-colors ${
+                  singleScreen ? 'px-2 py-1 text-[10px]' : 'px-3 py-2 text-sm rounded-lg border-2'
+                } ${
                   (patientFields.treatment_type || 'chronic') === v
                     ? 'border-sky-600 bg-sky-50 text-sky-900'
                     : 'border-slate-200 bg-white text-slate-600 hover:border-sky-300'
@@ -338,7 +361,7 @@ export default function InsurancePosPanel({
             value={patientFields.transaction_notes || ''}
             onChange={(e) => setField('transaction_notes', e.target.value)}
             rows={2}
-            className={`${INPUT_CLASS} resize-none`}
+            className={`${ic} resize-none`}
           />
         </>
       )
@@ -382,7 +405,7 @@ export default function InsurancePosPanel({
                 patient_last_name: last,
               }))
             }}
-            className={INPUT_CLASS}
+            className={ic}
             autoComplete="name"
           />
         </>
@@ -396,7 +419,7 @@ export default function InsurancePosPanel({
           <select
             value={patientFields.gender || ''}
             onChange={(e) => setField('gender', e.target.value)}
-            className={INPUT_CLASS}
+            className={ic}
           >
             <option value="">{t('common.select')}</option>
             <option value="male">{t('insurance.gender_male')}</option>
@@ -412,14 +435,25 @@ export default function InsurancePosPanel({
   const renderLabel = (key: string, required?: boolean) => {
     const hintKey = `insurance.field_hints.${key}`
     const hint = t(hintKey)
-    const showHint = hint !== hintKey
+    const hasHint = hint !== hintKey
+    if (singleScreen) {
+      return (
+        <label
+          className="text-[11px] font-bold text-slate-800 block mb-0.5 truncate leading-tight"
+          title={hasHint ? hint : undefined}
+        >
+          {insuranceFieldLabel(key, t)}
+          {required && <span className="text-red-600"> *</span>}
+        </label>
+      )
+    }
     return (
       <div className="mb-1.5">
         <label className="text-sm font-bold text-slate-900 block leading-snug">
           {insuranceFieldLabel(key, t)}
           {required && <span className="text-red-600 font-bold"> *</span>}
         </label>
-        {showHint && (
+        {hasHint && (
           <p className="text-[11px] text-slate-500 font-medium mt-0.5 leading-snug">{hint}</p>
         )}
       </div>
@@ -440,7 +474,7 @@ export default function InsurancePosPanel({
           min={isNum ? 0 : undefined}
           value={display}
           onChange={(e) => setField(key, e.target.value)}
-          className={INPUT_CLASS}
+          className={ic}
         />
       </>
     )
@@ -450,6 +484,79 @@ export default function InsurancePosPanel({
   const coverageSummary = preview?.coverage_summary
   const planLocalPct = selectedPlan?.coverage_rules?.local_drugs_pct ?? coverageSummary?.local_drugs_pct
   const planImportedPct = selectedPlan?.coverage_rules?.imported_drugs_pct ?? coverageSummary?.imported_drugs_pct
+
+  const companyPlanRow = (
+    <div className={`grid gap-2 shrink-0 ${singleScreen ? 'grid-cols-2 lg:grid-cols-4 pb-2 border-b border-sky-100' : 'grid-cols-1 sm:grid-cols-2'}`}>
+      <div className={singleScreen && showPlanPicker ? 'lg:col-span-1' : singleScreen ? 'lg:col-span-2' : ''}>
+        <label className={`${singleScreen ? 'text-[11px]' : 'text-sm'} font-bold text-slate-800 block mb-0.5`}>
+          {t('insurance.select_company')} <span className="text-red-600">*</span>
+        </label>
+        {!singleScreen && (
+          <p className="text-[11px] text-slate-500 font-medium mb-2">{t('insurance.select_company_hint')}</p>
+        )}
+        <select
+          value={companyId}
+          onChange={(e) => { setCompanyId(e.target.value ? Number(e.target.value) : ''); setPlanId('') }}
+          className={ic}
+        >
+          <option value="">{t('insurance.select_company')}</option>
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : c.name_en}</option>
+          ))}
+        </select>
+      </div>
+      {showPlanPicker && (
+        <div className={singleScreen ? 'lg:col-span-1' : ''}>
+          <label className={`${singleScreen ? 'text-[11px]' : 'text-sm'} font-bold text-slate-800 block mb-0.5`}>
+            {t('insurance.select_plan')}
+          </label>
+          {!singleScreen && (
+            <p className="text-[11px] text-slate-500 font-medium mb-2">{t('insurance.select_plan_hint')}</p>
+          )}
+          <select
+            value={planId}
+            onChange={(e) => setPlanId(e.target.value ? Number(e.target.value) : '')}
+            disabled={!companyId}
+            className={`${ic} disabled:opacity-50`}
+          >
+            <option value="">{t('insurance.select_plan')}</option>
+            {plans.map((p) => (
+              <option key={p.id} value={p.id}>{lang === 'ar' ? p.name_ar : p.name_en}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {singleScreen && (planLocalPct != null || planImportedPct != null) && (
+        <div className={`flex items-end ${showPlanPicker ? 'lg:col-span-2' : 'lg:col-span-2'}`}>
+          <p className="text-[10px] text-sky-800 font-medium bg-sky-50 border border-sky-200 rounded-md px-2 py-1.5 w-full leading-snug">
+            {t('insurance.company_coverage_hint', { local: planLocalPct ?? '—', imported: planImportedPct ?? '—' })}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+
+  if (singleScreen) {
+    return (
+      <div className="h-full flex flex-col gap-2 min-h-0 overflow-hidden">
+        {companyPlanRow}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 flex-1 min-h-0 content-start overflow-hidden">
+          {INSURANCE_POS_SECTION_ORDER.map((sectionKey) => renderSection(sectionKey))}
+        </div>
+        <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 border-t border-sky-100 text-[11px]">
+          {loading && (
+            <span className="text-sky-600 flex items-center gap-1 font-medium">
+              <Loader2 size={11} className="animate-spin" /> {t('insurance.calculating')}
+            </span>
+          )}
+          {error && <span className="text-red-600 font-semibold">{error}</span>}
+          {preview?.warnings?.map((w) => (
+            <span key={w} className="text-amber-700 font-medium">{w}</span>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4 p-4 sm:p-5 bg-gradient-to-b from-sky-50 to-slate-50 border-2 border-sky-200 rounded-xl">
@@ -474,7 +581,7 @@ export default function InsurancePosPanel({
             <select
               value={companyId}
               onChange={(e) => { setCompanyId(e.target.value ? Number(e.target.value) : ''); setPlanId('') }}
-              className={INPUT_CLASS}
+              className={ic}
             >
               <option value="">{t('insurance.select_company')}</option>
               {companies.map((c) => (
@@ -492,7 +599,7 @@ export default function InsurancePosPanel({
                 value={planId}
                 onChange={(e) => setPlanId(e.target.value ? Number(e.target.value) : '')}
                 disabled={!companyId}
-                className={`${INPUT_CLASS} disabled:opacity-50`}
+                className={`${ic} disabled:opacity-50`}
               >
                 <option value="">{t('insurance.select_plan')}</option>
                 {plans.map((p) => (
