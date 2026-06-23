@@ -50,8 +50,14 @@ const paperWidth: Record<string, string> = {
 export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
   const { t } = useTranslation()
   const [profile, setProfile] = useState<PharmacyProfile | null>(null)
+  const [patientCopyPrint, setPatientCopyPrint] = useState(false)
   const barcodeRef = useRef<SVGSVGElement | null>(null)
   const { invoice, items } = sale
+  const isInsurance = invoice.type === 'insurance'
+  const insuranceTotals = invoice.insurance_totals
+  const patientPaid = isInsurance && insuranceTotals
+    ? Number(insuranceTotals.final_patient_paid ?? invoice.net_total)
+    : invoice.net_total
 
   useEffect(() => {
     api.get<PharmacyProfile>('/settings/profile')
@@ -85,20 +91,25 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
     ? (profile?.receipt_footer_ar || i18n.getFixedT('ar')('receipt.thank_you'))
     : (profile?.receipt_footer_en || i18n.getFixedT('en')('receipt.thank_you'))
 
-  const handlePrint = () => {
-    // Blank the document title during printing so the browser doesn't stamp
-    // "Fratelanza ERP… / <date>" into the printed page header/footer.
+  const handlePrint = (customerCopy = false) => {
     const prevTitle = document.title
     const restore = () => {
       document.title = prevTitle
+      setPatientCopyPrint(false)
       window.removeEventListener('afterprint', restore)
     }
     window.addEventListener('afterprint', restore)
     document.title = ' '
-    window.print()
-    // Fallback restore in case afterprint doesn't fire on some browsers.
-    setTimeout(restore, 1000)
+    setPatientCopyPrint(customerCopy)
+    requestAnimationFrame(() => {
+      window.print()
+      setTimeout(restore, 1000)
+    })
   }
+
+  const patientSharePctLabel = insuranceTotals?.patient_share_pct != null
+    ? ` (${Number(insuranceTotals.patient_share_pct)}%)`
+    : ''
 
   const localeId = lang === 'ar' ? 'ar-EG' : 'en-US'
   const formatDateOnly = (s: string) => formatDate(s)
@@ -166,7 +177,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
 
         {/* Receipt content — width follows configured paper size for print */}
         <div
-          className={`flex-1 overflow-y-auto p-3 sm:p-5 receipt-print receipt-paper-${paper} mx-auto`}
+          className={`flex-1 overflow-y-auto p-3 sm:p-5 receipt-print receipt-paper-${paper} mx-auto${patientCopyPrint ? ' receipt-patient-copy' : ''}`}
           dir={dir}
           style={{ width: '100%', maxWidth: paperWidth[paper] }}
         >
@@ -213,7 +224,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
           </div>
 
           {/* Invoice info */}
-          <div className="receipt-info-block rounded-lg p-2 mb-2 space-y-1 bg-gray-50">
+          <div className="receipt-info-block rounded-lg p-2 mb-2 space-y-1 bg-gray-50 receipt-hide-patient-copy">
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">{tr('receipt.invoice_no')}</span>
               <span className="font-mono font-bold" style={{ color: accent }}>{invoice.invoice_number}</span>
@@ -268,13 +279,28 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
             )}
           </div>
 
+          {patientCopyPrint && isInsurance && (
+            <div className="receipt-patient-copy-only mb-2 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">{tr('receipt.date')}</span>
+                <span className="text-gray-700 text-xs">{formatDateOnly(invoice.created_at)}</span>
+              </div>
+              {(invoice.customer_name || invoice.delivery_customer_name) && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">{tr('receipt.customer')}</span>
+                  <span className="text-gray-700">{invoice.customer_name || invoice.delivery_customer_name}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Items */}
           <table className="w-full text-sm mb-4">
             <thead>
               <tr className="border-b-2 border-gray-200">
                 <th className="pb-2 text-start text-xs font-semibold text-gray-500 uppercase">{tr('receipt.item')}</th>
                 <th className="pb-2 text-center text-xs font-semibold text-gray-500 uppercase w-10">{tr('receipt.qty')}</th>
-                <th className="pb-2 text-end text-xs font-semibold text-gray-500 uppercase">{tr('receipt.total')}</th>
+                <th className="pb-2 text-end text-xs font-semibold text-gray-500 uppercase receipt-hide-patient-copy">{tr('receipt.total')}</th>
               </tr>
             </thead>
             <tbody>
@@ -292,7 +318,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                       <p className="font-medium text-gray-800 leading-tight">
                         {lang === 'ar' ? item.product_name_ar : item.product_name_en}
                       </p>
-                      <p className="text-[11px] text-gray-400 tabular-nums">
+                      <p className="text-[11px] text-gray-400 tabular-nums receipt-hide-patient-copy">
                         {tr('receipt.egp')} {item.unit_price.toFixed(2)} × {item.quantity}
                         {unitDisplay ? ` ${unitDisplay}` : ''}
                       </p>
@@ -310,7 +336,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                         </div>
                       )}
                     </td>
-                    <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums">{item.total.toFixed(2)}</td>
+                    <td className="py-2.5 text-end font-bold text-gray-900 tabular-nums receipt-hide-patient-copy">{item.total.toFixed(2)}</td>
                   </tr>
                 )
               })}
@@ -318,7 +344,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
           </table>
 
           {/* Totals */}
-          <div className="space-y-1.5 mb-4 bg-gray-50 rounded-xl p-4">
+          <div className="space-y-1.5 mb-4 bg-gray-50 rounded-xl p-4 receipt-hide-patient-copy">
             <div className="flex justify-between text-sm text-gray-600">
               <span>{tr('receipt.subtotal')}</span>
               <span className="tabular-nums">{invoice.subtotal.toFixed(2)}</span>
@@ -346,7 +372,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                   <span className="tabular-nums">{Number(invoice.insurance_totals.insurance_covered || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-600">
-                  <span>{tr('insurance.patient_share')}</span>
+                  <span>{tr('insurance.patient_share')}{patientSharePctLabel}</span>
                   <span className="tabular-nums">{Number(invoice.insurance_totals.patient_share || 0).toFixed(2)}</span>
                 </div>
                 {Number(invoice.insurance_totals.receipt_limit_excess || 0) > 0 && (
@@ -361,10 +387,10 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
                     <span className="tabular-nums">{Number(invoice.insurance_totals.exceeding_amount).toFixed(2)}</span>
                   </div>
                 )}
-                {Number(invoice.insurance_totals.additional_amount || 0) > 0 && (
+                {Number(invoice.insurance_totals.line_additional_total || 0) > 0 && (
                   <div className="flex justify-between text-xs text-gray-600">
-                    <span>{tr('insurance.additional_amount')}</span>
-                    <span className="tabular-nums">{Number(invoice.insurance_totals.additional_amount).toFixed(2)}</span>
+                    <span>{tr('insurance.item_additional')}</span>
+                    <span className="tabular-nums">{Number(invoice.insurance_totals.line_additional_total).toFixed(2)}</span>
                   </div>
                 )}
                 {Number(invoice.insurance_totals.copayment || 0) > 0 && (
@@ -383,8 +409,19 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
             </div>
           </div>
 
+          {patientCopyPrint && isInsurance && (
+            <div className="receipt-patient-copy-only mb-4 bg-gray-50 rounded-xl p-4">
+              <div className="flex justify-between text-base font-bold text-gray-900">
+                <span>{tr('receipt.patient_paid')}</span>
+                <span className="tabular-nums" style={{ color: accent }}>
+                  {tr('receipt.egp')} {patientPaid.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Payment */}
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4 space-y-1.5">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4 space-y-1.5 receipt-hide-patient-copy">
             <div className="flex justify-between text-sm">
               <span className="text-blue-600 font-semibold">{tr('receipt.payment')}</span>
               <span className="text-blue-900 font-bold">
@@ -427,24 +464,35 @@ export default function ReceiptModal({ sale, onNewSale, onClose }: Props) {
 
           {/* Scannable barcode at the bottom for fast invoice retrieval */}
           {profile?.show_barcode !== false && (
-            <div className="receipt-barcode-block mt-2 mb-1 flex flex-col items-center" dir="ltr">
+            <div className="receipt-barcode-block mt-2 mb-1 flex flex-col items-center receipt-hide-patient-copy" dir="ltr">
               <svg ref={barcodeRef} />
             </div>
           )}
         </div>
 
         {/* Actions */}
-        <div className="px-5 py-4 border-t border-gray-100 flex gap-3 no-print">
-          <button
-            onClick={handlePrint}
-            className="flex-1 flex items-center justify-center gap-2 border-2 border-gray-200 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all"
-          >
-            <Printer size={16} />
-            {t('receipt.print')}
-          </button>
+        <div className="px-5 py-4 border-t border-gray-100 flex flex-col gap-2 no-print">
+          <div className="flex gap-3">
+            <button
+              onClick={() => handlePrint(false)}
+              className="flex-1 flex items-center justify-center gap-2 border-2 border-gray-200 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all"
+            >
+              <Printer size={16} />
+              {t('receipt.print')}
+            </button>
+            {isInsurance && (
+              <button
+                onClick={() => handlePrint(true)}
+                className="flex-1 flex items-center justify-center gap-2 border-2 border-sky-200 rounded-xl py-2.5 text-sm font-semibold text-sky-800 hover:bg-sky-50 transition-all"
+              >
+                <Printer size={16} />
+                {t('receipt.print_customer_copy')}
+              </button>
+            )}
+          </div>
           <button
             onClick={onNewSale}
-            className="flex-1 flex items-center justify-center gap-2 text-white rounded-xl py-2.5 text-sm font-bold transition-all shadow-lg"
+            className="w-full flex items-center justify-center gap-2 text-white rounded-xl py-2.5 text-sm font-bold transition-all shadow-lg"
             style={{ backgroundColor: accent }}
           >
             <ShoppingCart size={16} />

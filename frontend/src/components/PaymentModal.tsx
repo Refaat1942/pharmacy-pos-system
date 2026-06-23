@@ -597,8 +597,30 @@ export default function PaymentModal({
             {checkoutStep === 'pay' && isInsurance && insurancePreview?.totals && (
               <div className="p-4 bg-sky-50 border-2 border-sky-200 rounded-xl text-xs space-y-1">
                 <p className="font-bold text-sky-900 uppercase tracking-wider mb-2">{t('insurance.transaction_title')}</p>
+                <div className="flex justify-between">
+                  <span>{t('insurance.patient_share')}{insurancePreview.totals.patient_share_pct != null ? ` (${insurancePreview.totals.patient_share_pct}%)` : ''}</span>
+                  <span>{insurancePreview.totals.patient_share.toFixed(2)} {t('receipt.egp')}</span>
+                </div>
+                {(insurancePreview.totals.receipt_limit_excess ?? 0) > 0 && (
+                  <div className="flex justify-between text-amber-800">
+                    <span>{t('insurance.receipt_limit_excess')}</span>
+                    <span>{insurancePreview.totals.receipt_limit_excess!.toFixed(2)} {t('receipt.egp')}</span>
+                  </div>
+                )}
+                {(insurancePreview.totals.exceeding_amount ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>{t('insurance.fields.exceeding_amount')}</span>
+                    <span>{insurancePreview.totals.exceeding_amount!.toFixed(2)} {t('receipt.egp')}</span>
+                  </div>
+                )}
+                {(insurancePreview.totals.line_additional_total ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>{t('insurance.item_additional')}</span>
+                    <span>{insurancePreview.totals.line_additional_total!.toFixed(2)} {t('receipt.egp')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between"><span>{t('insurance.covered')}</span><span>{insurancePreview.totals.insurance_covered.toFixed(2)} {t('receipt.egp')}</span></div>
-                <div className="flex justify-between font-bold"><span>{t('insurance.final_due')}</span><span>{insurancePreview.totals.final_patient_paid.toFixed(2)} {t('receipt.egp')}</span></div>
+                <div className="flex justify-between font-bold border-t border-sky-200 pt-1 mt-1"><span>{t('insurance.final_due')}</span><span>{insurancePreview.totals.final_patient_paid.toFixed(2)} {t('receipt.egp')}</span></div>
               </div>
             )}
 

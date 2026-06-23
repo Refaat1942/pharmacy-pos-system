@@ -310,6 +310,19 @@ body {
     font-weight: 700 !important;
     fill: #000 !important;
   }
+  .receipt-patient-copy-only { display: none !important; }
+  .receipt-patient-copy .receipt-hide-patient-copy {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .receipt-patient-copy .receipt-patient-copy-only {
+    display: block !important;
+    visibility: visible !important;
+  }
   .blueprint-print, .blueprint-print * { visibility: visible !important; }
   .blueprint-print {
     position: absolute;

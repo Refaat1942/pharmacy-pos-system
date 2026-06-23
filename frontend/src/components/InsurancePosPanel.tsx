@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Paperclip, Shield, X } from 'lucide-react'
 import type { CartItem, Customer } from '../lib/api'
@@ -80,6 +80,7 @@ export default function InsurancePosPanel({
   const [planId, setPlanId] = useState<number | ''>('')
   const [patientFields, setPatientFields] = useState<Record<string, string>>({})
   const [attachmentName, setAttachmentName] = useState('')
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<InsuranceCalculateResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -220,14 +221,20 @@ export default function InsurancePosPanel({
     return () => clearTimeout(timer)
   }, [companyId, planId, cartItems, patientFields, selectedCustomer?.id, onPreviewChange, t])
 
+  const resetAttachmentInput = () => {
+    if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+  }
+
   const onAttachment = (file: File | null) => {
     if (!file) {
       setAttachmentName('')
       setField('attachment_upload', '')
+      resetAttachmentInput()
       return
     }
     if (file.size > 500_000) {
       setError(t('insurance.attachment_too_large') as string)
+      resetAttachmentInput()
       return
     }
     const reader = new FileReader()
@@ -235,6 +242,11 @@ export default function InsurancePosPanel({
       setAttachmentName(file.name)
       setField('attachment_upload', String(reader.result || ''))
       setError('')
+      resetAttachmentInput()
+    }
+    reader.onerror = () => {
+      setError(t('common.error') as string)
+      resetAttachmentInput()
     }
     reader.readAsDataURL(file)
   }
@@ -374,7 +386,13 @@ export default function InsurancePosPanel({
             <label className="inline-flex items-center gap-1 px-3 py-2 text-xs font-bold bg-emerald-600 text-white rounded-lg cursor-pointer hover:bg-emerald-700">
               <Paperclip size={12} />
               {t('insurance.browse_file')}
-              <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => onAttachment(e.target.files?.[0] || null)} />
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                className="hidden"
+                onChange={(e) => onAttachment(e.target.files?.[0] || null)}
+              />
             </label>
             {attachmentName && (
               <>
@@ -680,8 +698,8 @@ export default function InsurancePosPanel({
           {(preview.totals.exceeding_amount ?? 0) > 0 && (
             <div className="flex justify-between"><span>{t('insurance.fields.exceeding_amount')}</span><span>{preview.totals.exceeding_amount!.toFixed(2)} {egp}</span></div>
           )}
-          {(preview.totals.additional_amount ?? 0) > 0 && (
-            <div className="flex justify-between"><span>{t('insurance.additional_amount')}</span><span>{preview.totals.additional_amount.toFixed(2)} {egp}</span></div>
+          {(preview.totals.line_additional_total ?? 0) > 0 && (
+            <div className="flex justify-between"><span>{t('insurance.item_additional')}</span><span>{preview.totals.line_additional_total!.toFixed(2)} {egp}</span></div>
           )}
           {preview.totals.copayment > 0 && (
             <div className="flex justify-between"><span>{t('insurance.copayment')}</span><span>{preview.totals.copayment.toFixed(2)} {egp}</span></div>

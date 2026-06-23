@@ -1228,6 +1228,8 @@
     "change": "Change",
     "thank_you": "Thank you for your purchase!",
     "print": "Print Receipt",
+    "print_customer_copy": "Print customer copy",
+    "patient_paid": "Patient paid",
     "new_sale": "New Sale",
     "close": "Close",
     "egp": "EGP",

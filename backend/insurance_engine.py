@@ -290,6 +290,11 @@ def calculate_insurance_sale(
 
     share_base = gross if timing == "before_discount" else after_discount
     patient_share_amt = (share_base * Decimal(str(patient_share_pct)) / Decimal("100")).quantize(Q, rounding=ROUND_HALF_UP)
+    if max_patient_share > 0 and patient_share_amt > Decimal(str(max_patient_share)):
+        patient_share_amt = Decimal(str(max_patient_share))
+        limit_warnings = ["Patient share capped at maximum"]
+    else:
+        limit_warnings = []
 
     insurance_owed = after_discount - patient_share_amt
     if insurance_owed < 0:
@@ -299,9 +304,7 @@ def calculate_insurance_sale(
     if receipt_limit > 0 and insurance_owed > Decimal(str(receipt_limit)):
         receipt_limit_excess = insurance_owed - Decimal(str(receipt_limit))
         insurance_owed = Decimal(str(receipt_limit))
-        limit_warnings = ["Receipt insurance limit exceeded — patient pays difference"]
-    else:
-        limit_warnings = []
+        limit_warnings.append("Receipt insurance limit exceeded — patient pays difference")
 
     insurance_covered = insurance_owed
     covered_f, period_warnings = _check_limits(
@@ -338,9 +341,6 @@ def calculate_insurance_sale(
     additional = exceeding_amount + line_additional_total
 
     final_patient = patient_share_amt + receipt_limit_excess + additional + copayment
-    if max_patient_share > 0 and final_patient > Decimal(str(max_patient_share)):
-        final_patient = Decimal(str(max_patient_share))
-        limit_warnings.append("Capped at max patient share")
 
     if final_patient < 0:
         final_patient = Decimal("0")
@@ -368,6 +368,7 @@ def calculate_insurance_sale(
             "patient_share_timing": timing,
             "patient_share": _money(patient_share_amt),
             "receipt_limit_excess": _money(receipt_limit_excess),
+            "line_additional_total": _money(line_additional_total),
             "additional_amount": _money(additional),
             "copayment": _money(copayment),
             "exceeding_amount": _money(exceeding_amount),

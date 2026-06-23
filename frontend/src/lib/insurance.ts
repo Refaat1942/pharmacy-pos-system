@@ -162,6 +162,7 @@ export interface InsuranceTotals {
   patient_share_timing?: string
   patient_share: number
   receipt_limit_excess?: number
+  line_additional_total?: number
   additional_amount: number
   copayment: number
   exceeding_amount?: number
