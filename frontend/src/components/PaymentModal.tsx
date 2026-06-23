@@ -233,7 +233,7 @@ export default function PaymentModal({
     }
     if (paymentMethod === 'hybrid' && !hybridTouched) {
       setCashPart(effectiveTotal.toFixed(2))
-      setCardPart('0')
+      setCardPart('')
     }
   }, [checkoutStep, paymentMethod, effectiveTotal, cashTouched, hybridTouched])
 
@@ -396,7 +396,7 @@ export default function PaymentModal({
           offer_id: item.offer_id,
           offer_discount: item.offer_discount || 0,
           unit_type: item.unit_type || 'pack',
-          dose_text: item.dose_text || undefined,
+          dose_text: item.dose_on_receipt && item.dose_text ? item.dose_text : undefined,
         })),
         discount: isInsurance ? 0 : invoiceDiscount,
         offer_ids: offerIds?.length ? offerIds : undefined,
@@ -828,6 +828,43 @@ export default function PaymentModal({
                     ? `Remaining: ${t('receipt.egp')} ${(effectiveTotal - hybridSum).toFixed(2)}`
                     : `Enter amounts totaling ${t('receipt.egp')} ${effectiveTotal.toFixed(2)}`}
                 </div>
+              </div>
+            )}
+
+            {checkoutStep === 'pay' && isDigitalAccount && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                  {t('payment.digital_settlement')}
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setAccountPaidAmount(''); setPaymentMethod('account') }}
+                    className={`py-3 px-2 rounded-xl border-2 text-sm font-semibold transition-all ${
+                      paymentMethod === 'account' && accountPaidNow <= 0
+                        ? 'border-amber-500 bg-amber-50 text-amber-800'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('payment.digital_full_on_account')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPaymentMethod('account'); setAccountPaidAmount('') }}
+                    className={`py-3 px-2 rounded-xl border-2 text-sm font-semibold transition-all ${
+                      paymentMethod === 'account' && accountPaidNow > 0
+                        ? 'border-pharma-500 bg-pharma-50 text-pharma-800'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {t('payment.digital_partial_now')}
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  {t('payment.digital_b2b_hint', {
+                    platform: platformDisplayLabel(platforms.find((p) => p.platform_key === digitalType), digitalType, langCode),
+                  })}
+                </p>
               </div>
             )}
 

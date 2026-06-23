@@ -614,7 +614,10 @@ def list_employees(current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT id, name_ar, name_en, role, status FROM users WHERE status='active' ORDER BY COALESCE(NULLIF(name_en,''), name_ar)"
+        """SELECT id, name_ar, name_en, role, status FROM users
+           WHERE status='active'
+             AND COALESCE(role, '') NOT IN ('delivery', 'driver')
+           ORDER BY COALESCE(NULLIF(name_en,''), name_ar)"""
     )
     employees = cur.fetchall()
     conn.close()
@@ -852,10 +855,21 @@ def create_sale(req: SaleRequest,
                     raise HTTPException(status_code=400, detail="Unknown or inactive digital platform")
                 cust = lookup_platform_partner(cur, req.digital_type)
                 if not cust:
+                    from digital_platforms import ensure_platform_customer
+                    try:
+                        cid = ensure_platform_customer(cur, req.digital_type, current_user.get("user_id"))
+                        cur.execute(
+                            "SELECT id, name, credit_limit, active FROM customers WHERE id=%s",
+                            (cid,),
+                        )
+                        cust = cur.fetchone()
+                    except ValueError:
+                        cust = None
+                if not cust:
                     pname = platform_partner_display_name(req.digital_type, cur=cur)
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Create a customer named '{pname}' for platform on-account sales",
+                        detail=f"Could not link B2B account for platform '{pname}'. Check Settings → Digital Platforms.",
                     )
                 account_customer_id = cust["id"]
             elif not account_customer_id:

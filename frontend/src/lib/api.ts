@@ -160,6 +160,8 @@ export interface CartItem {
   // When pack_size <= 1 this is always 'pack'.
   unit_type?: 'pack' | 'sub'
   dose_text?: string
+  /** Print dose direction on customer receipt when checked. */
+  dose_on_receipt?: boolean
 }
 
 export interface InvoiceItem {

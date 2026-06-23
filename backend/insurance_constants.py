@@ -36,37 +36,36 @@ INSURANCE_FIELD_KEYS = [
 
 # Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
 DEFAULT_FIELD_CONFIG = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
-for _k in (
-    "patient_first_name",
-    "patient_last_name",
-    "mobile_number",
-    "insurance_card_number",
-    "membership_number",
-    "policy_number",
-    "approval_number",
-):
+for _k in INSURANCE_STANDARD_POS_FIELDS:
     DEFAULT_FIELD_CONFIG[_k] = "optional"
-DEFAULT_FIELD_CONFIG["patient_first_name"] = "required"
-DEFAULT_FIELD_CONFIG["patient_last_name"] = "required"
+DEFAULT_FIELD_CONFIG["patient_name"] = "required"
 DEFAULT_FIELD_CONFIG["insurance_card_number"] = "required"
 DEFAULT_FIELD_CONFIG["mobile_country_code"] = "hidden"
+DEFAULT_FIELD_CONFIG["patient_first_name"] = "hidden"
+DEFAULT_FIELD_CONFIG["patient_last_name"] = "hidden"
 
-INSURANCE_TRANSACTION_CORE_KEYS = [
-    "insurance_card_number",
-    "patient_first_name",
-    "patient_last_name",
+# Standard POS insurance transaction fields (always shown unless hidden in company settings)
+INSURANCE_STANDARD_POS_FIELDS = [
+    "patient_name",
     "mobile_number",
-    "membership_number",
+    "insurance_card_number",
     "policy_number",
+    "membership_number",
+    "patient_share_pct",
+    "receipt_limit",
+    "max_patient_share",
+    "exceeding_amount",
     "approval_number",
 ]
+
+INSURANCE_TRANSACTION_CORE_KEYS = list(INSURANCE_STANDARD_POS_FIELDS)
 
 
 def merge_field_config_for_pos(stored: dict | None) -> dict:
     """POS: core patient fields only; extras stay hidden unless saved in company advanced settings."""
     stored = stored or {}
     cfg = dict(DEFAULT_FIELD_CONFIG)
-    for key in INSURANCE_TRANSACTION_CORE_KEYS:
+    for key in INSURANCE_STANDARD_POS_FIELDS:
         if key in stored:
             cfg[key] = stored[key]
     for key in INSURANCE_FIELD_KEYS:

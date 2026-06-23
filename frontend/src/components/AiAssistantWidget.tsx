@@ -33,6 +33,8 @@ export default function AiAssistantWidget() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [mode, setMode] = useState<'ai' | 'faq'>('faq')
+  const [hasServerKey, setHasServerKey] = useState<boolean | null>(null)
+  const [openaiOptionEnabled, setOpenaiOptionEnabled] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -42,9 +44,21 @@ export default function AiAssistantWidget() {
 
   useEffect(() => {
     if (!hasFeature('ai_assistant')) return
-    api.get<{ mode: 'ai' | 'faq' }>('/assistant/status')
-      .then(({ data }) => setMode(data.mode))
-      .catch(() => setMode('faq'))
+    api.get<{
+      mode: 'ai' | 'faq'
+      has_server_key?: boolean
+      openai_option_enabled?: boolean
+    }>('/assistant/status')
+      .then(({ data }) => {
+        setMode(data.mode)
+        setHasServerKey(data.has_server_key ?? null)
+        setOpenaiOptionEnabled(data.openai_option_enabled ?? null)
+      })
+      .catch(() => {
+        setMode('faq')
+        setHasServerKey(null)
+        setOpenaiOptionEnabled(null)
+      })
   }, [hasFeature])
 
   useEffect(() => {
@@ -134,6 +148,16 @@ export default function AiAssistantWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50">
+            {mode === 'faq' && (hasServerKey === false || openaiOptionEnabled === false) && (
+              <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
+                {hasServerKey === false && (
+                  <p>{t('assistant.faq_no_server_key')}</p>
+                )}
+                {hasServerKey !== false && openaiOptionEnabled === false && (
+                  <p>{t('assistant.faq_option_off')}</p>
+                )}
+              </div>
+            )}
             {messages.map((m, i) => (
               <div
                 key={`${m.role}-${i}`}

@@ -140,7 +140,8 @@
     "print_toolbar_btn": "Select printer & print",
     "print_toolbar_hint": "Use your thermal label printer (38mm). Scale 100%.",
     "pos_btn": "Dose label",
-    "pos_more": "More options"
+    "pos_more": "More options",
+    "include_on_receipt": "Include dose on customer receipt"
   },
   "nav": {
     "pos": "Point of Sale",
@@ -1162,7 +1163,11 @@
     "delivery_address_required": "Delivery address is required.",
     "delivery_required": "Delivery requires customer name, phone and address.",
     "paid_now": "Amount paid now",
-    "remaining_on_account": "Remaining on account"
+    "remaining_on_account": "Remaining on account",
+    "digital_settlement": "Digital platform settlement",
+    "digital_full_on_account": "Full on account",
+    "digital_partial_now": "Collect part now + rest on account",
+    "digital_b2b_hint": "Billed to {{platform}} (B2B partner). Enter cash/card collected now, or leave empty for full on-account."
   },
   "common": {
     "loading": "Loading...",
@@ -1390,6 +1395,11 @@
   "suppliers": {
     "title": "Suppliers",
     "new": "New Supplier",
+    "bulk_upload": "Bulk Upload",
+    "bulk_hint": "Download the template, fill supplier rows, then upload Excel or CSV.",
+    "download_template": "Download template",
+    "bulk_done": "Done: {{created}} created, {{updated}} updated, {{skipped}} skipped.",
+    "bulk_failed": "Upload failed — check file matches the template.",
     "edit": "Edit Supplier",
     "empty": "No suppliers yet",
     "search_placeholder": "Search by name, phone, contact",
@@ -1781,6 +1791,8 @@
     "error": "Could not get a reply. Please try again.",
     "mode_ai": "AI answers",
     "mode_faq": "Quick help",
+    "faq_no_server_key": "OpenAI is not active: the server has no API key loaded. Add OPENAI_API_KEY to /etc/pharmapos.env on the VPS, then restart the backend (sudo systemctl restart pharmapos).",
+    "faq_option_off": "OpenAI is not active: enable “OpenAI answers (not FAQ only)” under Smart AI Assistant in Control Platform, then log out and back in.",
     "suggest_sale": "How do I make a sale?",
     "suggest_return": "How do I process a return?",
     "suggest_barcode": "How to print barcode labels?",
@@ -1899,6 +1911,10 @@
     "select_plan": "Select plan",
     "pos_panel": "Insurance information",
     "transaction_title": "Insurance transaction",
+    "section_patient": "Patient",
+    "section_policy": "Policy & authorization",
+    "section_financial": "Patient share & limits",
+    "section_extra": "Additional fields",
     "child_self": "Self (account holder)",
     "treatment_chronic": "Chronic",
     "treatment_acute": "Acute",

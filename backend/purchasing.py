@@ -1,5 +1,8 @@
 """Purchasing & Suppliers module — suppliers, POs, supplier payments & statements."""
-from fastapi import APIRouter, HTTPException, Depends
+import csv
+import io
+
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -199,6 +202,134 @@ def delete_supplier(supplier_id: int, current_user=Depends(get_current_user)):
         conn.rollback()
         raise
     finally:
+        conn.close()
+
+
+SUPPLIER_TEMPLATE_HEADERS = [
+    "Name", "Contact Person", "Phone", "Email", "Region", "Address Details",
+    "Tax Number", "Notes", "Active",
+]
+
+
+@router.get("/suppliers/bulk-template")
+def suppliers_bulk_template(current_user=Depends(get_current_user)):
+    """Download Excel template for bulk supplier import."""
+    _admin_only(current_user)
+    from openpyxl import Workbook
+    from regions import REGIONS
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Suppliers"
+    ws.append(SUPPLIER_TEMPLATE_HEADERS)
+    ws.append([
+        "Pharma Distribution Co.",
+        "Mr. Hassan",
+        "01001234567",
+        "orders@example.com",
+        "Cairo",
+        "Industrial zone, block 4",
+        "123-456-789",
+        "Main wholesaler",
+        "yes",
+    ])
+
+    regions_ws = wb.create_sheet("Regions (reference)")
+    regions_ws.append(["Region Key", "English", "Arabic"])
+    for r in REGIONS:
+        regions_ws.append([r["key"], r["en"], r["ar"]])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="suppliers_template.xlsx"'},
+    )
+
+
+@router.post("/suppliers/bulk-upload")
+async def suppliers_bulk_upload(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
+    """Bulk import suppliers from Excel/CSV."""
+    _admin_only(current_user)
+    from openpyxl import load_workbook
+    from regions import resolve_region_key
+
+    content = await file.read()
+    name = (file.filename or "").lower()
+    rows: list[dict] = []
+    if name.endswith(".csv"):
+        text = content.decode("utf-8-sig", errors="replace")
+        rows = list(csv.DictReader(io.StringIO(text)))
+    else:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not any(row):
+                continue
+            rows.append(dict(zip(headers, row)))
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    created = updated = skipped = 0
+    try:
+        for raw in rows:
+            def cell(*keys: str) -> str:
+                for k in keys:
+                    for rk, rv in raw.items():
+                        if rk and rk.strip().lower() == k.lower():
+                            return str(rv).strip() if rv is not None else ""
+                return ""
+
+            supplier_name = cell("name", "supplier", "supplier name")
+            if not supplier_name:
+                skipped += 1
+                continue
+            contact = cell("contact person", "contact", "contact_person")
+            phone = cell("phone", "mobile", "tel")
+            email = cell("email")
+            region_raw = cell("region", "governorate")
+            region = resolve_region_key(region_raw) if region_raw else None
+            address_details = cell("address details", "address")
+            tax_number = cell("tax number", "tax_number", "tax #")
+            notes = cell("notes")
+            active_raw = cell("active", "status").lower()
+            active = active_raw not in ("no", "false", "0", "inactive")
+
+            cur.execute(
+                "SELECT id FROM suppliers WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) LIMIT 1",
+                (supplier_name,),
+            )
+            existing = cur.fetchone()
+            if existing:
+                cur.execute(
+                    """UPDATE suppliers SET contact_person=%s, phone=%s, email=%s, region=%s,
+                       address_details=%s, tax_number=%s, notes=%s, active=%s WHERE id=%s""",
+                    (contact or None, phone or None, email or None, region,
+                     address_details or None, tax_number or None, notes or None, active, existing["id"]),
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO suppliers
+                       (name, contact_person, phone, email, region, address_details, tax_number, notes, active)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (supplier_name, contact or None, phone or None, email or None, region,
+                     address_details or None, tax_number or None, notes or None, active),
+                )
+                created += 1
+        conn.commit()
+        return {"created": created, "updated": updated, "skipped": skipped}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
         conn.close()
 
 

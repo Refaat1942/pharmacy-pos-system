@@ -356,6 +356,7 @@ export default function POS() {
       discount: 0,
       discount_value: 0,
       dose_text: undefined,
+      dose_on_receipt: false,
     })))
   }, [isInsurancePos])
   useEffect(() => { try { localStorage.setItem(RXCLINIC_KEY, JSON.stringify(rxClinic)) } catch { /* ignore */ } }, [rxClinic, RXCLINIC_KEY])
@@ -631,7 +632,15 @@ export default function POS() {
 
   const setDoseText = useCallback((productId: number, doseText: string) => {
     setCartItems((prev) => prev.map((i) =>
-      i.product.id === productId ? { ...i, dose_text: doseText } : i,
+      i.product.id === productId
+        ? { ...i, dose_text: doseText || undefined, dose_on_receipt: doseText ? i.dose_on_receipt : false }
+        : i,
+    ))
+  }, [])
+
+  const setDoseOnReceipt = useCallback((productId: number, onReceipt: boolean) => {
+    setCartItems((prev) => prev.map((i) =>
+      i.product.id === productId ? { ...i, dose_on_receipt: onReceipt } : i,
     ))
   }, [])
 
@@ -1015,6 +1024,8 @@ export default function POS() {
                                 showPharmacyOnLabels={showPharmacyOnLabels}
                                 onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
                                 onDoseChange={(txt) => setDoseText(item.product.id, txt)}
+                                includeOnReceipt={!!item.dose_on_receipt}
+                                onReceiptToggle={(v) => setDoseOnReceipt(item.product.id, v)}
                               />
                             )}
                             {hasSub && (

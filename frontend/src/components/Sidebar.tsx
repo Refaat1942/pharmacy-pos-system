@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -7,6 +7,7 @@ import {
   LineChart, DollarSign, UsersRound, Layers, Stethoscope, Bike, Clock,
   ShieldAlert, Sparkles, Gift, Award, Shield, CreditCard,
 } from 'lucide-react'
+import { prescriptionsAPI } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { canAccessHr } from '../lib/hrAccess'
 import CopyrightNotice from './CopyrightNotice'
@@ -93,14 +94,17 @@ function NavLinks({
   items,
   locationPath,
   t,
+  badges,
 }: {
   sections?: { sectionKey: string; items: NavItem[] }[]
   items?: NavItem[]
   locationPath: string
   t: (key: string) => string
+  badges?: Record<string, number>
 }) {
   const renderItem = ({ to, labelKey, Icon }: NavItem) => {
     const active = locationPath === to
+    const badge = badges?.[to] || 0
     return (
       <Link
         key={to}
@@ -113,11 +117,18 @@ function NavLinks({
             : 'text-white/60 hover:text-white hover:bg-white/5 font-medium'
         }`}
       >
-        <Icon
-          size={17}
-          strokeWidth={active ? 2.5 : 2}
-          className={`shrink-0 transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:-rotate-3'}`}
-        />
+        <span className="relative shrink-0">
+          <Icon
+            size={17}
+            strokeWidth={active ? 2.5 : 2}
+            className={`transition-transform duration-300 ${active ? 'scale-110' : 'group-hover:scale-110 group-hover:-rotate-3'}`}
+          />
+          {badge > 0 && (
+            <span className="absolute -top-1.5 -end-2 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
+        </span>
         <span
           key={active ? `${to}-on` : to}
           className={`truncate nav-feature-label transition-all duration-300 ${
@@ -159,6 +170,28 @@ export default function Sidebar() {
   const isBranch = user?.role === 'branch'
   const userPerms = !isAdmin && Array.isArray(user?.permissions) ? new Set(user!.permissions as string[]) : null
   const navRef = useRef<HTMLElement>(null)
+  const [rxCount, setRxCount] = useState(0)
+  const clinicsRxOn = hasFeature('clinics') && hasFeatureOption('clinics', 'pos_prescriptions')
+
+  useEffect(() => {
+    if (!clinicsRxOn) {
+      setRxCount(0)
+      return
+    }
+    const refresh = () => {
+      prescriptionsAPI.count()
+        .then((r) => setRxCount(r.data.count || 0))
+        .catch(() => { /* ignore */ })
+    }
+    refresh()
+    const id = window.setInterval(refresh, 15000)
+    return () => window.clearInterval(id)
+  }, [clinicsRxOn])
+
+  const navBadges = useMemo(() => {
+    if (!rxCount) return undefined
+    return { '/': rxCount, '/clinics': rxCount }
+  }, [rxCount])
 
   const itemVisible = useCallback((n: NavItem) => {
     if (n.clockScreen) return true
@@ -223,13 +256,13 @@ export default function Sidebar() {
         className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-2 px-3 [overflow-anchor:none]"
         onScroll={persistScroll}
       >
-        <NavLinks sections={visibleSections} locationPath={location.pathname} t={t} />
+        <NavLinks sections={visibleSections} locationPath={location.pathname} t={t} badges={navBadges} />
       </nav>
 
       {/* Pinned nav — fraud, stock reallocation, settings always visible */}
       {pinnedItems.length > 0 && (
         <div className="shrink-0 border-t border-white/10 py-2 px-3 space-y-0.5 bg-slate-900">
-          <NavLinks items={pinnedItems} locationPath={location.pathname} t={t} />
+          <NavLinks items={pinnedItems} locationPath={location.pathname} t={t} badges={navBadges} />
         </div>
       )}
 

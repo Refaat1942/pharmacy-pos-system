@@ -1781,6 +1781,8 @@
     "error": "تعذّر الحصول على إجابة. حاول مرة أخرى.",
     "mode_ai": "إجابات ذكية",
     "mode_faq": "مساعدة سريعة",
+    "faq_no_server_key": "OpenAI غير مفعّل: السيرفر لا يقرأ مفتاح API. أضف OPENAI_API_KEY في /etc/pharmapos.env على VPS ثم أعد تشغيل الخدمة (sudo systemctl restart pharmapos).",
+    "faq_option_off": "OpenAI غير مفعّل: فعّل «OpenAI answers (not FAQ only)» ضمن Smart AI Assistant في Control Platform ثم سجّل خروج ودخول.",
     "suggest_sale": "كيف أعمل بيع؟",
     "suggest_return": "كيف أعمل مرتجع؟",
     "suggest_barcode": "كيف أطبع ملصق باركود؟",

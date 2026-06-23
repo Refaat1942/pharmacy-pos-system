@@ -6,7 +6,6 @@ import { insuranceAPI } from '../lib/api'
 import type { InsuranceCalculateResult, InsuranceCompany, InsurancePlan, InsuranceProfile } from '../lib/insurance'
 import {
   INSURANCE_EXTRA_FIELD_KEYS,
-  INSURANCE_TRANSACTION_CORE_KEYS,
   fieldMode,
   insuranceFieldLabel,
   splitCustomerName,
@@ -26,10 +25,11 @@ interface Props {
 const NUMERIC_KEYS = new Set(['receipt_limit', 'exceeding_amount', 'additional_amount', 'patient_share_pct', 'max_patient_share'])
 
 function hasPatientIdentity(fields: Record<string, string>): boolean {
+  if ((fields.patient_name || '').trim()) return true
   const first = (fields.patient_first_name || '').trim()
   const last = (fields.patient_last_name || '').trim()
   if (first || last) return true
-  return !!(fields.patient_name || '').trim()
+  return false
 }
 
 function profileLabel(p: InsuranceProfile): string {
@@ -121,6 +121,7 @@ export default function InsurancePosPanel({
       const { first, last } = splitCustomerName(selectedCustomer.name || '')
       setPatientFields((f) => ({
         ...f,
+        patient_name: selectedCustomer.name || f.patient_name || '',
         patient_first_name: first,
         patient_last_name: last,
         mobile_number: selectedCustomer.phone || f.mobile_number || '',
@@ -304,7 +305,22 @@ export default function InsurancePosPanel({
     if (key === 'patient_name') {
       return (
         <div key={key} className="md:col-span-2">
-          {renderInput(key)}
+          {renderLabel(key, fieldMode(key, fieldConfig) === 'required')}
+          <input
+            type="text"
+            value={patientFields.patient_name || ''}
+            onChange={(e) => {
+              const name = e.target.value
+              const { first, last } = splitCustomerName(name)
+              setPatientFields((f) => ({
+                ...f,
+                patient_name: name,
+                patient_first_name: first,
+                patient_last_name: last,
+              }))
+            }}
+            className="w-full border border-sky-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+          />
         </div>
       )
     }
@@ -386,23 +402,52 @@ export default function InsurancePosPanel({
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {INSURANCE_TRANSACTION_CORE_KEYS.map((key) => {
-          if (fieldMode(key, fieldConfig) === 'hidden') return null
-          if (key === 'mobile_number') {
-            return (
-              <div key={key} className="md:col-span-2">
-                {renderInput(key)}
-              </div>
-            )
-          }
-          return <div key={key}>{renderInput(key)}</div>
-        })}
+      <div className="space-y-3">
+        <div className="rounded-xl border border-sky-200 bg-white p-3 space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-800">
+            {t('insurance.section_patient')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(['patient_name', 'mobile_number'] as const).map((key) => {
+              if (fieldMode(key, fieldConfig) === 'hidden') return null
+              return key === 'patient_name' ? renderOptionalField(key) : renderInput(key)
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-sky-200 bg-white p-3 space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-800">
+            {t('insurance.section_policy')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(['insurance_card_number', 'policy_number', 'membership_number', 'approval_number'] as const).map((key) => {
+              if (fieldMode(key, fieldConfig) === 'hidden') return null
+              return renderInput(key)
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-sky-200 bg-white p-3 space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-800">
+            {t('insurance.section_financial')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {(['patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount'] as const).map((key) => {
+              if (fieldMode(key, fieldConfig) === 'hidden') return null
+              return renderInput(key)
+            })}
+          </div>
+        </div>
       </div>
 
       {optionalFields.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-sky-200 pt-4">
-          {optionalFields.map((key) => renderOptionalField(key))}
+        <div className="rounded-xl border border-dashed border-sky-300 bg-white p-3 space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">
+            {t('insurance.section_extra')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {optionalFields.map((key) => renderOptionalField(key))}
+          </div>
         </div>
       )}
 

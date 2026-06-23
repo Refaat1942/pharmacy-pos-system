@@ -20,6 +20,8 @@ interface Props {
   showPharmacyOnLabels?: boolean
   onOpenFullEditor: (doseText: string) => void
   onDoseChange?: (doseText: string) => void
+  includeOnReceipt?: boolean
+  onReceiptToggle?: (include: boolean) => void
 }
 
 const QUICK_PRESET_IDS = [
@@ -42,6 +44,8 @@ export default function PosItemDoseLabel({
   showPharmacyOnLabels = true,
   onOpenFullEditor,
   onDoseChange,
+  includeOnReceipt = false,
+  onReceiptToggle,
 }: Props) {
   const { t } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
@@ -221,6 +225,18 @@ export default function PosItemDoseLabel({
               </button>
             </div>
           </div>
+
+          {activeDoseText && onReceiptToggle && (
+            <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer pt-1 border-t border-slate-100">
+              <input
+                type="checkbox"
+                checked={includeOnReceipt}
+                onChange={(e) => onReceiptToggle(e.target.checked)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              {t('dose_labels.include_on_receipt')}
+            </label>
+          )}
         </div>
       )}
     </div>

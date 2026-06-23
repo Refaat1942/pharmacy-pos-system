@@ -32,19 +32,25 @@ export const INSURANCE_FIELD_KEYS = [
   'transaction_notes',
 ] as const
 
-/** Default visible fields on insurance POS transaction. */
-export const INSURANCE_TRANSACTION_CORE_KEYS = [
-  'insurance_card_number',
-  'patient_first_name',
-  'patient_last_name',
+/** Standard insurance POS fields — fixed layout; extras configurable per company. */
+export const INSURANCE_STANDARD_POS_FIELDS = [
+  'patient_name',
   'mobile_number',
-  'membership_number',
+  'insurance_card_number',
   'policy_number',
+  'membership_number',
+  'patient_share_pct',
+  'receipt_limit',
+  'max_patient_share',
+  'exceeding_amount',
   'approval_number',
 ] as const
 
+/** @deprecated use INSURANCE_STANDARD_POS_FIELDS */
+export const INSURANCE_TRANSACTION_CORE_KEYS = INSURANCE_STANDARD_POS_FIELDS
+
 export const INSURANCE_EXTRA_FIELD_KEYS = INSURANCE_FIELD_KEYS.filter(
-  (k) => !INSURANCE_TRANSACTION_CORE_KEYS.includes(k as (typeof INSURANCE_TRANSACTION_CORE_KEYS)[number]),
+  (k) => !INSURANCE_STANDARD_POS_FIELDS.includes(k as (typeof INSURANCE_STANDARD_POS_FIELDS)[number]),
 )
 
 export type InsuranceFieldKey = (typeof INSURANCE_FIELD_KEYS)[number]

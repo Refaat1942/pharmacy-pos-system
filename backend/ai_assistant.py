@@ -113,4 +113,6 @@ def assistant_status(current_user=Depends(get_current_user)):
         "ai_enabled": ai_on,
         "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini") if ai_on else None,
         "mode": "ai" if ai_on else "faq",
+        "has_server_key": has_key,
+        "openai_option_enabled": openai_allowed,
     }

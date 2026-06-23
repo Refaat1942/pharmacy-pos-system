@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2, Download } from 'lucide-react'
+import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, Upload } from 'lucide-react'
 import Layout from '../components/Layout'
 import { suppliersAPI, Supplier } from '../lib/api'
+import api from '../lib/api'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import { useAuth } from '../lib/auth'
@@ -23,6 +24,7 @@ export default function Suppliers() {
   const [editing, setEditing] = useState<Partial<Supplier> | null>(null)
   const [statement, setStatement] = useState<any>(null)
   const [paying, setPaying] = useState<Supplier | null>(null)
+  const [showBulk, setShowBulk] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -83,6 +85,13 @@ export default function Suppliers() {
                 className="flex items-center gap-1.5 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
                 <Download size={16} />
                 {t('common.export')}
+              </button>
+              <button
+                onClick={() => setShowBulk(true)}
+                className="flex items-center gap-1.5 px-3 py-2 border-2 border-pharma-200 rounded-lg text-sm font-medium text-pharma-700 hover:bg-pharma-50"
+              >
+                <Upload size={16} />
+                {t('suppliers.bulk_upload')}
               </button>
               <button
                 onClick={() => setEditing({ name: '', active: true })}
@@ -197,7 +206,69 @@ export default function Suppliers() {
       {paying && (
         <PaymentModal supplier={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />
       )}
+      {showBulk && (
+        <SuppliersBulkModal onClose={() => setShowBulk(false)} onDone={() => { setShowBulk(false); load() }} />
+      )}
     </Layout>
+  )
+}
+
+function SuppliersBulkModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { t } = useTranslation()
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const downloadTemplate = async () => {
+    const res = await api.get('/suppliers/bulk-template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'suppliers_template.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const upload = async () => {
+    if (!file) return
+    setBusy(true)
+    setMsg('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const { data } = await api.post('/suppliers/bulk-upload', fd)
+      setMsg(t('suppliers.bulk_done', data) as string)
+      setTimeout(onDone, 1200)
+    } catch (e: any) {
+      setMsg(e?.response?.data?.detail || t('suppliers.bulk_failed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <h2 className="font-bold text-lg">{t('suppliers.bulk_upload')}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <p className="text-sm text-slate-600">{t('suppliers.bulk_hint')}</p>
+          <button type="button" onClick={() => void downloadTemplate()} className="text-sm text-pharma-700 font-semibold hover:underline">
+            ⬇ {t('suppliers.download_template')}
+          </button>
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm" />
+          {msg && <p className="text-sm text-slate-700">{msg}</p>}
+        </div>
+        <div className="px-5 py-3 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200">{t('common.cancel')}</button>
+          <button onClick={() => void upload()} disabled={!file || busy} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium disabled:opacity-50">
+            {busy ? t('common.loading') : t('suppliers.bulk_upload')}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

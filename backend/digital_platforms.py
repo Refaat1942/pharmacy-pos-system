@@ -27,7 +27,7 @@ def _slug_key(raw: str) -> str:
     return s[:40] or "platform"
 
 
-def ensure_default_platforms(cur) -> None:
+def ensure_default_platforms(cur, *, link_customers: bool = True) -> None:
     for p in DEFAULT_PLATFORMS:
         cur.execute(
             """
@@ -37,6 +37,12 @@ def ensure_default_platforms(cur) -> None:
             """,
             (p["platform_key"], p["name_en"], p["name_ar"], p["badge_color"], p["sort_order"]),
         )
+    if link_customers:
+        for p in DEFAULT_PLATFORMS:
+            try:
+                ensure_platform_customer(cur, p["platform_key"])
+            except ValueError:
+                pass
 
 
 def _row_to_dict(row) -> dict:
