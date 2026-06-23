@@ -206,7 +206,7 @@ export interface Invoice {
   cash_amount: number
   visa_amount: number
   change_amount: number
-  seller_id: number
+  seller_id: number | null
   customer_id: number
   clinic_id?: number | null
   clinic_name?: string | null
@@ -442,6 +442,8 @@ export const salesAPI = {
   } = {}) => api.get<Invoice[]>('/sales', { params }),
   setDeliveryStatus: (invoiceId: number, status: string) =>
     api.post<Invoice>(`/sales/${invoiceId}/delivery-status`, { status }),
+  assignSeller: (invoiceId: number, sellerId: number) =>
+    api.post<SaleResponse>(`/sales/${invoiceId}/seller`, { seller_id: sellerId }),
   byClinic: (params: { date_from?: string; date_to?: string } = {}) =>
     api.get<{ clinic_id: number; clinic_name: string; invoice_count: number; gross: number; discount: number; net: number }[]>(
       '/sales/by-clinic', { params }),

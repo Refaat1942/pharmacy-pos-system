@@ -922,13 +922,13 @@ def create_sale(req: SaleRequest,
                     detail=f"Credit limit exceeded for {cust['name']} (balance {current_bal:.2f} + sale {credit_portion:.2f} > limit {limit:.2f})",
                 )
 
-        if not req.seller_id:
-            raise HTTPException(status_code=400, detail="Salesperson is required — select who is making this sale")
-        cur.execute("SELECT id, status FROM users WHERE id=%s", (req.seller_id,))
-        _seller = cur.fetchone()
-        if not _seller or _seller.get("status") != "active":
-            raise HTTPException(status_code=400, detail="Selected salesperson is not active")
-        seller_id = req.seller_id
+        seller_id = None
+        if req.seller_id:
+            cur.execute("SELECT id, status FROM users WHERE id=%s", (req.seller_id,))
+            _seller = cur.fetchone()
+            if not _seller or _seller.get("status") != "active":
+                raise HTTPException(status_code=400, detail="Selected salesperson is not active")
+            seller_id = req.seller_id
         branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
         if branch_id is None:
             raise HTTPException(status_code=400, detail="No active branch selected")
@@ -1560,6 +1560,68 @@ def get_sale(invoice_id: int, current_user=Depends(get_current_user)):
 
 class DeliveryStatusRequest(BaseModel):
     status: str
+
+
+class SellerAssignRequest(BaseModel):
+    seller_id: int
+
+
+@app.post("/api/sales/{invoice_id:int}/seller")
+def assign_seller(invoice_id: int, req: SellerAssignRequest,
+                    current_user=Depends(get_current_user)):
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        _assert_invoice_branch_access(cur, invoice_id, current_user)
+        cur.execute(
+            "SELECT id, seller_id, prescription_id, branch_id FROM invoices WHERE id=%s",
+            (invoice_id,),
+        )
+        inv = cur.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv.get("seller_id"):
+            raise HTTPException(status_code=400, detail="Salesperson already assigned to this invoice")
+        cur.execute("SELECT id, status FROM users WHERE id=%s", (req.seller_id,))
+        seller = cur.fetchone()
+        if not seller or seller.get("status") != "active":
+            raise HTTPException(status_code=400, detail="Selected salesperson is not active")
+        cur.execute(
+            "UPDATE invoices SET seller_id=%s WHERE id=%s RETURNING id",
+            (req.seller_id, invoice_id),
+        )
+        if inv.get("prescription_id"):
+            cur.execute(
+                """UPDATE prescriptions SET handled_by=%s
+                   WHERE id=%s AND handled_by IS NULL""",
+                (req.seller_id, inv["prescription_id"]),
+            )
+        conn.commit()
+        cur.execute(
+            """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                      c.name AS customer_name,
+                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                      b.address AS branch_address, b.phone AS branch_phone
+               FROM invoices i
+               LEFT JOIN users u ON i.seller_id = u.id
+               LEFT JOIN customers c ON i.customer_id = c.id
+               LEFT JOIN branches b ON i.branch_id = b.id
+               WHERE i.id=%s""",
+            (invoice_id,),
+        )
+        full_invoice = cur.fetchone()
+        cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
+        items = cur.fetchall()
+        return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
 
 
 @app.post("/api/sales/{invoice_id:int}/delivery-status")

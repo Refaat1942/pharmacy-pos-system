@@ -313,7 +313,6 @@ export default function PaymentModal({
   const accountRemaining = Math.max(0, effectiveTotal - accountPaidNowFinal)
 
   const isValid = () => {
-    if (!selectedSeller) return false
     if (requiresCustomerInfo && !hasCustomerInfo) return false
     if (needsDelivery) {
       if (!deliveryPersonId) return false
@@ -335,7 +334,6 @@ export default function PaymentModal({
 
   const topAlert = useMemo(() => {
     if (error) return error
-    if (!selectedSeller) return t('payment.seller_required') as string
     if (requiresCustomerInfo && !hasCustomerInfo) return t('payment.customer_required_over_100') as string
     if (needsDelivery) {
       if (!deliveryPersonId) return t('payment.delivery_person_required') as string
@@ -344,16 +342,12 @@ export default function PaymentModal({
     }
     return null
   }, [
-    error, selectedSeller, requiresCustomerInfo, hasCustomerInfo, needsDelivery,
+    error, requiresCustomerInfo, hasCustomerInfo, needsDelivery,
     deliveryPersonId, hasCustomerForShipment, deliveryAddress, paymentMethod,
     cashAmount, effectiveTotal, cashPart, cardPart, hybridDiff, t,
   ])
 
   const handleSubmit = async () => {
-    if (!selectedSeller) {
-      setError(t('payment.seller_required') as string)
-      return
-    }
     if (requiresCustomerInfo && !hasCustomerInfo) {
       setError(t('payment.customer_required_over_100') as string)
       return
@@ -499,7 +493,7 @@ export default function PaymentModal({
           <div className={`flex-1 min-h-0 space-y-5 ${checkoutStep === 'setup' && isInsurance ? 'p-4 overflow-hidden flex flex-col' : 'p-6 overflow-y-auto'}`}>
             {/* Salesperson — hidden on insurance setup (already chosen on POS) */}
             {!(checkoutStep === 'setup' && isInsurance) && (
-            <div className={`p-4 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50/80 border-emerald-200' : 'bg-red-50 border-red-300'}`}>
+            <div className={`p-4 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50/80 border-emerald-200' : 'bg-amber-50 border-amber-300'}`}>
               <SellerPicker
                 employees={modalEmployees}
                 selectedSeller={selectedSeller}
@@ -511,6 +505,9 @@ export default function PaymentModal({
                 autoFocusScan={!selectedSeller}
                 compact
               />
+              {!selectedSeller && (
+                <p className="text-[11px] text-amber-800 mt-2 font-medium">{t('payment.seller_optional_hint')}</p>
+              )}
             </div>
             )}
 

@@ -1402,7 +1402,13 @@ export default function POS() {
       )}
 
       {showReceiptModal && lastSale && (
-        <ReceiptModal sale={lastSale} onNewSale={handleNewSale} onClose={handleNewSale} />
+        <ReceiptModal
+          sale={lastSale}
+          employees={employees}
+          onSaleUpdate={setLastSale}
+          onNewSale={handleNewSale}
+          onClose={handleNewSale}
+        />
       )}
 
       {showHeld && (
