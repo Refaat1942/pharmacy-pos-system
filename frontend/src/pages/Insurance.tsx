@@ -5,7 +5,7 @@ import Layout from '../components/Layout'
 import { insuranceAPI } from '../lib/api'
 import type { InsuranceCompany, InsurancePlan, InsuranceClaim } from '../lib/insurance'
 import {
-  INSURANCE_FIELD_KEYS, INSURANCE_POS_SECTION_ORDER, INSURANCE_POS_SECTIONS,
+  INSURANCE_STANDARD_POS_FIELDS, INSURANCE_POS_SECTION_ORDER, INSURANCE_POS_SECTIONS,
   insuranceFieldLabel, type FieldMode,
 } from '../lib/insurance'
 import { useAuth } from '../lib/auth'
@@ -432,7 +432,7 @@ export default function Insurance() {
                     <div className="mt-3 space-y-4 max-h-[45vh] overflow-y-auto border rounded-xl p-3 bg-slate-50">
                       {INSURANCE_POS_SECTION_ORDER.map((sectionKey) => {
                         const keys = (INSURANCE_POS_SECTIONS[sectionKey] || []).filter((k) =>
-                          INSURANCE_FIELD_KEYS.includes(k as typeof INSURANCE_FIELD_KEYS[number]),
+                          INSURANCE_STANDARD_POS_FIELDS.includes(k as (typeof INSURANCE_STANDARD_POS_FIELDS)[number]),
                         )
                         if (!keys.length) return null
                         return (

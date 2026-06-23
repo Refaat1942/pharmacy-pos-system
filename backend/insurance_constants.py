@@ -33,39 +33,33 @@ INSURANCE_FIELD_KEYS = [
     "transaction_notes",
 ]
 
-# Standard POS insurance transaction fields (always shown unless hidden in company settings)
+# Fixed POS fields for every company — no extras on checkout
 INSURANCE_STANDARD_POS_FIELDS = [
     "patient_name",
-    "mobile_number",
     "insurance_card_number",
-    "policy_number",
+    "mobile_number",
     "membership_number",
+    "policy_number",
+    "approval_number",
     "patient_share_pct",
     "receipt_limit",
     "max_patient_share",
     "exceeding_amount",
-    "approval_number",
+    "attachment_upload",
+    "transaction_notes",
 ]
 
 INSURANCE_TRANSACTION_CORE_KEYS = list(INSURANCE_STANDARD_POS_FIELDS)
 
-# Grouping for admin layout editor and POS panel (additional_amount is per cart line, not a field)
 INSURANCE_POS_SECTIONS: dict[str, list[str]] = {
-    "patient": [
-        "patient_name", "mobile_number", "patient_first_name", "patient_last_name",
-        "date_of_birth", "gender", "mobile_country_code", "national_id", "address", "child_customer_id",
-    ],
+    "patient": ["patient_name", "mobile_number"],
     "policy": [
-        "insurance_card_number", "policy_number", "membership_number", "approval_number",
-        "referral_number", "employee_number", "employer_name",
+        "insurance_card_number", "membership_number", "policy_number", "approval_number",
     ],
     "financial": [
         "patient_share_pct", "receipt_limit", "max_patient_share", "exceeding_amount",
     ],
-    "clinical": [
-        "doctor_name", "doctor_specialty", "diagnosis", "prescription_number",
-        "prescription_date", "treatment_type", "transaction_notes", "attachment_upload",
-    ],
+    "documents": ["attachment_upload", "transaction_notes"],
 }
 
 # Default visible fields on insurance POS — rest hidden until enabled in company advanced settings
@@ -80,19 +74,13 @@ DEFAULT_FIELD_CONFIG["patient_last_name"] = "hidden"
 
 
 def merge_field_config_for_pos(stored: dict | None) -> dict:
-    """POS: core patient fields only; extras stay hidden unless saved in company advanced settings."""
+    """POS shows only INSURANCE_STANDARD_POS_FIELDS; all other keys stay hidden."""
     stored = stored or {}
-    cfg = dict(DEFAULT_FIELD_CONFIG)
+    cfg = {k: "hidden" for k in INSURANCE_FIELD_KEYS}
     for key in INSURANCE_STANDARD_POS_FIELDS:
-        if key in stored:
-            cfg[key] = stored[key]
-    for key in INSURANCE_FIELD_KEYS:
-        if key in INSURANCE_TRANSACTION_CORE_KEYS:
-            continue
+        default = DEFAULT_FIELD_CONFIG.get(key, "optional")
         mode = stored.get(key)
-        if mode in ("required", "optional"):
-            cfg[key] = mode
-    cfg["additional_amount"] = "hidden"
+        cfg[key] = mode if mode in ("required", "optional", "hidden") else default
     return cfg
 
 DEFAULT_COVERAGE_RULES = {

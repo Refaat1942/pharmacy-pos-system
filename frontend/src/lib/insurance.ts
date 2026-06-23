@@ -31,18 +31,20 @@ export const INSURANCE_FIELD_KEYS = [
   'transaction_notes',
 ] as const
 
-/** Standard insurance POS fields — fixed layout; extras configurable per company. */
+/** Fixed POS fields for every company — checkout shows these only. */
 export const INSURANCE_STANDARD_POS_FIELDS = [
   'patient_name',
-  'mobile_number',
   'insurance_card_number',
-  'policy_number',
+  'mobile_number',
   'membership_number',
+  'policy_number',
+  'approval_number',
   'patient_share_pct',
   'receipt_limit',
   'max_patient_share',
   'exceeding_amount',
-  'approval_number',
+  'attachment_upload',
+  'transaction_notes',
 ] as const
 
 /** @deprecated use INSURANCE_STANDARD_POS_FIELDS */
@@ -52,57 +54,27 @@ export const INSURANCE_EXTRA_FIELD_KEYS = INSURANCE_FIELD_KEYS.filter(
   (k) => !INSURANCE_STANDARD_POS_FIELDS.includes(k as (typeof INSURANCE_STANDARD_POS_FIELDS)[number]),
 )
 
-/** Section groupings for POS transaction layout (saved via company field_config). */
 export const INSURANCE_POS_SECTIONS: Record<string, readonly string[]> = {
-  patient: [
-    'patient_name', 'mobile_number', 'patient_first_name', 'patient_last_name',
-    'date_of_birth', 'gender', 'mobile_country_code', 'national_id', 'address', 'child_customer_id',
-  ],
-  policy: [
-    'insurance_card_number', 'policy_number', 'membership_number', 'approval_number',
-    'referral_number', 'employee_number', 'employer_name',
-  ],
-  financial: [
-    'patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount',
-  ],
-  clinical: [
-    'doctor_name', 'doctor_specialty', 'diagnosis', 'prescription_number',
-    'prescription_date', 'treatment_type', 'transaction_notes', 'attachment_upload',
-  ],
+  patient: ['patient_name', 'mobile_number'],
+  policy: ['insurance_card_number', 'membership_number', 'policy_number', 'approval_number'],
+  financial: ['patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount'],
+  documents: ['attachment_upload', 'transaction_notes'],
 }
 
-export const INSURANCE_POS_SECTION_ORDER = ['patient', 'policy', 'financial', 'clinical'] as const
+export const INSURANCE_POS_SECTION_ORDER = ['patient', 'policy', 'financial', 'documents'] as const
 
-/** Logical data-entry order within each section (unknown keys append at end). */
 export const INSURANCE_POS_FIELD_ORDER: Record<string, readonly string[]> = {
-  patient: [
-    'patient_name', 'mobile_number', 'national_id',
-    'patient_first_name', 'patient_last_name', 'date_of_birth', 'gender',
-    'mobile_country_code', 'address', 'child_customer_id',
-  ],
-  policy: [
-    'insurance_card_number', 'membership_number', 'policy_number', 'approval_number',
-    'referral_number', 'employee_number', 'employer_name',
-  ],
-  financial: [
-    'patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount',
-  ],
-  clinical: [
-    'doctor_name', 'doctor_specialty', 'diagnosis',
-    'prescription_number', 'prescription_date', 'treatment_type',
-    'transaction_notes', 'attachment_upload',
-  ],
+  patient: ['patient_name', 'mobile_number'],
+  policy: ['insurance_card_number', 'membership_number', 'policy_number', 'approval_number'],
+  financial: ['patient_share_pct', 'receipt_limit', 'max_patient_share', 'exceeding_amount'],
+  documents: ['attachment_upload', 'transaction_notes'],
 }
 
 /** Grid span in a 2-column section (2 = full row). */
 export const INSURANCE_FIELD_COL_SPAN: Record<string, 1 | 2> = {
   patient_name: 2,
-  address: 2,
-  diagnosis: 2,
   transaction_notes: 2,
   attachment_upload: 2,
-  treatment_type: 2,
-  child_customer_id: 2,
 }
 
 export function orderInsuranceFields(sectionKey: string, keys: string[]): string[] {
