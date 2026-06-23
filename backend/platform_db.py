@@ -45,6 +45,7 @@ FEATURES_CATALOG = [
     {"key": "insurance",  "label": "Insurance Billing",    "default": False},
     {"key": "discount_cards", "label": "Discount Cards",   "default": False},
     {"key": "pos_counseling", "label": "Smart POS Counseling", "default": True},
+    {"key": "eta",          "label": "ETA E-Receipt",        "default": False},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
@@ -291,6 +292,15 @@ FEATURE_OPTIONS_CATALOG = [
         "options": [
             {"key": "tips", "label": "Counseling tips on scan", "default": True},
             {"key": "related_products", "label": "Suggest related products", "default": True},
+        ],
+    },
+    {
+        "feature": "eta",
+        "label": "ETA E-Receipt",
+        "options": [
+            {"key": "settings", "label": "ETA credentials & devices", "default": True},
+            {"key": "receipts", "label": "Submit sales receipts", "default": True},
+            {"key": "credit_notes", "label": "Submit return credit notes", "default": True},
         ],
     },
 ]
