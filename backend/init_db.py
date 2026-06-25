@@ -1032,6 +1032,19 @@ ETA_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_eta_submissions_invoice ON eta_submissions(invoice_id)",
     "CREATE INDEX IF NOT EXISTS idx_eta_submissions_return ON eta_submissions(return_id)",
     "CREATE INDEX IF NOT EXISTS idx_eta_submission_attempts_submission ON eta_submission_attempts(submission_id)",
+    # Phase 1: EtaMiddleware HMAC credentials + branch mapping
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS base_url VARCHAR(300)",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS auth_key_enc TEXT",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS secret_key_enc TEXT",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS walk_in_defaults JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE eta_branch_devices ADD COLUMN IF NOT EXISTS branch_code VARCHAR(20)",
+    "ALTER TABLE eta_submissions ADD COLUMN IF NOT EXISTS qr_url TEXT",
+    # Phase 4 prep: product tax codes + line snapshots for ETA payloads
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_item_code VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_egs_code VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_rate DECIMAL(6,4) DEFAULT 0",
+    "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(10,2)",
+    "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS eta_line_snapshot JSONB",
 ]
 
 

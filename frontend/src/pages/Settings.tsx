@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useSort, SortTh } from '../components/DataTable'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download, Bike, Sparkles } from 'lucide-react'
+import { Users as UsersIcon, Building2, Plus, KeyRound, Pencil, X, ShieldAlert, Receipt, Upload, Trash2, RotateCcw, Printer, BookOpen, Download, Bike, Sparkles, FileCheck2 } from 'lucide-react'
 import DigitalPlatformsSettings from '../components/DigitalPlatformsSettings'
+import EtaSettings from '../components/EtaSettings'
 import FeatureOptionsPicker from '../components/FeatureOptionsPicker'
 import { buildFeatureOptionsState, type FeatureOptionGroup, type FeatureOptionsMap } from '../lib/featureOptions'
 import Layout from '../components/Layout'
@@ -66,21 +67,22 @@ const roleClass: Record<string, string> = {
 
 export default function Settings() {
   const { t } = useTranslation()
-  const { user, hasFeatureOption } = useAuth()
+  const { user, hasFeatureOption, hasFeature } = useAuth()
   const tabOn = {
     users: hasFeatureOption('settings', 'users'),
     branches: hasFeatureOption('settings', 'branches'),
     pharmacy: hasFeatureOption('settings', 'pharmacy'),
     platforms: hasFeatureOption('settings', 'digital_platforms'),
+    eta: hasFeature('eta') && hasFeatureOption('eta', 'settings'),
     manual: hasFeatureOption('settings', 'manual'),
     features: hasFeatureOption('settings', 'features'),
   }
-  const defaultTab = (['users', 'branches', 'pharmacy', 'platforms', 'manual', 'features'] as const)
+  const defaultTab = (['users', 'branches', 'pharmacy', 'platforms', 'eta', 'manual', 'features'] as const)
     .find((k) => tabOn[k]) ?? 'users'
-  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'manual' | 'features'>(defaultTab)
+  const [tab, setTab] = useState<'users' | 'branches' | 'pharmacy' | 'platforms' | 'eta' | 'manual' | 'features'>(defaultTab)
 
   const firstOpenTab = useCallback(() => {
-    const order = ['users', 'branches', 'pharmacy', 'platforms', 'manual', 'features'] as const
+    const order = ['users', 'branches', 'pharmacy', 'platforms', 'eta', 'manual', 'features'] as const
     return order.find((k) => tabOn[k]) ?? 'users'
   }, [tabOn])
 
@@ -120,6 +122,9 @@ export default function Settings() {
           {tabOn.platforms && (
             <TabButton active={tab === 'platforms'} onClick={() => setTab('platforms')} icon={<Bike size={15} />} label={t('settings.platforms_tab')} />
           )}
+          {tabOn.eta && (
+            <TabButton active={tab === 'eta'} onClick={() => setTab('eta')} icon={<FileCheck2 size={15} />} label={t('settings.eta_tab')} />
+          )}
           {tabOn.manual && (
             <TabButton active={tab === 'manual'} onClick={() => setTab('manual')} icon={<BookOpen size={15} />} label={t('settings.manual_tab')} />
           )}
@@ -132,6 +137,7 @@ export default function Settings() {
         {tab === 'branches' && tabOn.branches && <BranchesTab />}
         {tab === 'pharmacy' && tabOn.pharmacy && <PharmacyTab />}
         {tab === 'platforms' && tabOn.platforms && <DigitalPlatformsSettings />}
+        {tab === 'eta' && tabOn.eta && <EtaSettings />}
         {tab === 'manual' && tabOn.manual && <ManualTab />}
         {tab === 'features' && tabOn.features && <FeaturesTab />}
       </div>

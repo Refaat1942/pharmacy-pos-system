@@ -660,6 +660,7 @@
       "quick_items_empty": "No items configured yet"
     },
     "platforms_tab": "Digital Platforms",
+    "eta_tab": "ETA E-Receipt",
     "digital_platforms": {
       "title": "Digital delivery platforms",
       "subtitle": "Manage Talabat, Vezeeta, and custom partners for digital POS sales and on-account billing.",
@@ -676,6 +677,32 @@
       "deactivate_confirm": "Deactivate this platform? It will be hidden from POS but past sales stay in history.",
       "save_failed": "Could not save platform",
       "hint": "For digital on-account sales, each platform needs a linked customer account (e.g. customer named Talabat). Enable “Create customer account” when adding a platform."
+    },
+    "eta": {
+      "readiness_title": "Integration readiness",
+      "readiness_ok": "Configuration complete — ready for sandbox testing with the middleware provider.",
+      "readiness_pending": "Complete the items below before sandbox certification.",
+      "credentials_title": "EtaMiddleware credentials",
+      "credentials_hint": "HMAC authentication for POST /EtaDocument/Documents (API v2). Secrets are encrypted at rest.",
+      "base_url": "Base URL",
+      "auth_key": "EtaAuthentication key",
+      "secret_key": "HMAC secret key",
+      "issuer_rin": "Tax registration (RIN)",
+      "walk_in_title": "Walk-in customer defaults",
+      "active_label": "Enable ETA submission (staging/production)",
+      "active_hint": "Leave off until sandbox certification is complete. POS checkout is never blocked by ETA.",
+      "save": "Save ETA settings",
+      "saved": "ETA settings saved",
+      "save_failed": "Could not save ETA settings",
+      "load_failed": "Could not load ETA settings",
+      "test_connection": "Test connection",
+      "test_ok": "Connection and authentication succeeded",
+      "test_fail": "Connection or authentication failed",
+      "devices_title": "Branch & POS mapping",
+      "devices_hint": "Each branch needs the BranchCode and PosSerial registered on the middleware side.",
+      "branch_code": "Branch code",
+      "pos_serial": "POS serial",
+      "save_device": "Save device mapping"
     },
     "admin_only": "Admin access required",
     "user_list": "User list",
@@ -1238,7 +1265,10 @@
     "close": "Close",
     "egp": "EGP",
     "paid_now": "Paid now",
-    "on_account": "On account"
+    "on_account": "On account",
+    "eta_qr": "Verify receipt with ETA",
+    "eta_qr_hint": "Scan to open the official e-receipt on the Tax Authority portal",
+    "eta_qr_pending": "ETA verification QR will appear on reprint once registered"
   },
   "units": {
     "box": "Box",

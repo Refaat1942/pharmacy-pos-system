@@ -931,6 +931,7 @@
       "quick_items_empty": "لم تُضف أصناف بعد"
     },
     "platforms_tab": "المنصات الرقمية",
+    "eta_tab": "إيصال ETA",
     "digital_platforms": {
       "title": "منصات التوصيل الرقمية",
       "subtitle": "إدارة طلبات، فيزيتا، وشركاء مخصصين لمبيعات نقطة البيع الرقمية والتحصيل الآجل.",
@@ -947,6 +948,32 @@
       "deactivate_confirm": "إيقاف هذه المنصة؟ ستختفي من نقطة البيع لكن المبيعات السابقة تبقى في السجل.",
       "save_failed": "تعذر حفظ المنصة",
       "hint": "للمبيعات الرقمية الآجلة، كل منصة تحتاج حساب عميل مربوط (مثل عميل باسم Talabat). فعّل «إنشاء حساب عميل» عند الإضافة."
+    },
+    "eta": {
+      "readiness_title": "جاهزية الربط",
+      "readiness_ok": "الإعداد مكتمل — جاهز لاختبار Sandbox مع مزود الـ Middleware.",
+      "readiness_pending": "أكمل البنود أدناه قبل اعتماد Sandbox.",
+      "credentials_title": "بيانات EtaMiddleware",
+      "credentials_hint": "مصادقة HMAC لـ POST /EtaDocument/Documents (API v2). الأسرار مشفّرة في قاعدة البيانات.",
+      "base_url": "رابط الأساس (Base URL)",
+      "auth_key": "مفتاح EtaAuthentication",
+      "secret_key": "المفتاح السري HMAC",
+      "issuer_rin": "الرقم الضريبي (RIN)",
+      "walk_in_title": "افتراضيات عميل نقدي",
+      "active_label": "تفعيل إرسال ETA",
+      "active_hint": "اتركه معطّلاً حتى اكتمال اعتماد Sandbox. نقطة البيع لا تنتظر ETA أبداً.",
+      "save": "حفظ إعدادات ETA",
+      "saved": "تم حفظ إعدادات ETA",
+      "save_failed": "تعذر حفظ إعدادات ETA",
+      "load_failed": "تعذر تحميل إعدادات ETA",
+      "test_connection": "اختبار الاتصال",
+      "test_ok": "نجح الاتصال والمصادقة",
+      "test_fail": "فشل الاتصال أو المصادقة",
+      "devices_title": "ربط الفروع وأجهزة POS",
+      "devices_hint": "كل فرع يحتاج BranchCode و PosSerial مسجّلين لدى الـ Middleware.",
+      "branch_code": "كود الفرع",
+      "pos_serial": "رقم POS",
+      "save_device": "حفظ ربط الجهاز"
     },
     "admin_only": "صلاحيات المدير مطلوبة",
     "user_list": "قائمة المستخدمين",
@@ -1231,7 +1258,10 @@
     "close": "إغلاق",
     "egp": "ج.م",
     "paid_now": "المدفوع الآن",
-    "on_account": "على الحساب"
+    "on_account": "على الحساب",
+    "eta_qr": "تحقق من الإيصال عبر ETA",
+    "eta_qr_hint": "امسح الرمز للاطلاع على الإيصال الإلكتروني الرسمي",
+    "eta_qr_pending": "سيظهر رمز ETA على إعادة الطباعة بعد التسجيل"
   },
   "units": {
     "box": "علبة",

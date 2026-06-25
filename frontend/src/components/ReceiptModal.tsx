@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Printer, ShoppingCart, X } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
+import QRCode from 'qrcode'
 import type { Employee, SaleResponse } from '../lib/api'
 import api, { salesAPI } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatDate } from '../lib/formatDate'
 import CopyrightNotice from './CopyrightNotice'
 import SellerPicker from './SellerPicker'
+import { useAuth } from '../lib/auth'
 
 interface Props {
   sale: SaleResponse
@@ -52,12 +54,16 @@ const paperWidth: Record<string, string> = {
 
 export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSaleUpdate }: Props) {
   const { t } = useTranslation()
+  const { hasFeature } = useAuth()
+  const etaFeatureOn = hasFeature('eta')
   const [profile, setProfile] = useState<PharmacyProfile | null>(null)
   const [patientCopyPrint, setPatientCopyPrint] = useState(false)
   const [saleState, setSaleState] = useState(sale)
   const [pendingSeller, setPendingSeller] = useState<Employee | null>(null)
   const [sellerSaving, setSellerSaving] = useState(false)
   const [sellerError, setSellerError] = useState('')
+  const [etaQrImage, setEtaQrImage] = useState<string | null>(null)
+  const [etaQrPending, setEtaQrPending] = useState(false)
   const barcodeRef = useRef<SVGSVGElement | null>(null)
   const { invoice, items } = saleState
   const isInsurance = invoice.type === 'insurance'
@@ -192,6 +198,55 @@ export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSa
       /* swallow — bad chars in invoice number shouldn't break the receipt */
     }
   }, [profile?.show_barcode, invoice.invoice_number, paper])
+
+  // ETA e-receipt QR (shown when middleware returns QrUrl after submission)
+  useEffect(() => {
+    if (!etaFeatureOn || !invoice.id) {
+      setEtaQrImage(null)
+      setEtaQrPending(false)
+      return
+    }
+
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setInterval> | undefined
+
+    const loadEtaQr = async () => {
+      try {
+        const r = await api.get<{
+          active?: boolean
+          status?: string
+          qr_url?: string | null
+        }>(`/eta/invoice/${invoice.id}/receipt`)
+        if (cancelled) return
+        const url = r.data.qr_url
+        if (url) {
+          const dataUrl = await QRCode.toDataURL(url, { margin: 1, width: 160, errorCorrectionLevel: 'M' })
+          if (!cancelled) {
+            setEtaQrImage(dataUrl)
+            setEtaQrPending(false)
+            if (pollTimer) clearInterval(pollTimer)
+          }
+          return
+        }
+        const waiting = r.data.active && ['not_submitted', 'pending', 'processing'].includes(r.data.status || '')
+        setEtaQrPending(!!waiting)
+        setEtaQrImage(null)
+      } catch {
+        if (!cancelled) {
+          setEtaQrImage(null)
+          setEtaQrPending(false)
+        }
+      }
+    }
+
+    void loadEtaQr()
+    pollTimer = setInterval(() => { void loadEtaQr() }, 4000)
+
+    return () => {
+      cancelled = true
+      if (pollTimer) clearInterval(pollTimer)
+    }
+  }, [etaFeatureOn, invoice.id])
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -512,6 +567,20 @@ export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSa
 
           <p className="receipt-footer-block text-center text-xs text-gray-500 pb-1 whitespace-pre-line">{footerText}</p>
           <CopyrightNotice variant="short" className="no-print text-center text-[10px] text-gray-400 pb-2" />
+
+          {etaFeatureOn && (etaQrImage || etaQrPending) && (
+            <div className="receipt-eta-qr-block mt-3 mb-2 flex flex-col items-center border-t border-dashed border-gray-300 pt-3">
+              {etaQrImage ? (
+                <>
+                  <img src={etaQrImage} alt="ETA QR" className="w-36 h-36 object-contain" />
+                  <p className="text-xs font-semibold text-gray-800 mt-1 text-center">{tr('receipt.eta_qr')}</p>
+                  <p className="text-[10px] text-gray-500 text-center px-2">{tr('receipt.eta_qr_hint')}</p>
+                </>
+              ) : (
+                <p className="text-[10px] text-gray-500 text-center px-2">{tr('receipt.eta_qr_pending')}</p>
+              )}
+            </div>
+          )}
 
           {/* Scannable barcode at the bottom for fast invoice retrieval */}
           {profile?.show_barcode !== false && (

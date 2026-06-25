@@ -43,6 +43,7 @@ export const SETTINGS_TAB_OPTION = {
   branches: 'branches',
   pharmacy: 'pharmacy',
   platforms: 'digital_platforms',
+  eta: 'eta',
   manual: 'manual',
   features: 'features',
 } as const

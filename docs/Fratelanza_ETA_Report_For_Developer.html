@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fratelanza POS — ETA Integration Readiness</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 24px; color: #1e293b; line-height: 1.5; }
+    h1 { color: #0f766e; font-size: 1.6rem; border-bottom: 2px solid #14b8a6; padding-bottom: 8px; }
+    h2 { color: #0f766e; font-size: 1.15rem; margin-top: 28px; }
+    .meta { background: #f0fdfa; border: 1px solid #99f6e4; padding: 12px 16px; border-radius: 8px; font-size: 0.95rem; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+    th { background: #f1f5f9; }
+    .done { color: #059669; font-weight: 600; }
+    .todo { color: #d97706; font-weight: 600; }
+    .box { background: #fffbeb; border: 1px solid #fcd34d; padding: 14px; border-radius: 8px; margin: 16px 0; }
+    .print-hint { background: #eff6ff; border: 1px solid #93c5fd; padding: 10px 14px; border-radius: 8px; font-size: 0.9rem; margin-bottom: 24px; }
+    @media print { .print-hint { display: none; } body { margin: 20px; } }
+    ul { padding-left: 20px; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="print-hint">
+    <strong>To save as PDF:</strong> Press <kbd>Ctrl</kbd>+<kbd>P</kbd> → choose <strong>Save as PDF</strong> or <strong>Microsoft Print to PDF</strong> → Save.
+  </div>
+
+  <h1>Fratelanza Pharmacy POS — ETA Readiness Report</h1>
+
+  <div class="meta">
+    <strong>To:</strong> EtaMiddleware Developer<br />
+    <strong>From:</strong> Fratelanza POS<br />
+    <strong>Date:</strong> 25 June 2026<br />
+    <strong>API docs:</strong> <a href="https://documenter.getpostman.com/view/51011938/2sBXVZpF4t">EtaMiddleware Postman</a><br />
+    <strong>Test URL:</strong> https://testeta.misrapp.com/api
+  </div>
+
+  <h2>1. Summary</h2>
+  <p>Our pharmacy POS is <strong>ready to start sandbox testing</strong> with your EtaMiddleware API v2. We can build the JSON, sign requests with HMAC, and call <code>POST /EtaDocument/Documents</code>.</p>
+  <p><strong>Important:</strong> ETA is <strong>OFF by default</strong>. Normal POS sales are <strong>not changed</strong> and do not wait for ETA.</p>
+
+  <h2>2. What we already built (ready)</h2>
+  <ul>
+    <li>Database tables for credentials, branch/POS mapping, submission queue</li>
+    <li>HMAC signing (EtaAuthentication + EtaTimestamp + EtaSignature, API version 2)</li>
+    <li>Convert a sale invoice to your <code>Documents[]</code> format</li>
+    <li>Admin settings screen (credentials + branch code + POS serial)</li>
+    <li>Test connection button</li>
+    <li>Preview JSON for one invoice (without submitting)</li>
+    <li>Submit one invoice manually for certification</li>
+  </ul>
+
+  <h2>3. What we still need to build (after your approval)</h2>
+  <ul>
+    <li><strong>Auto-send</strong> each sale/return in the background (cashier does not wait)</li>
+    <li><strong>Retry worker</strong> if submission fails</li>
+    <li><strong>QR code</strong> on printed receipt + status in Sales screen</li>
+    <li><strong>Product codes</strong> bulk setup (GS1 / EGS / VAT per medicine)</li>
+  </ul>
+
+  <h2>4. What we need from you</h2>
+  <table>
+    <tr><th>#</th><th>Item</th><th>Status</th></tr>
+    <tr><td>1</td><td>Sandbox EtaAuthentication key</td><td>Pending</td></tr>
+    <tr><td>2</td><td>Sandbox HMAC SecretKey</td><td>Pending</td></tr>
+    <tr><td>3</td><td>BranchCode for each pharmacy branch</td><td>Pending</td></tr>
+    <tr><td>4</td><td>PosSerial for each branch/terminal</td><td>Pending</td></tr>
+    <tr><td>5</td><td>Whitelist our server IP (avoid ERR_IP_DENY)</td><td>Pending</td></tr>
+    <tr><td>6</td><td>Confirm walk-in customer defaults are OK for retail sales</td><td>Pending</td></tr>
+    <tr><td>7</td><td>Confirm ItemCode rules for medicines (GS1 / barcode)</td><td>Pending</td></tr>
+    <tr><td>8</td><td>Confirm VAT: 0% medicines vs 14% (TaxType T1 vs VAT)</td><td>Pending</td></tr>
+    <tr><td>9</td><td>Partial returns: IsPartialRefund or separate RR?</td><td>Pending</td></tr>
+    <tr><td>10</td><td>Production BaseUrl when we go live</td><td>Pending</td></tr>
+  </table>
+
+  <h2>5. Document types we will send</h2>
+  <table>
+    <tr><th>Type</th><th>Code</th><th>When</th></tr>
+    <tr><td>Sales Receipt (SR)</td><td>3</td><td>Every sale</td></tr>
+    <tr><td>Return Receipt (RR)</td><td>4</td><td>Full return (needs ReferenceUUID)</td></tr>
+    <tr><td>Partial refund</td><td>3 + IsPartialRefund=true</td><td>Partial return</td></tr>
+  </table>
+
+  <h2>6. How we map sale → your JSON</h2>
+  <table>
+    <tr><th>Your field</th><th>Our POS field</th></tr>
+    <tr><td>InternalId</td><td>Invoice number (e.g. INV-20260625-0001)</td></tr>
+    <tr><td>UniqueId</td><td>BranchCode-R-invoiceId-invoiceNumber</td></tr>
+    <tr><td>BranchCode / PosSerial</td><td>Configured in ETA settings per branch</td></tr>
+    <tr><td>Customer fields</td><td>Customer record OR walk-in defaults</td></tr>
+    <tr><td>PaymentType</td><td>0=cash, 1=visa, 2=mixed</td></tr>
+    <tr><td>ItemCode</td><td>Product ETA code → GS1 barcode → internal barcode</td></tr>
+    <tr><td>VAT / DocumentDetailTaxs</td><td>From product vat_rate (often 0% for medicines)</td></tr>
+  </table>
+
+  <h2>7. Walk-in customer (no registered customer)</h2>
+  <div class="box">
+    CustomerName: Walk-in Customer · CustomerCode: WALKIN · Country: EG<br />
+    Governate/City: Cairo · Street: N/A · Building: 1 · CustomerType: 0
+  </div>
+
+  <h2>8. Suggested next steps together</h2>
+  <ol>
+    <li>You send sandbox keys + branch/POS codes + IP whitelist.</li>
+    <li>We configure Settings → ETA and run Test Connection.</li>
+    <li>We send you a sample JSON from a real test sale for your review.</li>
+    <li>We run your Postman test cases (AcceptedDocument, returns, errors).</li>
+    <li>We enable auto-send + QR on receipt for one pilot pharmacy.</li>
+    <li>After 7 days stable → production credentials.</li>
+  </ol>
+
+  <h2>9. POS safety guarantee</h2>
+  <p>We did <strong>not</strong> change checkout, stock, returns logic, or tenant data. ETA is a separate optional module. Existing pharmacies work exactly as before until we turn ETA on for a specific tenant.</p>
+
+  <p style="margin-top:40px; font-size:0.85rem; color:#64748b;">Fratelanza Pharmacy POS · ETA integration branch · EtaMiddleware API v2</p>
+</body>
+</html>
