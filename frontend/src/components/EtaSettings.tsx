@@ -57,7 +57,13 @@ export default function EtaSettings() {
   const [testing, setTesting] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
-  const [testResult, setTestResult] = useState<{ auth_ok?: boolean; reachable?: boolean; error_codes?: string[] } | null>(null)
+  const [testResult, setTestResult] = useState<{
+    auth_ok?: boolean
+    reachable?: boolean
+    http_status?: number | null
+    error_codes?: string[]
+    hint?: string
+  } | null>(null)
   const [readiness, setReadiness] = useState<Readiness | null>(null)
   const [devices, setDevices] = useState<BranchDevice[]>([])
   const [missingBranches, setMissingBranches] = useState<BranchRow[]>([])
@@ -277,10 +283,20 @@ export default function EtaSettings() {
         </div>
 
         {testResult && (
-          <p className={`text-sm mt-3 ${testResult.auth_ok ? 'text-emerald-700' : 'text-red-700'}`}>
-            {testResult.auth_ok ? t('settings.eta.test_ok') : t('settings.eta.test_fail')}
-            {testResult.error_codes?.length ? ` (${testResult.error_codes.join(', ')})` : ''}
-          </p>
+          <div className={`text-sm mt-3 p-3 rounded-lg ${testResult.auth_ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+            <p className="font-medium">
+              {testResult.auth_ok ? t('settings.eta.test_ok') : t('settings.eta.test_fail')}
+            </p>
+            {testResult.http_status != null && (
+              <p className="text-xs mt-1">HTTP {testResult.http_status}{testResult.reachable === false ? ' — not reachable' : ''}</p>
+            )}
+            {testResult.error_codes?.length ? (
+              <p className="text-xs mt-1">Codes: {testResult.error_codes.join(', ')}</p>
+            ) : null}
+            {testResult.hint ? (
+              <p className="text-xs mt-2">{testResult.hint}</p>
+            ) : null}
+          </div>
         )}
       </div>
 

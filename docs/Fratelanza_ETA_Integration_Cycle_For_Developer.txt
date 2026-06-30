@@ -1,0 +1,151 @@
+Fratelanza Pharmacy POS — How Our ETA Integration Works
+=========================================================
+For: EtaMiddleware developer
+Date: 2026-06-30
+ERP: https://erp.fratelanza.com
+VPS IP (outbound): 187.124.15.14
+
+SUMMARY
+-------
+We integrate with YOUR EtaMiddleware API v2 only (not ETA directly).
+POS checkout NEVER waits on ETA — submission is async (Phase 2).
+All HMAC requests come from our VPS IP above.
+
+WHAT IS LIVE TODAY (Phase 1)
+----------------------------
+✓ Save encrypted Auth key + Secret + Base URL in Settings
+✓ Map each pharmacy branch → BranchCode + PosSerial (B01 / P01)
+✓ Build Documents[] JSON from real sale invoices
+✓ Test connection → signed POST to your API
+✓ Preview JSON / manual submit one invoice (admin)
+✓ Receipt screen polls our DB for QrUrl (after submit)
+
+NOT LIVE YET (Phase 2)
+----------------------
+✗ Auto-submit on every sale/return
+✗ Background retry worker
+✗ Hooks exist but are NOT called from checkout yet
+
+-------------------------------------------------------------------
+CYCLE 1 — SETUP (admin, one time)
+-------------------------------------------------------------------
+1. Admin → Settings → ETA E-Receipt
+2. GET  /api/eta/settings     (load config)
+3. GET  /api/eta/readiness    (checklist)
+4. PUT  /api/eta/settings     (save URL, keys, walk-in customer defaults)
+5. PUT  /api/eta/devices/{branch_id}  (BranchCode B01, PosSerial P01)
+6. POST /api/eta/test-connection      (our server calls YOUR API — see below)
+
+Base URL must be: https://testeta.misrapp.com/api
+NOT the dashboard: https://testserver.misrapp.com
+
+-------------------------------------------------------------------
+CYCLE 2 — TEST CONNECTION (our backend → your API)
+-------------------------------------------------------------------
+POST https://testeta.misrapp.com/api/EtaDocument/Documents
+
+Headers:
+  EtaAuthentication: <auth key, 128 chars from credential.txt>
+  EtaTimestamp:      <Unix seconds, string>
+  EtaSignature:      Base64(HMAC-SHA256(payload, secret))
+  EtaAPIVersion:     2
+  Content-Type:      application/json
+
+Body (exact string in HMAC):
+  {"Documents":[]}
+
+HMAC payload = authKey + timestamp + rawJsonBody
+             (no spaces added between parts)
+
+Secret: EtaCyrus@1234
+
+We treat auth as OK if response has no ERR_AUTH_*, ERR_HMAC_*, ERR_IP_DENY.
+VAL_* validation errors on empty array = still auth OK.
+
+CURRENT RESULT FROM VPS:
+  Auth key length: 128 (full key — not truncated)
+  HTTP 500 Internal Server Error
+  → Please check your server logs for IP 187.124.15.14
+
+-------------------------------------------------------------------
+CYCLE 3 — SUBMIT A REAL RECEIPT (certification / manual today)
+-------------------------------------------------------------------
+1. GET  /api/eta/preview/{invoice_id}
+       → returns {"Documents":[...]}  (no call to your API)
+
+2. POST /api/eta/submit-preview/{invoice_id}
+       → our backend POSTs to YOUR API:
+
+POST {BaseUrl}/EtaDocument/Documents
+Same HMAC headers as test.
+Body: {"Documents":[ { one Sales Receipt document } ]}
+
+Document mapping:
+  InternalId     = invoice number
+  UniqueId       = {BranchCode}-R-{invoice_id}-{invoice_number}
+  DocumentType   = 3 (sale), 4 (return — Phase 2)
+  BranchCode     = B01 (from settings)
+  PosSerial      = P01 (from settings)
+  Customer*      = customer record OR walk-in defaults (cash = configurable name)
+  DocumentDetails = invoice line items
+  ItemCode       = product eta_item_code OR barcode
+  VAT            = product vat_rate
+
+-------------------------------------------------------------------
+CYCLE 4 — QR ON PRINTED RECEIPT
+-------------------------------------------------------------------
+After submit succeeds (Phase 2 will automate this):
+
+  GET {BaseUrl}/EtaDocument/QrCode?UniqueId={UniqueId}
+  HMAC: authKey + timestamp + ""  (empty body for GET)
+
+We store QrUrl in eta_submissions.qr_url.
+
+Cashier receipt modal polls (every 4 sec):
+  GET /api/eta/invoice/{invoice_id}/receipt
+  → returns qr_url when status=accepted
+
+Frontend NEVER calls your API directly — only our backend does.
+
+-------------------------------------------------------------------
+CYCLE 5 — AUTO SUBMIT AFTER SALE (Phase 2 — planned)
+-------------------------------------------------------------------
+Sale completes → DB commit → enqueue_sale (try/except, no raise)
+→ eta_submissions status=pending
+→ background worker POST /Documents + GET /QrCode
+→ receipt QR appears when ready
+
+Returns: same with DocumentType=4 + ReferenceUUID to original receipt.
+
+-------------------------------------------------------------------
+OUR INTERNAL API (all need tenant login + eta feature enabled)
+-------------------------------------------------------------------
+GET  /api/eta/status
+GET  /api/eta/readiness
+GET  /api/eta/settings              (admin)
+PUT  /api/eta/settings              (admin)
+PUT  /api/eta/devices/{branch_id}   (admin)
+POST /api/eta/test-connection       (admin → calls your POST /Documents)
+GET  /api/eta/preview/{invoice_id}
+POST /api/eta/submit-preview/{invoice_id}  (admin → calls your POST /Documents)
+GET  /api/eta/invoice/{id}/receipt  (QR status for print)
+
+-------------------------------------------------------------------
+YOUR API ENDPOINTS WE CALL
+-------------------------------------------------------------------
+POST {BaseUrl}/EtaDocument/Documents     — submit SR/RR
+GET  {BaseUrl}/EtaDocument/QrCode?UniqueId=… — fetch QR URL
+
+-------------------------------------------------------------------
+QUESTIONS FOR YOU
+-------------------------------------------------------------------
+1. Is POST {"Documents":[]} valid for auth test? We get HTTP 500.
+2. Expected response for that test?
+3. Confirm HMAC: authKey + timestamp + rawJsonBody, SHA-256, Base64?
+4. GET QrCode: sign with empty body string?
+5. Whitelist IP 187.124.15.14?
+6. Return QrUrl in POST response or only via GET QrCode?
+7. Do you also need SQL view export, or HTTP API only?
+
+Full technical doc with diagrams:
+  docs/ETA_INTEGRATION_CYCLE_FOR_DEVELOPER.md

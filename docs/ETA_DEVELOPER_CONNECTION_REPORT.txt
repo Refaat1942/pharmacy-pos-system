@@ -1,0 +1,126 @@
+Fratelanza ERP — ETA Test Connection Failure (Technical Report)
+Date: 2026-06-30
+Contact: Fratelanza POS / Dr. Ahmed Refaat
+
+================================================================================
+1. WHAT THE SETTINGS PAGE DOES (TECHNICAL)
+================================================================================
+
+Page: Settings → ETA E-Receipt (Fratelanza ERP web admin)
+URL:  https://erp.fratelanza.com/settings
+
+When the pharmacy admin clicks "Test connection", our backend performs:
+
+  POST {BaseUrl}/EtaDocument/Documents
+  Content-Type: application/json
+  Body: {"Documents":[]}
+
+  Headers (API v2):
+    EtaAuthentication: <auth key from credential.txt>
+    EtaTimestamp:      <Unix seconds UTC>
+    EtaSignature:      Base64(HMAC-SHA256(authKey + timestamp + rawJsonBody, secretKey))
+    EtaAPIVersion:     2
+
+HMAC payload string (no spaces):
+  authKey + timestamp + '{"Documents":[]}'
+
+Expected on success:
+  HTTP 200 with JSON body; auth OK if no ERR_AUTH_* / ERR_HMAC_* / ERR_IP_DENY codes.
+  Empty Documents[] may return validation errors — that is still auth success.
+
+Credentials are stored encrypted in tenant PostgreSQL table: eta_credentials
+Branch/POS mapping: eta_branch_devices (BranchCode B01, PosSerial P01)
+
+================================================================================
+2. CURRENT FAILURE (UPDATED 2026-06-30)
+================================================================================
+
+UI message: "Connection or authentication failed"
+
+Base URL is now correct: https://testeta.misrapp.com/api
+
+VPS signed POST test (HMAC v2, body {"Documents":[]}):
+  Auth key length: 128 chars (matches full credential.txt key — NOT truncated)
+  HMAC secret:     EtaCyrus@1234
+  Result:          HTTP 500 Internal Server Error (empty or no JSON body)
+
+Interpretation:
+  - Outbound HTTPS from VPS works; POST reaches testeta.misrapp.com
+  - We did NOT get ERR_AUTH_*, ERR_HMAC_*, or ERR_IP_DENY (typical auth failures)
+  - HTTP 500 suggests EtaMiddleware server-side error, not wrong URL or missing network
+  - Developer should check middleware logs for VPS IP 187.124.15.14 and this auth key
+
+Earlier issue (fixed): Base URL was testserver.misrapp.com (dashboard) instead of testeta API.
+
+================================================================================
+3. VPS NETWORK CHECK (FROM OUR SERVER)
+================================================================================
+
+VPS public IP: 187.124.15.14
+Host: Hostinger VPS (erp.fratelanza.com)
+
+From VPS shell:
+  curl -4 ifconfig.me
+  → 187.124.15.14
+
+  curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
+    https://testeta.misrapp.com/api/EtaDocument/Documents
+  → HTTP 405
+
+Note: HTTP 405 on GET is expected — endpoint requires POST + HMAC.
+This proves outbound HTTPS to testeta.misrapp.com works from our VPS.
+
+================================================================================
+4. CREDENTIALS WE USE (SANDBOX)
+================================================================================
+
+Provided in credential.txt:
+  Auth key:     (long string starting N06vshhuLd3...)
+  HMAC secret:  EtaCyrus@1234
+  Branch code:  B01
+  Pos serial:   P01
+  Dashboard:    https://testserver.misrapp.com (admin / Admin@eta)
+
+================================================================================
+5. REQUEST FOR DEVELOPER
+================================================================================
+
+Please confirm:
+
+1) Correct API Base URL is https://testeta.misrapp.com/api (not testserver)?
+
+2) Auth key + secret EtaCyrus@1234 are active for sandbox?
+
+3) Is VPS IP 187.124.15.14 whitelisted? (We get 405 on GET, not 403, but POST may differ.)
+
+4) Signed POST from VPS 187.124.15.14 with body {"Documents":[]} returns HTTP 500.
+   What is the expected status + JSON? Please check your server logs for this request.
+
+5) Is empty Documents[] a valid auth smoke test, or should we POST one minimal SR document
+   (BranchCode B01, PosSerial P01, one line item)?
+
+6) Any required fields besides standard v2 headers for test POST?
+
+We can provide:
+  - Exact timestamp + request URL used
+  - HTTP status code (currently 500)
+  - Full JSON response body when present (no secrets)
+
+================================================================================
+6. FRATELANZA POS INTEGRATION STATUS
+================================================================================
+
+Done:
+  - HMAC signing API v2
+  - Settings UI + encrypted credential storage
+  - Invoice → Documents[] mapper
+  - Branch B01 / POS P01 mapping
+  - Receipt QR display when QrUrl returned
+
+Not yet live:
+  - Auto-submit every sale (Phase 2 background worker)
+  - ETA submission disabled until sandbox test passes
+
+POS checkout is never blocked by ETA.
+
+================================================================================
