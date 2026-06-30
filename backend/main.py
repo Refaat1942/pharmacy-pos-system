@@ -184,6 +184,8 @@ from insurance import router as insurance_router
 app.include_router(insurance_router)
 from discount_cards import router as discount_cards_router
 app.include_router(discount_cards_router)
+from eta.router import router as eta_router
+app.include_router(eta_router, dependencies=[Depends(requires_feature("eta"))])
 
 
 @app.on_event("startup")

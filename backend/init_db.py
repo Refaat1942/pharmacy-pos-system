@@ -979,11 +979,86 @@ CUSTOMER_PHONE_MIGRATIONS = [
          AND NOT EXISTS (SELECT 1 FROM customer_phones cp WHERE cp.customer_id = c.id)""",
 ]
 
+# ETA integration (Phase 0): additive tables only — no ALTER on existing tables.
+ETA_MIGRATIONS = [
+    """CREATE TABLE IF NOT EXISTS eta_credentials (
+        id SERIAL PRIMARY KEY,
+        environment VARCHAR(20) NOT NULL,
+        client_id VARCHAR(200),
+        client_secret_enc TEXT,
+        certificate_enc TEXT,
+        issuer_rin VARCHAR(60),
+        active BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(environment)
+    )""",
+    """CREATE TABLE IF NOT EXISTS eta_branch_devices (
+        id SERIAL PRIMARY KEY,
+        branch_id INTEGER NOT NULL REFERENCES branches(id),
+        pos_serial VARCHAR(100) NOT NULL,
+        device_label VARCHAR(100),
+        activity_code VARCHAR(50),
+        active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(branch_id)
+    )""",
+    """CREATE TABLE IF NOT EXISTS eta_submissions (
+        id SERIAL PRIMARY KEY,
+        invoice_id INTEGER REFERENCES invoices(id),
+        return_id INTEGER REFERENCES returns(id),
+        document_type VARCHAR(30) NOT NULL,
+        idempotency_key VARCHAR(120) UNIQUE NOT NULL,
+        eta_uuid VARCHAR(100),
+        status VARCHAR(30) NOT NULL DEFAULT 'pending',
+        request_payload JSONB,
+        response_payload JSONB,
+        error_message TEXT,
+        submitted_at TIMESTAMP,
+        accepted_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+    )""",
+    """CREATE TABLE IF NOT EXISTS eta_submission_attempts (
+        id SERIAL PRIMARY KEY,
+        submission_id INTEGER NOT NULL REFERENCES eta_submissions(id) ON DELETE CASCADE,
+        attempt_no INTEGER NOT NULL,
+        http_status INTEGER,
+        response_body JSONB,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_eta_submissions_status ON eta_submissions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_eta_submissions_invoice ON eta_submissions(invoice_id)",
+    "CREATE INDEX IF NOT EXISTS idx_eta_submissions_return ON eta_submissions(return_id)",
+    "CREATE INDEX IF NOT EXISTS idx_eta_submission_attempts_submission ON eta_submission_attempts(submission_id)",
+    # Phase 1: EtaMiddleware HMAC credentials + branch mapping
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS base_url VARCHAR(300)",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS auth_key_enc TEXT",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS secret_key_enc TEXT",
+    "ALTER TABLE eta_credentials ADD COLUMN IF NOT EXISTS walk_in_defaults JSONB DEFAULT '{}'::jsonb",
+    "ALTER TABLE eta_branch_devices ADD COLUMN IF NOT EXISTS branch_code VARCHAR(20)",
+    "ALTER TABLE eta_submissions ADD COLUMN IF NOT EXISTS qr_url TEXT",
+    # Phase 4 prep: product tax codes + line snapshots for ETA payloads
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_item_code VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_egs_code VARCHAR(100)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_rate DECIMAL(6,4) DEFAULT 0",
+    "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(10,2)",
+    "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS eta_line_snapshot JSONB",
+]
+
 
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
-    for stmt in PRODUCT_COLUMN_MIGRATIONS + BULK_UPLOAD_MIGRATIONS + SEARCH_INDEX_MIGRATIONS + BATCH_OVERSELL_MIGRATIONS + CUSTOMER_PHONE_MIGRATIONS:
+    for stmt in (
+        PRODUCT_COLUMN_MIGRATIONS
+        + BULK_UPLOAD_MIGRATIONS
+        + SEARCH_INDEX_MIGRATIONS
+        + BATCH_OVERSELL_MIGRATIONS
+        + CUSTOMER_PHONE_MIGRATIONS
+        + ETA_MIGRATIONS
+    ):
         try:
             cur.execute(stmt)
             conn.commit()

@@ -45,6 +45,7 @@ FEATURES_CATALOG = [
     {"key": "insurance",  "label": "Insurance Billing",    "default": False},
     {"key": "discount_cards", "label": "Discount Cards",   "default": False},
     {"key": "pos_counseling", "label": "Smart POS Counseling", "default": True},
+    {"key": "eta",          "label": "ETA E-Receipt",        "default": True},
 ]
 DEFAULT_FEATURES = [f["key"] for f in FEATURES_CATALOG if f["default"]]
 ALL_FEATURE_KEYS = {f["key"] for f in FEATURES_CATALOG}
@@ -233,6 +234,7 @@ FEATURE_OPTIONS_CATALOG = [
             {"key": "manual", "label": "User manual tab", "default": True},
             {"key": "features", "label": "Features & modules tab", "default": True},
             {"key": "login_cards", "label": "Login card printing", "default": True},
+            {"key": "eta", "label": "ETA e-Receipt tab", "default": True},
         ],
     },
     {
@@ -293,6 +295,15 @@ FEATURE_OPTIONS_CATALOG = [
             {"key": "related_products", "label": "Suggest related products", "default": True},
         ],
     },
+    {
+        "feature": "eta",
+        "label": "ETA E-Receipt",
+        "options": [
+            {"key": "settings", "label": "ETA credentials & devices", "default": True},
+            {"key": "receipts", "label": "Submit sales receipts", "default": True},
+            {"key": "credit_notes", "label": "Submit return credit notes", "default": True},
+        ],
+    },
 ]
 
 _catalog_features = {g["feature"] for g in FEATURE_OPTIONS_CATALOG}
@@ -304,11 +315,11 @@ assert _catalog_features == ALL_FEATURE_KEYS, (
 # Default feature bundles per plan (used when seeding platform.plans).
 _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
     "basic": [
-        "dashboard", "pos", "sales", "returns", "inventory", "customers", "shifts", "settings",
+        "dashboard", "pos", "sales", "returns", "inventory", "customers", "shifts", "settings", "eta",
     ],
     "pro": [
         "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "shifts", "settings", "clinics", "offers",
+        "purchases", "suppliers", "customers", "shifts", "settings", "clinics", "offers", "eta",
     ],
     "enterprise": list(ALL_FEATURE_KEYS),
 }

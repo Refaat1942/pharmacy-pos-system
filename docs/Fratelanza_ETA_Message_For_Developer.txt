@@ -1,0 +1,42 @@
+Hi,
+
+We are integrating our Fratelanza Pharmacy POS with your EtaMiddleware API (v2).
+Postman docs: https://documenter.getpostman.com/view/51011938/2sBXVZpF4t
+
+WHAT IS READY ON OUR SIDE:
+- We can build the Documents[] JSON from a real sale
+- We sign requests with HMAC (EtaAuthentication + EtaTimestamp + EtaSignature)
+- We can call POST /EtaDocument/Documents and GET /EtaDocument/QrCode
+- Admin screen for credentials, branch code, and POS serial
+- Test connection + preview JSON before submit
+- ETA is OFF by default — normal POS sales are NOT affected
+
+WHAT WE STILL NEED TO BUILD (after sandbox OK):
+- Auto-send each sale/return in background (cashier does not wait)
+- Retry worker if API fails
+- Show QR code on receipt + status in sales history
+- Bulk setup of product ItemCode and VAT for medicines
+
+WHAT WE NEED FROM YOU:
+1) Sandbox EtaAuthentication key
+2) Sandbox HMAC SecretKey
+3) BranchCode for each pharmacy branch
+4) PosSerial for each branch/terminal
+5) Whitelist our server IP (to avoid ERR_IP_DENY)
+6) Confirm walk-in customer defaults OK for retail (no registered customer)
+7) Confirm ItemCode rules for medicines (GS1 / EGS / barcode)
+8) Confirm VAT rules (0% medicines vs 14%)
+9) Partial returns: use IsPartialRefund or separate return receipt?
+10) Production BaseUrl when we go live
+
+DOCUMENT TYPES WE WILL USE:
+- DocumentType 3 = Sales Receipt (every sale)
+- DocumentType 4 = Full return (with ReferenceUUID)
+- IsPartialRefund true = partial return flow
+
+NEXT STEP:
+Please send sandbox credentials + branch/POS codes + IP whitelist.
+We will run test connection and send you a sample JSON from a test invoice for your approval.
+
+Thanks,
+Fratelanza POS Team
