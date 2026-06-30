@@ -1168,10 +1168,22 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {prod['name_en']} belongs to a different branch",
                 )
-            # Deduct the same quantity shown on the invoice (1 pack sold = 1 stock unit).
-            stock_used = item.quantity
-            unit_label = prod["unit"] or "unit"
-            line_pack = max(1, int(prod["pack_size"] or 1))
+            # When pack_size > 1, products.stock is in sub-units (sachets, strips, etc.).
+            cur_pack = max(1, int(prod["pack_size"] or 1))
+            sub_unit = (prod.get("sub_unit") or "").strip()
+            sold_as_sub = (
+                (item.unit_type or "pack").strip().lower() == "sub"
+                and cur_pack > 1
+                and bool(sub_unit)
+            )
+            if sold_as_sub:
+                stock_used = int(item.quantity)
+                unit_label = sub_unit
+                line_pack = 1
+            else:
+                stock_used = int(item.quantity) * cur_pack
+                unit_label = prod["unit"] or "unit"
+                line_pack = cur_pack
             offer_disc = float(item.offer_discount or 0)
             line_discount = float(item.discount or 0)
             if int(item.product_id) in offer_product_ids:

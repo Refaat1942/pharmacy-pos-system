@@ -73,6 +73,13 @@ def _diagnose_connection(status: int | None, data: dict, err_codes: list[str]) -
     auth_fail = any(c in _AUTH_CODES for c in err_codes) or status in (401, 403)
     reachable = status is not None
 
+    # ETA returns IsSuccess=true with VAL_* codes for empty/invalid test payloads — auth still OK.
+    if isinstance(data, dict) and data.get("IsSuccess") is True and not any(c in _AUTH_CODES for c in err_codes):
+        auth_fail = False
+
+    if isinstance(data, dict) and data.get("raw") and not data.get("IsSuccess"):
+        auth_fail = True
+
     hint = ""
     if not reachable:
         hint = "Cannot reach the server (DNS, firewall, or SSL). Check Base URL and VPS outbound HTTPS."
@@ -84,6 +91,12 @@ def _diagnose_connection(status: int | None, data: dict, err_codes: list[str]) -
         hint = "Auth key rejected or missing. Re-paste the full key from credential.txt and Save."
     elif status == 404:
         hint = "URL not found. Base URL should be https://testeta.misrapp.com/api (include /api)."
+    elif status is not None and status >= 500:
+        hint = (
+            "EtaMiddleware returned a server error (HTTP 500). "
+            "Your request reached their API; this is usually a middleware bug or invalid test payload — "
+            "ask the developer to check server logs for your VPS IP and auth key."
+        )
     elif auth_fail:
         hint = "Authentication failed. Verify keys and ask developer to confirm sandbox account is active."
     elif reachable and status is not None and status < 500 and not auth_fail:

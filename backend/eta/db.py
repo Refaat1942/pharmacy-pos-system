@@ -36,12 +36,12 @@ def credentials_for_api(cur, *, environment: str = "staging") -> Optional[dict]:
     row = load_credentials_row(cur, environment=environment)
     if not row:
         return None
-    auth_key = decrypt_secret(row.get("auth_key_enc") or "")
+    auth_key = decrypt_secret(row.get("auth_key_enc") or "").strip()
     if not auth_key:
         auth_key = (row.get("client_id") or "").strip()
-    secret_key = decrypt_secret(row.get("secret_key_enc") or "")
+    secret_key = decrypt_secret(row.get("secret_key_enc") or "").strip()
     if not secret_key:
-        secret_key = decrypt_secret(row.get("client_secret_enc") or "")
+        secret_key = decrypt_secret(row.get("client_secret_enc") or "").strip()
     base_url = (row.get("base_url") or "").strip()
     if not base_url:
         base_url = DEFAULT_TEST_BASE_URL if environment != "production" else ""
