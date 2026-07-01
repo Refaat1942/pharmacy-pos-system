@@ -68,7 +68,7 @@ export default function EtaSettings() {
   const [devices, setDevices] = useState<BranchDevice[]>([])
   const [missingBranches, setMissingBranches] = useState<BranchRow[]>([])
 
-  const [baseUrl, setBaseUrl] = useState('https://testeta.misrapp.com/api')
+  const [baseUrl, setBaseUrl] = useState('https://testserver.misrapp.com')
   const [authKey, setAuthKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [issuerRin, setIssuerRin] = useState('')
@@ -94,7 +94,7 @@ export default function EtaSettings() {
         api.get('/eta/readiness'),
       ])
       const staging = settingsRes.data.staging as EnvSettings
-      setBaseUrl(staging.base_url || 'https://testeta.misrapp.com/api')
+      setBaseUrl(staging.base_url || 'https://testserver.misrapp.com')
       setIssuerRin(staging.issuer_rin || '')
       setActive(!!staging.active)
       setWalkIn({ ...walkIn, ...staging.walk_in_defaults })

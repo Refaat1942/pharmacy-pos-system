@@ -4,7 +4,7 @@
 Usage:
   cd /opt/pharmapos/backend
   python3 eta/run_connection_test.py \\
-    --base-url https://testeta.misrapp.com/api \\
+    --base-url https://testserver.misrapp.com \\
     --auth-key 'PASTE_AUTH_KEY' \\
     --secret 'EtaCyrus@1234'
 """
@@ -22,7 +22,7 @@ from eta.client import EtaMiddlewareClient
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Test EtaMiddleware connection from this server")
-    p.add_argument("--base-url", default="https://testeta.misrapp.com/api")
+    p.add_argument("--base-url", default="https://testserver.misrapp.com")
     p.add_argument("--auth-key", required=True)
     p.add_argument("--secret", required=True)
     args = p.parse_args()

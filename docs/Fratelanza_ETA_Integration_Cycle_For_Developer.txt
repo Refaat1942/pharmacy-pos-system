@@ -36,13 +36,12 @@ CYCLE 1 — SETUP (admin, one time)
 5. PUT  /api/eta/devices/{branch_id}  (BranchCode B01, PosSerial P01)
 6. POST /api/eta/test-connection      (our server calls YOUR API — see below)
 
-Base URL must be: https://testeta.misrapp.com/api
-NOT the dashboard: https://testserver.misrapp.com
+Base URL must be: https://testserver.misrapp.com/api (include /api path)
 
 -------------------------------------------------------------------
 CYCLE 2 — TEST CONNECTION (our backend → your API)
 -------------------------------------------------------------------
-POST https://testeta.misrapp.com/api/EtaDocument/Documents
+POST https://testserver.misrapp.com/api/EtaDocument/Documents
 
 Headers:
   EtaAuthentication: <auth key, 128 chars from credential.txt>

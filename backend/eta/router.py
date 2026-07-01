@@ -124,16 +124,8 @@ def update_eta_settings(body: CredentialsPatch, current_user=Depends(get_current
             walk_in = base
 
         base_url = (body.base_url or (existing.get("base_url") if existing else DEFAULT_TEST_BASE_URL) or DEFAULT_TEST_BASE_URL).strip().rstrip("/")
-        if "testserver.misrapp.com" in base_url.lower() and "testeta" not in base_url.lower():
-            raise HTTPException(
-                status_code=400,
-                detail="Base URL must be the API endpoint (https://testeta.misrapp.com/api), not the dashboard (testserver.misrapp.com).",
-            )
-        if not base_url.lower().endswith("/api"):
-            raise HTTPException(
-                status_code=400,
-                detail="Base URL should end with /api (example: https://testeta.misrapp.com/api).",
-            )
+        if not base_url.lower().startswith("https://"):
+            raise HTTPException(status_code=400, detail="Base URL must start with https://")
 
         save_credentials(
             cur,

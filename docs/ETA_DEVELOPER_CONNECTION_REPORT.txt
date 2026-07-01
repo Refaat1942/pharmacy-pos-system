@@ -37,7 +37,7 @@ Branch/POS mapping: eta_branch_devices (BranchCode B01, PosSerial P01)
 
 UI message: "Connection or authentication failed"
 
-Base URL is now correct: https://testeta.misrapp.com/api
+Base URL is now correct: https://testserver.misrapp.com/api
 
 VPS signed POST test (HMAC v2, body {"Documents":[]}):
   Auth key length: 128 chars (matches full credential.txt key — NOT truncated)
@@ -45,12 +45,12 @@ VPS signed POST test (HMAC v2, body {"Documents":[]}):
   Result:          HTTP 500 Internal Server Error (empty or no JSON body)
 
 Interpretation:
-  - Outbound HTTPS from VPS works; POST reaches testeta.misrapp.com
+  - Outbound HTTPS from VPS works; POST reaches testserver.misrapp.com
   - We did NOT get ERR_AUTH_*, ERR_HMAC_*, or ERR_IP_DENY (typical auth failures)
   - HTTP 500 suggests EtaMiddleware server-side error, not wrong URL or missing network
   - Developer should check middleware logs for VPS IP 187.124.15.14 and this auth key
 
-Earlier issue (fixed): Base URL was testserver.misrapp.com (dashboard) instead of testeta API.
+Earlier note: we initially used testeta.misrapp.com; developer confirmed testserver.misrapp.com/api is correct.
 
 ================================================================================
 3. VPS NETWORK CHECK (FROM OUR SERVER)
@@ -64,11 +64,11 @@ From VPS shell:
   → 187.124.15.14
 
   curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
-    https://testeta.misrapp.com/api/EtaDocument/Documents
+    https://testserver.misrapp.com/api/EtaDocument/Documents
   → HTTP 405
 
 Note: HTTP 405 on GET is expected — endpoint requires POST + HMAC.
-This proves outbound HTTPS to testeta.misrapp.com works from our VPS.
+This proves outbound HTTPS to testserver.misrapp.com works from our VPS.
 
 ================================================================================
 4. CREDENTIALS WE USE (SANDBOX)
@@ -87,7 +87,7 @@ Provided in credential.txt:
 
 Please confirm:
 
-1) Correct API Base URL is https://testeta.misrapp.com/api (not testserver)?
+1) Confirm sandbox API Base URL is https://testserver.misrapp.com/api ?
 
 2) Auth key + secret EtaCyrus@1234 are active for sandbox?
 

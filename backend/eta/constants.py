@@ -1,7 +1,7 @@
 """ETA / EtaMiddleware constants."""
 from __future__ import annotations
 
-DEFAULT_TEST_BASE_URL = "https://testeta.misrapp.com/api"
+DEFAULT_TEST_BASE_URL = "https://testserver.misrapp.com"
 DEFAULT_PROD_BASE_URL = "https://eta.misrapp.com/api"
 
 DOC_TYPE_SALES_RECEIPT = 3

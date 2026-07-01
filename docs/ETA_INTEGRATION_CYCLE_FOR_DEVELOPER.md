@@ -44,11 +44,11 @@ Fratelanza POS integrates with **your EtaMiddleware API v2** (HMAC-signed `EtaDo
 | **Pharmacy admin**     | Configures ETA in Settings → ETA E-Receipt                                     |
 | **Fratelanza backend** | Maps invoices → JSON, signs requests, calls your API, stores submission status |
 | **EtaMiddleware**      | Validates HMAC, accepts documents, returns UUID / QrUrl                        |
-| **ETA dashboard**      | `https://testserver.misrapp.com` — admin UI only, **not** the API base URL     |
+| **ETA sandbox host**   | `https://testserver.misrapp.com` — API at `/api`, dashboard login at same host |
 
 
-**Correct API base URL (sandbox):** `https://testeta.misrapp.com/api`  
-**Wrong URL (dashboard):** `https://testserver.misrapp.com` — we reject this in settings validation.
+**Correct API base URL (sandbox):** `https://testserver.misrapp.com/api`  
+**Dashboard login:** `https://testserver.misrapp.com` (admin / Admin@eta) — same host, path must include `/api` for API calls.
 
 ---
 
@@ -69,7 +69,7 @@ GET /api/eta/readiness         ← blockers/warnings checklist
         │
         ▼
 Admin enters:
-  • Base URL (testeta…/api)
+  • Base URL (testserver…/api)
   • Auth key + HMAC secret (from credential.txt)
   • Walk-in customer defaults (for cash sales without registered customer)
   • BranchCode + PosSerial per pharmacy branch (e.g. B01 / P01)
@@ -415,7 +415,7 @@ sequenceDiagram
 | HMAC secret | `EtaCyrus@1234`                                                    |
 | BranchCode  | `B01`                                                              |
 | PosSerial   | `P01`                                                              |
-| API base    | `https://testeta.misrapp.com/api`                                  |
+| API base    | `https://testserver.misrapp.com/api`                                  |
 | Dashboard   | `https://testserver.misrapp.com` (admin / Admin@eta)               |
 
 

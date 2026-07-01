@@ -90,7 +90,7 @@ def _diagnose_connection(status: int | None, data: dict, err_codes: list[str]) -
     elif "ERR_AUTH_INV" in err_codes or "ERR_AUTH_REQ" in err_codes:
         hint = "Auth key rejected or missing. Re-paste the full key from credential.txt and Save."
     elif status == 404:
-        hint = "URL not found. Base URL should be https://testeta.misrapp.com/api (include /api)."
+        hint = "URL not found. Check Base URL (example: https://testserver.misrapp.com or …/api if your middleware uses an /api prefix)."
     elif status is not None and status >= 500:
         hint = (
             "EtaMiddleware returned a server error (HTTP 500). "
@@ -168,7 +168,7 @@ class EtaMiddlewareClient:
                 "http_status": None,
                 "reachable": False,
                 "auth_ok": False,
-                "hint": f"Network error: {exc}. Check Base URL and that the VPS can reach testeta.misrapp.com on port 443.",
+                "hint": f"Network error: {exc}. Check Base URL and that the VPS can reach testserver.misrapp.com on port 443.",
                 "response": {"error": str(exc)},
                 "error_codes": [],
             }

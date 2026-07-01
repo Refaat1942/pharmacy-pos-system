@@ -31,7 +31,7 @@ Fratelanza Pharmacy POS is **ready to begin sandbox certification** against the 
 ```
 ┌─────────────┐     sale commit      ┌──────────────────┐     async worker     ┌─────────────────┐
 │  POS / Web  │ ──────────────────► │ Fratelanza API   │ ───────────────────► │ EtaMiddleware   │
-│  Checkout   │   (instant receipt)  │ backend/eta/*    │   HMAC POST JSON     │ testeta.misrapp │
+│  Checkout   │   (instant receipt)  │ backend/eta/*    │   HMAC POST JSON     │ testserver…/api │
 └─────────────┘                      └──────────────────┘                      └────────┬────────┘
                                                                                         │
                                                                                         ▼
@@ -55,7 +55,7 @@ Fratelanza Pharmacy POS is **ready to begin sandbox certification** against the 
 | `POST` | `{BaseUrl}/EtaDocument/Documents` | Submit sales receipts (SR), return receipts (RR), partial refunds |
 | `GET` | `{BaseUrl}/EtaDocument/QrCode?UniqueId={id}` | Fetch QR URL for receipt reprint |
 
-**Test base URL (expected):** `https://testeta.misrapp.com/api`
+**Test base URL (expected):** `https://testserver.misrapp.com/api`
 
 **Authentication (v2):**
 
