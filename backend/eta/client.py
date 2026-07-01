@@ -90,7 +90,7 @@ def _diagnose_connection(status: int | None, data: dict, err_codes: list[str]) -
     elif "ERR_AUTH_INV" in err_codes or "ERR_AUTH_REQ" in err_codes:
         hint = "Auth key rejected or missing. Re-paste the full key from credential.txt and Save."
     elif status == 404:
-        hint = "URL not found. Check Base URL (example: https://testserver.misrapp.com or …/api if your middleware uses an /api prefix)."
+        hint = "URL not found. Set Base URL to https://testserver.misrapp.com/api (include the /api suffix)."
     elif status is not None and status >= 500:
         hint = (
             "EtaMiddleware returned a server error (HTTP 500). "
@@ -102,7 +102,14 @@ def _diagnose_connection(status: int | None, data: dict, err_codes: list[str]) -
     elif reachable and status is not None and status < 500 and not auth_fail:
         hint = "Connection and authentication OK. Empty test payload may show validation errors — that is normal."
 
-    auth_ok = reachable and not auth_fail and (status is not None and status < 500)
+    auth_ok = (
+        reachable
+        and not auth_fail
+        and status is not None
+        and status not in (404, 405)
+        and status < 500
+        and (status < 400 or (isinstance(data, dict) and data.get("IsSuccess") is True))
+    )
 
     return {
         "http_status": status,

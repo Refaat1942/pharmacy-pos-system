@@ -189,6 +189,44 @@ def test_connection(environment: str = "staging", current_user=Depends(get_curre
         conn.close()
 
 
+@router.post("/enqueue/{invoice_id}", dependencies=[Depends(requires_feature("eta")), Depends(requires_feature_option("eta", "settings"))])
+def enqueue_invoice(invoice_id: int, current_user=Depends(get_current_user)):
+    """Admin: queue one completed sale for ETA submission (e.g. missed auto-submit)."""
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, type, status FROM invoices WHERE id = %s", (invoice_id,))
+        inv = cur.fetchone()
+        if not inv:
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        if inv.get("status") != "completed":
+            raise HTTPException(status_code=400, detail="Invoice is not completed")
+        from eta.hooks import enqueue_sale
+
+        enqueue_sale(cur, invoice_id, current_user, sale_type=inv.get("type") or "cash")
+        conn.commit()
+        return {"ok": True, "invoice_id": invoice_id}
+    finally:
+        conn.close()
+
+
+@router.post("/process-queue", dependencies=[Depends(requires_feature("eta")), Depends(requires_feature_option("eta", "settings"))])
+def process_eta_queue(limit: int = 20, current_user=Depends(get_current_user)):
+    """Admin: process pending ETA submissions for this tenant now."""
+    _admin(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        from eta.worker import process_tenant_with_user
+
+        stats = process_tenant_with_user(cur, current_user, limit=min(limit, 50))
+        conn.commit()
+        return {"ok": True, **stats}
+    finally:
+        conn.close()
+
+
 @router.get("/readiness", dependencies=[Depends(requires_feature("eta"))])
 def get_readiness(environment: str = "staging", current_user=Depends(get_current_user)):
     conn = get_db_connection()
@@ -223,9 +261,10 @@ def get_invoice_eta_receipt(invoice_id: int, current_user=Depends(get_current_us
             }
 
         accepted = submission.get("status") == "accepted"
+        status = submission.get("status") or "pending"
         return {
             "active": True,
-            "status": submission.get("status"),
+            "status": status,
             "qr_url": submission.get("qr_url") if accepted else None,
             "eta_uuid": submission.get("eta_uuid") if accepted else None,
             "error_message": submission.get("error_message"),

@@ -55,6 +55,8 @@ export default function EtaSettings() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [processingQueue, setProcessingQueue] = useState(false)
+  const [queueResult, setQueueResult] = useState<{ claimed?: number; accepted?: number; failed?: number } | null>(null)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [testResult, setTestResult] = useState<{
@@ -68,7 +70,7 @@ export default function EtaSettings() {
   const [devices, setDevices] = useState<BranchDevice[]>([])
   const [missingBranches, setMissingBranches] = useState<BranchRow[]>([])
 
-  const [baseUrl, setBaseUrl] = useState('https://testserver.misrapp.com')
+  const [baseUrl, setBaseUrl] = useState('https://testserver.misrapp.com/api')
   const [authKey, setAuthKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [issuerRin, setIssuerRin] = useState('')
@@ -94,7 +96,7 @@ export default function EtaSettings() {
         api.get('/eta/readiness'),
       ])
       const staging = settingsRes.data.staging as EnvSettings
-      setBaseUrl(staging.base_url || 'https://testserver.misrapp.com')
+      setBaseUrl(staging.base_url || 'https://testserver.misrapp.com/api')
       setIssuerRin(staging.issuer_rin || '')
       setActive(!!staging.active)
       setWalkIn({ ...walkIn, ...staging.walk_in_defaults })
@@ -175,6 +177,19 @@ export default function EtaSettings() {
       setTestResult({ reachable: false, auth_ok: false, error_codes: [typeof detail === 'string' ? detail : 'request_failed'] })
     } finally {
       setTesting(false)
+    }
+  }
+
+  const runProcessQueue = async () => {
+    setProcessingQueue(true)
+    setQueueResult(null)
+    try {
+      const r = await api.post('/eta/process-queue', null, { params: { limit: 20 } })
+      setQueueResult(r.data)
+    } catch {
+      setQueueResult({ claimed: 0, accepted: 0, failed: 0 })
+    } finally {
+      setProcessingQueue(false)
     }
   }
 
@@ -277,6 +292,11 @@ export default function EtaSettings() {
           <button type="button" className="btn-secondary" disabled={testing} onClick={runTest}>
             {testing ? <Loader2 className="animate-spin" size={16} /> : t('settings.eta.test_connection')}
           </button>
+          {active && (
+            <button type="button" className="btn-secondary" disabled={processingQueue} onClick={runProcessQueue}>
+              {processingQueue ? <Loader2 className="animate-spin" size={16} /> : t('settings.eta.process_queue')}
+            </button>
+          )}
           <button type="button" className="btn-secondary" onClick={load}>
             <RefreshCw size={16} />
           </button>
@@ -297,6 +317,15 @@ export default function EtaSettings() {
               <p className="text-xs mt-2">{testResult.hint}</p>
             ) : null}
           </div>
+        )}
+        {queueResult && (
+          <p className="text-xs mt-2 text-slate-600">
+            {t('settings.eta.queue_result', {
+              claimed: queueResult.claimed ?? 0,
+              accepted: queueResult.accepted ?? 0,
+              failed: queueResult.failed ?? 0,
+            })}
+          </p>
         )}
       </div>
 

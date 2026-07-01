@@ -191,3 +191,156 @@ def get_branch_device(cur, branch_id: int) -> Optional[dict]:
     )
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def enqueue_submission(
+    cur,
+    *,
+    invoice_id: int | None,
+    return_id: int | None,
+    document_type: str,
+    idempotency_key: str,
+) -> int | None:
+    """Insert a pending submission. Returns id or None if duplicate."""
+    cur.execute(
+        """
+        INSERT INTO eta_submissions
+            (invoice_id, return_id, document_type, idempotency_key, status)
+        VALUES (%s, %s, %s, %s, 'pending')
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id
+        """,
+        (invoice_id, return_id, document_type, idempotency_key),
+    )
+    row = cur.fetchone()
+    return int(row["id"]) if row else None
+
+
+def claim_pending_submissions(cur, *, limit: int = 20) -> list[dict]:
+    cur.execute(
+        """
+        SELECT id FROM eta_submissions
+        WHERE status = 'pending'
+        ORDER BY created_at ASC
+        LIMIT %s
+        FOR UPDATE SKIP LOCKED
+        """,
+        (limit,),
+    )
+    ids = [int(r["id"]) for r in cur.fetchall()]
+    if not ids:
+        return []
+    cur.execute(
+        """
+        UPDATE eta_submissions
+        SET status = 'processing', updated_at = NOW()
+        WHERE id = ANY(%s)
+        RETURNING *
+        """,
+        (ids,),
+    )
+    return [dict(r) for r in cur.fetchall()]
+
+
+def count_submission_attempts(cur, submission_id: int) -> int:
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM eta_submission_attempts WHERE submission_id = %s",
+        (submission_id,),
+    )
+    return int(cur.fetchone()["cnt"])
+
+
+def record_submission_attempt(
+    cur,
+    *,
+    submission_id: int,
+    attempt_no: int,
+    http_status: int | None,
+    response_body: Any,
+    error_message: str | None,
+) -> None:
+    cur.execute(
+        """
+        INSERT INTO eta_submission_attempts
+            (submission_id, attempt_no, http_status, response_body, error_message)
+        VALUES (%s, %s, %s, %s::jsonb, %s)
+        """,
+        (
+            submission_id,
+            attempt_no,
+            http_status,
+            json.dumps(response_body, default=str) if response_body is not None else None,
+            error_message,
+        ),
+    )
+
+
+def mark_submission_accepted(
+    cur,
+    submission_id: int,
+    *,
+    eta_uuid: str | None,
+    qr_url: str | None,
+    request_payload: dict | None,
+    response_payload: dict | None,
+) -> None:
+    cur.execute(
+        """
+        UPDATE eta_submissions SET
+            status = 'accepted',
+            eta_uuid = %s,
+            qr_url = %s,
+            request_payload = COALESCE(%s::jsonb, request_payload),
+            response_payload = %s::jsonb,
+            error_message = NULL,
+            submitted_at = COALESCE(submitted_at, NOW()),
+            accepted_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            eta_uuid,
+            qr_url,
+            json.dumps(request_payload, default=str) if request_payload else None,
+            json.dumps(response_payload, default=str) if response_payload else None,
+            submission_id,
+        ),
+    )
+
+
+def mark_submission_failed(
+    cur,
+    submission_id: int,
+    *,
+    error_message: str,
+    response_payload: dict | None = None,
+    retry: bool = False,
+) -> None:
+    status = "pending" if retry else "failed"
+    cur.execute(
+        """
+        UPDATE eta_submissions SET
+            status = %s,
+            error_message = %s,
+            response_payload = COALESCE(%s::jsonb, response_payload),
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (
+            status,
+            error_message[:2000] if error_message else None,
+            json.dumps(response_payload, default=str) if response_payload else None,
+            submission_id,
+        ),
+    )
+
+
+def mark_submission_processing_reset(cur, submission_id: int) -> None:
+    """Return stuck processing row to pending (e.g. worker crash)."""
+    cur.execute(
+        """
+        UPDATE eta_submissions SET status = 'pending', updated_at = NOW()
+        WHERE id = %s AND status = 'processing'
+        """,
+        (submission_id,),
+    )

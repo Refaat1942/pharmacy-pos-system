@@ -1248,6 +1248,13 @@ def create_sale(req: SaleRequest,
             mark_customer_sale_type(cur, invoice_customer_id, req.type)
 
         conn.commit()
+        try:
+            from eta.hooks import enqueue_sale
+            if req.type != "return":
+                enqueue_sale(cur, invoice_id, current_user, sale_type=req.type)
+                conn.commit()
+        except Exception:
+            conn.rollback()
         cur.execute(
             """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
                       c.name AS customer_name,
@@ -1798,6 +1805,12 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
             cur, invoice_id, round(total_returned, 2), current_user.get("user_id"),
         )
         conn.commit()
+        try:
+            from eta.hooks import enqueue_return
+            enqueue_return(cur, ret["id"], invoice_id, current_user)
+            conn.commit()
+        except Exception:
+            conn.rollback()
         ret["total_returned"] = round(total_returned, 2)
         return dict(ret)
     except HTTPException:

@@ -76,6 +76,15 @@ fi
 systemctl restart pharmapos
 systemctl reload nginx 2>/dev/null || true
 
+if [ -f "$APP_DIR/deploy/eta-worker.service" ]; then
+  cp "$APP_DIR/deploy/eta-worker.service" /etc/systemd/system/eta-worker.service
+  cp "$APP_DIR/deploy/eta-worker.timer" /etc/systemd/system/eta-worker.timer
+  systemctl daemon-reload
+  systemctl enable eta-worker.timer 2>/dev/null || true
+  systemctl start eta-worker.timer 2>/dev/null || true
+  info "ETA worker timer enabled (every 30s)"
+fi
+
 echo ""
 echo "✅ Update complete!"
 systemctl status pharmapos --no-pager -l

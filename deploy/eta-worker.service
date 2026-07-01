@@ -1,0 +1,16 @@
+[Unit]
+Description=PharmaPOS ETA submission worker (one shot)
+After=network.target postgresql.service pharmapos.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=pharmapos
+Group=pharmapos
+WorkingDirectory=/opt/pharmapos/backend
+EnvironmentFile=/etc/pharmapos.env
+ExecStart=/opt/pharmapos/venv/bin/python3 eta/run_worker.py
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

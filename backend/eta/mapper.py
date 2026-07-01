@@ -15,7 +15,7 @@ from eta.constants import (
     PAYMENT_VISA,
     DEFAULT_WALK_IN,
 )
-from eta.db import get_branch_device
+from eta.db import get_branch_device, get_submission_for_invoice
 
 
 def _money(value: float | Decimal | None) -> float:
@@ -291,3 +291,101 @@ def load_invoice_bundle(cur, invoice_id: int) -> tuple[dict, list[dict], dict | 
             }
 
     return invoice, items, customer, device
+
+
+def load_return_bundle(
+    cur,
+    return_id: int,
+) -> tuple[dict, list[dict], dict | None, dict, str | None, str, bool]:
+    """Load return + line items and original invoice ETA reference."""
+    cur.execute("SELECT * FROM returns WHERE id = %s", (return_id,))
+    ret = cur.fetchone()
+    if not ret:
+        raise ValueError("Return not found")
+    ret = dict(ret)
+
+    invoice_id = int(ret["original_invoice_id"])
+    cur.execute("SELECT * FROM invoices WHERE id = %s", (invoice_id,))
+    invoice = cur.fetchone()
+    if not invoice:
+        raise ValueError("Original invoice not found")
+    invoice = dict(invoice)
+
+    cur.execute(
+        """
+        SELECT ri.*,
+               ii.product_name_en, ii.product_name_ar, ii.barcode,
+               ii.unit_label, ii.pack_size AS line_pack_stored,
+               p.unit, p.vat_rate, p.eta_item_code, p.eta_egs_code,
+               p.international_barcode, p.barcode AS product_barcode
+        FROM return_items ri
+        JOIN invoice_items ii ON ii.id = ri.invoice_item_id
+        LEFT JOIN products p ON p.id = ri.product_id
+        WHERE ri.return_id = %s
+        ORDER BY ri.id ASC
+        """,
+        (return_id,),
+    )
+    items: list[dict] = []
+    for row in cur.fetchall():
+        r = dict(row)
+        qty = int(r.get("sub_quantity") or r.get("quantity") or 0)
+        unit_price = float(r.get("unit_price") or 0)
+        items.append(
+            {
+                "product_id": r.get("product_id"),
+                "product_name_en": r.get("product_name_en"),
+                "product_name_ar": r.get("product_name_ar"),
+                "barcode": r.get("barcode"),
+                "quantity": qty,
+                "unit_price": unit_price,
+                "discount": 0,
+                "offer_discount": 0,
+                "total": round(qty * unit_price, 2),
+                "unit_label": r.get("unit_label"),
+                "unit": r.get("unit"),
+                "vat_rate": r.get("vat_rate"),
+                "eta_item_code": r.get("eta_item_code"),
+                "eta_egs_code": r.get("eta_egs_code"),
+                "international_barcode": r.get("international_barcode"),
+                "product_barcode": r.get("product_barcode"),
+            }
+        )
+
+    customer = None
+    if invoice.get("customer_id"):
+        cur.execute("SELECT * FROM customers WHERE id = %s", (invoice["customer_id"],))
+        crow = cur.fetchone()
+        customer = dict(crow) if crow else None
+
+    branch_id = invoice.get("branch_id")
+    device = get_branch_device(cur, branch_id) if branch_id else None
+    if not device:
+        raise ValueError(f"No ETA POS device configured for branch {branch_id}")
+
+    orig_sub = get_submission_for_invoice(cur, invoice_id)
+    original_uuid = (orig_sub or {}).get("eta_uuid")
+    branch_code = (device.get("branch_code") or "0").strip()
+    internal_id = str(invoice.get("invoice_number") or invoice_id)
+    original_unique_id = build_unique_id(branch_code, internal_id, invoice_id)
+
+    cur.execute(
+        """
+        SELECT COALESCE(SUM(ii.quantity * COALESCE(NULLIF(ii.pack_size, 0), 1)), 0) AS sold_sub,
+               COALESCE((
+                   SELECT SUM(ri.sub_quantity)
+                   FROM return_items ri
+                   JOIN returns r ON r.id = ri.return_id
+                   WHERE r.original_invoice_id = %s
+               ), 0) AS returned_sub
+        FROM invoice_items ii
+        WHERE ii.invoice_id = %s
+        """,
+        (invoice_id, invoice_id),
+    )
+    qty_row = cur.fetchone()
+    sold_sub = int(qty_row["sold_sub"] or 0)
+    returned_sub = int(qty_row["returned_sub"] or 0)
+    partial = returned_sub < sold_sub
+
+    return ret, items, customer, device, original_uuid, original_unique_id, partial
