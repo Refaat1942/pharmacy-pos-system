@@ -61,7 +61,7 @@ def seed():
         cur.execute("""
             INSERT INTO products (barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (barcode) DO NOTHING
+            ON CONFLICT (barcode, branch_id) DO NOTHING
         """, (*p, branch_id))
 
     # Customers
