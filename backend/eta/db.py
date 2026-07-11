@@ -335,12 +335,14 @@ def mark_submission_failed(
     )
 
 
-def mark_submission_processing_reset(cur, submission_id: int) -> None:
-    """Return stuck processing row to pending (e.g. worker crash)."""
+def reset_stale_processing(cur, *, minutes: int = 15) -> int:
+    """Return stuck processing rows to pending after worker crash."""
     cur.execute(
         """
         UPDATE eta_submissions SET status = 'pending', updated_at = NOW()
-        WHERE id = %s AND status = 'processing'
+        WHERE status = 'processing'
+          AND updated_at < NOW() - (%s || ' minutes')::interval
         """,
-        (submission_id,),
+        (str(int(minutes)),),
     )
+    return cur.rowcount

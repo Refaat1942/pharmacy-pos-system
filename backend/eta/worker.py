@@ -14,10 +14,11 @@ from eta.db import (
     claim_pending_submissions,
     count_submission_attempts,
     credentials_for_api,
-    get_submission_for_invoice,
+    get_branch_device,
     mark_submission_accepted,
     mark_submission_failed,
     record_submission_attempt,
+    reset_stale_processing,
 )
 from eta.mapper import (
     build_return_document,
@@ -218,6 +219,7 @@ def process_tenant_schema(schema_name: str, *, tenant_slug: str, limit: int = 20
             conn.commit()
             return stats
 
+        reset_stale_processing(cur, minutes=15)
         claimed = claim_pending_submissions(cur, limit=limit)
         stats["claimed"] = len(claimed)
         for row in claimed:
@@ -263,6 +265,7 @@ def process_tenant_with_user(cur, user: dict, *, limit: int = 20) -> dict[str, i
     stats = {"claimed": 0, "accepted": 0, "failed": 0}
     if not is_eta_operational(cur, user, environment=DEFAULT_ENVIRONMENT):
         return stats
+    reset_stale_processing(cur, minutes=15)
     claimed = claim_pending_submissions(cur, limit=limit)
     stats["claimed"] = len(claimed)
     for row in claimed:

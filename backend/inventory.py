@@ -1210,6 +1210,11 @@ def clear_branch_history(req: ClearHistoryRequest,
         pays = cur.rowcount
         cur.execute("DELETE FROM invoices WHERE branch_id=%s", (req.branch_id,))
         invs = cur.rowcount
+        cur.execute(
+            """DELETE FROM product_batches
+               WHERE product_id IN (SELECT id FROM products WHERE branch_id=%s)""",
+            (req.branch_id,),
+        )
         cur.execute("UPDATE products SET stock=0 WHERE branch_id=%s", (req.branch_id,))
         prods = cur.rowcount
         conn.commit()

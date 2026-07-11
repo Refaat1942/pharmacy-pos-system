@@ -229,8 +229,10 @@ export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSa
           return
         }
         const waiting = r.data.active && ['not_submitted', 'pending', 'processing'].includes(r.data.status || '')
+        const failed = r.data.status === 'failed'
         setEtaQrPending(!!waiting)
         setEtaQrImage(null)
+        if (failed && pollTimer) clearInterval(pollTimer)
       } catch {
         if (!cancelled) {
           setEtaQrImage(null)

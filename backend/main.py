@@ -1154,6 +1154,8 @@ def create_sale(req: SaleRequest,
         for item in req.items:
             if item.quantity <= 0:
                 raise HTTPException(status_code=400, detail=f"Invalid quantity for product {item.product_id}")
+            if req.type == "return":
+                continue
             cur.execute(
                 """SELECT name_ar, name_en, barcode, stock, branch_id, active,
                           unit, sub_unit, COALESCE(pack_size,1) AS pack_size
