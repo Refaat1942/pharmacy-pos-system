@@ -28,9 +28,20 @@ class ChatRequest(BaseModel):
     page_context: Optional[str] = None
 
 
-def _resolve_lang(req_lang: str | None, user: dict) -> str:
+def _detect_lang(text: str) -> str:
+    """Pick Arabic vs English from the user's message (Egyptian Arabic welcome)."""
+    if not text:
+        return "ar"
+    ar_chars = sum(1 for c in text if "\u0600" <= c <= "\u06FF" or "\u0750" <= c <= "\u077F")
+    latin = sum(1 for c in text if ("a" <= c.lower() <= "z"))
+    return "ar" if ar_chars >= max(3, latin) else "en"
+
+
+def _resolve_lang(req_lang: str | None, user: dict, last_user_message: str = "") -> str:
     if req_lang in ("ar", "en"):
         return req_lang
+    if req_lang == "auto" or not req_lang:
+        return _detect_lang(last_user_message)
     return "ar"
 
 
@@ -80,7 +91,9 @@ def _call_openai(system: str, messages: list[dict]) -> str | None:
 
 @router.post("/chat", dependencies=[Depends(requires_feature("ai_assistant"))])
 def assistant_chat(body: ChatRequest, current_user=Depends(get_current_user)):
-    lang = _resolve_lang(body.lang, current_user)
+    history = [{"role": m.role, "content": m.content.strip()} for m in body.messages[-12:]]
+    last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+    lang = _resolve_lang(body.lang, current_user, last_user)
     features = _tenant_features(current_user)
     system = build_system_prompt(
         lang,
@@ -89,8 +102,6 @@ def assistant_chat(body: ChatRequest, current_user=Depends(get_current_user)):
         (body.page_context or "").strip() or None,
     )
 
-    history = [{"role": m.role, "content": m.content.strip()} for m in body.messages[-12:]]
-    last_user = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
     from feature_access import user_feature_option
     use_openai = user_feature_option(current_user, "ai_assistant", "openai")

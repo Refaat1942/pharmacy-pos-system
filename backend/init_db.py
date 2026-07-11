@@ -1048,6 +1048,37 @@ ETA_MIGRATIONS = [
 ]
 
 
+def apply_data_migrations(cur, conn) -> list:
+    """One-time data fixes tracked in schema_data_migrations (per tenant schema)."""
+    warnings = []
+    migration_key = "cost_from_price_20pct_v1"
+    try:
+        cur.execute(
+            """CREATE TABLE IF NOT EXISTS schema_data_migrations (
+                key VARCHAR(100) PRIMARY KEY,
+                applied_at TIMESTAMPTZ DEFAULT NOW()
+            )"""
+        )
+        conn.commit()
+        cur.execute("SELECT 1 FROM schema_data_migrations WHERE key = %s", (migration_key,))
+        if cur.fetchone():
+            return warnings
+        cur.execute(
+            """UPDATE products
+               SET cost = ROUND(price * 0.2, 2)
+               WHERE active = true AND price > 0"""
+        )
+        cur.execute(
+            "INSERT INTO schema_data_migrations (key) VALUES (%s)",
+            (migration_key,),
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        warnings.append(f"cost_from_price migration -> {e}")
+    return warnings
+
+
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []

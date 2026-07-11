@@ -3,19 +3,17 @@ import { useTranslation } from 'react-i18next'
 import { Printer, ShoppingCart, X } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
-import type { Employee, SaleResponse } from '../lib/api'
-import api, { salesAPI } from '../lib/api'
+import type { SaleResponse } from '../lib/api'
+import api from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatDate } from '../lib/formatDate'
 import CopyrightNotice from './CopyrightNotice'
-import SellerPicker from './SellerPicker'
 import { useAuth } from '../lib/auth'
 
 interface Props {
   sale: SaleResponse
   onNewSale: () => void
   onClose: () => void
-  employees: Employee[]
   onSaleUpdate?: (sale: SaleResponse) => void
 }
 
@@ -52,16 +50,13 @@ const paperWidth: Record<string, string> = {
   'A4': '190mm',
 }
 
-export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSaleUpdate }: Props) {
+export default function ReceiptModal({ sale, onNewSale, onClose, onSaleUpdate }: Props) {
   const { t } = useTranslation()
   const { hasFeature } = useAuth()
   const etaFeatureOn = hasFeature('eta')
   const [profile, setProfile] = useState<PharmacyProfile | null>(null)
   const [patientCopyPrint, setPatientCopyPrint] = useState(false)
   const [saleState, setSaleState] = useState(sale)
-  const [pendingSeller, setPendingSeller] = useState<Employee | null>(null)
-  const [sellerSaving, setSellerSaving] = useState(false)
-  const [sellerError, setSellerError] = useState('')
   const [etaQrImage, setEtaQrImage] = useState<string | null>(null)
   const [etaQrPending, setEtaQrPending] = useState(false)
   const barcodeRef = useRef<SVGSVGElement | null>(null)
@@ -127,24 +122,6 @@ export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSa
   const patientSharePctLabel = insuranceTotals?.patient_share_pct != null
     ? ` (${Number(insuranceTotals.patient_share_pct)}%)`
     : ''
-
-  const needsSeller = !invoice.seller_id
-  const assignSeller = async () => {
-    if (!pendingSeller) return
-    setSellerSaving(true)
-    setSellerError('')
-    try {
-      const { data } = await salesAPI.assignSeller(invoice.id, pendingSeller.id)
-      setSaleState(data)
-      onSaleUpdate?.(data)
-      setPendingSeller(null)
-    } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setSellerError(typeof detail === 'string' ? detail : (t('common.error') as string))
-    } finally {
-      setSellerSaving(false)
-    }
-  }
 
   const localeId = lang === 'ar' ? 'ar-EG' : 'en-US'
   const formatDateOnly = (s: string) => formatDate(s)
@@ -260,28 +237,6 @@ export default function ReceiptModal({ sale, onNewSale, onClose, employees, onSa
             <X size={18} />
           </button>
         </div>
-
-        {needsSeller && (
-          <div className="px-5 py-4 border-b border-amber-200 bg-amber-50 no-print">
-            <p className="text-sm font-bold text-amber-900 mb-1">{t('receipt.assign_seller')}</p>
-            <p className="text-xs text-amber-800 mb-3">{t('receipt.assign_seller_hint')}</p>
-            <SellerPicker
-              employees={employees}
-              selectedSeller={pendingSeller}
-              onSellerChange={setPendingSeller}
-              compact
-            />
-            {sellerError && <p className="text-xs text-red-600 mt-2">{sellerError}</p>}
-            <button
-              type="button"
-              onClick={() => void assignSeller()}
-              disabled={!pendingSeller || sellerSaving}
-              className="mt-3 w-full rounded-xl bg-amber-600 text-white py-2.5 text-sm font-bold hover:bg-amber-700 disabled:opacity-50"
-            >
-              {sellerSaving ? t('common.saving') : t('receipt.save_seller')}
-            </button>
-          </div>
-        )}
 
         {/* Receipt content — width follows configured paper size for print */}
         <div

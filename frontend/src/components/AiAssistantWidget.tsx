@@ -96,7 +96,7 @@ export default function AiAssistantWidget() {
     try {
       const { data } = await api.post<{ reply: string; source: string; lang: string }>('/assistant/chat', {
         messages: nextMessages.map((m) => ({ role: m.role, content: m.content })),
-        lang,
+        lang: 'auto',
         page_context: pageContext,
       })
       setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])

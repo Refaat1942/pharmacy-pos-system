@@ -859,16 +859,16 @@ function ReplenishmentModal({
   const [notes, setNotes] = useState('')
   const [working, setWorking] = useState(false)
 
-  const shouldFetch = Boolean(branchId) && (showAll || onlyZero || activeSearch.trim().length >= 2)
+  const shouldFetch = (isAdmin || Boolean(branchId)) && (showAll || onlyZero || activeSearch.trim().length >= 2)
 
   const load = () => {
-    if (!branchId) {
+    if (!isAdmin && !branchId) {
       setLines([])
       return
     }
     setLoading(true)
     purchasesAPI.replenishment({
-      branch_id: Number(branchId),
+      branch_id: branchId ? Number(branchId) : undefined,
       supplier_id: supplierFilter ? Number(supplierFilter) : undefined,
       only_zero: onlyZero || undefined,
       include_all: showAll || undefined,
@@ -1093,6 +1093,9 @@ function ReplenishmentModal({
                     <input type="checkbox" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} />
                   </th>
                   <SortTh k="name" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_name')}</SortTh>
+                  {!branchId && (
+                    <th className="px-3 py-2 text-start">{t('purchases.branch')}</th>
+                  )}
                   <SortTh k="barcode" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_barcode')}</SortTh>
                   <SortTh k="supplier" sort={replSort} onToggle={replToggle} align="start">{t('purchases.col_supplier')}</SortTh>
                   <SortTh k="stock" sort={replSort} onToggle={replToggle} align="end">{t('purchases.in_stock')}</SortTh>
@@ -1115,6 +1118,11 @@ function ReplenishmentModal({
                       <input type="checkbox" checked={l.selected} onChange={(e) => update(l.id, { selected: e.target.checked })} />
                     </td>
                     <td className="px-3 py-2">{i18n.language === 'ar' ? l.name_ar : l.name_en}</td>
+                    {!branchId && (
+                      <td className="px-3 py-2 text-xs text-slate-600 whitespace-nowrap">
+                        {i18n.language === 'ar' ? l.branch_name_ar : l.branch_name_en || '—'}
+                      </td>
+                    )}
                     <td className="px-3 py-2 font-mono text-xs text-slate-500">{l.barcode || '—'}</td>
                     <td className="px-3 py-2 text-slate-600 text-xs">{l.supplier_name || t('purchases.unassigned_supplier')}</td>
                     <td className={`px-3 py-2 text-end ${l.stock <= 0 ? 'text-red-600 font-semibold' : 'text-slate-600'}`}>

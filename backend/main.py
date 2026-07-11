@@ -431,7 +431,20 @@ def list_branches(current_user=Depends(get_current_user)):
 def get_product(product_id: int, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM products WHERE id = %s", (product_id,))
+    cur.execute(
+        """SELECT p.*, s.name AS supplier_name,
+                  (SELECT sup.name
+                   FROM purchase_order_items poi
+                   JOIN purchase_orders po ON po.id = poi.po_id
+                   JOIN suppliers sup ON sup.id = po.supplier_id
+                   WHERE poi.product_id = p.id AND po.status = 'received'
+                   ORDER BY po.received_at DESC NULLS LAST, po.id DESC
+                   LIMIT 1) AS last_po_supplier_name
+           FROM products p
+           LEFT JOIN suppliers s ON s.id = p.supplier_id
+           WHERE p.id = %s""",
+        (product_id,),
+    )
     product = cur.fetchone()
     conn.close()
     if not product:
@@ -516,11 +529,14 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
             cls = product_fields_from_material_group(
                 infer_material_group(origin_type=req.origin_type, is_service=req.is_service, category=req.category)
             )
+        cost = req.cost
+        if cost is None and req.price and req.price > 0:
+            cost = round(float(req.price) * 0.2, 2)
         cur.execute(
             """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, material_group, is_service)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
-             req.price, req.cost, req.stock, req.min_stock, req.expiry_date,
+             req.price, cost, req.stock, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price,
              cls["origin_type"], req.medication_type, cls["material_group"], cls["is_service"]),
         )
@@ -925,12 +941,13 @@ def create_sale(req: SaleRequest,
                 )
 
         seller_id = None
-        if req.seller_id:
-            cur.execute("SELECT id, status FROM users WHERE id=%s", (req.seller_id,))
+        _seller_uid = req.seller_id or current_user.get("id")
+        if _seller_uid:
+            cur.execute("SELECT id, status FROM users WHERE id=%s", (_seller_uid,))
             _seller = cur.fetchone()
             if not _seller or _seller.get("status") != "active":
-                raise HTTPException(status_code=400, detail="Selected salesperson is not active")
-            seller_id = req.seller_id
+                raise HTTPException(status_code=400, detail="Salesperson account is not active")
+            seller_id = _seller_uid
         branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
         if branch_id is None:
             raise HTTPException(status_code=400, detail="No active branch selected")

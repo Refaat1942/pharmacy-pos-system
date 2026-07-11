@@ -1103,6 +1103,9 @@ def apply_schema_to_all_tenants() -> dict:
             col_warn = init_db.apply_product_columns(cur, conn)
             if col_warn:
                 out["column_warnings"].append({"slug": t["slug"], "warnings": col_warn})
+            data_warn = init_db.apply_data_migrations(cur, conn)
+            if data_warn:
+                out["column_warnings"].append({"slug": t["slug"], "warnings": data_warn})
             cur.execute(init_db.SQL)
             ensure_default_platforms(cur)
             conn.commit()

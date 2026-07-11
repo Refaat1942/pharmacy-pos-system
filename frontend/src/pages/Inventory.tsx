@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, ScanLine } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
-import api, { formatApiError } from '../lib/api'
+import api, { formatApiError, suppliersAPI, type Supplier } from '../lib/api'
 import {
   autoPickKeysPerTerm,
   isMultiTermSearch,
@@ -99,6 +99,9 @@ type Product = {
   pack_size?: number | null
   sub_unit?: string | null
   sub_price?: number | null
+  supplier_id?: number | null
+  supplier_name?: string | null
+  last_po_supplier_name?: string | null
 }
 
 function productLabelExpiry(it: Product): string | null {
@@ -874,6 +877,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const { t, i18n } = useTranslation()
   const lang = i18n.language === 'ar' ? 'ar' : 'en'
   const itemExt = item as Product & { material_group?: string; origin_type?: string; medication_type?: string }
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [detail, setDetail] = useState<Product | null>(null)
   const [f, setF] = useState({
     barcode: item?.barcode || '',
     international_barcode: item?.international_barcode || '',
@@ -883,6 +888,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     unit: item?.unit || 'box',
     price: item?.price?.toString() || '',
     cost: item?.cost?.toString() || '',
+    supplier_id: item?.supplier_id != null ? String(item.supplier_id) : '',
     stock: item?.stock != null
       ? formatPackStockInput(item.stock, packSizeOf(item))
       : '0',
@@ -898,6 +904,27 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
+  const priceNum = parseFloat(f.price) || 0
+  const costNum = f.cost ? parseFloat(f.cost) : 0
+  const marginPct = priceNum > 0 && costNum >= 0
+    ? (((priceNum - costNum) / priceNum) * 100).toFixed(1)
+    : null
+  const costPctOfPrice = priceNum > 0 && costNum >= 0
+    ? ((costNum / priceNum) * 100).toFixed(1)
+    : null
+
+  useEffect(() => {
+    suppliersAPI.list().then((r) => setSuppliers(r.data.filter((s) => s.active !== false))).catch(() => setSuppliers([]))
+  }, [])
+
+  useEffect(() => {
+    if (!item?.id) {
+      setDetail(null)
+      return
+    }
+    api.get<Product>(`/products/${item.id}`).then((r) => setDetail(r.data)).catch(() => setDetail(item))
+  }, [item?.id])
+
   const stockPreviewSub = (() => {
     if (!f.stock.trim()) return null
     const n = parsePackStockInput(f.stock, packSize)
@@ -922,7 +949,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         category: f.category || null,
         unit: f.unit,
         price: priceNum,
-        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? priceNum : null),
+        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? Math.round(priceNum * 0.2 * 100) / 100 : null),
+        supplier_id: f.supplier_id ? parseInt(f.supplier_id, 10) : null,
         min_stock: parseInt(f.min_stock) || 0,
         ...(item ? {} : { expiry_date: f.expiry_date || null }),
         pack_size: packSize,
@@ -1064,6 +1092,30 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             <Field label={t('inventory.f_cost')}>
               <input type="number" step="0.01" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} className="input" />
             </Field>
+            <Field label={t('inventory.f_margin_pct')}>
+              <input type="text" readOnly value={marginPct != null ? `${marginPct}%` : '—'} className="input bg-slate-50 text-slate-600" />
+            </Field>
+            <Field label={t('inventory.f_cost_pct_of_price')}>
+              <input type="text" readOnly value={costPctOfPrice != null ? `${costPctOfPrice}%` : '—'} className="input bg-slate-50 text-slate-600" />
+            </Field>
+            <Field label={t('inventory.f_supplier')}>
+              <select value={f.supplier_id} onChange={e => setF({ ...f, supplier_id: e.target.value })} className="input">
+                <option value="">—</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </Field>
+            {item && (detail?.last_po_supplier_name || detail?.supplier_name) && (
+              <Field label={t('inventory.last_po_supplier')}>
+                <input
+                  type="text"
+                  readOnly
+                  value={detail?.last_po_supplier_name || detail?.supplier_name || '—'}
+                  className="input bg-slate-50 text-slate-600"
+                />
+              </Field>
+            )}
             <Field label={t('inventory.f_min_stock')}>
               <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
             </Field>

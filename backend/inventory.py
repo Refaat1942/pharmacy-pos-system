@@ -220,6 +220,7 @@ class ProductUpdate(BaseModel):
     medication_type: Optional[str] = None
     material_group: Optional[str] = None
     is_service: Optional[bool] = None
+    supplier_id: Optional[int] = None
 
 
 
@@ -227,7 +228,7 @@ class ProductUpdate(BaseModel):
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
                          "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type",
-                         "material_group", "is_service"}
+                         "material_group", "is_service", "supplier_id"}
 
 
 @router.put("/products/{product_id}")
@@ -237,6 +238,18 @@ def update_product(product_id: int, req: ProductUpdate,
               if k in ALLOWED_UPDATE_FIELDS}
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
+    if "supplier_id" in fields and fields["supplier_id"] is not None:
+        conn_chk = get_db_connection()
+        cur_chk = conn_chk.cursor()
+        try:
+            cur_chk.execute(
+                "SELECT id FROM suppliers WHERE id=%s AND active=true",
+                (fields["supplier_id"],),
+            )
+            if not cur_chk.fetchone():
+                raise HTTPException(status_code=400, detail="Supplier not found")
+        finally:
+            conn_chk.close()
     if "material_group" in fields or "origin_type" in fields or "is_service" in fields:
         from material_groups import infer_material_group, product_fields_from_material_group, normalize_material_group
         mg = normalize_material_group(fields.get("material_group"))
@@ -600,8 +613,11 @@ def list_items(q: str = "", branch_id: Optional[int] = None,
 
     sql = (
         "SELECT p.*, b.name_en AS branch_name_en, b.name_ar AS branch_name_ar, "
-        f"{batches_sql} "
-        "FROM products p LEFT JOIN branches b ON p.branch_id = b.id "
+        f"{batches_sql}, "
+        "s.name AS supplier_name "
+        "FROM products p "
+        "LEFT JOIN branches b ON p.branch_id = b.id "
+        "LEFT JOIN suppliers s ON p.supplier_id = s.id "
         f"WHERE {where_sql} "
         "ORDER BY p.name_en LIMIT %s OFFSET %s"
     )
@@ -1600,7 +1616,7 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
     cost_val = _row_get(r, "cost", "cost price", "purchase price")
     cost = float(cost_val) if cost_val not in (None, "") else None
     if cost is None and price > 0:
-        cost = price
+        cost = round(price * 0.2, 2)
     min_raw = _row_get(r, "min_stock", "min stock", "minimum stock")
     min_stock = int(float(min_raw)) if min_raw not in (None, "") else 5
 

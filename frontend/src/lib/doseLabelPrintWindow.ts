@@ -128,6 +128,8 @@ export function openDoseLabelPrintWindow(opts: OpenDoseLabelPrintOptions): boole
       cell.appendChild(nm)
       const dose = w.document.createElement('div')
       dose.className = 'dose'
+      const isArabic = /[\u0600-\u06FF]/.test(row.doseText)
+      if (isArabic) dose.setAttribute('dir', 'rtl')
       dose.textContent = row.doseText.trim()
       cell.appendChild(dose)
       if (row.patientName?.trim()) {

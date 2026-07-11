@@ -2,13 +2,12 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, ShoppingBag, CreditCard, Smartphone, Banknote, CheckCircle2, AlertCircle, Shield } from 'lucide-react'
 import { salesAPI, employeesAPI, loyaltyAPI } from '../lib/api'
-import type { CartItem, Employee, Customer, SaleResponse, LoyaltyCalculateResult } from '../lib/api'
+import type { CartItem, Customer, SaleResponse, LoyaltyCalculateResult } from '../lib/api'
 import i18n from '../lib/i18n'
 import { useAuth } from '../lib/auth'
 import { platformDisplayLabel } from '../lib/digitalPlatforms'
 import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 import InsurancePosPanel from './InsurancePosPanel'
-import SellerPicker from './SellerPicker'
 import type { InsuranceCalculateResult } from '../lib/insurance'
 
 interface Props {
@@ -19,9 +18,6 @@ interface Props {
   offerIds?: number[]
   offerSavings?: number
   offerNames?: string
-  selectedSeller: Employee | null
-  onSellerChange: (seller: Employee | null) => void
-  employees?: Employee[]
   selectedCustomer: Customer | null
   clinicId?: number | null
   prescriptionId?: number | null
@@ -37,13 +33,12 @@ type CheckoutStep = 'type' | 'setup' | 'pay'
 export default function PaymentModal({
   cartItems, subtotal, invoiceDiscount, netTotal,
   offerIds, offerSavings, offerNames,
-  selectedSeller, onSellerChange, employees: employeesProp,
   selectedCustomer, clinicId, prescriptionId,
   initialSaleType,
   onClose, onSuccess,
 }: Props) {
   const { t } = useTranslation()
-  const { hasFeature, hasFeatureOption } = useAuth()
+  const { user, hasFeature, hasFeatureOption } = useAuth()
   const lang = i18n.language
   const loyaltyOn = hasFeature('loyalty') && hasFeatureOption('loyalty', 'pos_redeem')
   const digitalSalesOn = hasFeature('pos') && hasFeatureOption('pos', 'digital_sales')
@@ -83,18 +78,9 @@ export default function PaymentModal({
   })
   const [cashTouched, setCashTouched] = useState(false)
   const [hybridTouched, setHybridTouched] = useState(false)
-  const [modalEmployees, setModalEmployees] = useState<Employee[]>(employeesProp ?? [])
 
   const isDigitalPaid = saleType === 'digital' && digitalBilling === 'paid'
   const isDigitalAccount = saleType === 'digital' && digitalBilling === 'account'
-
-  useEffect(() => {
-    if (employeesProp?.length) {
-      setModalEmployees(employeesProp)
-      return
-    }
-    employeesAPI.list().then((r) => setModalEmployees(r.data)).catch(() => {})
-  }, [employeesProp])
 
   useEffect(() => {
     const load = () => {
@@ -427,7 +413,7 @@ export default function PaymentModal({
           paymentMethod === 'account' && saleType === 'digital'
             ? undefined
             : selectedCustomer?.id,
-        seller_id: selectedSeller?.id,
+        seller_id: user?.id,
         clinic_id: clinicId ?? undefined,
         prescription_id: prescriptionId ?? undefined,
         delivery_address: needsDelivery ? deliveryAddress.trim() : undefined,
@@ -491,26 +477,6 @@ export default function PaymentModal({
         <div className="flex flex-1 overflow-hidden min-h-0">
           {/* ── Left: payment form ── */}
           <div className={`flex-1 min-h-0 space-y-5 ${checkoutStep === 'setup' && isInsurance ? 'p-4 overflow-hidden flex flex-col' : 'p-6 overflow-y-auto'}`}>
-            {/* Salesperson — hidden on insurance setup (already chosen on POS) */}
-            {!(checkoutStep === 'setup' && isInsurance) && (
-            <div className={`p-4 rounded-xl border-2 ${selectedSeller ? 'bg-emerald-50/80 border-emerald-200' : 'bg-amber-50 border-amber-300'}`}>
-              <SellerPicker
-                employees={modalEmployees}
-                selectedSeller={selectedSeller}
-                onSellerChange={(seller) => {
-                  onSellerChange(seller)
-                  if (seller) setError('')
-                }}
-                onEmployeesChange={setModalEmployees}
-                autoFocusScan={!selectedSeller}
-                compact
-              />
-              {!selectedSeller && (
-                <p className="text-[11px] text-amber-800 mt-2 font-medium">{t('payment.seller_optional_hint')}</p>
-              )}
-            </div>
-            )}
-
             {checkoutStep === 'pay' && loyaltyOn && selectedCustomer && !isInsurance && (
               <div className="p-3 rounded-xl border-2 border-indigo-100 bg-indigo-50/80 space-y-2">
                 <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wider">

@@ -2,7 +2,7 @@
 
 SYSTEM_GUIDE_EN = """
 You are Fratelanza PharmaPOS Assistant — a helpful expert for pharmacy staff using this ERP.
-Answer clearly and practically. Use the user's language (Arabic or English).
+Answer clearly and practically. Always reply in the same language the user writes in (Arabic Egyptian or English).
 You help with: Point of Sale, sales, returns, inventory, purchases, customers, suppliers,
 transfers, expiry, reports, cash shifts, settings, barcode labels, dose labels, small items on POS,
 deliveries, clinics/prescriptions, fraud surveillance (admin), stock reallocation, HR (if enabled).
@@ -10,7 +10,8 @@ Do NOT invent features that are not listed in ENABLED FEATURES below.
 If unsure, say what menu path to check. Keep answers short (2-6 sentences) unless they ask for steps.
 
 POS essentials:
-- Select seller before Pay. Scan barcode or search product. Cart on the right.
+- Each employee logs in with their own account — sales are recorded under the logged-in user automatically.
+- Scan barcode or search product. Cart on the right.
 - Payment types: cash, visa, hybrid, account (credit customer), delivery, digital platforms.
 - Multiple POS windows: "New POS window" opens separate cart.
 - Suspend/Held carts for serving another customer.
@@ -30,14 +31,14 @@ When giving steps, use menu names exactly as shown in the app sidebar.
 
 SYSTEM_GUIDE_AR = """
 أنت مساعد نظام صيدلية فراتيلانزا — خبير يساعد موظفي الصيدلية على استخدام النظام.
-أجب بوضوح وعملياً بلغة المستخدم (عربي أو إنجليزي).
+أجب بوضوح وعملياً بنفس لغة المستخدم (عربي مصري أو إنجليزي).
 تساعد في: نقطة البيع، المبيعات، المرتجعات، المخزون، المشتريات، العملاء، الموردين،
 التحويلات، الصلاحية، التقارير، درج الكاش، الإعدادات، ملصقات الباركود، ملصقات الجرعة،
 المستلزمات الصغيرة في نقطة البيع، التوصيل، العيادات/الروشتات، مراقبة الاحتيال (مدير)، إعادة توزيع المخزون.
 لا تخترع ميزات غير موجودة في الميزات المفعّلة أدناه.
 إذا لم تكن متأكداً، اذكر مسار القائمة. إجابات مختصرة إلا إذا طلبوا خطوات.
 
-نقطة البيع: اختر البائع قبل الدفع. امسح الباركود أو ابحث. السلة على اليمين.
+نقطة البيع: كل موظف يسجّل دخوله بحسابه — البيع يُسجّل باسم المستخدم تلقائياً. امسح الباركود أو ابحث. السلة على اليمين.
 طرق الدفع: نقدي، فيزا، مختلط، آجل (عميل)، توصيل، منصات رقمية.
 نافذة بيع جديدة = سلة مستقلة. تعليق/سلال معلقة. خصم على الفاتورة أو الصنف.
 سجل المبيعات للطباعة والمرتجعات. افتح وردية قبل البيع من درج الكاش.
@@ -50,8 +51,8 @@ SYSTEM_GUIDE_AR = """
 FAQ_ENTRIES = [
     {
         "keys": ["sale", "sell", "pos", "pay", "checkout", "بيع", "دفع", "كاشير"],
-        "en": "POS sale: 1) Select seller at top. 2) Scan/search products. 3) Click Checkout → choose payment → Confirm. You need an open cash shift first (Cash Drawer → Start Shift).",
-        "ar": "البيع: ١) اختر البائع من الأعلى. ٢) امسح/ابحث عن الأصناف. ٣) الدفع → اختر طريقة الدفع → تأكيد. يجب فتح وردية أولاً من درج الكاش.",
+        "en": "POS sale: 1) Scan/search products. 2) Click Checkout → choose payment → Confirm. You need an open cash shift first (Cash Drawer → Start Shift). The sale is saved under your login.",
+        "ar": "البيع: ١) امسح/ابحث عن الأصناف. ٢) الدفع → اختر طريقة الدفع → تأكيد. يجب فتح وردية أولاً من درج الكاش. البيع يُسجّل باسم حسابك تلقائياً.",
     },
     {
         "keys": ["return", "refund", "مرتجع", "استرجاع"],
@@ -137,7 +138,12 @@ def build_system_prompt(lang: str, enabled_features: list[str], user_role: str, 
     guide = SYSTEM_GUIDE_AR if lang == "ar" else SYSTEM_GUIDE_EN
     feats = ", ".join(enabled_features) if enabled_features else "pos, sales, inventory"
     ctx = f"\nCurrent screen context: {page_context}" if page_context else ""
+    lang_rule = (
+        "اكتب بالعربية المصرية الواضحة إذا سأل بالعربي؛ وبالإنجليزية إذا سأل بالإنجليزي."
+        if lang == "ar"
+        else "Use clear Egyptian Arabic if the user writes in Arabic; English if they write in English."
+    )
     return (
         f"{guide}\n\nENABLED FEATURES: {feats}\nUSER ROLE: {user_role}{ctx}\n"
-        "Answer only about this pharmacy ERP. Be friendly and professional."
+        f"{lang_rule}\nAnswer only about this pharmacy ERP. Be friendly and professional."
     )

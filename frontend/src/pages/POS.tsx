@@ -22,16 +22,15 @@ import type { ComponentType } from 'react'
 import Layout from '../components/Layout'
 import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
-import SellerPicker from '../components/SellerPicker'
 import PosSaleTypePicker, { type PosSaleType } from '../components/PosSaleTypePicker'
 import ReceiptModal from '../components/ReceiptModal'
 import PrescriptionBell from '../components/PrescriptionBell'
 import TreatmentReminderBell from '../components/TreatmentReminderBell'
 import PosCounselingTips, { type CounselingTip } from '../components/PosCounselingTips'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import { productsAPI, employeesAPI, customersAPI, posCounselingAPI } from '../lib/api'
+import { productsAPI, customersAPI, posCounselingAPI } from '../lib/api'
 import api from '../lib/api'
-import type { Product, CartItem, Employee, Customer, SaleResponse, Prescription, CustomerTreatmentPlan } from '../lib/api'
+import type { Product, CartItem, Customer, SaleResponse, Prescription, CustomerTreatmentPlan } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
 import { formatStockInline } from '../lib/packStock'
@@ -54,7 +53,6 @@ interface HeldCart {
   invoiceDiscount: number
   invoiceDiscountMode: 'amount' | 'percent'
   customer: Customer | null
-  seller: Employee | null
   clinic?: { id: number; name: string } | null
   rxId?: number | null
 }
@@ -168,7 +166,6 @@ export default function POS() {
   const CART_KEY = `pos_cart_${scope}`
   const DISCOUNT_KEY = `pos_discount_${scope}`
   const DISCMODE_KEY = `pos_discmode_${scope}`
-  const SELLER_KEY = `pos_seller_${scope}`
   const CUSTOMER_KEY = `pos_customer_${scope}`
   const RXCLINIC_KEY = `pos_rxclinic_${scope}`
   const RXID_KEY = `pos_rxid_${scope}`
@@ -182,9 +179,7 @@ export default function POS() {
   const [searching, setSearching] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  const [employees, setEmployees] = useState<Employee[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [selectedSeller, setSelectedSeller] = useState<Employee | null>(() => loadJSON<Employee | null>(SELLER_KEY, null))
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerList, setShowCustomerList] = useState(false)
@@ -351,7 +346,6 @@ export default function POS() {
   useEffect(() => { try { localStorage.setItem(CART_KEY, JSON.stringify(cartItems)) } catch { /* ignore */ } }, [cartItems, CART_KEY])
   useEffect(() => { try { localStorage.setItem(DISCOUNT_KEY, JSON.stringify(invoiceDiscount)) } catch { /* ignore */ } }, [invoiceDiscount, DISCOUNT_KEY])
   useEffect(() => { try { localStorage.setItem(DISCMODE_KEY, JSON.stringify(invoiceDiscountMode)) } catch { /* ignore */ } }, [invoiceDiscountMode, DISCMODE_KEY])
-  useEffect(() => { try { localStorage.setItem(SELLER_KEY, JSON.stringify(selectedSeller)) } catch { /* ignore */ } }, [selectedSeller, SELLER_KEY])
   useEffect(() => { try { localStorage.setItem(CUSTOMER_KEY, JSON.stringify(selectedCustomer)) } catch { /* ignore */ } }, [selectedCustomer, CUSTOMER_KEY])
   useEffect(() => {
     if (!isInsurancePos) return
@@ -370,11 +364,11 @@ export default function POS() {
 
   const suspendCurrent = useCallback(() => {
     if (cartItems.length === 0) { alert(t('pos.suspend_none')); return }
-    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller, clinic: rxClinic, rxId }
+    const h: HeldCart = { id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, clinic: rxClinic, rxId }
     setHeld((prev) => [h, ...prev])
-    setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setSelectedSeller(null); setRxClinic(null); setRxId(null)
+    setCartItems([]); setInvoiceDiscount(0); setSelectedCustomer(null); setRxClinic(null); setRxId(null)
     searchRef.current?.focus()
-  }, [cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, rxClinic, rxId, t])
+  }, [cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, rxClinic, rxId, t])
 
   const recallHeld = useCallback((id: string) => {
     if (recallLock.current) return
@@ -385,21 +379,17 @@ export default function POS() {
     setHeld((prev) => {
       let next = prev.filter((x) => x.id !== id)
       if (cartItems.length > 0) {
-        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, seller: selectedSeller, clinic: rxClinic, rxId }, ...next]
+        next = [{ id: makeId(), ts: Date.now(), items: cartItems, invoiceDiscount, invoiceDiscountMode, customer: selectedCustomer, clinic: rxClinic, rxId }, ...next]
       }
       return next
     })
-    setCartItems(normalizeItems(h.items)); setInvoiceDiscount(h.invoiceDiscount); setInvoiceDiscountMode(h.invoiceDiscountMode || 'amount'); setSelectedCustomer(h.customer); setSelectedSeller(h.seller); setRxClinic(h.clinic ?? null); setRxId(h.rxId ?? null)
+    setCartItems(normalizeItems(h.items)); setInvoiceDiscount(h.invoiceDiscount); setInvoiceDiscountMode(h.invoiceDiscountMode || 'amount'); setSelectedCustomer(h.customer); setRxClinic(h.clinic ?? null); setRxId(h.rxId ?? null)
     setShowHeld(false)
     searchRef.current?.focus()
-  }, [held, cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, selectedSeller, rxClinic, rxId])
+  }, [held, cartItems, invoiceDiscount, invoiceDiscountMode, selectedCustomer, rxClinic, rxId])
 
   const deleteHeld = useCallback((id: string) => {
     setHeld((prev) => prev.filter((x) => x.id !== id))
-  }, [])
-
-  useEffect(() => {
-    employeesAPI.list().then((r) => setEmployees(r.data))
   }, [])
 
   useEffect(() => {
@@ -719,7 +709,6 @@ export default function POS() {
     setCartItems([])
     setInvoiceDiscount(0)
     setSelectedCustomer(null)
-    setSelectedSeller(null)
     setPosSaleType('cash')
     setRxClinic(null)
     setRxId(null)
@@ -1171,15 +1160,8 @@ export default function POS() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Seller / Customer */}
+          {/* Customer */}
           <div className="px-5 py-4 space-y-3 border-b border-slate-100">
-            <SellerPicker
-              employees={employees}
-              selectedSeller={selectedSeller}
-              onSellerChange={setSelectedSeller}
-              onEmployeesChange={setEmployees}
-            />
-
             <div className="relative">
               <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">
                 <User size={13} /> {t('pos.customer')}
@@ -1390,9 +1372,6 @@ export default function POS() {
           offerIds={pricedCart.offerIds}
           offerSavings={pricedCart.offerSavings}
           offerNames={pricedCart.offerNames}
-          selectedSeller={selectedSeller}
-          onSellerChange={setSelectedSeller}
-          employees={employees}
           selectedCustomer={selectedCustomer}
           clinicId={rxClinic?.id ?? null}
           prescriptionId={rxId}
@@ -1405,7 +1384,6 @@ export default function POS() {
       {showReceiptModal && lastSale && (
         <ReceiptModal
           sale={lastSale}
-          employees={employees}
           onSaleUpdate={setLastSale}
           onNewSale={handleNewSale}
           onClose={handleNewSale}

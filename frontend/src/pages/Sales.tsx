@@ -461,7 +461,7 @@ export default function Sales() {
               </select>
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.seller')}</label>
+              <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('sales.employee')}</label>
               <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
                 <option value="">{t('common.all')}</option>
@@ -524,6 +524,7 @@ export default function Sales() {
           <div className="mb-3 max-w-xs">
             <TableFilter value={quick.query} onChange={quick.setQuery} placeholder={t('common.filter_placeholder')} />
           </div>
+          <p className="text-xs text-gray-500 mb-3">{t('sales.table_hint')}</p>
 
           {loading ? (
             <div className="flex items-center justify-center py-24 text-gray-400">
@@ -543,37 +544,26 @@ export default function Sales() {
           ) : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-w-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[88rem]">
+                <table className="w-full text-sm min-w-[52rem]">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100 text-[11px] font-bold text-gray-400 uppercase tracking-wider">
                       <SortTh k="invoice_number" sort={sort} onToggle={toggle} align="start">{t('sales.invoice_no')}</SortTh>
                       <SortTh k="created_at" sort={sort} onToggle={toggle} align="start">{t('sales.date')}</SortTh>
                       <SortTh k="type" sort={sort} onToggle={toggle} align="start">{t('sales.sale_type')}</SortTh>
-                      <SortTh k="digital_type" sort={sort} onToggle={toggle} align="start">{t('sales.digital_platform')}</SortTh>
                       <SortTh k="payment" sort={sort} onToggle={toggle} align="start">{t('sales.payment_method')}</SortTh>
-                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.payment_detail')}</th>
-                      <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.seller')}</SortTh>
-                      <SortTh k="customer" sort={sort} onToggle={toggle} align="start">{t('sales.customer')}</SortTh>
-                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.customer_phone')}</th>
-                      <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('sales.branch')}</SortTh>
-                      <SortTh k="clinic" sort={sort} onToggle={toggle} align="start">{t('sales.clinic')}</SortTh>
-                      <SortTh k="subtotal" sort={sort} onToggle={toggle} align="end">{t('sales.subtotal')}</SortTh>
-                      <SortTh k="discount" sort={sort} onToggle={toggle} align="end">{t('sales.discount')}</SortTh>
-                      <th className="px-3 py-3 text-end whitespace-nowrap">{t('sales.delivery_fee')}</th>
                       <SortTh k="net_total" sort={sort} onToggle={toggle} align="end">{t('sales.total')}</SortTh>
-                      <th className="px-3 py-3 text-start whitespace-nowrap">{t('sales.driver')}</th>
-                      <th className="px-3 py-3 text-center whitespace-nowrap">{t('sales.delivery_status')}</th>
-                      <SortTh k="status" sort={sort} onToggle={toggle} align="center">{t('sales.status')}</SortTh>
-                      <th className="px-4 py-3 text-center sticky end-0 bg-gray-50" />
+                      <SortTh k="seller" sort={sort} onToggle={toggle} align="start">{t('sales.employee')}</SortTh>
+                      <SortTh k="customer" sort={sort} onToggle={toggle} align="start">{t('sales.customer')}</SortTh>
+                      <SortTh k="branch" sort={sort} onToggle={toggle} align="start">{t('sales.branch')}</SortTh>
+                      <th className="px-4 py-3 text-center sticky end-0 bg-gray-50">{t('common.actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {sorted.map((inv) => {
-                      const st = inv.delivery_status || ''
-                      return (
+                    {sorted.map((inv) => (
                       <tr
                         key={`${inv.isReturn ? 'ret' : 'inv'}-${inv.id}`}
-                        className="hover:bg-gray-50/80 transition-colors"
+                        className="hover:bg-gray-50/80 transition-colors cursor-pointer"
+                        onClick={() => !inv.isReturn && handleView(inv.id)}
                       >
                         <td className="px-3 py-3 font-mono text-xs font-bold text-gray-900 whitespace-nowrap">
                           <div className="flex flex-col gap-0.5">
@@ -592,17 +582,6 @@ export default function Sales() {
                           {typeLabel[inv.type] || inv.type}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
-                          {inv.digital_type ? (
-                            <span
-                              className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${platformBadgeClass(inv.digital_type, byKey(inv.digital_type)?.badge_color)}`}
-                            >
-                              {platformLabel[inv.digital_type] || inv.digital_type}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 whitespace-nowrap">
                           <span
                             className={`inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                               inv.isReturn
@@ -613,11 +592,10 @@ export default function Sales() {
                             {inv.isReturn ? t('sales.return_type') : paymentLabel[inv.payment_method] || inv.payment_method}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[11px] text-gray-600 max-w-[14rem]">
-                          {inv.isReturn ? '—' : (
-                            <span className="line-clamp-2" title={paymentBreakdown(inv, t, paymentLabelsWithPlatform)}>
-                              {paymentBreakdown(inv, t, paymentLabelsWithPlatform)}
-                            </span>
+                        <td className={`px-3 py-3 text-end font-bold tabular-nums whitespace-nowrap ${inv.net_total < 0 ? 'text-red-600' : 'text-pharma-700'}`}>
+                          {t('sales.egp')} {inv.net_total.toFixed(2)}
+                          {!inv.isReturn && (inv.discount || 0) > 0 && (
+                            <div className="text-[10px] font-normal text-amber-600">−{inv.discount!.toFixed(2)}</div>
                           )}
                         </td>
                         <td className="px-3 py-3 text-gray-700 text-xs whitespace-nowrap">
@@ -626,51 +604,10 @@ export default function Sales() {
                         <td className="px-3 py-3 text-gray-600 text-xs max-w-[10rem] truncate" title={customerDisplay(inv)}>
                           {customerDisplay(inv) || '—'}
                         </td>
-                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap font-mono">
-                          {phoneDisplay(inv) || '—'}
-                        </td>
                         <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
                           {branchLabel(inv, lang) || '—'}
                         </td>
-                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
-                          {inv.clinic_name || '—'}
-                        </td>
-                        <td className="px-3 py-3 text-end text-xs text-gray-600 tabular-nums whitespace-nowrap">
-                          {!inv.isReturn && inv.subtotal != null ? `${t('sales.egp')} ${inv.subtotal.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-end text-xs text-amber-600 tabular-nums whitespace-nowrap">
-                          {!inv.isReturn && (inv.discount || 0) > 0 ? `-${inv.discount.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-end text-xs text-teal-700 tabular-nums whitespace-nowrap">
-                          {(inv.delivery_fee || 0) > 0 ? inv.delivery_fee!.toFixed(2) : '—'}
-                        </td>
-                        <td className={`px-3 py-3 text-end font-bold tabular-nums whitespace-nowrap ${inv.net_total < 0 ? 'text-red-600' : 'text-pharma-700'}`}>
-                          {t('sales.egp')} {inv.net_total.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-3 text-gray-600 text-xs whitespace-nowrap">
-                          {inv.delivery_person_name || '—'}
-                        </td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          {st ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
-                              {t(`deliveries.${st}`)}
-                            </span>
-                          ) : '—'}
-                        </td>
-                        <td className="px-3 py-3 text-center whitespace-nowrap">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                              inv.status === 'completed'
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-red-100 text-red-600'
-                            }`}
-                          >
-                            {inv.status === 'completed'
-                              ? t('sales.completed')
-                              : t('sales.returned')}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 sticky end-0 bg-white">
+                        <td className="px-3 py-3 sticky end-0 bg-white" onClick={(e) => e.stopPropagation()}>
                           {!inv.isReturn && (
                             <div className="flex items-center gap-1 justify-end">
                               <button
@@ -693,7 +630,7 @@ export default function Sales() {
                           )}
                         </td>
                       </tr>
-                    )})}
+                    ))}
                   </tbody>
                 </table>
               </div>

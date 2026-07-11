@@ -65,6 +65,9 @@ export interface Product {
   pack_size?: number
   sub_unit?: string | null
   sub_price?: number | null
+  supplier_id?: number | null
+  supplier_name?: string | null
+  last_po_supplier_name?: string | null
 }
 
 export interface Employee {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, Printer, Settings2 } from 'lucide-react'
 import {
@@ -54,6 +55,8 @@ export default function PosItemDoseLabel({
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
   const [qty, setQty] = useState(defaultQty)
   const [busy, setBusy] = useState(false)
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const anchorRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const allPresets = useMemo(() => mergeDosePresets(customPresets), [customPresets])
@@ -78,18 +81,40 @@ export default function PosItemDoseLabel({
     setQty(defaultQty)
   }, [defaultQty, productId])
 
-  // Report the chosen dose text up so it can be saved on the sale line / receipt.
   useEffect(() => {
     onDoseChange?.(activeDoseText)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDoseText])
 
+  const updatePanelPos = () => {
+    const el = anchorRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const width = Math.min(window.innerWidth - 24, 352)
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))
+    const spaceBelow = window.innerHeight - rect.bottom
+    const top = spaceBelow >= 280 ? rect.bottom + 6 : Math.max(12, rect.top - 280)
+    setPanelPos({ top, left, width })
+  }
+
+  useEffect(() => {
+    if (!open) return
+    updatePanelPos()
+    const onResize = () => updatePanelPos()
+    window.addEventListener('resize', onResize)
+    window.addEventListener('scroll', onResize, true)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('scroll', onResize, true)
+    }
+  }, [open])
+
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      const t = e.target as Node
+      if (panelRef.current?.contains(t) || anchorRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -131,9 +156,102 @@ export default function PosItemDoseLabel({
     setCustomDose('')
   }
 
+  const panel = open && panelPos ? createPortal(
+    <div
+      ref={panelRef}
+      className="fixed z-[200] rounded-xl border-2 border-blue-200 bg-white shadow-xl p-3 space-y-2.5"
+      style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width }}
+    >
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        {t('dose_labels.presets')}
+      </p>
+      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+        {quickPresets.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            onClick={() => pickPreset(p)}
+            className={`px-2 py-1 rounded-full text-[10px] font-semibold border transition-colors ${
+              selectedPresetId === p.id
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400'
+            }`}
+          >
+            {doseTextForPreset(p, lang)}
+          </button>
+        ))}
+      </div>
+
+      <div>
+        <label className="text-[10px] font-bold text-slate-600 block mb-1">
+          {t('dose_labels.custom_dose')}
+        </label>
+        <textarea
+          value={customDose}
+          onChange={(e) => {
+            setCustomDose(e.target.value)
+            setSelectedPresetId(null)
+          }}
+          rows={2}
+          dir={lang === 'ar' ? 'rtl' : 'ltr'}
+          placeholder={t('dose_labels.custom_ph') as string}
+          className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-[10px] text-slate-600 flex items-center gap-1">
+          {t('dose_labels.col_qty')}
+          <input
+            type="number"
+            min={1}
+            max={99}
+            value={qty}
+            onChange={(e) => setQty(Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)))}
+            className="w-12 text-center border border-slate-200 rounded px-1 py-0.5 text-xs font-bold"
+          />
+        </label>
+        <div className="flex flex-wrap gap-1.5 justify-end">
+          <button
+            type="button"
+            onClick={() => onOpenFullEditor(activeDoseText)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            <Settings2 size={11} />
+            {t('dose_labels.pos_more')}
+          </button>
+          <button
+            type="button"
+            disabled={busy || !activeDoseText}
+            onClick={() => printLabels(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold disabled:opacity-40"
+          >
+            <Printer size={11} />
+            {t('dose_labels.print')}
+          </button>
+        </div>
+      </div>
+
+      {onReceiptToggle && (
+        <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer pt-1 border-t border-slate-100">
+          <input
+            type="checkbox"
+            checked={includeOnReceipt}
+            disabled={!activeDoseText}
+            onChange={(e) => onReceiptToggle(e.target.checked)}
+            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+          />
+          {t('dose_labels.include_on_receipt')}
+        </label>
+      )}
+    </div>,
+    document.body,
+  ) : null
+
   return (
-    <div className="relative mt-2" ref={panelRef}>
+    <div className="relative mt-2">
       <button
+        ref={anchorRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
@@ -157,92 +275,7 @@ export default function PosItemDoseLabel({
         </p>
       )}
 
-      {open && (
-        <div className="absolute z-30 mt-1 start-0 w-[min(100vw-3rem,22rem)] rounded-xl border-2 border-blue-200 bg-white shadow-xl p-3 space-y-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
-            {t('dose_labels.presets')}
-          </p>
-          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-            {quickPresets.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => pickPreset(p)}
-                className={`px-2 py-1 rounded-full text-[10px] font-semibold border transition-colors ${
-                  selectedPresetId === p.id
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-400'
-                }`}
-              >
-                {doseTextForPreset(p, lang)}
-              </button>
-            ))}
-          </div>
-
-          <div>
-            <label className="text-[10px] font-bold text-slate-600 block mb-1">
-              {t('dose_labels.custom_dose')}
-            </label>
-            <textarea
-              value={customDose}
-              onChange={(e) => {
-                setCustomDose(e.target.value)
-                setSelectedPresetId(null)
-              }}
-              rows={2}
-              dir={lang === 'ar' ? 'rtl' : 'ltr'}
-              placeholder={t('dose_labels.custom_ph') as string}
-              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <label className="text-[10px] text-slate-600 flex items-center gap-1">
-              {t('dose_labels.col_qty')}
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={qty}
-                onChange={(e) => setQty(Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)))}
-                className="w-12 text-center border border-slate-200 rounded px-1 py-0.5 text-xs font-bold"
-              />
-            </label>
-            <div className="flex flex-wrap gap-1.5 justify-end">
-              <button
-                type="button"
-                onClick={() => onOpenFullEditor(activeDoseText)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
-              >
-                <Settings2 size={11} />
-                {t('dose_labels.pos_more')}
-              </button>
-              <button
-                type="button"
-                disabled={busy || !activeDoseText}
-                onClick={() => printLabels(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold disabled:opacity-40"
-              >
-                <Printer size={11} />
-                {t('dose_labels.print')}
-              </button>
-            </div>
-          </div>
-
-          {onReceiptToggle && (
-            <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer pt-1 border-t border-slate-100">
-              <input
-                type="checkbox"
-                checked={includeOnReceipt}
-                disabled={!activeDoseText}
-                onChange={(e) => onReceiptToggle(e.target.checked)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
-              />
-              {t('dose_labels.include_on_receipt')}
-            </label>
-          )}
-        </div>
-      )}
+      {panel}
     </div>
   )
 }
