@@ -59,6 +59,8 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<Period>('month')
   const [pnl, setPnl] = useState<PnlSummary | null>(null)
   const [pnlLoading, setPnlLoading] = useState(false)
+  const [topProductsLimit, setTopProductsLimit] = useState(5)
+  const [topSellersLimit, setTopSellersLimit] = useState(3)
 
   useEffect(() => {
     if (!isAdmin) return
@@ -78,14 +80,14 @@ export default function Dashboard() {
 
   const branchCfg = () => dashboardBranchHeaders(branchFilter, isAdmin)
 
-  const loadAll = () => {
+  const loadAll = (productsLimit = topProductsLimit, sellersLimit = topSellersLimit) => {
     setLoading(true)
     const cfg = branchCfg()
     Promise.all([
       dashboardAPI.summary(cfg),
       dashboardAPI.series(7, cfg),
-      dashboardAPI.topProducts(5, 30, cfg),
-      dashboardAPI.topSellers(3, 30, cfg),
+      dashboardAPI.topProducts(productsLimit, 30, cfg),
+      dashboardAPI.topSellers(sellersLimit, 30, cfg),
       dashboardAPI.alerts(cfg),
     ])
       .then(([s, sr, tp, ts, al]) => {
@@ -120,7 +122,7 @@ export default function Dashboard() {
     loadAll()
     loadPnl(period)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchFilter, isAdmin])
+  }, [branchFilter, isAdmin, topProductsLimit, topSellersLimit])
 
   useEffect(() => {
     loadPnl(period)
@@ -349,13 +351,28 @@ export default function Dashboard() {
               {showTopLists && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Package size={16} className="text-pharma-600" />
-                    {t('dashboard.top_products')}
-                  </h2>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                      <Package size={16} className="text-pharma-600" />
+                      {t('dashboard.top_products')}
+                    </h2>
+                    <label className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{t('dashboard.show_top')}</span>
+                      <select
+                        value={topProductsLimit}
+                        onChange={(e) => setTopProductsLimit(parseInt(e.target.value, 10))}
+                        className="input text-xs py-1 px-2 min-w-[4.5rem]"
+                      >
+                        {[5, 10, 25, 50].map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   {topProducts.length === 0 ? (
                     <p className="text-xs text-gray-400 py-6 text-center">{t('common.no_data')}</p>
                   ) : (
+                    <div className={`overflow-auto ${topProductsLimit > 10 ? 'max-h-[28rem]' : ''}`}>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-[11px] uppercase text-gray-400 border-b">
@@ -380,17 +397,33 @@ export default function Dashboard() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
 
                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                  <h2 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-1.5">
-                    <Users size={16} className="text-pharma-600" />
-                    {t('dashboard.top_sellers')}
-                  </h2>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <h2 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                      <Users size={16} className="text-pharma-600" />
+                      {t('dashboard.top_sellers')}
+                    </h2>
+                    <label className="flex items-center gap-2 text-xs text-gray-500">
+                      <span>{t('dashboard.show_top')}</span>
+                      <select
+                        value={topSellersLimit}
+                        onChange={(e) => setTopSellersLimit(parseInt(e.target.value, 10))}
+                        className="input text-xs py-1 px-2 min-w-[4.5rem]"
+                      >
+                        {[3, 5, 10, 20].map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   {topSellers.length === 0 ? (
                     <p className="text-xs text-gray-400 py-6 text-center">{t('common.no_data')}</p>
                   ) : (
+                    <div className={`overflow-auto ${topSellersLimit > 5 ? 'max-h-[28rem]' : ''}`}>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-[11px] uppercase text-gray-400 border-b">
@@ -415,6 +448,7 @@ export default function Dashboard() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   )}
                 </div>
               </div>

@@ -1616,6 +1616,17 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
     price = float(price_raw) if price_raw not in (None, "") else 0.0
     cost_val = _row_get(r, "cost", "cost price", "purchase price")
     cost = float(cost_val) if cost_val not in (None, "") else None
+    disc_raw = _row_get(
+        r, "discount %", "discount_pct", "discount percent", "discount percentage",
+        "profit margin %", "margin %", "profit %",
+    )
+    if cost is None and price > 0 and disc_raw not in (None, ""):
+        try:
+            disc = float(disc_raw)
+            if 0 <= disc <= 100:
+                cost = round(price * (1 - disc / 100), 2)
+        except (TypeError, ValueError):
+            pass
     if cost is None and price > 0:
         from pricing import default_cost_from_price
         cost = default_cost_from_price(price)
@@ -1859,20 +1870,50 @@ def _row_get(r, *keys):
 def bulk_template(current_user=Depends(get_current_user)):
     """Download a blank Excel template for bulk item upload."""
     from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from pricing import DEFAULT_PROFIT_RATIO, profit_pct_of_price, default_cost_from_price
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
     headers = [
         "Code", "Material Name", "Name (Arabic)", "International Barcode", "Material Group",
         "Stock", "Unit",
-        "Sub unit", "Subunit Quantity", "Sales Price", "Cost", "Category",
+        "Sub unit", "Subunit Quantity", "Sales Price", "Discount %", "Cost", "Category",
         "Min Stock", "Expiry Date",
     ]
     ws.append(headers)
-    ws.append(["1234567890123", "Panadol Extra 48 Tab", "بانادول اكسترا", "5000112637922", "DL", 100,
-               "Box", "Strip", 4, 116.00, 80.00, "Painkillers", 10, "2027-12-31"])
-    ws.append(["7654321098765", "Augmentin 1g", "أوجمنتين 1 جم", "8901234567890", "DI", 50,
-               "Box", "Tablet", 14, 180.00, 130.00, "Antibiotics", 5, "2026-06-30"])
+    header_fill = PatternFill("solid", fgColor="E8F5E9")
+    for col in range(1, len(headers) + 1):
+        cell = ws.cell(row=1, column=col)
+        cell.font = Font(bold=True)
+        cell.fill = header_fill
+
+    samples = [
+        ("1234567890123", "Panadol Extra 48 Tab", "بانادول اكسترا", "5000112637922", "DL", 100,
+         "Box", "Strip", 4, 116.00, None, 92.80, "Painkillers", 10, "2027-12-31"),
+        ("7654321098765", "Augmentin 1g", "أوجمنتين 1 جم", "8901234567890", "DI", 50,
+         "Box", "Tablet", 14, 180.00, None, 144.00, "Antibiotics", 5, "2026-06-30"),
+    ]
+    for row_idx, sample in enumerate(samples, start=2):
+        price = float(sample[9])
+        cost = float(sample[11]) if sample[11] is not None else default_cost_from_price(price)
+        disc = profit_pct_of_price(price, cost)
+        row = list(sample)
+        row[10] = disc
+        row[11] = cost
+        ws.append(row)
+        # Discount % formula: profit margin % of sales price (default 20% when cost empty)
+        ws.cell(row=row_idx, column=11).value = (
+            f'=IF(J{row_idx}>0,IF(L{row_idx}>0,ROUND((J{row_idx}-L{row_idx})/J{row_idx}*100,1),{DEFAULT_PROFIT_RATIO * 100}),"")'
+        )
+
+    ws.column_dimensions["A"].width = 16
+    ws.column_dimensions["B"].width = 28
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["K"].width = 12
+    ws.column_dimensions["O"].width = 14
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

@@ -1958,7 +1958,7 @@ def dashboard_top_sellers(request: Request,
                           limit: int = 3, days: int = 30,
                           current_user=Depends(get_current_user)):
     active_branch = resolve_analytics_branch(request, current_user)
-    limit = max(1, min(limit, 20))
+    limit = max(1, min(limit, 50))
     days = max(1, min(days, 365))
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

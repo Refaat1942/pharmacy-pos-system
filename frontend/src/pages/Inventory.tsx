@@ -1031,12 +1031,12 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
 
   return (
     <Modal wide onClose={onClose} title={item ? t('inventory.edit_item') : t('inventory.add_item')}>
-      <form onSubmit={submit} className="space-y-6">
+      <form onSubmit={submit} className="space-y-5">
         <section>
           <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
-            {t('inventory.form_section_basic')}
+            {t('inventory.form_section_identity')}
           </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label={t('inventory.f_name_en') + ' *'}>
               <input required value={f.name_en} onChange={e => setF({ ...f, name_en: e.target.value })} className="input" />
             </Field>
@@ -1057,6 +1057,21 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 ))}
               </datalist>
             </Field>
+            <Field label={t('inventory.f_medication_type')}>
+              <select value={f.medication_type} onChange={e => setF({ ...f, medication_type: e.target.value })} className="input">
+                <option value="">{t('common.all')}</option>
+                <option value="acute">{t('inventory.med_acute')}</option>
+                <option value="chronic">{t('inventory.med_chronic')}</option>
+              </select>
+            </Field>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_classification')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label={t('inventory.f_material_group')}>
               <select
                 value={f.material_group}
@@ -1077,13 +1092,14 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 })}
               </p>
             </Field>
-            <Field label={t('inventory.f_medication_type')}>
-              <select value={f.medication_type} onChange={e => setF({ ...f, medication_type: e.target.value })} className="input">
-                <option value="">{t('common.all')}</option>
-                <option value="acute">{t('inventory.med_acute')}</option>
-                <option value="chronic">{t('inventory.med_chronic')}</option>
-              </select>
-            </Field>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_identifiers')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label={t('inventory.f_barcode')}>
               <div className="flex gap-2">
                 <input value={f.barcode} onChange={e => setF({ ...f, barcode: e.target.value })} className="input flex-1" placeholder={t('inventory.barcode_auto_ph') as string} />
@@ -1099,6 +1115,15 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             <Field label={t('inventory.f_international_barcode')}>
               <input value={f.international_barcode} onChange={e => setF({ ...f, international_barcode: e.target.value })} className="input" />
             </Field>
+          </div>
+        </section>
+
+        <section className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">
+            {t('inventory.form_section_packaging')}
+          </h4>
+          <p className="text-xs text-slate-500 mb-3">{t('inventory.pack_hint')}</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label={t('inventory.f_unit')}>
               <select value={f.unit} onChange={e => setF({ ...f, unit: e.target.value })} className="input">
                 <option value="box">Box</option>
@@ -1114,69 +1139,6 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
                 <option value="l">Liter</option>
               </select>
             </Field>
-          </div>
-        </section>
-
-        <section>
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
-            {t('inventory.form_section_pricing')}
-          </h4>
-          <p className="text-xs text-slate-500 mb-3">{t('inventory.pricing_linked_hint')}</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            <Field label={t('inventory.f_price') + ' *'}>
-              <input required type="number" step="0.01" min="0" value={f.price} onChange={e => patchPricing('price', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_cost')}>
-              <input type="number" step="0.01" min="0" value={f.cost} onChange={e => patchPricing('cost', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_profit_amt')}>
-              <input type="number" step="0.01" value={f.profit} onChange={e => patchPricing('profit', e.target.value)} className="input bg-emerald-50 text-emerald-800" />
-            </Field>
-            <Field label={t('inventory.f_margin_pct')}>
-              <input type="number" step="0.1" min="0" max="100" value={f.margin_pct} onChange={e => patchPricing('margin_pct', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_cost_pct_of_price')}>
-              <input type="number" step="0.1" min="0" max="100" value={f.cost_pct} onChange={e => patchPricing('cost_pct', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_vat_rate_pct')}>
-              <input type="number" step="0.1" min="0" max="100" value={f.vat_rate_pct} onChange={e => patchPricing('vat_rate_pct', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_vat_amt')}>
-              <input type="number" step="0.01" min="0" value={f.vat_amt} onChange={e => patchPricing('vat_amt', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_net_ex_vat')}>
-              <input type="number" step="0.01" min="0" value={f.net_ex_vat} onChange={e => patchPricing('net_ex_vat', e.target.value)} className="input" />
-            </Field>
-            <Field label={t('inventory.f_supplier')}>
-              <select value={f.supplier_id} onChange={e => setF({ ...f, supplier_id: e.target.value })} className="input">
-                <option value="">—</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </Field>
-            {item && (detail?.last_po_supplier_name || detail?.supplier_name) && (
-              <Field label={t('inventory.last_po_supplier')}>
-                <input
-                  type="text"
-                  readOnly
-                  value={detail?.last_po_supplier_name || detail?.supplier_name || '—'}
-                  className="input bg-slate-50 text-slate-600"
-                />
-              </Field>
-            )}
-            <Field label={t('inventory.f_min_stock')}>
-              <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
-            </Field>
-          </div>
-        </section>
-
-        <section className="p-4 rounded-xl bg-slate-50 border border-slate-200">
-          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3">
-            {t('inventory.form_section_packaging')}
-          </h4>
-          <p className="text-xs text-slate-500 mb-3">{t('inventory.pack_hint')}</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label={t('inventory.f_sub_unit')}>
               <select
                 value={f.sub_unit}
@@ -1212,6 +1174,74 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               )}
             </p>
           )}
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_pricing')}
+          </h4>
+          <p className="text-xs text-slate-500 mb-3">{t('inventory.pricing_linked_hint')}</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Field label={t('inventory.f_price') + ' *'}>
+                <input required type="number" step="0.01" min="0" value={f.price} onChange={e => patchPricing('price', e.target.value)} className="input" />
+              </Field>
+              <Field label={t('inventory.f_cost')}>
+                <input type="number" step="0.01" min="0" value={f.cost} onChange={e => patchPricing('cost', e.target.value)} className="input" />
+              </Field>
+              <Field label={t('inventory.f_profit_amt')}>
+                <input type="number" step="0.01" value={f.profit} onChange={e => patchPricing('profit', e.target.value)} className="input bg-emerald-50 text-emerald-800" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Field label={t('inventory.f_margin_pct')}>
+                <input type="number" step="0.1" min="0" max="100" value={f.margin_pct} onChange={e => patchPricing('margin_pct', e.target.value)} className="input" />
+              </Field>
+              <Field label={t('inventory.f_cost_pct_of_price')}>
+                <input type="number" step="0.1" min="0" max="100" value={f.cost_pct} onChange={e => patchPricing('cost_pct', e.target.value)} className="input" />
+              </Field>
+              <Field label={t('inventory.f_vat_rate_pct')}>
+                <input type="number" step="0.1" min="0" max="100" value={f.vat_rate_pct} onChange={e => patchPricing('vat_rate_pct', e.target.value)} className="input" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Field label={t('inventory.f_vat_amt')}>
+                <input type="number" step="0.01" min="0" value={f.vat_amt} onChange={e => patchPricing('vat_amt', e.target.value)} className="input" />
+              </Field>
+              <Field label={t('inventory.f_net_ex_vat')}>
+                <input type="number" step="0.01" min="0" value={f.net_ex_vat} onChange={e => patchPricing('net_ex_vat', e.target.value)} className="input" />
+              </Field>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
+            {t('inventory.form_section_supplier')}
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label={t('inventory.f_supplier')}>
+              <select value={f.supplier_id} onChange={e => setF({ ...f, supplier_id: e.target.value })} className="input">
+                <option value="">—</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </Field>
+            {item && (detail?.last_po_supplier_name || detail?.supplier_name) && (
+              <Field label={t('inventory.last_po_supplier')}>
+                <input
+                  type="text"
+                  readOnly
+                  value={detail?.last_po_supplier_name || detail?.supplier_name || '—'}
+                  className="input bg-slate-50 text-slate-600"
+                />
+              </Field>
+            )}
+            <Field label={t('inventory.f_min_stock')}>
+              <input type="number" value={f.min_stock} onChange={e => setF({ ...f, min_stock: e.target.value })} className="input" />
+            </Field>
+          </div>
         </section>
 
         <section>
@@ -2328,8 +2358,13 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
 
 function Modal({ children, onClose, title, wide }: any) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-xl'} max-h-[92vh] overflow-auto`} onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-5xl' : 'max-w-xl'} max-h-[92vh] overflow-auto`} onMouseDown={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h3 className="font-bold text-lg">{title}</h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-slate-700"><X size={20} /></button>
