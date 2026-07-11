@@ -1043,6 +1043,7 @@ ETA_MIGRATIONS = [
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_item_code VARCHAR(100)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS eta_egs_code VARCHAR(100)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_rate DECIMAL(6,4) DEFAULT 0",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS avg_cost NUMERIC(10,2)",
     "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS vat_amount DECIMAL(10,2)",
     "ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS eta_line_snapshot JSONB",
 ]
@@ -1051,7 +1052,27 @@ ETA_MIGRATIONS = [
 def apply_data_migrations(cur, conn) -> list:
     """One-time data fixes tracked in schema_data_migrations (per tenant schema)."""
     warnings = []
-    migration_key = "cost_from_price_20pct_v1"
+    migrations = [
+        (
+            "cost_from_price_20pct_v1",
+            """UPDATE products
+               SET cost = ROUND(price * 0.2, 2)
+               WHERE active = true AND price > 0""",
+            None,
+        ),
+        (
+            "profit_cost_vat_defaults_v2",
+            """UPDATE products
+               SET cost = ROUND(price * 0.8, 2),
+                   avg_cost = CASE
+                     WHEN avg_cost IS NULL OR avg_cost = 0 THEN ROUND(price * 0.8, 2)
+                     ELSE avg_cost
+                   END,
+                   vat_rate = 0.14
+               WHERE active = true AND price > 0""",
+            None,
+        ),
+    ]
     try:
         cur.execute(
             """CREATE TABLE IF NOT EXISTS schema_data_migrations (
@@ -1060,22 +1081,19 @@ def apply_data_migrations(cur, conn) -> list:
             )"""
         )
         conn.commit()
-        cur.execute("SELECT 1 FROM schema_data_migrations WHERE key = %s", (migration_key,))
-        if cur.fetchone():
-            return warnings
-        cur.execute(
-            """UPDATE products
-               SET cost = ROUND(price * 0.2, 2)
-               WHERE active = true AND price > 0"""
-        )
-        cur.execute(
-            "INSERT INTO schema_data_migrations (key) VALUES (%s)",
-            (migration_key,),
-        )
-        conn.commit()
+        for key, sql_stmt, _ in migrations:
+            cur.execute("SELECT 1 FROM schema_data_migrations WHERE key = %s", (key,))
+            if cur.fetchone():
+                continue
+            cur.execute(sql_stmt)
+            cur.execute(
+                "INSERT INTO schema_data_migrations (key) VALUES (%s)",
+                (key,),
+            )
+            conn.commit()
     except Exception as e:
         conn.rollback()
-        warnings.append(f"cost_from_price migration -> {e}")
+        warnings.append(f"data migration -> {e}")
     return warnings
 
 

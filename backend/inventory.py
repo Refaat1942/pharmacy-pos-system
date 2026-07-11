@@ -221,6 +221,7 @@ class ProductUpdate(BaseModel):
     material_group: Optional[str] = None
     is_service: Optional[bool] = None
     supplier_id: Optional[int] = None
+    vat_rate: Optional[float] = None
 
 
 
@@ -228,7 +229,7 @@ class ProductUpdate(BaseModel):
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
                          "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type",
-                         "material_group", "is_service", "supplier_id"}
+                         "material_group", "is_service", "supplier_id", "vat_rate", "avg_cost"}
 
 
 @router.put("/products/{product_id}")
@@ -1616,7 +1617,8 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
     cost_val = _row_get(r, "cost", "cost price", "purchase price")
     cost = float(cost_val) if cost_val not in (None, "") else None
     if cost is None and price > 0:
-        cost = round(price * 0.2, 2)
+        from pricing import default_cost_from_price
+        cost = default_cost_from_price(price)
     min_raw = _row_get(r, "min_stock", "min stock", "minimum stock")
     min_stock = int(float(min_raw)) if min_raw not in (None, "") else 5
 

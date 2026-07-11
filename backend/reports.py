@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 import psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, resolve_analytics_branch
-from digital_platforms import platform_display_name as platform_partner_display_name
+from pricing import SQL_UNIT_COST
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -88,7 +88,7 @@ def profit_and_loss(
         # p.cost is per main unit → divide by the product pack_size to get unit-correct cost.
         cur.execute(f"""
             SELECT COALESCE(SUM(
-                ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                 / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)
             ), 0)::float AS cogs
             FROM invoice_items ii
@@ -151,9 +151,9 @@ def sales_by_category(
               COALESCE(p.category, 'Uncategorized') AS category,
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
-              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                   / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))::float AS cost,
-              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                   / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)))::float AS profit
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
@@ -327,14 +327,15 @@ def product_profitability(
               COALESCE(p.category, 'Uncategorized') AS category,
               SUM(ii.quantity)::int AS qty,
               SUM(ii.total)::float AS revenue,
-              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+              SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                   / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))::float AS cost,
-              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+              (SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                   / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)))::float AS profit,
               CASE WHEN SUM(ii.total) > 0
-                   THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                   THEN ((SUM(ii.total) - SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                           / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))) / SUM(ii.total) * 100)::float
-                   ELSE 0 END AS margin_pct
+                   ELSE 0 END AS margin_pct,
+              MAX(COALESCE(NULLIF(p.avg_cost, 0), NULLIF(p.cost, 0), 0))::float AS avg_cost
             FROM invoice_items ii
             JOIN invoices i ON i.id = ii.invoice_id
             JOIN products p ON p.id = ii.product_id
@@ -407,6 +408,11 @@ def sales_by_item(
               p.barcode,
               COALESCE(p.category, 'Uncategorized') AS category,
               COALESCE(p.stock, 0)::int AS current_stock,
+              p.price::float AS sales_price,
+              COALESCE(NULLIF(p.avg_cost, 0), NULLIF(p.cost, 0), 0)::float AS avg_cost,
+              (s.qty_total * COALESCE(NULLIF(p.avg_cost, 0), NULLIF(p.cost, 0), 0))::float AS cost_total,
+              (s.revenue_total - s.qty_total * COALESCE(NULLIF(p.avg_cost, 0), NULLIF(p.cost, 0), 0))::float AS profit,
+              (p.price * 0.14)::float AS vat_per_unit,
               s.qty_total,
               s.revenue_total,
               s.qty_cash,
@@ -655,7 +661,7 @@ def monthly_trend(
             ),
             cogs_cte AS (
                 SELECT DATE_TRUNC('month', i.created_at)::date AS month_start,
-                       SUM(ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(p.cost, 0)
+                       SUM(ii.quantity * COALESCE(ii.pack_size, 1) * ({SQL_UNIT_COST})
                            / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1)) AS cogs
                 FROM invoice_items ii
                 JOIN invoices i ON i.id = ii.invoice_id

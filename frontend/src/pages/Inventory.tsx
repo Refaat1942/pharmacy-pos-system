@@ -906,6 +906,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
   const priceNum = parseFloat(f.price) || 0
   const costNum = f.cost ? parseFloat(f.cost) : 0
+  const profitAmt = priceNum > 0 ? Math.round(priceNum * 0.2 * 100) / 100 : null
+  const vatAmt = priceNum > 0 ? Math.round(priceNum * 0.14 * 100) / 100 : null
+  const netExVat = priceNum > 0 ? Math.round(priceNum * 0.86 * 100) / 100 : null
   const marginPct = priceNum > 0 && costNum >= 0
     ? (((priceNum - costNum) / priceNum) * 100).toFixed(1)
     : null
@@ -949,7 +952,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         category: f.category || null,
         unit: f.unit,
         price: priceNum,
-        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? Math.round(priceNum * 0.2 * 100) / 100 : null),
+        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? Math.round(priceNum * 0.8 * 100) / 100 : null),
+        vat_rate: 0.14,
         supplier_id: f.supplier_id ? parseInt(f.supplier_id, 10) : null,
         min_stock: parseInt(f.min_stock) || 0,
         ...(item ? {} : { expiry_date: f.expiry_date || null }),
@@ -1092,8 +1096,17 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             <Field label={t('inventory.f_cost')}>
               <input type="number" step="0.01" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} className="input" />
             </Field>
+            <Field label={t('inventory.f_profit_amt')}>
+              <input type="text" readOnly value={profitAmt != null ? `${profitAmt} (${t('inventory.f_profit_target')})` : '—'} className="input bg-emerald-50 text-emerald-800" />
+            </Field>
             <Field label={t('inventory.f_margin_pct')}>
               <input type="text" readOnly value={marginPct != null ? `${marginPct}%` : '—'} className="input bg-slate-50 text-slate-600" />
+            </Field>
+            <Field label={t('inventory.f_vat_amt')}>
+              <input type="text" readOnly value={vatAmt != null ? vatAmt.toFixed(2) : '—'} className="input bg-slate-50 text-slate-600" />
+            </Field>
+            <Field label={t('inventory.f_net_ex_vat')}>
+              <input type="text" readOnly value={netExVat != null ? netExVat.toFixed(2) : '—'} className="input bg-slate-50 text-slate-600" />
             </Field>
             <Field label={t('inventory.f_cost_pct_of_price')}>
               <input type="text" readOnly value={costPctOfPrice != null ? `${costPctOfPrice}%` : '—'} className="input bg-slate-50 text-slate-600" />

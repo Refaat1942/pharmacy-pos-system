@@ -392,7 +392,10 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     pid = it["product_id"]
     pack_size = 1
     if pid:
-        cur.execute("SELECT id, stock, branch_id, pack_size FROM products WHERE id=%s FOR UPDATE", (pid,))
+        cur.execute(
+            "SELECT id, stock, branch_id, pack_size, cost, avg_cost FROM products WHERE id=%s FOR UPDATE",
+            (pid,),
+        )
         p = cur.fetchone()
         if not p:
             raise HTTPException(status_code=400, detail=f"Product id {pid} no longer exists")
@@ -410,16 +413,20 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
             pid = p["id"]
             pack_size = max(1, int(p.get("pack_size") or 1))
     if not pid:
+        default_price = (
+            float(new_price) if new_price is not None
+            else (round(inventory_cost / 0.8, 2) if inventory_cost > 0 else inventory_cost)
+        )
         cur.execute(
             """INSERT INTO products
-               (barcode, name_ar, name_en, category, unit, price, cost,
-                stock, min_stock, expiry_date, branch_id, active)
-               VALUES (%s,%s,%s,'',' ',%s,%s,0,5,%s,%s,true)
+               (barcode, name_ar, name_en, category, unit, price, cost, avg_cost,
+                stock, min_stock, expiry_date, branch_id, active, vat_rate)
+               VALUES (%s,%s,%s,'',' ',%s,%s,%s,0,5,%s,%s,true,0.14)
                ON CONFLICT (barcode, branch_id) DO NOTHING
                RETURNING id, stock""",
             (it["barcode"], it["product_name_ar"] or it["product_name_en"],
              it["product_name_en"] or it["product_name_ar"],
-             new_price if new_price is not None else inventory_cost, inventory_cost,
+             default_price, inventory_cost, inventory_cost,
              it["expiry_date"], branch_id),
         )
         p = cur.fetchone()
@@ -440,10 +447,26 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     # PO qty is in packs/boxes — convert to sub-units when pack_size > 1.
     outer_qty = stock_qty
     stock_qty_sub = outer_qty * pack_size if pack_size > 1 else outer_qty
+
+    cur.execute(
+        "SELECT stock, cost, avg_cost, pack_size FROM products WHERE id=%s FOR UPDATE",
+        (pid,),
+    )
+    prow = cur.fetchone()
+    old_stock_sub = int(prow["stock"] or 0) if prow else 0
+    old_avg = float(prow.get("avg_cost") or prow.get("cost") or 0) if prow else 0
+    old_packs = old_stock_sub / pack_size if pack_size > 1 else old_stock_sub
+    total_packs = old_packs + outer_qty
+    new_avg = (
+        (old_packs * old_avg + outer_qty * inventory_cost) / total_packs
+        if total_packs > 0 else inventory_cost
+    )
+    new_avg = round(new_avg, 4)
+
     add_batch_stock(cur, pid, branch_id, stock_qty_sub, it["expiry_date"])
     new_stock = sync_product_from_batches(cur, pid)
-    sets = ["cost=%s"]
-    params: list = [inventory_cost]
+    sets = ["cost=%s", "avg_cost=%s"]
+    params: list = [inventory_cost, new_avg]
     if new_price is not None:
         sets.append("price=%s")
         params.append(new_price)

@@ -531,12 +531,14 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
             )
         cost = req.cost
         if cost is None and req.price and req.price > 0:
-            cost = round(float(req.price) * 0.2, 2)
+            from pricing import default_cost_from_price
+            cost = default_cost_from_price(req.price)
+        vat_rate = 0.14
         cur.execute(
-            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, material_group, is_service)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, avg_cost, vat_rate, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, material_group, is_service)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
-             req.price, cost, req.stock, req.min_stock, req.expiry_date,
+             req.price, cost, cost, vat_rate, req.stock, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price,
              cls["origin_type"], req.medication_type, cls["material_group"], cls["is_service"]),
         )
