@@ -599,20 +599,16 @@ export default function POS() {
     return unmatched
   }, [])
 
-  // Toggle a cart line between "pack" and "sub" units.
+  // Toggle sell unit (box vs strip). Reset qty to 1 — do not convert pack count to sub-units.
   const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
     setCartItems((prev) => prev.map((i) => {
       if (i.product.id !== productId) return i
+      if ((i.unit_type || 'pack') === ut) return i
       const pack = Math.max(1, i.product.pack_size || 1)
-      const prevUt = i.unit_type || 'pack'
-      let q = Math.max(1, i.quantity)
-      if (pack > 1 && i.product.sub_unit && prevUt !== ut) {
-        if (prevUt === 'pack' && ut === 'sub') q = q * pack
-        else if (prevUt === 'sub' && ut === 'pack') q = Math.max(1, Math.floor(q / pack))
-      }
       const price = ut === 'sub'
         ? (i.product.sub_price != null ? Number(i.product.sub_price) : i.product.price / pack)
         : i.product.price
+      const q = 1
       return { ...i, unit_type: ut, unit_price: price, quantity: q, discount: calcLineDiscount(q * price, i.discount_mode, i.discount_value) }
     }))
   }, [])
