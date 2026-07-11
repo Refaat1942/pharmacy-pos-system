@@ -34,6 +34,12 @@ import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import { useAuth } from '../lib/auth'
 import { inventoryTabEnabled } from '../lib/featureGates'
 import {
+  applyPricingChange,
+  pricingFieldsFromProduct,
+  vatRateForSave,
+  type PricingDriver,
+} from '../lib/pricing'
+import {
   DEFAULT_MATERIAL_GROUP,
   MATERIAL_GROUP_CODES,
   materialGroupLabel,
@@ -879,6 +885,7 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const itemExt = item as Product & { material_group?: string; origin_type?: string; medication_type?: string }
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [detail, setDetail] = useState<Product | null>(null)
+  const initialPricing = pricingFieldsFromProduct(item)
   const [f, setF] = useState({
     barcode: item?.barcode || '',
     international_barcode: item?.international_barcode || '',
@@ -886,8 +893,14 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     name_en: item?.name_en || '',
     category: item?.category || '',
     unit: item?.unit || 'box',
-    price: item?.price?.toString() || '',
-    cost: item?.cost?.toString() || '',
+    price: initialPricing.price,
+    cost: initialPricing.cost,
+    profit: initialPricing.profit,
+    vat_amt: initialPricing.vat_amt,
+    net_ex_vat: initialPricing.net_ex_vat,
+    margin_pct: initialPricing.margin_pct,
+    cost_pct: initialPricing.cost_pct,
+    vat_rate_pct: initialPricing.vat_rate_pct,
     supplier_id: item?.supplier_id != null ? String(item.supplier_id) : '',
     stock: item?.stock != null
       ? formatPackStockInput(item.stock, packSizeOf(item))
@@ -904,17 +917,26 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
-  const priceNum = parseFloat(f.price) || 0
-  const costNum = f.cost ? parseFloat(f.cost) : 0
-  const profitAmt = priceNum > 0 ? Math.round(priceNum * 0.2 * 100) / 100 : null
-  const vatAmt = priceNum > 0 ? Math.round(priceNum * 0.14 * 100) / 100 : null
-  const netExVat = priceNum > 0 ? Math.round(priceNum * 0.86 * 100) / 100 : null
-  const marginPct = priceNum > 0 && costNum >= 0
-    ? (((priceNum - costNum) / priceNum) * 100).toFixed(1)
-    : null
-  const costPctOfPrice = priceNum > 0 && costNum >= 0
-    ? ((costNum / priceNum) * 100).toFixed(1)
-    : null
+
+  const patchPricing = (driver: PricingDriver, value: string) => {
+    setF((prev) => {
+      const pricing = applyPricingChange(
+        {
+          price: prev.price,
+          cost: prev.cost,
+          profit: prev.profit,
+          vat_amt: prev.vat_amt,
+          net_ex_vat: prev.net_ex_vat,
+          margin_pct: prev.margin_pct,
+          cost_pct: prev.cost_pct,
+          vat_rate_pct: prev.vat_rate_pct,
+        },
+        driver,
+        value,
+      )
+      return { ...prev, ...pricing }
+    })
+  }
 
   useEffect(() => {
     suppliersAPI.list().then((r) => setSuppliers(r.data.filter((s) => s.active !== false))).catch(() => setSuppliers([]))
@@ -927,6 +949,16 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     }
     api.get<Product>(`/products/${item.id}`).then((r) => setDetail(r.data)).catch(() => setDetail(item))
   }, [item?.id])
+
+  useEffect(() => {
+    if (!detail) return
+    const pricing = pricingFieldsFromProduct(detail)
+    setF((prev) => ({
+      ...prev,
+      ...pricing,
+      supplier_id: detail.supplier_id != null ? String(detail.supplier_id) : prev.supplier_id,
+    }))
+  }, [detail])
 
   const stockPreviewSub = (() => {
     if (!f.stock.trim()) return null
@@ -952,8 +984,8 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         category: f.category || null,
         unit: f.unit,
         price: priceNum,
-        cost: f.cost ? parseFloat(f.cost) : (priceNum > 0 ? Math.round(priceNum * 0.8 * 100) / 100 : null),
-        vat_rate: 0.14,
+        cost: f.cost ? parseFloat(f.cost) : null,
+        vat_rate: vatRateForSave(f.vat_rate_pct),
         supplier_id: f.supplier_id ? parseInt(f.supplier_id, 10) : null,
         min_stock: parseInt(f.min_stock) || 0,
         ...(item ? {} : { expiry_date: f.expiry_date || null }),
@@ -1089,27 +1121,31 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
           <h4 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-3 border-b border-slate-100 pb-2">
             {t('inventory.form_section_pricing')}
           </h4>
+          <p className="text-xs text-slate-500 mb-3">{t('inventory.pricing_linked_hint')}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <Field label={t('inventory.f_price') + ' *'}>
-              <input required type="number" step="0.01" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} className="input" />
+              <input required type="number" step="0.01" min="0" value={f.price} onChange={e => patchPricing('price', e.target.value)} className="input" />
             </Field>
             <Field label={t('inventory.f_cost')}>
-              <input type="number" step="0.01" value={f.cost} onChange={e => setF({ ...f, cost: e.target.value })} className="input" />
+              <input type="number" step="0.01" min="0" value={f.cost} onChange={e => patchPricing('cost', e.target.value)} className="input" />
             </Field>
             <Field label={t('inventory.f_profit_amt')}>
-              <input type="text" readOnly value={profitAmt != null ? `${profitAmt} (${t('inventory.f_profit_target')})` : '—'} className="input bg-emerald-50 text-emerald-800" />
+              <input type="number" step="0.01" value={f.profit} onChange={e => patchPricing('profit', e.target.value)} className="input bg-emerald-50 text-emerald-800" />
             </Field>
             <Field label={t('inventory.f_margin_pct')}>
-              <input type="text" readOnly value={marginPct != null ? `${marginPct}%` : '—'} className="input bg-slate-50 text-slate-600" />
-            </Field>
-            <Field label={t('inventory.f_vat_amt')}>
-              <input type="text" readOnly value={vatAmt != null ? vatAmt.toFixed(2) : '—'} className="input bg-slate-50 text-slate-600" />
-            </Field>
-            <Field label={t('inventory.f_net_ex_vat')}>
-              <input type="text" readOnly value={netExVat != null ? netExVat.toFixed(2) : '—'} className="input bg-slate-50 text-slate-600" />
+              <input type="number" step="0.1" min="0" max="100" value={f.margin_pct} onChange={e => patchPricing('margin_pct', e.target.value)} className="input" />
             </Field>
             <Field label={t('inventory.f_cost_pct_of_price')}>
-              <input type="text" readOnly value={costPctOfPrice != null ? `${costPctOfPrice}%` : '—'} className="input bg-slate-50 text-slate-600" />
+              <input type="number" step="0.1" min="0" max="100" value={f.cost_pct} onChange={e => patchPricing('cost_pct', e.target.value)} className="input" />
+            </Field>
+            <Field label={t('inventory.f_vat_rate_pct')}>
+              <input type="number" step="0.1" min="0" max="100" value={f.vat_rate_pct} onChange={e => patchPricing('vat_rate_pct', e.target.value)} className="input" />
+            </Field>
+            <Field label={t('inventory.f_vat_amt')}>
+              <input type="number" step="0.01" min="0" value={f.vat_amt} onChange={e => patchPricing('vat_amt', e.target.value)} className="input" />
+            </Field>
+            <Field label={t('inventory.f_net_ex_vat')}>
+              <input type="number" step="0.01" min="0" value={f.net_ex_vat} onChange={e => patchPricing('net_ex_vat', e.target.value)} className="input" />
             </Field>
             <Field label={t('inventory.f_supplier')}>
               <select value={f.supplier_id} onChange={e => setF({ ...f, supplier_id: e.target.value })} className="input">
