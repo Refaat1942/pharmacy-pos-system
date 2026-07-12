@@ -933,6 +933,12 @@ def create_tenant(
                 )
             )
             rcur.execute(init_db.SQL)
+            col_warn = init_db.apply_product_columns(rcur, rconn)
+            if col_warn:
+                print(f"[create_tenant] column migrations for {slug}: {col_warn}")
+            data_warn = init_db.apply_data_migrations(rcur, rconn)
+            if data_warn:
+                print(f"[create_tenant] data migrations for {slug}: {data_warn}")
             rcur.execute(
                 """INSERT INTO branches(name_ar, name_en, address, phone)
                    VALUES (%s, %s, %s, %s) RETURNING id""",
