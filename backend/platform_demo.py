@@ -294,14 +294,31 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> dict:
         )
         admin_row = cur.fetchone()
         if admin_row:
-            for bid in branch_ids:
+            # DB allows one open shift per user — assign different users per branch.
+            shift_plan: list[tuple[int, int]] = [(admin_row["id"], main_branch_id)]
+            extra_shift_users = [
+                ("cashier2", 1),
+                ("pharmacist2", 2),
+            ]
+            for username, branch_idx in extra_shift_users:
+                if branch_idx >= len(branch_ids):
+                    continue
+                cur.execute(
+                    "SELECT id FROM users WHERE username = %s AND status = 'active'",
+                    [username],
+                )
+                u = cur.fetchone()
+                if u:
+                    shift_plan.append((u["id"], branch_ids[branch_idx]))
+
+            for user_id, bid in shift_plan:
                 cur.execute(
                     """INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type)
                        SELECT %s, %s, 1000, 'Demo shift (auto-opened for video)', 'morning'
                        WHERE NOT EXISTS (
-                         SELECT 1 FROM shifts WHERE branch_id = %s AND closed_at IS NULL
+                         SELECT 1 FROM shifts WHERE user_id = %s AND status = 'open'
                        )""",
-                    [admin_row["id"], bid, bid],
+                    [user_id, bid, user_id],
                 )
                 if cur.rowcount:
                     stats["shifts"] += 1
