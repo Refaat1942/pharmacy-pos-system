@@ -343,3 +343,15 @@ def extend_demo_pack(pack_id: int, body: DemoPackExtendIn, admin=Depends(get_sup
         return platform_demo.extend_demo_pack(pack_id, body.extra_days)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@router.post("/demo-tenants/{slug}/seed")
+def seed_demo_tenant(slug: str, admin=Depends(get_super_admin)):
+    """Fill sample branches, suppliers, products, customers on an existing demo pharmacy."""
+    import platform_demo
+    try:
+        return platform_demo.reseed_demo_tenant(slug)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Demo seed failed: {e}")

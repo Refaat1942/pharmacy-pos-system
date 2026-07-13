@@ -172,6 +172,10 @@ export const platformAPI = {
   revokeDemoPack: (id: number) => platformApi.post(`/demo-packs/${id}/revoke`),
   extendDemoPack: (id: number, extra_days: number) =>
     platformApi.post<DemoPack>(`/demo-packs/${id}/extend`, { extra_days }),
+  seedDemoTenant: (slug: string) =>
+    platformApi.post<{ ok: boolean; slug: string; stats: Record<string, number>; login: Record<string, string> }>(
+      `/demo-tenants/${encodeURIComponent(slug)}/seed`,
+    ),
 }
 
 export interface DemoPackUser {

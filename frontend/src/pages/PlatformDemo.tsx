@@ -48,6 +48,9 @@ export default function PlatformDemo() {
   const [busy, setBusy] = useState(false)
   const [revoking, setRevoking] = useState<number | null>(null)
   const [extending, setExtending] = useState<number | null>(null)
+  const [seedSlug, setSeedSlug] = useState('demo-2')
+  const [seedBusy, setSeedBusy] = useState(false)
+  const [seedResult, setSeedResult] = useState<{ stats: Record<string, number>; login: Record<string, string> } | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -107,6 +110,24 @@ export default function PlatformDemo() {
       alert(typeof detail === 'string' ? detail : 'Extend failed')
     } finally {
       setExtending(null)
+    }
+  }
+
+  const seedTenant = async (e: FormEvent) => {
+    e.preventDefault()
+    const slug = seedSlug.trim().toLowerCase()
+    if (!slug) return
+    setSeedBusy(true)
+    setSeedResult(null)
+    setError('')
+    try {
+      const r = await platformAPI.seedDemoTenant(slug)
+      setSeedResult({ stats: r.data.stats, login: r.data.login })
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Demo seed failed')
+    } finally {
+      setSeedBusy(false)
     }
   }
 
@@ -229,6 +250,43 @@ export default function PlatformDemo() {
               <ShieldCheck size={16} className="inline me-1.5 -mt-0.5" />
               Demo mode blocks exports, bulk import, and password changes. Admin credentials stay on the server.
             </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+            <h2 className="text-lg font-bold text-slate-900">Seed demo pharmacy data</h2>
+            <p className="text-sm text-slate-600">
+              Fill an existing demo tenant with branches, suppliers, products, customers, users, and open shifts — for POS demo videos.
+            </p>
+            <form onSubmit={seedTenant} className="flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[10rem]">
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Pharmacy code</label>
+                <input
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono lowercase"
+                  value={seedSlug}
+                  onChange={(e) => setSeedSlug(e.target.value.toLowerCase())}
+                  placeholder="demo-2"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={seedBusy}
+                className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold px-4 py-2.5 rounded-xl text-sm"
+              >
+                {seedBusy ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                {seedBusy ? 'Seeding…' : 'Seed sample data'}
+              </button>
+            </form>
+            {seedResult && (
+              <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-900 space-y-2">
+                <p className="font-semibold">Seed complete</p>
+                <p className="text-xs">
+                  {Object.entries(seedResult.stats).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                </p>
+                <p className="text-xs font-mono">
+                  pharmacist / pharm123 · cashier / cash123 · cashier2 / cash123
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

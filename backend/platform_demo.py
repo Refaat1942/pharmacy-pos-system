@@ -15,50 +15,72 @@ from db import get_platform_connection, get_raw_connection
 import platform_db
 
 DEMO_EXTRA_USERS = [
-    ("pharmacist", "pharm123", "د. أحمد", "Ahmed Pharmacist", "pharmacist"),
-    ("cashier", "cash123", "محمد الكاشير", "Mohamed Cashier", "cashier"),
+    ("pharmacist", "pharm123", "د. أحمد رفعت", "Dr. Ahmed Refaat", "pharmacist", 0),
+    ("cashier", "cash123", "محمد الكاشير", "Mohamed Cashier", "cashier", 0),
+    ("cashier2", "cash123", "نور حسن", "Nour Hassan", "cashier", 1),
+    ("pharmacist2", "pharm123", "د. سارة", "Dr. Sara", "pharmacist", 2),
 ]
 
-# (barcode, name_ar, name_en, category, unit, price, supplier_slug, stock_sub, min_stock, expiry, pack_size, sub_unit)
+# (barcode, intl_barcode, name_ar, name_en, category, material_group, med_type,
+#  unit, price, supplier_slug, stock, min_stock, expiry, pack_size, sub_unit)
 DEMO_PRODUCTS = [
-    ("3006814", "بانادول بخار", "PANADOL VAPOUR RELEASE 10/SACH", "DL", "PAC", 130.00, "ibn_sina", 108, 10, "2027-06-30", 10, "sachet"),
-    ("6223001001", "باراسيتامول 500", "Paracetamol 500mg", "DL", "strip", 12.00, "pharco", 200, 20, "2026-12-31", 10, "tablet"),
-    ("6223001002", "أموكسيسيلين 250", "Amoxicillin 250mg", "DL", "box", 85.00, "eipico", 80, 15, "2026-09-30", 1, None),
-    ("6223001003", "إيبوبروفين 400", "Ibuprofen 400mg", "DL", "strip", 18.00, "pharco", 150, 20, "2027-01-31", 10, "tablet"),
-    ("6223001004", "أوميبرازول 20", "Omeprazole 20mg", "DL", "box", 45.00, "eipico", 60, 10, "2026-12-31", 14, "capsule"),
-    ("6223001005", "فيتامين سي 1000", "Vitamin C 1000mg", "CL", "box", 95.00, "ibn_sina", 45, 10, "2027-06-30", 1, None),
-    ("6223001006", "أسبرين 100", "Aspirin 100mg", "DL", "strip", 15.00, "pharco", 300, 30, "2027-03-31", 10, "tablet"),
-    ("6223001007", "سيتيريزين 10", "Cetirizine 10mg", "DL", "strip", 22.00, "eipico", 140, 15, "2026-08-31", 10, "tablet"),
-    ("6223001008", "ميتفورمين 500", "Metformin 500mg", "DL", "box", 55.00, "pharco", 110, 10, "2026-11-30", 30, "tablet"),
-    ("6223001009", "أتورفاستاتين 10", "Atorvastatin 10mg", "DL", "box", 120.00, "eipico", 35, 8, "2027-02-28", 30, "tablet"),
-    ("6223001010", "أموكسي+كلاف", "Amoxicillin+Clavulanate", "DL", "box", 175.00, "ibn_sina", 40, 10, "2026-07-31", 1, None),
-    ("6223001011", "لوراتادين 10", "Loratadine 10mg", "DL", "strip", 25.00, "pharco", 160, 15, "2027-04-30", 10, "tablet"),
-    ("6223001012", "ديكلوفيناك 50", "Diclofenac 50mg", "DL", "strip", 20.00, "eipico", 130, 15, "2026-10-31", 10, "tablet"),
-    ("6223001013", "محلول ملحي", "Normal Saline 0.9%", "CL", "bottle", 35.00, "ibn_sina", 60, 5, "2026-05-31", 1, None),
-    ("6223001014", "زنك 50", "Zinc 50mg", "CL", "box", 48.00, "pharco", 80, 10, "2027-08-31", 30, "capsule"),
-    ("6223001015", "كريم هيدروكورتيزون", "Hydrocortisone Cream", "CL", "tube", 28.00, "eipico", 50, 5, "2027-01-31", 1, None),
-    ("6223001016", "شامبو ضد القمل", "Anti-Lice Shampoo", "CL", "bottle", 65.00, "ibn_sina", 25, 5, "2027-05-31", 1, None),
-    ("6223001017", "ميزاج استنشاق", "Vicks Inhaler", "CL", "piece", 42.00, "ibn_sina", 90, 10, "2028-01-31", 1, None),
-    ("6223001018", "كحول طبي 70%", "Medical Alcohol 70%", "CL", "bottle", 22.00, "pharco", 120, 15, "2027-12-31", 1, None),
-    ("6223001019", "ضمادات معقمة", "Sterile Gauze Pack", "CL", "box", 18.00, "eipico", 200, 20, "2028-06-30", 1, None),
+    ("3006814", "5000112637922", "بانادول اكسترا", "Panadol Extra 48 Tab", "Painkillers", "DL", "acute", "box", 130.00, "ibn_sina", 120, 15, "2027-12-31", 48, "tablet"),
+    ("3000109", "6223001090011", "أنتينال 200", "Antinal 200mg 24 Cap", "Antibiotics", "DL", "acute", "box", 52.00, "pharco", 85, 10, "2027-06-30", 24, "capsule"),
+    ("6223001001", "6223001001001", "باراسيتامول 500", "Paracetamol 500mg", "Painkillers", "DL", "acute", "strip", 12.00, "pharco", 200, 20, "2026-12-31", 10, "tablet"),
+    ("6223001002", "6223001002001", "أموكسيسيلين 250", "Amoxicillin 250mg", "Antibiotics", "DL", "acute", "box", 85.00, "eipico", 80, 15, "2026-09-30", 1, None),
+    ("6223001003", "6223001003001", "إيبوبروفين 400", "Ibuprofen 400mg", "Painkillers", "DL", "acute", "strip", 18.00, "pharco", 150, 20, "2027-01-31", 10, "tablet"),
+    ("6223001004", "6223001004001", "أوميبرازول 20", "Omeprazole 20mg", "Digestive", "DL", "chronic", "box", 45.00, "eipico", 60, 10, "2026-12-31", 14, "capsule"),
+    ("6223001005", "6223001005001", "فيتامين سي 1000", "Vitamin C 1000mg", "Supplements", "CL", "chronic", "box", 95.00, "ibn_sina", 45, 10, "2027-06-30", 1, None),
+    ("6223001006", "6223001006001", "أسبرين 100", "Aspirin 100mg", "Painkillers", "DL", "chronic", "strip", 15.00, "pharco", 300, 30, "2027-03-31", 10, "tablet"),
+    ("6223001007", "6223001007001", "سيتيريزين 10", "Cetirizine 10mg", "Allergy", "DL", "acute", "strip", 22.00, "eipico", 140, 15, "2026-08-31", 10, "tablet"),
+    ("6223001008", "6223001008001", "ميتفورمين 500", "Metformin 500mg", "Diabetes", "DL", "chronic", "box", 55.00, "pharco", 110, 10, "2026-11-30", 30, "tablet"),
+    ("6223001009", "6223001009001", "أتورفاستاتين 10", "Atorvastatin 10mg", "Cardiology", "DL", "chronic", "box", 120.00, "eipico", 35, 8, "2027-02-28", 30, "tablet"),
+    ("6223001010", "6223001010001", "أموكسي+كلاف", "Amoxicillin+Clavulanate", "Antibiotics", "DL", "acute", "box", 175.00, "ibn_sina", 40, 10, "2026-07-31", 1, None),
+    ("6223001011", "6223001011001", "لوراتادين 10", "Loratadine 10mg", "Allergy", "DL", "acute", "strip", 25.00, "pharco", 160, 15, "2027-04-30", 10, "tablet"),
+    ("6223001012", "6223001012001", "ديكلوفيناك 50", "Diclofenac 50mg", "Painkillers", "DL", "acute", "strip", 20.00, "eipico", 130, 15, "2026-10-31", 10, "tablet"),
+    ("6223001013", "6223001013001", "محلول ملحي", "Normal Saline 0.9%", "Medical supplies", "ML", None, "bottle", 35.00, "ibn_sina", 60, 5, "2026-05-31", 1, None),
+    ("6223001014", "6223001014001", "زنك 50", "Zinc 50mg", "Supplements", "CL", "chronic", "box", 48.00, "pharco", 80, 10, "2027-08-31", 30, "capsule"),
+    ("6223001015", "6223001015001", "كريم هيدروكورتيزون", "Hydrocortisone Cream 1%", "Dermatology", "CL", "acute", "tube", 28.00, "eipico", 50, 5, "2027-01-31", 1, None),
+    ("6223001016", "6223001016001", "شامبو ضد القمل", "Anti-Lice Shampoo", "Personal care", "CL", "acute", "bottle", 65.00, "ibn_sina", 25, 5, "2027-05-31", 1, None),
+    ("6223001017", "6223001017001", "فicks استنشاق", "Vicks Inhaler", "Cold & flu", "CL", "acute", "piece", 42.00, "ibn_sina", 90, 10, "2028-01-31", 1, None),
+    ("6223001018", "6223001018001", "كحول طبي 70%", "Medical Alcohol 70%", "Medical supplies", "ML", None, "bottle", 22.00, "pharco", 120, 15, "2027-12-31", 1, None),
+    ("6223001019", "6223001019001", "ضمادات معقمة", "Sterile Gauze Pack", "Medical supplies", "ML", None, "box", 18.00, "eipico", 200, 20, "2028-06-30", 1, None),
+    ("6223001020", "6223001020001", "أوجمنتين 1g", "Augmentin 1g 14 Tab", "Antibiotics", "DI", "acute", "box", 180.00, "memphis", 55, 10, "2026-06-30", 14, "tablet"),
+    ("6223001021", "6223001021001", "كونكور 5", "Concor 5mg", "Cardiology", "DI", "chronic", "box", 210.00, "sedico", 30, 8, "2027-03-31", 30, "tablet"),
+    ("6223001022", "6223001022001", "نيتروجين ميست", "Nivea Soft Cream", "Cosmetics", "CI", None, "tube", 75.00, "multi_apex", 40, 5, "2028-12-31", 1, None),
+    ("6223001023", "6223001023001", "حليب أطفال", "Baby Milk Stage 1", "Baby care", "CI", None, "box", 320.00, "multi_apex", 25, 5, "2027-09-30", 1, None),
+    ("6223001024", "6223001024001", "بانادول بخار", "Panadol Vapour 10 Sachets", "Cold & flu", "DL", "acute", "box", 130.00, "ibn_sina", 108, 10, "2027-06-30", 10, "sachet"),
 ]
 
+# (slug, name, contact, phone, email, address, region, tax_number, notes)
 DEMO_SUPPLIERS = [
-    ("ibn_sina", "Ibn Sina", "أحمد مورد", "01011110001"),
-    ("pharco", "Pharco", "سارة مورد", "01011110002"),
-    ("eipico", "EIPICO", "محمود مورد", "01011110003"),
+    ("ibn_sina", "Ibn Sina", "أحمد مورد", "01011110001", "orders@ibnsina-demo.eg", "Cairo Distribution Hub", "cairo", "100-111-001", "Primary wholesaler — fast delivery"),
+    ("pharco", "Pharco", "سارة مورد", "01011110002", "supply@pharco-demo.eg", "Alexandria Industrial Zone", "alexandria", "100-111-002", "Local generics"),
+    ("eipico", "EIPICO", "محمود مورد", "01011110003", "sales@eipico-demo.eg", "10th of Ramadan City", "sharqia", "100-111-003", "EIPICO lines"),
+    ("memphis", "Memphis Pharma", "كريم مورد", "01011110004", "memphis@demo.eg", "6th October City", "giza", "100-111-004", "Imported antibiotics"),
+    ("sedico", "SEDICO", "ليلى مورد", "01011110005", "sedico@demo.eg", "New Cairo", "cairo", "100-111-005", "Cardiology & chronic"),
+    ("multi_apex", "Multi-Apex", "هاني مورد", "01011110006", "multi@demo.eg", "Heliopolis", "cairo", "100-111-006", "Cosmetics & baby care"),
 ]
 
 DEMO_BRANCHES_EXTRA = [
-    ("فرع الإسماعيلية", "Ismailia Branch", "Ismailia, Egypt", "01022220001"),
-    ("فرع بورسعيد", "Port Said Branch", "Port Said, Egypt", "01022220002"),
+    ("فرع الإسماعيلية", "Ismailia Branch", "Salah Salem St, Ismailia", "01022220001"),
+    ("فرع بورسعيد", "Port Said Branch", "Port Said Downtown", "01022220002"),
 ]
 
+# (code, name, phone, email, region, address, tax_number, credit_limit, discount_pct, discount_notes, notes, sale_type)
 DEMO_CUSTOMERS = [
-    ("أحمد محمود", "01001234567", "عميل منتظم"),
-    ("فاطمة إبراهيم", "01112345678", None),
-    ("محمد حسن", "01223456789", "تأمين طبي"),
-    ("سارة علي", "01098765432", "ولاء"),
+    ("C001", "أحمد محمود", "01001234567", "ahmed.m@demo.eg", "cairo", "Nasr City, Block 7", None, 5000, 5.0, "Regular customer discount", "عميل منتظم", "cash"),
+    ("C002", "فاطمة إبراهيم", "01112345678", "fatma.i@demo.eg", "ismailia", "El Gabbal St", None, 2000, None, None, None, "cash"),
+    ("C003", "محمد حسن", "01223456789", "m.hassan@demo.eg", "cairo", "Heliopolis", "200-333-001", 10000, 10.0, "Corporate account", "تأمين / حساب آجل", "account"),
+    ("C004", "سارة علي", "01098765432", "sara.ali@demo.eg", "port_said", "Port Fouad", None, 1500, None, None, "برنامج ولاء", "cash"),
+    ("C005", "خالد يوسف", "01055556666", "k.youssef@demo.eg", "cairo", "Maadi", None, 3000, 7.5, "Chronic meds discount", "أدوية مزمنة", "cash"),
+    ("C006", "نادية سمير", "01166667777", "n.samir@demo.eg", "alexandria", "Smouha", None, 0, None, None, None, "cash"),
+    ("C007", "شركة النيل للتأمين", "0223456789", "billing@nile-ins.demo.eg", "cairo", "Downtown Cairo", "300-444-001", 50000, 15.0, "Insurance contract", "عميل تأمين B2B", "account"),
+    ("C008", "ياسمين كمال", "01077778888", "y.kamal@demo.eg", "giza", "Dokki", None, 800, None, None, "عميلة جديدة", "cash"),
+    ("C009", "عمر رشاد", "01288889999", "o.rashad@demo.eg", "sharqia", "Zagazig", None, 2500, 3.0, None, None, "account"),
+    ("C010", "مريم عبد الله", "01099990000", "m.abdullah@demo.eg", "cairo", "Shubra", None, 0, None, None, "Walk-in", "cash"),
+    ("C011", "Hassan El Masry", "01100001111", "h.masry@demo.eg", "ismailia", "Faisal", None, 1200, None, None, "English-speaking customer", "cash"),
+    ("C012", "Dr. Layla Clinic", "0221111222", "clinic@layla.demo.eg", "cairo", "Mohandessin", "400-555-002", 15000, 12.0, "Clinic contract", "عيادة — فواتير آجلة", "account"),
 ]
 
 
@@ -94,9 +116,11 @@ def _unique_demo_slug(prefix: str = "demo") -> str:
     raise ValueError("Could not generate a unique demo pharmacy code")
 
 
-def _seed_demo_content(schema_name: str, admin_username: str) -> None:
+def _seed_demo_content(schema_name: str, admin_username: str) -> dict:
+    from material_groups import product_fields_from_material_group
     from pricing import default_cost_from_price
 
+    stats = {"branches": 0, "suppliers": 0, "products": 0, "customers": 0, "users": 0, "shifts": 0}
     conn = get_raw_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -109,6 +133,18 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> None:
             raise ValueError("Demo tenant has no branch")
         main_branch_id = branch_row["id"]
 
+        cur.execute(
+            """UPDATE branches SET name_ar = %s, name_en = %s, address = %s, phone = %s
+               WHERE id = %s""",
+            [
+                "الفرع الرئيسي — القاهرة",
+                "Main Branch — Cairo",
+                "15 Abbas El Akkad St, Nasr City, Cairo",
+                "01000000001",
+                main_branch_id,
+            ],
+        )
+
         for name_ar, name_en, address, phone in DEMO_BRANCHES_EXTRA:
             cur.execute(
                 """INSERT INTO branches (name_ar, name_en, address, phone)
@@ -118,66 +154,139 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> None:
                    )""",
                 [name_ar, name_en, address, phone, name_en],
             )
+            if cur.rowcount:
+                stats["branches"] += 1
 
         supplier_ids: dict[str, int] = {}
-        for slug, name, contact, phone in DEMO_SUPPLIERS:
+        for slug, name, contact, phone, email, address, region, tax_number, notes in DEMO_SUPPLIERS:
             cur.execute(
-                """INSERT INTO suppliers (name, contact_person, phone, active)
-                   SELECT %s, %s, %s, true
+                """INSERT INTO suppliers
+                   (name, contact_person, phone, email, address, region, tax_number, notes, active)
+                   SELECT %s, %s, %s, %s, %s, %s, %s, %s, true
                    WHERE NOT EXISTS (SELECT 1 FROM suppliers WHERE name = %s)
                    RETURNING id""",
-                [name, contact, phone, name],
+                [name, contact, phone, email, address, region, tax_number, notes, name],
             )
             row = cur.fetchone()
             if row:
                 supplier_ids[slug] = row["id"]
+                stats["suppliers"] += 1
             else:
                 cur.execute("SELECT id FROM suppliers WHERE name = %s", [name])
                 found = cur.fetchone()
                 if found:
                     supplier_ids[slug] = found["id"]
+                    cur.execute(
+                        """UPDATE suppliers SET contact_person=%s, phone=%s, email=%s, address=%s,
+                           region=%s, tax_number=%s, notes=%s, active=true WHERE id=%s""",
+                        [contact, phone, email, address, region, tax_number, notes, found["id"]],
+                    )
 
         cur.execute("SELECT id FROM branches ORDER BY id")
         branch_ids = [r["id"] for r in cur.fetchall()]
+        stats["branches"] = len(branch_ids)
 
         for branch_id in branch_ids:
-            for barcode, name_ar, name_en, category, unit, price, sup_slug, stock, min_stock, expiry, pack_size, sub_unit in DEMO_PRODUCTS:
+            for row in DEMO_PRODUCTS:
+                (barcode, intl_barcode, name_ar, name_en, category, mg, med_type,
+                 unit, price, sup_slug, stock, min_stock, expiry, pack_size, sub_unit) = row
                 cost = default_cost_from_price(price)
                 sup_id = supplier_ids.get(sup_slug)
-                bc = f"{barcode}" if branch_id == main_branch_id else f"{barcode}-B{branch_id}"
+                cls = product_fields_from_material_group(mg)
+                pack_size = max(1, int(pack_size or 1))
+                sub_price = round(price / pack_size, 2) if pack_size > 1 and sub_unit else None
+                sub_unit_val = sub_unit if pack_size > 1 else None
+                bc = barcode if branch_id == main_branch_id else f"{barcode}-B{branch_id}"
+                branch_stock = stock if branch_id == main_branch_id else max(10, stock // 3)
                 cur.execute(
                     """INSERT INTO products (
-                         barcode, name_ar, name_en, category, unit, price, cost, avg_cost,
-                         stock, min_stock, expiry_date, branch_id, supplier_id,
-                         pack_size, sub_unit, vat_rate, active
+                         barcode, international_barcode, name_ar, name_en, category, unit,
+                         price, cost, avg_cost, stock, min_stock, expiry_date, branch_id,
+                         supplier_id, pack_size, sub_unit, sub_price, vat_rate,
+                         material_group, origin_type, is_service, medication_type, active
                        )
-                       SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0.14,true
+                       SELECT %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0.14,%s,%s,%s,%s,true
                        WHERE NOT EXISTS (
                          SELECT 1 FROM products WHERE barcode = %s AND branch_id = %s
                        )""",
                     [
-                        bc, name_ar, name_en, category, unit, price, cost, cost,
-                        stock if branch_id == main_branch_id else max(10, stock // 3),
-                        min_stock, expiry, branch_id, sup_id,
-                        pack_size, sub_unit, bc, branch_id,
+                        bc, intl_barcode, name_ar, name_en, category, unit,
+                        price, cost, cost, branch_stock, min_stock, expiry, branch_id,
+                        sup_id, pack_size, sub_unit_val, sub_price,
+                        cls["material_group"], cls["origin_type"], cls["is_service"], med_type,
+                        bc, branch_id,
                     ],
                 )
+                if cur.rowcount:
+                    stats["products"] += 1
 
-        for username, password, name_ar, name_en, role in DEMO_EXTRA_USERS:
+        for username, password, name_ar, name_en, role, branch_idx in DEMO_EXTRA_USERS:
+            bid = branch_ids[min(branch_idx, len(branch_ids) - 1)]
             cur.execute(
                 """INSERT INTO users (username, password_hash, name_ar, name_en, role, branch_id, status)
                    SELECT %s, %s, %s, %s, %s, %s, 'active'
                    WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = %s)""",
-                [username, hash_password(password), name_ar, name_en, role, main_branch_id, username],
+                [username, hash_password(password), name_ar, name_en, role, bid, username],
             )
+            if cur.rowcount:
+                stats["users"] += 1
 
-        for name, phone, notes in DEMO_CUSTOMERS:
+        for (code, name, phone, email, region, address, tax_number, credit_limit,
+             discount_pct, discount_notes, notes, sale_type) in DEMO_CUSTOMERS:
             cur.execute(
-                """INSERT INTO customers (name, phone, notes, branch_id)
-                   SELECT %s, %s, %s, %s
-                   WHERE NOT EXISTS (SELECT 1 FROM customers WHERE phone = %s)""",
-                [name, phone, notes, main_branch_id, phone],
+                """INSERT INTO customers
+                   (code, name, phone, email, region, address_details, tax_number,
+                    credit_limit, discount_percent, discount_notes, notes, sale_type, branch_id, active)
+                   SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, true
+                   WHERE NOT EXISTS (SELECT 1 FROM customers WHERE phone = %s)
+                   RETURNING id""",
+                [
+                    code, name, phone, email, region, address, tax_number,
+                    credit_limit, discount_pct, discount_notes, notes, sale_type, main_branch_id, phone,
+                ],
             )
+            cust = cur.fetchone()
+            if cust:
+                stats["customers"] += 1
+                cur.execute(
+                    """INSERT INTO customer_phones (customer_id, phone, label, is_primary, sort_order)
+                       SELECT %s, %s, 'Mobile', true, 0
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM customer_phones WHERE customer_id = %s AND phone = %s
+                       )""",
+                    [cust["id"], phone, cust["id"], phone],
+                )
+            else:
+                cur.execute("SELECT id FROM customers WHERE phone = %s", [phone])
+                existing = cur.fetchone()
+                if existing:
+                    cur.execute(
+                        """UPDATE customers SET code=%s, name=%s, email=%s, region=%s,
+                           address_details=%s, tax_number=%s, credit_limit=%s,
+                           discount_percent=%s, discount_notes=%s, notes=%s, sale_type=%s, active=true
+                           WHERE id=%s""",
+                        [
+                            code, name, email, region, address, tax_number, credit_limit,
+                            discount_pct, discount_notes, notes, sale_type, existing["id"],
+                        ],
+                    )
+
+        cur.execute(
+            """UPDATE pharmacy_profile SET
+               name_ar = COALESCE(NULLIF(name_ar, ''), 'صيدلية العرض التجريبي'),
+               name_en = COALESCE(NULLIF(name_en, ''), 'Fratelanza Demo Pharmacy'),
+               phone = COALESCE(NULLIF(phone, ''), '01000000001'),
+               address_ar = COALESCE(NULLIF(address_ar, ''), 'Nasr City, Cairo'),
+               address_en = COALESCE(NULLIF(address_en, ''), 'Nasr City, Cairo'),
+               loyalty_enabled = true
+               WHERE id = 1"""
+        )
+
+        quick_barcodes = [p[0] for p in DEMO_PRODUCTS[:8]]
+        cur.execute(
+            """UPDATE pharmacy_profile SET pos_quick_items = %s::jsonb WHERE id = 1""",
+            [json.dumps(quick_barcodes)],
+        )
 
         cur.execute(
             "SELECT id FROM users WHERE username = %s AND status = 'active'",
@@ -185,21 +294,45 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> None:
         )
         admin_row = cur.fetchone()
         if admin_row:
-            cur.execute(
-                """INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type)
-                   SELECT %s, %s, 500, 'Demo shift (auto-opened)', 'morning'
-                   WHERE NOT EXISTS (
-                     SELECT 1 FROM shifts WHERE branch_id = %s AND closed_at IS NULL
-                   )""",
-                [admin_row["id"], main_branch_id, main_branch_id],
-            )
+            for bid in branch_ids:
+                cur.execute(
+                    """INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type)
+                       SELECT %s, %s, 1000, 'Demo shift (auto-opened for video)', 'morning'
+                       WHERE NOT EXISTS (
+                         SELECT 1 FROM shifts WHERE branch_id = %s AND closed_at IS NULL
+                       )""",
+                    [admin_row["id"], bid, bid],
+                )
+                if cur.rowcount:
+                    stats["shifts"] += 1
 
         conn.commit()
+        return stats
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
+
+
+def reseed_demo_tenant(slug: str) -> dict:
+    """Fill or refresh demo sample data on an existing demo pharmacy (e.g. demo-2)."""
+    slug = (slug or "").strip().lower()
+    tenant = platform_db.get_tenant_by_slug(slug)
+    if not tenant:
+        raise ValueError(f"Pharmacy '{slug}' not found")
+    if not tenant.get("is_demo"):
+        raise ValueError(f"'{slug}' is not a demo pharmacy — seed blocked for safety")
+    if tenant.get("status") == "suspended":
+        platform_db.update_tenant(tenant["id"], {"status": "active"})
+    stats = _seed_demo_content(tenant["schema_name"], "admin")
+    return {
+        "ok": True,
+        "slug": slug,
+        "schema_name": tenant["schema_name"],
+        "stats": stats,
+        "login": {"tenant": slug, "admin": "admin", "pharmacist": "pharmacist / pharm123", "cashier": "cashier / cash123"},
+    }
 
 
 def _login_path(slug: str, username: str | None = None) -> str:
@@ -534,3 +667,13 @@ def revoke_demo_pack(pack_id: int) -> dict:
             except Exception:
                 pass
     return row
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) >= 3 and sys.argv[1] == "seed":
+        result = reseed_demo_tenant(sys.argv[2])
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        print("Usage: python platform_demo.py seed <tenant-slug>")
+        print("Example: python platform_demo.py seed demo-2")
