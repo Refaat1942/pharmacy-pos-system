@@ -315,6 +315,11 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> dict:
         conn.close()
 
 
+def _looks_like_demo_slug(slug: str) -> bool:
+    """Pharmacy codes created for trials (demo, demo-2, demo-abc123, …)."""
+    return slug == "demo" or slug.startswith("demo-")
+
+
 def reseed_demo_tenant(slug: str) -> dict:
     """Fill or refresh demo sample data on an existing demo pharmacy (e.g. demo-2)."""
     slug = (slug or "").strip().lower()
@@ -322,7 +327,10 @@ def reseed_demo_tenant(slug: str) -> dict:
     if not tenant:
         raise ValueError(f"Pharmacy '{slug}' not found")
     if not tenant.get("is_demo"):
-        raise ValueError(f"'{slug}' is not a demo pharmacy — seed blocked for safety")
+        if not _looks_like_demo_slug(slug):
+            raise ValueError(f"'{slug}' is not a demo pharmacy — seed blocked for safety")
+        platform_db.update_tenant(tenant["id"], {"is_demo": True})
+        tenant = platform_db.get_tenant_by_slug(slug) or tenant
     if tenant.get("status") == "suspended":
         platform_db.update_tenant(tenant["id"], {"status": "active"})
     stats = _seed_demo_content(tenant["schema_name"], "admin")
