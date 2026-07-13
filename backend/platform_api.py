@@ -283,6 +283,8 @@ def migrate_all(admin=Depends(get_super_admin)):
 
 class DemoPackCreateIn(BaseModel):
     label: str = "POS demo — all features"
+    prospect_name: str = Field(..., min_length=1, max_length=200)
+    prospect_phone: str = Field(default="", max_length=40)
     count: int = Field(default=1, ge=1, le=25)
     expiry_days: int = Field(default=2, ge=1, le=365)
     slug_prefix: str = "demo"
@@ -316,6 +318,8 @@ def create_demo_pack(body: DemoPackCreateIn, request: Request, admin=Depends(get
     try:
         return platform_demo.create_demo_pack(
             label=body.label,
+            prospect_name=body.prospect_name,
+            prospect_phone=body.prospect_phone,
             count=body.count,
             expiry_days=body.expiry_days,
             slug_prefix=body.slug_prefix,

@@ -165,6 +165,8 @@ export const platformAPI = {
   getDemoPack: (id: number) => platformApi.get<DemoPack>('/demo-packs/' + id),
   createDemoPack: (data: {
     label?: string
+    prospect_name: string
+    prospect_phone?: string
     count?: number
     expiry_days?: number
     slug_prefix?: string
@@ -199,6 +201,8 @@ export interface DemoPackSummary {
   id: number
   token: string
   label: string
+  prospect_name?: string | null
+  prospect_phone?: string | null
   expires_at: string | null
   created_at: string
   revoked_at: string | null

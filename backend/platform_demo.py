@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import secrets
 import string
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import psycopg2.extras
@@ -102,6 +102,40 @@ def all_feature_options_enabled(features: list[str]) -> dict[str, dict[str, bool
 def _gen_password() -> str:
     alphabet = string.ascii_letters + string.digits
     return "Demo" + "".join(secrets.choice(alphabet) for _ in range(6))
+
+
+def _serialize_pack_row(row: dict) -> dict:
+    out = dict(row)
+    for key in ("created_at", "expires_at", "revoked_at"):
+        val = out.get(key)
+        if val is not None and hasattr(val, "isoformat"):
+            out[key] = val.isoformat()
+    return out
+
+
+def _coerce_expiry(exp) -> datetime | None:
+    if exp is None:
+        return None
+    if isinstance(exp, datetime):
+        return exp
+    if isinstance(exp, date):
+        return datetime.combine(exp, datetime.max.time().replace(microsecond=0))
+    if isinstance(exp, str):
+        raw = exp.strip()
+        if not raw:
+            return None
+        if "T" in raw:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return datetime.combine(date.fromisoformat(raw[:10]), datetime.max.time().replace(microsecond=0))
+    return None
+
+
+def _pack_is_expired(exp) -> bool:
+    dt = _coerce_expiry(exp)
+    if not dt:
+        return False
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    return dt < now
 
 
 def _unique_demo_slug(prefix: str = "demo") -> str:
@@ -385,7 +419,7 @@ def _get_valid_pack_row(token: str) -> Optional[dict]:
         if d.get("revoked_at"):
             return None
         exp = d.get("expires_at")
-        if exp and exp < date.today():
+        if _pack_is_expired(exp):
             return None
         return d
     finally:
@@ -486,6 +520,8 @@ def demo_auto_login(token: str, account_index: int = 0) -> dict:
 def create_demo_pack(
     *,
     label: str,
+    prospect_name: str = "",
+    prospect_phone: str = "",
     count: int = 1,
     expiry_days: int = 2,
     slug_prefix: str = "demo",
@@ -493,10 +529,15 @@ def create_demo_pack(
 ) -> dict:
     """Provision N demo pharmacies (all features) and store a shareable access pack."""
     label = (label or "").strip() or "POS demo accounts"
+    prospect_name = (prospect_name or "").strip()
+    prospect_phone = (prospect_phone or "").strip()
+    if not prospect_name:
+        raise ValueError("Prospect / customer name is required")
     count = max(1, min(int(count), 25))
     expiry_days = max(1, min(int(expiry_days), 365))
-    today = date.today()
-    sub_end = today + timedelta(days=expiry_days)
+    started_at = datetime.now()
+    expires_at = started_at + timedelta(days=expiry_days)
+    sub_end = expires_at.date()
     features = all_features_enabled()
     feature_options = all_feature_options_enabled(features)
     origin = (app_origin or "").rstrip("/")
@@ -511,12 +552,12 @@ def create_demo_pack(
             slug=slug,
             name=name,
             plan="enterprise",
-            notes=f"Auto demo pack — {label}",
+            notes=f"Auto demo pack — {label} — {prospect_name}" + (f" ({prospect_phone})" if prospect_phone else ""),
             admin_username="admin",
             admin_password=admin_password,
             features=features,
             feature_options=feature_options,
-            subscription_start=today.isoformat(),
+            subscription_start=started_at.date().isoformat(),
             subscription_end=sub_end.isoformat(),
             max_users=None,
             max_branches=3,
@@ -554,16 +595,18 @@ def create_demo_pack(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(
-            """INSERT INTO demo_packs(token, label, expires_at, accounts)
-               VALUES (%s, %s, %s, %s::jsonb)
-               RETURNING id, token, label, expires_at, accounts, created_at, revoked_at""",
-            [token, label, sub_end.isoformat(), json.dumps(accounts)],
+            """INSERT INTO demo_packs(token, label, prospect_name, prospect_phone, expires_at, accounts)
+               VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+               RETURNING id, token, label, prospect_name, prospect_phone,
+                         expires_at, accounts, created_at, revoked_at""",
+            [token, label, prospect_name, prospect_phone or None, expires_at, json.dumps(accounts)],
         )
         row = dict(cur.fetchone())
         conn.commit()
     finally:
         conn.close()
 
+    row = _serialize_pack_row(row)
     row["share_url"] = share_url
     row["accounts"] = accounts
     row["features_enabled"] = features
@@ -575,12 +618,13 @@ def list_demo_packs() -> list[dict]:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(
-            """SELECT id, token, label, expires_at, created_at, revoked_at,
+            """SELECT id, token, label, prospect_name, prospect_phone,
+                      expires_at, created_at, revoked_at,
                       jsonb_array_length(accounts) AS account_count
                FROM demo_packs
                ORDER BY created_at DESC"""
         )
-        rows = [dict(r) for r in cur.fetchall()]
+        rows = [_serialize_pack_row(dict(r)) for r in cur.fetchall()]
         for r in rows:
             r["share_path"] = f"/demo/{r['token']}"
         return rows
@@ -637,17 +681,17 @@ def extend_demo_pack(pack_id: int, extra_days: int) -> dict:
         raise ValueError("Cannot extend a revoked demo pack")
 
     exp = pack.get("expires_at")
-    if isinstance(exp, str):
-        exp = date.fromisoformat(exp)
-    base = max(date.today(), exp) if exp else date.today()
+    exp_dt = _coerce_expiry(exp)
+    now = datetime.now(exp_dt.tzinfo) if exp_dt and exp_dt.tzinfo else datetime.now()
+    base = max(now, exp_dt) if exp_dt else now
     new_exp = base + timedelta(days=extra_days)
 
     accounts = list(pack.get("accounts") or [])
     for acc in accounts:
         tid = acc.get("tenant_id")
         if tid:
-            platform_db.update_tenant(tid, {"subscription_end": new_exp.isoformat()})
-        acc["subscription_end"] = new_exp.isoformat()
+            platform_db.update_tenant(tid, {"subscription_end": new_exp.date().isoformat()})
+        acc["subscription_end"] = new_exp.date().isoformat()
 
     conn = get_platform_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -655,7 +699,7 @@ def extend_demo_pack(pack_id: int, extra_days: int) -> dict:
         cur.execute(
             """UPDATE demo_packs SET expires_at = %s, accounts = %s::jsonb
                WHERE id = %s RETURNING *""",
-            [new_exp.isoformat(), json.dumps(accounts), pack_id],
+            [new_exp, json.dumps(accounts), pack_id],
         )
         row = dict(cur.fetchone())
         conn.commit()

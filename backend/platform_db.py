@@ -516,6 +516,23 @@ def bootstrap_platform() -> None:
         cur = conn.cursor()
         cur.execute(PLATFORM_SQL)
 
+        for stmt in (
+            "ALTER TABLE platform.demo_packs ADD COLUMN IF NOT EXISTS prospect_name VARCHAR(200)",
+            "ALTER TABLE platform.demo_packs ADD COLUMN IF NOT EXISTS prospect_phone VARCHAR(40)",
+            """ALTER TABLE platform.demo_packs
+               ALTER COLUMN expires_at TYPE TIMESTAMP WITH TIME ZONE
+               USING (
+                 CASE
+                   WHEN expires_at IS NULL THEN NULL
+                   ELSE (expires_at::timestamp + time '23:59:59') AT TIME ZONE 'UTC'
+                 END
+               )""",
+        ):
+            try:
+                cur.execute(stmt)
+            except Exception:
+                pass
+
         # Default super-admin
         cur.execute("SELECT COUNT(*) FROM platform.super_admins")
         if cur.fetchone()[0] == 0:

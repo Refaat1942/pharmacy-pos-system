@@ -41,6 +41,8 @@ export default function PlatformDemo() {
   const [created, setCreated] = useState<DemoPack | null>(null)
   const [form, setForm] = useState({
     label: 'POS demo — all features enabled',
+    prospect_name: '',
+    prospect_phone: '',
     count: 1,
     expiry_days: 2,
     slug_prefix: 'demo',
@@ -86,7 +88,7 @@ export default function PlatformDemo() {
   }
 
   const revoke = async (id: number) => {
-    if (!confirm('Revoke this demo link and suspend its demo pharmacies?')) return
+    if (!confirm('Revoke this demo link? The prospect will no longer be able to open it, and the demo pharmacy will be suspended immediately.')) return
     setRevoking(id)
     try {
       await platformAPI.revokeDemoPack(id)
@@ -182,6 +184,28 @@ export default function PlatformDemo() {
             </p>
 
             <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Prospect / customer name *</label>
+              <input
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
+                value={form.prospect_name}
+                onChange={(e) => setForm({ ...form, prospect_name: e.target.value })}
+                placeholder="e.g. Dr. Ahmed — Lotus Pharmacy"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Phone number</label>
+              <input
+                type="tel"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
+                value={form.prospect_phone}
+                onChange={(e) => setForm({ ...form, prospect_phone: e.target.value })}
+                placeholder="01001234567"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Pack label</label>
               <input
                 className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm"
@@ -244,8 +268,18 @@ export default function PlatformDemo() {
               <li>Create a link (default valid <strong>2 days</strong>).</li>
               <li>Send the link to your prospect — they click once and land in POS as admin.</li>
               <li>No pharmacy code or password to type; demo safety limits still apply.</li>
-              <li>Extend validity (+2 / +7 / +30 days) or revoke anytime.</li>
+              <li>Extend validity (+2 / +7 / +30 days) or <strong>Revoke</strong> to cancel access early.</li>
             </ol>
+            <div className="rounded-xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-950 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <Ban size={14} /> What does Revoke do?
+              </p>
+              <p className="text-xs leading-relaxed">
+                Revoke immediately disables the share link and suspends the demo pharmacy — even before the expiry date.
+                Use it when the trial is finished, the prospect did not sign up, or you shared the link by mistake.
+                Revoked links cannot be extended; create a new link if needed.
+              </p>
+            </div>
             <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-4 text-sm text-indigo-900">
               <ShieldCheck size={16} className="inline me-1.5 -mt-0.5" />
               Demo mode blocks exports, bulk import, and password changes. Admin credentials stay on the server.
@@ -308,7 +342,11 @@ export default function PlatformDemo() {
               </a>
             </div>
             <p className="text-xs text-emerald-800">
-              Valid until {created.expires_at || '—'} · Admin auto-login · {created.accounts?.length ?? 0} demo(s)
+              {created.prospect_name && (
+                <>Customer: <strong>{created.prospect_name}</strong>
+                  {created.prospect_phone ? ` · ${created.prospect_phone}` : ''} · </>
+              )}
+              Started {formatDateTime(created.created_at)} · Expires {formatDateTime(created.expires_at)} · {created.accounts?.length ?? 0} demo(s)
             </p>
             {(created.accounts?.length ?? 0) > 1 && (
               <div className="space-y-2 pt-2 border-t border-emerald-200">
@@ -337,13 +375,16 @@ export default function PlatformDemo() {
           ) : packs.length === 0 ? (
             <div className="p-8 text-center text-slate-400 text-sm">No demo packs yet.</div>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[56rem]">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
+                  <th className="px-4 py-3 text-start">Customer</th>
+                  <th className="px-4 py-3 text-start">Phone</th>
                   <th className="px-4 py-3 text-start">Label</th>
                   <th className="px-4 py-3 text-center">Accounts</th>
+                  <th className="px-4 py-3 text-start">Started</th>
                   <th className="px-4 py-3 text-start">Expires</th>
-                  <th className="px-4 py-3 text-start">Created</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-center">Actions</th>
                 </tr>
@@ -352,23 +393,28 @@ export default function PlatformDemo() {
                 {packs.map((p) => {
                   const share = fullShareUrl(p.share_path)
                   const revoked = !!p.revoked_at
+                  const expired = !revoked && p.expires_at && new Date(p.expires_at) < new Date()
                   return (
                     <tr key={p.id} className="border-t border-slate-100">
-                      <td className="px-4 py-3 font-medium text-slate-800">{p.label}</td>
+                      <td className="px-4 py-3 font-medium text-slate-800">{p.prospect_name || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 tabular-nums whitespace-nowrap">{p.prospect_phone || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{p.label}</td>
                       <td className="px-4 py-3 text-center tabular-nums">{p.account_count}</td>
-                      <td className="px-4 py-3 text-slate-600">{p.expires_at || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">{formatDateTime(p.created_at)}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{formatDateTime(p.created_at)}</td>
+                      <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{formatDateTime(p.expires_at)}</td>
                       <td className="px-4 py-3 text-center">
                         {revoked ? (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">Revoked</span>
+                        ) : expired ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Expired</span>
                         ) : (
                           <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center justify-center gap-1">
-                          {!revoked && <CopyBtn text={share} />}
-                          {!revoked && (
+                          {!revoked && !expired && <CopyBtn text={share} />}
+                          {!revoked && !expired && (
                             <a href={share} target="_blank" rel="noopener noreferrer" className="p-1.5 hover:bg-slate-100 rounded" title="Open">
                               <ExternalLink size={14} />
                             </a>
@@ -394,10 +440,11 @@ export default function PlatformDemo() {
                               type="button"
                               disabled={revoking === p.id}
                               onClick={() => void revoke(p.id)}
-                              className="p-1.5 hover:bg-red-50 text-red-600 rounded"
-                              title="Revoke"
+                              className="inline-flex items-center gap-1 text-[10px] px-2 py-1 hover:bg-red-50 text-red-600 rounded border border-red-100"
+                              title="Revoke — disable link and suspend demo pharmacy"
                             >
-                              {revoking === p.id ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />}
+                              {revoking === p.id ? <Loader2 size={12} className="animate-spin" /> : <Ban size={12} />}
+                              Revoke
                             </button>
                           )}
                         </div>
@@ -407,6 +454,7 @@ export default function PlatformDemo() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>
