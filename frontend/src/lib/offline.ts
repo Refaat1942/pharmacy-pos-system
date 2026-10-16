@@ -6,8 +6,11 @@
  * - Product search uses the branch's "offline pack" (all sellable products),
  *   downloaded while online from GET /api/pos/offline-pack.
  * - A sale that cannot reach the server is queued on this PC with a client_uuid and
- *   the receipt still prints (temporary number OFF-…). When the network returns the
- *   queue is uploaded to POST /api/sales; the server de-duplicates by client_uuid.
+ *   the receipt still prints (temporary number OFF-…).
+ * - Opening and closing a cash shift work the same way: the shift opens/closes on this
+ *   PC at once and is queued.
+ * - One queue, uploaded in order (open shift → sales → close shift) when the network
+ *   returns; the server de-duplicates every upload by client_uuid.
  *
  * Wired into the shared axios instance by installOffline(api) (see lib/api.ts).
  */
@@ -141,7 +144,8 @@ export async function searchOfflineProducts(q: string, limit = 60): Promise<any[
   return scored.slice(0, limit).map((x) => ({ ...x.p, active: true }))
 }
 
-// ─── offline sale queue ────────────────────────────────────────────────────
+// ─── offline queue (sales + shift open/close) ─────────────────────────────
+type QueueKind = 'sale' | 'shift_open' | 'shift_close'
 interface QueuedSale {
   client_uuid: string
   created_at: string
@@ -150,6 +154,9 @@ interface QueuedSale {
   branch: string | null
   payload: any
   error?: string
+  /** Missing on entries saved before shifts could be queued → 'sale'. */
+  kind?: QueueKind
+  url?: string
 }
 
 const queueKey = () => `sales-queue|${scope().split('|')[0]}`
@@ -223,16 +230,97 @@ async function queueSale(payload: any): Promise<{ invoice: any; items: any[] }> 
   return { invoice, items }
 }
 
-let flushing = false
-/** Upload queued sales. Safe to call often; the server de-duplicates by client_uuid. */
-export async function flushQueue(api: AxiosInstance): Promise<void> {
-  if (flushing || !localStorage.getItem('pharma_token')) return
-  flushing = true
-  try {
+// ─── offline cash shift ────────────────────────────────────────────────────
+const currentShiftKey = () => `get|${scope()}|/shifts/current|`
+
+async function queueEntry(kind: QueueKind, url: string, payload: any, number: string): Promise<string> {
+  const now = new Date().toISOString()
+  const q = await readQueue()
+  q.push({
+    client_uuid: uuid(), created_at: now, number, scope: scope(),
+    branch: localStorage.getItem('pharma_active_branch'), payload, kind, url,
+  })
+  await writeQueue(q)
+  return now
+}
+
+/** Open the shift on this PC; the POS sees it as open straight away. */
+async function queueShiftOpen(payload: any): Promise<any> {
+  let user: any = {}
+  try { user = JSON.parse(localStorage.getItem('pharma_user') || '{}') } catch { /* ignore */ }
+  const seq = Number(localStorage.getItem('fps_offline_shift_seq') || '0') + 1
+  localStorage.setItem('fps_offline_shift_seq', String(seq))
+  const openedAt = await queueEntry('shift_open', '/shifts/open', payload, `SHIFT-OPEN-${seq}`)
+  const shift = {
+    id: -seq, user_id: user.id ?? null, branch_id: Number(localStorage.getItem('pharma_active_branch')) || null,
+    opened_at: openedAt, opening_cash: Number(payload?.opening_cash || 0), notes: payload?.notes ?? null,
+    shift_type: payload?.shift_type ?? null, status: 'open', closed_at: null, offline: true,
+  }
+  await idbSet(currentShiftKey(), shift)
+  return shift
+}
+
+/** Takings recorded on this PC for the shift (queued sales since it opened). */
+async function localBreakdown(shift: any): Promise<any> {
+  const since = shift?.opened_at ? new Date(shift.opened_at).getTime() : 0
+  const sales = (await readQueue()).filter((s) => (s.kind ?? 'sale') === 'sale' && new Date(s.created_at).getTime() >= since)
+  let cash = 0, visa = 0, account = 0, other = 0, total = 0, collected = 0, change = 0
+  for (const s of sales) {
+    const p = s.payload || {}
+    const items = (p.items || []) as any[]
+    const sub = items.reduce((t, i) => t + Number(i.quantity) * Number(i.unit_price), 0)
+    const fee = p.type === 'delivery' || p.type === 'digital' ? Number(p.delivery_fee || 0) : 0
+    const net = Math.max(0, sub - Number(p.discount || 0) + fee)
+    total += net
+    if (p.payment_method === 'cash') {
+      cash += net
+      const given = Number(p.cash_amount ?? net)
+      collected += given
+      change += Math.max(0, given - net)
+    } else if (p.payment_method === 'visa') visa += net
+    else if (p.payment_method === 'account') account += net
+    else other += net
+  }
+  const r = (n: number) => Math.round(n * 100) / 100
+  return {
+    cash_sales: r(cash), visa_sales: r(visa), account_sales: r(account), other_sales: r(other), total_sales: r(total),
+    invoice_count: sales.length, cash_collected: r(collected), cash_change: r(change), returns_value: 0, returns_count: 0,
+    expected_cash: r(Number(shift?.opening_cash || 0) + collected - change), offline: true,
+  }
+}
+
+async function queueShiftClose(url: string, payload: any): Promise<any> {
+  const shift: any = (await idbGet(currentShiftKey())) || {}
+  const closedAt = await queueEntry('shift_close', url, payload, 'SHIFT-CLOSE')
+  const breakdown = await localBreakdown(shift)
+  await idbSet(currentShiftKey(), null)
+  const counted = Number(payload?.counted_cash || 0)
+  return {
+    ...shift, status: 'closed', closed_at: closedAt, closing_cash: counted, counted_visa: Number(payload?.counted_visa || 0),
+    expected_cash: breakdown.expected_cash, variance: Math.round((counted - breakdown.expected_cash) * 100) / 100,
+    breakdown, offline: true,
+  }
+}
+
+async function hasQueuedShiftChange(): Promise<boolean> {
+  return (await readQueue()).some((s) => !s.error && (s.kind === 'shift_open' || s.kind === 'shift_close'))
+}
+
+let flushing: Promise<void> | null = null
+/** Upload the queue in order. Safe to call often; the server de-duplicates by client_uuid. */
+export function flushQueue(api: AxiosInstance): Promise<void> {
+  if (!localStorage.getItem('pharma_token')) return Promise.resolve()
+  // A second caller waits for the upload already running (e.g. close shift after sales).
+  if (!flushing) flushing = doFlush(api).finally(() => { flushing = null })
+  return flushing
+}
+
+async function doFlush(api: AxiosInstance): Promise<void> {
+  {
     let q = await readQueue()
     for (const sale of q.filter((s) => !s.error)) {
       try {
-        await api.post('/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
+        await api.post(sale.url || '/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
           headers: { 'X-Offline-Skip': '1', ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}) },
         })
         q = (await readQueue()).filter((s) => s.client_uuid !== sale.client_uuid)
@@ -247,8 +335,6 @@ export async function flushQueue(api: AxiosInstance): Promise<void> {
         await writeQueue(q)
       }
     }
-  } finally {
-    flushing = false
   }
 }
 
@@ -269,10 +355,18 @@ function fakeResponse(cfg: InternalAxiosRequestConfig, data: any): AxiosResponse
 }
 
 const MAX_CACHE_BYTES = 2_000_000
-const POS_PATHS = /^\/(sales$|products$|shifts\/current|customers|offers\/active|settings\/profile|digital-platforms|employees|pos\b|pos-|pos_)/
+const POS_PATHS = /^\/(sales$|products$|shifts\b|customers|offers\/active|settings\/profile|digital-platforms|employees|pos\b|pos-|pos_)/
+const SHIFT_CLOSE = /^\/shifts\/-?\d+\/close$/
+const SHIFT_REPORT = /^\/shifts\/(-?\d+)\/report$/
+/** Writes that depend on queued ones (a sale needs its shift): upload the queue first. */
+const ORDERED_WRITES = /^\/(sales$|shifts\/)/
 
 export function installOffline(api: AxiosInstance): void {
-  api.interceptors.request.use((cfg) => {
+  api.interceptors.request.use(async (cfg) => {
+    const method = (cfg.method || 'get').toLowerCase()
+    if (method === 'post' && ORDERED_WRITES.test(cfg.url || '') && !cfg.headers?.['X-Offline-Skip'] && status.pending > 0 && navigator.onLine) {
+      await flushQueue(api)
+    }
     // Give every sale its id up front: if the answer is lost (timeout) and the sale
     // is queued and re-sent, the server recognises it instead of saving it twice.
     if ((cfg.method || '').toLowerCase() === 'post' && cfg.url === '/sales' && cfg.data && typeof cfg.data === 'object' && !cfg.data.client_uuid) {
@@ -286,9 +380,15 @@ export function installOffline(api: AxiosInstance): void {
     return cfg
   })
   api.interceptors.response.use(
-    (res) => {
+    async (res) => {
       const cfg = res.config
       setOnline(true)
+      // Until a shift opened/closed offline is uploaded, the server's answer is out of
+      // date — show the shift as this PC knows it.
+      if (cfg.url === '/shifts/current' && (cfg.method || 'get').toLowerCase() === 'get' && await hasQueuedShiftChange()) {
+        const local = await idbGet(currentShiftKey())
+        if (local !== undefined) return { ...res, data: local }
+      }
       if ((cfg.method || 'get').toLowerCase() === 'get' && !cfg.headers?.['X-Offline-Skip'] && cfg.responseType !== 'blob') {
         try {
           const body = JSON.stringify(res.data)
@@ -304,15 +404,24 @@ export function installOffline(api: AxiosInstance): void {
       const method = (cfg.method || 'get').toLowerCase()
       const url = cfg.url || ''
       if (method === 'get') {
+        const rep = SHIFT_REPORT.exec(url)
+        if (rep) {
+          const cur: any = await idbGet(currentShiftKey())
+          if (cur && String(cur.id) === rep[1]) {
+            return fakeResponse(cfg, { report_type: 'X', shift: cur, breakdown: await localBreakdown(cur), pending_deliveries: 0 })
+          }
+        }
         if (url === '/products' && cfg.params?.q != null) {
           return fakeResponse(cfg, await searchOfflineProducts(String(cfg.params.q)))
         }
         const cached = await idbGet(cacheKey(cfg))
         if (cached !== undefined) return fakeResponse(cfg, cached)
       }
-      if (method === 'post' && url === '/sales') {
+      if (method === 'post') {
         const payload = typeof cfg.data === 'string' ? JSON.parse(cfg.data) : cfg.data
-        if (payload?.type !== 'return') return fakeResponse(cfg, await queueSale(payload))
+        if (url === '/sales' && payload?.type !== 'return') return fakeResponse(cfg, await queueSale(payload))
+        if (url === '/shifts/open') return fakeResponse(cfg, await queueShiftOpen(payload))
+        if (SHIFT_CLOSE.test(url)) return fakeResponse(cfg, await queueShiftClose(url, payload))
       }
       return Promise.reject(err)
     },

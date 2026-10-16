@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import psycopg2, psycopg2.extras
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id
@@ -14,12 +14,27 @@ class OpenShiftIn(BaseModel):
     opening_cash: float = Field(ge=0)
     notes: Optional[str] = None
     shift_type: Optional[str] = None  # 'morning' | 'evening' | 'night' (auto if omitted)
+    # Offline POS upload: id generated on the PC + when it actually happened.
+    client_uuid: Optional[str] = None
+    offline_created_at: Optional[datetime] = None
 
 
 class CloseShiftIn(BaseModel):
     counted_cash: float = Field(ge=0)
     counted_visa: float = Field(default=0, ge=0)
     notes: Optional[str] = None
+    client_uuid: Optional[str] = None
+    offline_created_at: Optional[datetime] = None
+
+
+def _offline_time(client_uuid: Optional[str], ts: Optional[datetime]) -> Optional[datetime]:
+    """When an offline action happened (clamped to the last 30 days, never the future)."""
+    if not client_uuid or not ts:
+        return None
+    if ts.tzinfo is not None:
+        ts = ts.astimezone().replace(tzinfo=None)  # shifts timestamps are server-local naive
+    now = datetime.now()
+    return max(now - timedelta(days=30), min(ts, now))
 
 
 def _count_pending_deliveries(cur, shift) -> int:
@@ -103,9 +118,17 @@ def open_shift(
         active_branch_id = int(x_active_branch)
     except ValueError:
         raise HTTPException(400, "Invalid X-Active-Branch header")
+    client_uuid = (body.client_uuid or "").strip()[:64] or None
+    offline_at = _offline_time(client_uuid, body.offline_created_at)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if client_uuid:
+            # Re-sent offline upload → the shift is already saved.
+            cur.execute("SELECT * FROM shifts WHERE client_uuid=%s", [client_uuid])
+            dup = cur.fetchone()
+            if dup:
+                return dict(dup)
         cur.execute("SELECT id FROM branches WHERE id=%s", [active_branch_id])
         if not cur.fetchone():
             raise HTTPException(400, "Branch not found")
@@ -123,7 +146,7 @@ def open_shift(
             m = row.get("shift_morning_start") or _t(6, 0)
             e = row.get("shift_evening_start") or _t(14, 0)
             n = row.get("shift_night_start")   or _t(22, 0)
-            now_t = datetime.now().time()
+            now_t = (offline_at or datetime.now()).time()
             # Pick the latest configured start that is <= now. If now is before all starts
             # (e.g. 02:00 with defaults 06:00/14:00/22:00), wrap around to the latest start
             # of the previous day — typically the night shift.
@@ -134,14 +157,21 @@ def open_shift(
                     shift_type = label
         try:
             cur.execute("""
-                INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type)
-                VALUES (%s, %s, %s, %s, %s) RETURNING *
-            """, [current_user['user_id'], active_branch_id, body.opening_cash, body.notes, shift_type])
+                INSERT INTO shifts(user_id, branch_id, opening_cash, notes, shift_type,
+                                   opened_at, client_uuid, is_offline)
+                VALUES (%s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s) RETURNING *
+            """, [current_user['user_id'], active_branch_id, body.opening_cash, body.notes, shift_type,
+                  offline_at, client_uuid, offline_at is not None])
             row = dict(cur.fetchone())
             conn.commit()
             return row
         except psycopg2.errors.UniqueViolation:
             conn.rollback()
+            if client_uuid:
+                cur.execute("SELECT * FROM shifts WHERE client_uuid=%s", [client_uuid])
+                dup = cur.fetchone()
+                if dup:
+                    return dict(dup)
             raise HTTPException(400, "You already have an open shift; close it first")
     finally:
         cur.close(); conn.close()
@@ -170,19 +200,41 @@ def close_shift(
     body: CloseShiftIn,
     current_user: dict = Depends(get_current_user),
 ):
+    client_uuid = (body.client_uuid or "").strip()[:64] or None
+    offline_at = _offline_time(client_uuid, body.offline_created_at)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT * FROM shifts WHERE id=%s", [shift_id])
+        if client_uuid:
+            cur.execute("SELECT * FROM shifts WHERE close_client_uuid=%s", [client_uuid])
+            done = cur.fetchone()
+            if done:
+                # Re-sent offline close → already closed.
+                done = dict(done)
+                exp = _compute_expected(cur, done)
+                return {**done, "breakdown": exp}
+        if shift_id <= 0:
+            # Shift opened offline: the PC never learned its server id. It is this
+            # user's open shift, which the queued "open" upload created just before.
+            cur.execute(
+                "SELECT * FROM shifts WHERE user_id=%s AND status='open' ORDER BY opened_at DESC LIMIT 1",
+                [current_user['user_id']],
+            )
+        else:
+            cur.execute("SELECT * FROM shifts WHERE id=%s", [shift_id])
         shift = cur.fetchone()
         if not shift:
             raise HTTPException(404, "Shift not found")
         shift = dict(shift)
+        shift_id = shift['id']
         if shift['status'] != 'open':
             raise HTTPException(400, "Shift already closed")
         if shift['user_id'] != current_user['user_id'] and current_user.get('role') != 'admin':
             raise HTTPException(403, "Cannot close another user's shift")
-        pending_deliveries = _count_pending_deliveries(cur, shift)
+        if offline_at is not None:
+            # Closed at the till with no internet: count sales up to that moment.
+            shift['closed_at'] = max(offline_at, shift['opened_at'])
+        pending_deliveries = 0 if offline_at is not None else _count_pending_deliveries(cur, shift)
         if pending_deliveries > 0:
             raise HTTPException(
                 400,
@@ -194,12 +246,13 @@ def close_shift(
         variance_visa = round(body.counted_visa - exp['visa_sales'], 2)
         cur.execute("""
             UPDATE shifts
-            SET closed_at=now(), closing_cash=%s, expected_cash=%s,
+            SET closed_at=COALESCE(%s, now()), closing_cash=%s, expected_cash=%s,
                 variance=%s, counted_visa=%s, variance_visa=%s,
-                status='closed',
+                status='closed', close_client_uuid=%s,
                 notes = COALESCE(NULLIF(%s,''), notes)
             WHERE id=%s RETURNING *
-        """, [body.counted_cash, expected, variance, body.counted_visa, variance_visa, body.notes, shift_id])
+        """, [shift.get('closed_at'), body.counted_cash, expected, variance, body.counted_visa, variance_visa,
+              client_uuid, body.notes, shift_id])
         row = dict(cur.fetchone())
         conn.commit()
         return {**row, "breakdown": exp, "variance": variance, "expected_cash": expected, "variance_visa": variance_visa}
