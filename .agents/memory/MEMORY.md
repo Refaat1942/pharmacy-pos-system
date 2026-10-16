@@ -2,3 +2,4 @@
 - [Product branch_id orphans](product-branch-orphans.md) — products uploaded with no active branch get branch_id NULL, vanish from per-branch views and branch-scoped queries; guard at upload + backfill to a branch.
 - [Payroll proration](payroll.md) — salary = base × hours_worked ÷ 208 (26d×8h), uncapped (overtime pays more); present day w/o hours = 8h (back-compat); same formula in generate + edit; HR plan-gated.
 - [Shared table primitives](datatable-primitives.md) — all data tables use frontend/src/components/DataTable.tsx (useSort/SortTh/useQuickFilter/TableFilter); pipeline raw→quickFilter→sort→render.
+- [offline-pos.md](offline-pos.md) — offline POS queue, client_uuid idempotency, search_path commit
