@@ -3,3 +3,4 @@
 - [Payroll proration](payroll.md) — salary = base × hours_worked ÷ 208 (26d×8h), uncapped (overtime pays more); present day w/o hours = 8h (back-compat); same formula in generate + edit; HR plan-gated.
 - [Shared table primitives](datatable-primitives.md) — all data tables use frontend/src/components/DataTable.tsx (useSort/SortTh/useQuickFilter/TableFilter); pipeline raw→quickFilter→sort→render.
 - [offline-pos.md](offline-pos.md) — offline POS queue, client_uuid idempotency, search_path commit
+- [label-printing.md](label-printing.md) — labels use Windows paper size only, 2 labels per page (2-up roll), working setup
