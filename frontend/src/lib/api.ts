@@ -7,10 +7,12 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
+  // Keep headers a caller set on purpose (offline uploads carry the login and branch
+  // of the cashier who made the sale, not whoever is logged in now).
   const token = localStorage.getItem('pharma_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
+  if (token && !config.headers.Authorization) config.headers.Authorization = `Bearer ${token}`
   const activeBranch = localStorage.getItem('pharma_active_branch')
-  if (activeBranch) config.headers['X-Active-Branch'] = activeBranch
+  if (activeBranch && !config.headers['X-Active-Branch']) config.headers['X-Active-Branch'] = activeBranch
   // Let the browser set multipart boundary — never force bare multipart/form-data
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']

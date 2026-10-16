@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { offlineLogin } from '../lib/offline'
 import { useTranslation } from 'react-i18next'
 import { Lock, ScanLine, LogOut } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -73,6 +74,14 @@ export default function LockScreen() {
       setError(detail || t('lock.error'))
       setScan('')
     } catch {
+      // No internet: check the password against the copy saved at this cashier's last login.
+      const u = (() => { try { return JSON.parse(localStorage.getItem('pharma_user') || '{}') } catch { return {} } })()
+      const slug = localStorage.getItem('pharma_tenant_slug') || ''
+      if (payload.password && u.username && await offlineLogin(slug, u.username, payload.password)) {
+        setPassword(''); setScan('')
+        unlock()
+        return
+      }
       setError(t('lock.error'))
       setScan('')
     } finally {

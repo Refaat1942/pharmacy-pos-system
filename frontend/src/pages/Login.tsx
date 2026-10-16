@@ -5,6 +5,7 @@ import { Eye, EyeOff, Loader2, Globe, Pill, Building2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { getDefaultHomePath } from '../lib/routeAccess'
 import { authAPI } from '../lib/api'
+import { isNetworkError, offlineLogin, rememberLogin } from '../lib/offline'
 import i18n from '../lib/i18n'
 import CopyrightNotice from '../components/CopyrightNotice'
 
@@ -33,9 +34,18 @@ export default function Login() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const slug = tenantSlug.trim().toLowerCase()
     try {
-      const slug = tenantSlug.trim().toLowerCase()
-      const { data } = await authAPI.login(slug, username, password)
+      let data: any
+      try {
+        data = (await authAPI.login(slug, username, password)).data
+        void rememberLogin(slug, username, password, data)
+      } catch (err) {
+        // No internet: cashiers who logged in on this PC before can still log in.
+        if (!isNetworkError(err)) throw err
+        data = await offlineLogin(slug, username, password)
+        if (!data) throw { response: { data: { detail: t('offline.login_unavailable') } } }
+      }
       localStorage.setItem('pharma_tenant_slug', slug)
       login(data.token, data.user, data.tenant)
       const tenantHas = (key: string) => {
