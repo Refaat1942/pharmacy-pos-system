@@ -17,7 +17,7 @@ import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import api from './api'
 
-export type LabelPreset = '25x5' | '38x10' | '38x12' | 'custom'
+export type LabelPreset = '37x12' | '25x5' | '38x10' | '38x12' | 'custom'
 export type CodeKind = 'barcode' | 'qr'
 export type BarSize = 'small' | 'medium' | 'large'
 
@@ -57,15 +57,17 @@ export interface LabelPrintDialogLabels {
 }
 
 export const PRESET_DIMS: Record<Exclude<LabelPreset, 'custom'>, { wMm: number; hMm: number }> = {
+  // 37 × 12 mm labels, one per gap (two of them make 25 mm on the roll).
+  '37x12': { wMm: 37, hMm: 12 },
   '25x5': { wMm: 25, hMm: 5 },
   '38x10': { wMm: 38, hMm: 10 },
   '38x12': { wMm: 38, hMm: 12 },
 }
 
 export const DEFAULT_LABEL_PREFS: LabelPrefs = {
-  preset: '38x10',
-  customW: 38,
-  customH: 10,
+  preset: '37x12',
+  customW: 37,
+  customH: 12,
   perPage: 1,
   pairGap: 1,
   code: 'barcode',
@@ -76,7 +78,7 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   showPharmacy: false,
 }
 
-const PREFS_KEY = 'fps_label_prefs_v5'
+const PREFS_KEY = 'fps_label_prefs_v7'
 
 function clamp(v: number, lo: number, hi: number, fallback: number): number {
   return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -110,7 +112,7 @@ export function labelDims(p: LabelPrefs): { wMm: number; hMm: number } {
   if (p.preset === 'custom') {
     return { wMm: clamp(p.customW, 10, 120, 38), hMm: clamp(p.customH, 4, 100, 12) }
   }
-  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x10']
+  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['37x12']
 }
 
 /** Size of one printed page = one gap-to-gap section (the paper size to set in Windows). */

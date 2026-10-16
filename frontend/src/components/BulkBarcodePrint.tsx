@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Printer, Minus, Plus, Eye, Barcode, QrCode, Download, Zap, CloudOff } from 'lucide-react'
+import { X, Printer, Minus, Plus, Eye, Barcode, QrCode } from 'lucide-react'
 import api from '../lib/api'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import {
@@ -16,23 +16,6 @@ import {
   type LabelPreset,
   type BarSize,
 } from '../lib/labelPrint'
-import {
-  detectBridge,
-  pickLabelPrinter,
-  printViaBridge,
-  pushCatalog,
-  type BridgeStatus,
-  type CatalogItem,
-  type DirectLabel,
-} from '../lib/tsplLabel'
-
-// Per-PC direct-print settings (FPS Print Bridge). Defaults suit Xprinter 38 × 10 rolls.
-interface DirectPrefs { printer: string; gapMm: number; shiftXmm: number; shiftYmm: number; rotate180: boolean; density: number }
-const DIRECT_KEY = 'fps_direct_print_v1'
-const DIRECT_DEFAULTS: DirectPrefs = { printer: '', gapMm: 2, shiftXmm: 0, shiftYmm: 0, rotate180: false, density: 10 }
-function loadDirect(): DirectPrefs {
-  try { return { ...DIRECT_DEFAULTS, ...JSON.parse(localStorage.getItem(DIRECT_KEY) || '{}') } } catch { return { ...DIRECT_DEFAULTS } }
-}
 
 export interface BulkItem {
   id: number
@@ -82,23 +65,6 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
   const [prefs, setPrefs] = useState<LabelPrefs>(loadLabelPrefs)
   const [pharmacyName, setPharmacyName] = useState('')
   const [busy, setBusy] = useState(false)
-  const [bridge, setBridge] = useState<BridgeStatus | null | 'checking'>('checking')
-  const [direct, setDirect] = useState<DirectPrefs>(loadDirect)
-  const [showTune, setShowTune] = useState(false)
-  const [msg, setMsg] = useState('')
-  const setD = <K extends keyof DirectPrefs>(k: K, v: DirectPrefs[K]) => setDirect((d) => ({ ...d, [k]: v }))
-
-  useEffect(() => { try { localStorage.setItem(DIRECT_KEY, JSON.stringify(direct)) } catch { /* ignore */ } }, [direct])
-  useEffect(() => {
-    let alive = true
-    void detectBridge().then((st) => {
-      if (!alive) return
-      setBridge(st)
-      if (st) setDirect((d) => ({ ...d, printer: pickLabelPrinter(st, d.printer) }))
-    })
-    return () => { alive = false }
-  }, [])
-
   const set = <K extends keyof LabelPrefs>(k: K, v: LabelPrefs[K]) => setPrefs((p) => ({ ...p, [k]: v }))
 
   useEffect(() => { saveLabelPrefs(prefs) }, [prefs])
@@ -110,6 +76,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
 
   const dims = labelDims(prefs)
   const tiny = dims.hMm < 9
+  const eff = buildConfig(prefs, pharmacyName)
   const totalLabels = useMemo(() => printable.reduce((s, i) => s + (qty[i.id] || 0), 0), [qty, printable])
   const skipped = items.length - printable.length
 
@@ -132,56 +99,6 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
       setBusy(false)
     }
   }
-
-  // One-click printing through FPS Print Bridge: exact label size + gap are sent to
-  // the printer as TSPL, so no Windows paper size / offsets are involved.
-  const printDirect = async () => {
-    if (!totalLabels || !bridge || bridge === 'checking') return
-    setBusy(true)
-    setMsg('')
-    try {
-      const labels: DirectLabel[] = printable.map((it) => ({
-        barcode: it.barcode!, name: it.name, price: it.price, expiryDate: it.expiryDate, qty: qty[it.id] || 0,
-      }))
-      await printViaBridge(direct.printer, labels, {
-        ...dims, gapMm: direct.gapMm, code: prefs.code, barSize: prefs.barSize,
-        showName: prefs.showName, showPrice: prefs.showPrice, showExpiry: prefs.showExpiry,
-        showPharmacy: prefs.showPharmacy, pharmacyName,
-        shiftXmm: direct.shiftXmm, shiftYmm: direct.shiftYmm, rotate180: direct.rotate180, density: direct.density,
-      })
-      setMsg(t('bulk_barcode.direct_sent', { n: totalLabels }) as string)
-    } catch (e: any) {
-      setMsg(`${t('bulk_barcode.direct_failed')}: ${e?.message || e}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // Copy the item list into the bridge so labels can be printed with no internet.
-  const saveOffline = async () => {
-    setBusy(true)
-    setMsg(t('bulk_barcode.offline_saving') as string)
-    try {
-      const all: CatalogItem[] = []
-      for (let offset = 0; offset < 200000; offset += 1000) {
-        const { data } = await api.get('/inventory/items', { params: { load_all: true, paged: true, offset, limit: 1000 } })
-        const page = (data.items || []) as any[]
-        page.forEach((p) => p.barcode && all.push({
-          barcode: String(p.barcode), name: (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || '',
-          price: p.price ?? null, expiry: p.expiry_date ?? null,
-        }))
-        if (page.length < 1000) break
-      }
-      await pushCatalog(all, pharmacyName)
-      setMsg(t('bulk_barcode.offline_saved', { n: all.length }) as string)
-    } catch (e: any) {
-      setMsg(`${t('bulk_barcode.direct_failed')}: ${e?.message || e}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const bridgeOk = !!bridge && bridge !== 'checking'
 
   const sample = printable[0]
   // On-screen preview scale: 1 mm ≈ 5 px.
@@ -206,6 +123,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                 value={prefs.preset}
                 onChange={(v) => set('preset', v)}
                 options={[
+                  { value: '37x12', label: '37 × 12 mm' },
                   { value: '25x5', label: '25 × 5 mm' },
                   { value: '38x10', label: '38 × 10 mm' },
                   { value: '38x12', label: '38 × 12 mm' },
@@ -285,8 +203,8 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
               {[0, 1].map((r) => (
                 // One block = one gap-to-gap page of the roll; the dashed line between blocks is the gap.
                 <div key={r} className="flex flex-col items-center mb-3 last:mb-0 pb-3 last:pb-0 border-b-2 border-dashed border-amber-300 last:border-b-0"
-                  style={{ gap: prefs.perPage === 2 ? px(prefs.pairGap) : 0 }}>
-                  {Array.from({ length: prefs.perPage }).map((_, c) => (
+                  style={{ gap: eff.perPage === 2 ? px(eff.pairGap) : 0 }}>
+                  {Array.from({ length: eff.perPage }).map((_, c) => (
                     <div key={c} className="border border-slate-400 rounded-sm flex items-center justify-center bg-white overflow-hidden"
                       style={{ width: px(dims.wMm), height: px(dims.hMm), flex: `0 0 ${px(dims.hMm)}` }}>
                       {prefs.code === 'qr'
@@ -343,51 +261,8 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
           </table>
         </div>
 
-        {bridgeOk ? (
-          <div className="px-5 py-3 border-t bg-pharma-50 text-xs text-pharma-900 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Zap size={14} className="text-pharma-700" />
-              <span className="font-semibold">{t('bulk_barcode.direct_ready')}</span>
-              <select value={direct.printer} onChange={(e) => setD('printer', e.target.value)}
-                className="border border-pharma-200 rounded px-2 py-1 bg-white">
-                {(bridge as BridgeStatus).printers.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <button type="button" onClick={() => setShowTune((v) => !v)} className="underline text-pharma-700">
-                {t('bulk_barcode.fine_tune')}
-              </button>
-              <button type="button" onClick={saveOffline} disabled={busy}
-                className="ms-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-pharma-300 bg-white hover:bg-pharma-100 disabled:opacity-50">
-                <CloudOff size={13} /> {t('bulk_barcode.offline_save')}
-              </button>
-            </div>
-            {showTune && (
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-1">{t('bulk_barcode.gap_mm')}
-                  <input type="number" step={0.5} min={0} max={10} value={direct.gapMm} onChange={(e) => setD('gapMm', parseFloat(e.target.value) || 0)} className="w-16 border rounded px-1.5 py-0.5" /></label>
-                <label className="flex items-center gap-1">{t('bulk_barcode.move_right')}
-                  <input type="number" step={0.5} min={-20} max={40} value={direct.shiftXmm} onChange={(e) => setD('shiftXmm', parseFloat(e.target.value) || 0)} className="w-16 border rounded px-1.5 py-0.5" /></label>
-                <label className="flex items-center gap-1">{t('bulk_barcode.move_down')}
-                  <input type="number" step={0.5} min={-10} max={10} value={direct.shiftYmm} onChange={(e) => setD('shiftYmm', parseFloat(e.target.value) || 0)} className="w-16 border rounded px-1.5 py-0.5" /></label>
-                <label className="flex items-center gap-1">{t('bulk_barcode.darkness')}
-                  <input type="number" min={1} max={15} value={direct.density} onChange={(e) => setD('density', parseInt(e.target.value) || 10)} className="w-14 border rounded px-1.5 py-0.5" /></label>
-                <label className="flex items-center gap-1"><input type="checkbox" checked={direct.rotate180} onChange={(e) => setD('rotate180', e.target.checked)} /> {t('bulk_barcode.rotate')}</label>
-              </div>
-            )}
-          </div>
-        ) : bridge === null ? (
-          <div className="px-5 py-3 border-t bg-amber-50 text-xs text-amber-900 flex flex-wrap items-center gap-2">
-            <Zap size={14} />
-            <span>{t('bulk_barcode.bridge_missing')}</span>
-            <a href="/downloads/FPS-Print-Bridge.exe" download
-              className="ms-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
-              <Download size={13} /> {t('bulk_barcode.bridge_download')}
-            </a>
-          </div>
-        ) : null}
-
         <div className="px-5 py-3 border-t bg-slate-50 flex items-center justify-between gap-3">
           <div className="text-xs">
-            {msg && <div className="text-pharma-800 font-semibold">{msg}</div>}
             {skipped > 0 && <div className="text-amber-700">{t('bulk_barcode.skipped', { n: skipped })}</div>}
           </div>
           <div className="flex items-center gap-2">
@@ -399,17 +274,9 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
               <Eye size={14} /> {t('bulk_barcode.preview')}
             </button>
             <button type="button" onClick={() => print(true)} disabled={busy || !totalLabels}
-              className={bridgeOk
-                ? 'px-4 py-2 text-sm rounded-lg border border-slate-300 bg-white hover:bg-slate-50 font-medium disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap'
-                : 'px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap'}>
-              <Printer size={14} /> {bridgeOk ? t('bulk_barcode.windows_print') : t('bulk_barcode.choose_printer', { n: totalLabels })}
+              className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-medium disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap">
+              <Printer size={14} /> {t('bulk_barcode.choose_printer', { n: totalLabels })}
             </button>
-            {bridgeOk && (
-              <button type="button" onClick={printDirect} disabled={busy || !totalLabels}
-                className="px-4 py-2 text-sm rounded-lg bg-pharma-600 hover:bg-pharma-700 text-white font-semibold disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap">
-                <Zap size={14} /> {t('bulk_barcode.direct_print', { n: totalLabels })}
-              </button>
-            )}
           </div>
         </div>
       </div>
