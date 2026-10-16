@@ -123,7 +123,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                 value={prefs.preset}
                 onChange={(v) => set('preset', v)}
                 options={[
-                  { value: '37x25', label: t('bulk_barcode.size_37x25') },
+                  { value: '37x12', label: '37 × 12 mm' },
                   { value: '25x5', label: '25 × 5 mm' },
                   { value: '38x10', label: '38 × 10 mm' },
                   { value: '38x12', label: '38 × 12 mm' },
@@ -145,7 +145,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                 </div>
               )}
             </div>
-            {prefs.preset !== '37x25' && <div>
+            <div>
               <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.per_page')}</p>
               <Segmented<1 | 2>
                 value={prefs.perPage}
@@ -162,7 +162,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                     className="w-16 border border-slate-300 rounded px-2 py-1" /> mm
                 </label>
               )}
-            </div>}
+            </div>
             <div>
               <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.bar_size')}</p>
               <Segmented<BarSize>

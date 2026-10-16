@@ -89,8 +89,7 @@
     "bar_size": "Barcode size",
     "bar_small": "Small",
     "bar_medium": "Medium",
-    "bar_large": "Large",
-    "size_37x25": "37 × 25 mm (2 labels)"
+    "bar_large": "Large"
   },
   "dose_labels": {
     "title": "Dose labels",

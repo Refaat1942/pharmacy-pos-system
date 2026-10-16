@@ -89,8 +89,7 @@
     "bar_size": "حجم الباركود",
     "bar_small": "صغير",
     "bar_medium": "متوسط",
-    "bar_large": "كبير",
-    "size_37x25": "37 × 25 مم (ملصقين)"
+    "bar_large": "كبير"
   },
   "dose_labels": {
     "title": "ملصقات الجرعة",
