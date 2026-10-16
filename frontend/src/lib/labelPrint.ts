@@ -17,7 +17,7 @@ import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import api from './api'
 
-export type LabelPreset = '25x5' | '38x10' | '38x12' | 'custom'
+export type LabelPreset = '37x25' | '25x5' | '38x10' | '38x12' | 'custom'
 export type CodeKind = 'barcode' | 'qr'
 export type BarSize = 'small' | 'medium' | 'large'
 
@@ -57,16 +57,18 @@ export interface LabelPrintDialogLabels {
 }
 
 export const PRESET_DIMS: Record<Exclude<LabelPreset, 'custom'>, { wMm: number; hMm: number }> = {
+  // 37 × 25 mm roll: two 37 × 12 labels stacked between gaps (always printed 2 per page).
+  '37x25': { wMm: 37, hMm: 12 },
   '25x5': { wMm: 25, hMm: 5 },
   '38x10': { wMm: 38, hMm: 10 },
   '38x12': { wMm: 38, hMm: 12 },
 }
 
 export const DEFAULT_LABEL_PREFS: LabelPrefs = {
-  preset: '38x10',
-  customW: 38,
-  customH: 10,
-  perPage: 1,
+  preset: '37x25',
+  customW: 37,
+  customH: 12,
+  perPage: 2,
   pairGap: 1,
   code: 'barcode',
   barSize: 'medium',
@@ -76,7 +78,7 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   showPharmacy: false,
 }
 
-const PREFS_KEY = 'fps_label_prefs_v5'
+const PREFS_KEY = 'fps_label_prefs_v6'
 
 function clamp(v: number, lo: number, hi: number, fallback: number): number {
   return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -89,7 +91,7 @@ export function loadLabelPrefs(): LabelPrefs {
     return {
       ...DEFAULT_LABEL_PREFS,
       ...p,
-      perPage: p.perPage === 2 ? 2 : 1,
+      perPage: p.preset === '37x25' || p.preset === undefined || p.perPage === 2 ? 2 : 1,
       code: p.code === 'qr' ? 'qr' : 'barcode',
       barSize: p.barSize === 'small' || p.barSize === 'large' ? p.barSize : 'medium',
     }
@@ -110,12 +112,13 @@ export function labelDims(p: LabelPrefs): { wMm: number; hMm: number } {
   if (p.preset === 'custom') {
     return { wMm: clamp(p.customW, 10, 120, 38), hMm: clamp(p.customH, 4, 100, 12) }
   }
-  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x10']
+  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['37x25']
 }
 
 /** Size of one printed page = one gap-to-gap section (the paper size to set in Windows). */
 export function pageSizeMm(p: LabelPrefs): { wMm: number; hMm: number } {
   const { wMm, hMm } = labelDims(p)
+  if (p.preset === '37x25') return { wMm: 37, hMm: 25 }
   return { wMm, hMm: p.perPage === 2 ? +(hMm * 2 + clamp(p.pairGap, 0, 10, 1)).toFixed(2) : hMm }
 }
 
@@ -127,7 +130,9 @@ const BAR_SIZE: Record<BarSize, { w: number; h: number }> = {
 }
 
 export function buildConfig(prefs: LabelPrefs, pharmacyName: string): LabelPrintConfig {
-  return { ...prefs, ...labelDims(prefs), pharmacyName }
+  // The 37 × 25 roll is fixed: 2 labels of 12 mm with 1 mm between them.
+  const fixed = prefs.preset === '37x25' ? { perPage: 2 as const, pairGap: 1 } : {}
+  return { ...prefs, ...fixed, ...labelDims(prefs), pharmacyName }
 }
 
 /** Saved prefs (this computer) + pharmacy name from the profile. */
