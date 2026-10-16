@@ -426,6 +426,58 @@ def pos_offline_pack(current_user=Depends(get_current_user), active_branch=Depen
         conn.close()
 
 
+def _json_row(r: dict) -> dict:
+    out = {}
+    for k, v in r.items():
+        if isinstance(v, (date, datetime)):
+            v = v.isoformat()
+        elif v is not None and not isinstance(v, (int, float, str, bool)):
+            v = float(v)  # Decimal
+        out[k] = v
+    return out
+
+
+@app.get("/api/pos/offline-invoices")
+def pos_offline_invoices(days: int = 3,
+                         current_user=Depends(get_current_user),
+                         active_branch=Depends(get_active_branch_id)):
+    """Recent invoices of the branch with their items (same shape as GET /api/sales/{id}),
+    so the till can find a receipt and make a return while offline."""
+    days = max(1, min(days, 14))
+    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                      c.name AS customer_name, b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                      b.address AS branch_address, b.phone AS branch_phone
+               FROM invoices i
+               LEFT JOIN users u ON i.seller_id = u.id
+               LEFT JOIN customers c ON i.customer_id = c.id
+               LEFT JOIN branches b ON i.branch_id = b.id
+               WHERE i.branch_id = %s AND i.created_at >= now() - make_interval(days => %s)
+               ORDER BY i.created_at DESC LIMIT 3000""",
+            (branch_id, days),
+        )
+        invoices = [_json_row(r) for r in cur.fetchall()]
+        ids = [r["id"] for r in invoices]
+        items: list = []
+        if ids:
+            cur.execute(
+                """SELECT ii.*, p.unit AS prod_unit, p.sub_unit AS prod_sub_unit,
+                          COALESCE((SELECT SUM(ri.sub_quantity) FROM return_items ri
+                                    WHERE ri.invoice_item_id = ii.id), 0) AS returned_sub
+                   FROM invoice_items ii LEFT JOIN products p ON ii.product_id = p.id
+                   WHERE ii.invoice_id = ANY(%s) ORDER BY ii.id""",
+                (ids,),
+            )
+            items = [_json_row(r) for r in cur.fetchall()]
+        return {"generated_at": datetime.now().isoformat(), "invoices": invoices, "items": items}
+    finally:
+        conn.close()
+
+
 @app.get("/api/products")
 def search_products(q: str = "",
                     current_user=Depends(get_current_user),
@@ -900,7 +952,7 @@ def _sale_response(cur, invoice_id: int) -> dict:
     return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
 
 
-def _offline_sale_time(req: "SaleRequest") -> Optional[datetime]:
+def _offline_sale_time(req) -> Optional[datetime]:
     """When the sale was made offline (clamped to the last 30 days, never the future)."""
     if not req.client_uuid or not req.offline_created_at:
         return None
@@ -1819,13 +1871,24 @@ class ReturnItem(BaseModel):
 class ReturnRequest(BaseModel):
     items: List[ReturnItem]
     reason: Optional[str] = None
+    # Offline POS upload (see create_sale).
+    client_uuid: Optional[str] = None
+    offline_created_at: Optional[datetime] = None
 
 
 @app.post("/api/sales/{invoice_id}/return")
 def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get_current_user)):
+    client_uuid = (req.client_uuid or "").strip()[:64] or None
+    offline_at = _offline_sale_time(req)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if client_uuid:
+            # Re-sent offline upload → the return is already saved.
+            cur.execute("SELECT * FROM returns WHERE client_uuid=%s", (client_uuid,))
+            dup = cur.fetchone()
+            if dup:
+                return dict(dup)
         _assert_invoice_branch_access(cur, invoice_id, current_user)
         # Always tag the return with the ORIGINAL INVOICE's branch (not the
         # operator's profile branch). Admins may operate across branches; the
@@ -1835,17 +1898,20 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         if not inv_row:
             raise HTTPException(status_code=404, detail="Invoice not found")
         return_branch_id = inv_row["branch_id"]
-        from shifts import assert_open_shift_for_sales
-        assert_open_shift_for_sales(cur, current_user["user_id"], return_branch_id)
+        if offline_at is None:
+            # Offline returns were made in a shift opened on the till; it is matched by time.
+            from shifts import assert_open_shift_for_sales
+            assert_open_shift_for_sales(cur, current_user["user_id"], return_branch_id)
 
         return_number = _next_invoice_number(cur)
 
         cur.execute(
             """INSERT INTO returns
-               (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id)
-               VALUES (%s,%s,'partial',%s,%s,%s,%s) RETURNING *""",
+               (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id,
+                client_uuid, is_offline, created_at)
+               VALUES (%s,%s,'partial',%s,%s,%s,%s,%s,%s,COALESCE(%s, now())) RETURNING *""",
             (invoice_id, return_number, 0, req.reason,
-             current_user.get("user_id"), return_branch_id),
+             current_user.get("user_id"), return_branch_id, client_uuid, offline_at is not None, offline_at),
         )
         ret = cur.fetchone()
 
@@ -1928,6 +1994,15 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
             conn.rollback()
         ret["total_returned"] = round(total_returned, 2)
         return dict(ret)
+    except psycopg2.errors.UniqueViolation:
+        # Same offline return uploaded twice at once: the other request saved it.
+        conn.rollback()
+        if client_uuid:
+            cur.execute("SELECT * FROM returns WHERE client_uuid=%s", (client_uuid,))
+            dup = cur.fetchone()
+            if dup:
+                return dict(dup)
+        raise HTTPException(status_code=409, detail="Duplicate return")
     except HTTPException:
         conn.rollback()
         raise

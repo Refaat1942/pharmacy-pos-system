@@ -817,6 +817,9 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS claim_id INTEGER;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(64);
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_client_uuid ON invoices(client_uuid) WHERE client_uuid IS NOT NULL;
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(64);
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid) WHERE client_uuid IS NOT NULL;
 
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS insurance_line JSONB;
 
