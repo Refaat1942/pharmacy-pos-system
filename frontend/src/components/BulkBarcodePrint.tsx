@@ -115,6 +115,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
 
+        <div className="flex-1 min-h-0 overflow-auto">
         <div className="px-5 py-4 border-b bg-slate-50 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
           <div className="space-y-3">
             <div>
@@ -143,24 +144,6 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                       className="w-16 border border-slate-300 rounded px-2 py-1" /> mm
                   </label>
                 </div>
-              )}
-            </div>
-            <div>
-              <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.per_page')}</p>
-              <Segmented<1 | 2>
-                value={prefs.perPage}
-                onChange={(v) => set('perPage', v)}
-                options={[
-                  { value: 1, label: t('bulk_barcode.per_page_1') },
-                  { value: 2, label: t('bulk_barcode.per_page_2') },
-                ]}
-              />
-              {prefs.perPage === 2 && (
-                <label className="flex items-center gap-1 mt-2">{t('bulk_barcode.pair_gap')}
-                  <input type="number" min={0} max={10} step={0.5} value={prefs.pairGap}
-                    onChange={(e) => set('pairGap', Math.max(0, parseFloat(e.target.value) || 0))}
-                    className="w-16 border border-slate-300 rounded px-2 py-1" /> mm
-                </label>
               )}
             </div>
             <div>
@@ -227,7 +210,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto">
+        <div>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase sticky top-0">
               <tr>
@@ -259,6 +242,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
               )}
             </tbody>
           </table>
+        </div>
         </div>
 
         <div className="px-5 py-3 border-t bg-slate-50 flex items-center justify-between gap-3">
