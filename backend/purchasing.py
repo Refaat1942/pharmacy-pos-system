@@ -348,6 +348,9 @@ class POItemIn(BaseModel):
     sales_tax: float = 0
     public_price: Optional[float] = None
     expiry_date: Optional[date] = None
+    # Unit the line is bought in: "pack" (box, default), "mid" (strip), "sub" (tablet).
+    # quantity, unit_cost and public_price are all per this unit.
+    unit_type: Optional[str] = "pack"
 
 
 class POIn(BaseModel):
@@ -444,35 +447,49 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
         pid = p["id"]
         pack_size = max(1, int(p.get("pack_size") or 1))
 
-    # PO qty is in packs/boxes — convert to sub-units when pack_size > 1.
-    outer_qty = stock_qty
-    stock_qty_sub = outer_qty * pack_size if pack_size > 1 else outer_qty
-
     cur.execute(
-        "SELECT stock, cost, avg_cost, pack_size FROM products WHERE id=%s FOR UPDATE",
+        """SELECT stock, cost, avg_cost, pack_size, unit, sub_unit, mid_unit, mid_size
+           FROM products WHERE id=%s FOR UPDATE""",
         (pid,),
     )
-    prow = cur.fetchone()
-    old_stock_sub = int(prow["stock"] or 0) if prow else 0
-    old_avg = float(prow.get("avg_cost") or prow.get("cost") or 0) if prow else 0
+    prow = cur.fetchone() or {}
+    pack_size = max(1, int(prow.get("pack_size") or pack_size or 1))
+
+    # Line qty/cost/price are per the unit it was bought in (box by default, or
+    # strip/tablet). Stock is stored in the smallest unit; cost and price per box.
+    from pack_units import unit_label, unit_multiple
+    per_unit = unit_multiple(prow, it.get("unit_type")) if prow else 1
+    stock_qty_sub = stock_qty * per_unit
+    outer_qty = stock_qty_sub / pack_size              # boxes received
+    to_box = pack_size / per_unit                      # bought units in one box
+    box_cost = round(inventory_cost * to_box, 4)
+    if new_price is not None:
+        new_price = round(new_price * to_box, 2)
+
+    old_stock_sub = int(prow.get("stock") or 0)
+    old_avg = float(prow.get("avg_cost") or prow.get("cost") or 0)
     old_packs = old_stock_sub / pack_size if pack_size > 1 else old_stock_sub
     total_packs = old_packs + outer_qty
     new_avg = (
-        (old_packs * old_avg + outer_qty * inventory_cost) / total_packs
-        if total_packs > 0 else inventory_cost
+        (old_packs * old_avg + outer_qty * box_cost) / total_packs
+        if total_packs > 0 else box_cost
     )
     new_avg = round(new_avg, 4)
 
     add_batch_stock(cur, pid, branch_id, stock_qty_sub, it["expiry_date"])
     new_stock = sync_product_from_batches(cur, pid)
     sets = ["cost=%s", "avg_cost=%s"]
-    params: list = [inventory_cost, new_avg]
+    params: list = [box_cost, new_avg]
     if new_price is not None:
         sets.append("price=%s")
         params.append(new_price)
         if pack_size > 1:
             sets.append("sub_price=%s")
             params.append(round(new_price / pack_size, 2))
+            mid_size = int(prow.get("mid_size") or 0)
+            if prow.get("mid_unit") and 1 < mid_size < pack_size:
+                sets.append("mid_price=%s")
+                params.append(round(new_price * mid_size / pack_size, 2))
     params.append(pid)
     cur.execute(f"UPDATE products SET {', '.join(sets)} WHERE id=%s", params)
     cur.execute("UPDATE purchase_order_items SET product_id=%s WHERE id=%s", (pid, it["id"]))
@@ -480,8 +497,9 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
         cur, pid, branch_id, "purchase",
         stock_qty_sub, new_stock,
         reference_type="po", reference_id=po["id"],
-        reason=f"PO {po['po_number']} received"
-        + (f" ({paid_qty}+{bonus_qty} bonus)" if bonus_qty else ""),
+        reason=f"PO {po['po_number']} received ({paid_qty}"
+        + (f"+{bonus_qty} bonus" if bonus_qty else "")
+        + f" {unit_label(prow, it.get('unit_type')) if prow else 'unit'})",
         user_id=current_user.get("user_id"),
     )
 
@@ -584,11 +602,12 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                 """INSERT INTO purchase_order_items
                    (po_id, product_id, barcode, product_name_ar, product_name_en,
                     quantity, bonus_qty, unit_cost, discount_pct, vat_pct, sales_tax, public_price,
-                    expiry_date, total)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    expiry_date, total, unit_type)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (po_id, it.product_id, barcode, pname_ar, pname_en,
                  it.quantity, it.bonus_qty, pharmacy, it.discount_pct, 0, stax,
-                 retail, it.expiry_date, line_total),
+                 retail, it.expiry_date, line_total,
+                 (it.unit_type or "pack") if it.product_id else "pack"),
             )
 
         po_row = {"id": po_id, "po_number": po_number, "branch_id": req.branch_id}

@@ -17,3 +17,7 @@ Business decisions confirmed by the pharmacy owner:
 **Why:** the client's exported master data counts whole boxes and prices per box. Misreading these as small-unit values corrupts both inventory valuation and shelf pricing, so the semantics must stay fixed.
 
 **How to apply:** when pack_size > 1 → stock is stored in SUB-units = round(Quantity × pack_size); sub_price = round(price ÷ pack_size, 2); sub_unit defaults to "piece" (editable per item). When pack_size ≤ 1 → stock = round(Quantity), no sub_unit/sub_price. Existing-item matching on re-upload is scoped to the current branch_id (NULL-safe), not a global barcode match, so an upload never edits another branch's row.
+
+**One-row-per-unit exports (box row + strip row, same Code):** a row with Subunit Quantity 1 is the box (box price + stock in boxes); a row with Subunit Quantity > 1 is the sub unit and its price is the price of ONE sub unit (kept as typed, not divided). Merged in `_combine_unit_tier_rows`; with several sub rows the finest (largest qty) wins. Stock is never summed across tier rows.
+
+**Any-system import:** `backend/import_mapper.py` reads xlsx / legacy xls (xlrd) / HTML-as-xls / CSV (any encoding/delimiter), finds the header row + sheet, maps headers via multilingual synonyms (EN/AR/FR/ES/TR/DE + Odoo/ERPNext names) with content-based guesses, and normalises unit codes (PAC→box, STR→strip, علبة→box, شريط→strip). `POST /inventory/bulk-upload/preview` returns the detected mapping; the UI lets the user correct it and sends `mapping` JSON with the upload.

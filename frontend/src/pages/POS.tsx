@@ -33,7 +33,7 @@ import api from '../lib/api'
 import type { Product, CartItem, Customer, SaleResponse, Prescription, CustomerTreatmentPlan } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
-import { formatStockInline } from '../lib/packStock'
+import { formatStockInline, sellUnitsOf, unitPrice, type SellUnit } from '../lib/packStock'
 import {
   barcodeSearchQueries,
   looksLikeScannerInput,
@@ -122,6 +122,7 @@ function DiscountModeToggle({
 }
 
 const normalizeItems = (items: CartItem[]): CartItem[] => items.map(normalizeItem)
+
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -408,7 +409,7 @@ export default function POS() {
   }, [])
 
   // Selling is allowed even when stock is zero or negative; replenishment nets it out.
-  const maxQty = useCallback((_p: Product, _unit_type: 'pack' | 'sub') => {
+  const maxQty = useCallback((_p: Product, _unit_type: SellUnit) => {
     return 999999
   }, [])
 
@@ -589,19 +590,27 @@ export default function POS() {
     return unmatched
   }, [])
 
-  // Toggle sell unit (box vs strip). Reset qty to 1 — do not convert pack count to sub-units.
-  const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
+  // Toggle sell unit (box vs strip). The typed count is kept as-is (3 boxes → 3 strips);
+  // it is never converted, so the cashier always sees the number they entered.
+  const setUnitType = useCallback((productId: number, ut: SellUnit) => {
     setCartItems((prev) => prev.map((i) => {
       if (i.product.id !== productId) return i
       if ((i.unit_type || 'pack') === ut) return i
-      const pack = Math.max(1, i.product.pack_size || 1)
-      const price = ut === 'sub'
-        ? (i.product.sub_price != null ? Number(i.product.sub_price) : i.product.price / pack)
-        : i.product.price
-      const q = 1
+      if (!sellUnitsOf(i.product).includes(ut)) return i
+      const price = unitPrice(i.product, ut)
+      const q = i.quantity
       return { ...i, unit_type: ut, unit_price: price, quantity: q, discount: calcLineDiscount(q * price, i.discount_mode, i.discount_value) }
     }))
   }, [])
+
+  /** Translated unit name (Box → علبة); falls back to the raw label, then to a default. */
+  const unitName = useCallback((raw: string | null | undefined, fallback: 'box' | 'piece') => {
+    const r = (raw || '').trim()
+    if (!r) return t(`units.${fallback}`)
+    const key = `units.${r.toLowerCase()}`
+    const tr = t(key)
+    return tr === key ? r : tr
+  }, [t])
 
   const setDoseText = useCallback((productId: number, doseText: string) => {
     setCartItems((prev) => prev.map((i) =>
@@ -846,7 +855,7 @@ export default function POS() {
                   </button>
                 ) : (
                   <kbd className="hidden sm:flex absolute end-4 top-1/2 -translate-y-1/2 items-center gap-1 text-[10px] text-slate-400 bg-slate-100 px-2 py-1 rounded-md font-mono">
-                    <Search size={10} /> Scan or type
+                    <Search size={10} /> {t('pos.scan_or_type')}
                   </kbd>
                 )}
               </div>
@@ -895,14 +904,23 @@ export default function POS() {
                                   ? `${p.stock} ${t('pos.negative_stock')}`
                                   : isOut
                                   ? t('pos.out_of_stock')
-                                  : `${formatStockInline(p.stock, p.pack_size, p.unit, p.sub_unit)} ${t('pos.in_stock')}`}
+                                  : `${formatStockInline(p.stock, p.pack_size, unitName(p.unit, 'box'), unitName(p.sub_unit, 'piece'), p.mid_unit ? unitName(p.mid_unit, 'piece') : null, p.mid_size)} ${t('pos.in_stock')}`}
                               </span>
                             </div>
                           </div>
                           <div className="text-end flex-shrink-0">
                             <p className="text-pharma-700 font-bold tabular-nums">
                               {t('pos.egp')} {formatMoney(p.price)}
+                              <span className="ms-1 text-[10px] font-semibold text-slate-400">/ {unitName(p.unit, 'box')}</span>
                             </p>
+                            {sellUnitsOf(p).filter((u) => u !== 'pack').map((u) => (
+                              <p key={u} className="text-[11px] text-slate-500 tabular-nums">
+                                {t('pos.egp')} {formatMoney(unitPrice(p, u))}
+                                <span className="ms-1 text-[10px] text-slate-400">
+                                  / {u === 'mid' ? unitName(p.mid_unit, 'piece') : unitName(p.sub_unit, 'piece')}
+                                </span>
+                              </p>
+                            ))}
                           </div>
                           {idx === highlight && (
                             <CornerDownLeft size={14} className="text-pharma-500 flex-shrink-0" />
@@ -945,7 +963,7 @@ export default function POS() {
                       onClick={() => { setCartItems([]); setInvoiceDiscount(0); setRxClinic(null); setRxId(null) }}
                       className="text-xs text-slate-400 hover:text-red-500 font-medium flex items-center gap-1 transition-colors"
                     >
-                      <Trash2 size={12} /> Clear
+                      <Trash2 size={12} /> {t('pos.clear_cart')}
                     </button>
                   </div>
                   {rxClinic && (
@@ -964,183 +982,206 @@ export default function POS() {
                       const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
                       const itemTotal = item.quantity * item.unit_price - item.discount
                       const pack = Math.max(1, item.product.pack_size || 1)
-                      const hasSub = pack > 1 && !!item.product.sub_unit
-                      const ut = item.unit_type || 'pack'
+                      const units = sellUnitsOf(item.product)
+                      const hasSub = units.length > 1
+                      const ut: SellUnit = units.includes(item.unit_type || 'pack') ? (item.unit_type || 'pack') : 'pack'
                       const max = maxQty(item.product, ut)
-                      const unitLabel = ut === 'sub' ? item.product.sub_unit : item.product.unit
+                      const boxLabel = unitName(item.product.unit, 'box')
+                      const subLabel = unitName(item.product.sub_unit, 'piece')
+                      const midLabel = item.product.mid_unit ? unitName(item.product.mid_unit, 'piece') : ''
+                      const labelOf = (u: SellUnit) => (u === 'sub' ? subLabel : u === 'mid' ? midLabel : boxLabel)
+                      const unitLabel = labelOf(ut)
+                      const isOfferItem = offersEnabled && isOfferProduct(item.product.id, activeOffers)
+                      const stock = item.product.stock
+                      const stockTone = stock < 0
+                        ? 'text-red-600 bg-red-50'
+                        : stock <= 0
+                          ? 'text-red-500 bg-red-50'
+                          : stock <= (item.product.min_stock || 0)
+                            ? 'text-amber-700 bg-amber-50'
+                            : 'text-pharma-700 bg-pharma-50'
                       return (
-                        <div key={item.product.id} className="px-5 py-4 border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 transition-colors">
-                          <div className="flex flex-col sm:flex-row gap-4 sm:items-start">
-                            <div className="flex-1 min-w-0 space-y-2">
+                        <div key={item.product.id} className="cart-item-enter px-5 py-4 hover:bg-slate-50/60 transition-colors">
+                          {/* Primary row: name · unit · qty · total */}
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                            <div className="flex-1 min-w-[12rem]">
                               <p className="font-semibold text-slate-800 text-sm leading-snug">{name}</p>
-                            <p className="text-[11px] text-slate-400 tabular-nums">
-                              {t('pos.egp')} {formatMoney(item.unit_price)} × {item.quantity} {unitLabel}
-                            </p>
-                            <p className={`text-[11px] font-semibold tabular-nums ${
-                              item.product.stock < 0
-                                ? 'text-red-600'
-                                : item.product.stock <= 0
-                                ? 'text-red-500'
-                                : item.product.stock <= (item.product.min_stock || 0)
-                                  ? 'text-amber-600'
-                                  : 'text-emerald-600'
-                            }`}>
-                              {item.product.stock < 0
-                                ? `${item.product.stock} ${t('pos.negative_stock')}`
-                                : item.product.stock <= 0
-                                ? t('pos.out_of_stock')
-                                : `${formatStockInline(item.product.stock, item.product.pack_size, item.product.unit, item.product.sub_unit)} ${t('pos.in_stock')}`}
-                            </p>
-                            {(item.offer_discount || 0) > 0 && (
-                              <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold uppercase tracking-wide text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">
-                                <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
-                              </span>
-                            )}
-                            {doseLabelsOn && !isInsurancePos && (
-                              <PosItemDoseLabel
-                                productId={item.product.id}
-                                productName={name || item.product.name_en}
-                                patientName={selectedCustomer?.name || ''}
-                                defaultQty={item.quantity}
-                                customPresets={doseLabelPresets}
-                                pharmacyName={pharmacyName}
-                                showPharmacyOnLabels={showPharmacyOnLabels}
-                                onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
-                                onDoseChange={(txt) => setDoseText(item.product.id, txt)}
-                                includeOnReceipt={!!item.dose_on_receipt}
-                                onReceiptToggle={(v) => setDoseOnReceipt(item.product.id, v)}
-                              />
-                            )}
-                            {hasSub && (
-                              <div className="mt-1 inline-flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
-                                <button
-                                  onClick={() => setUnitType(item.product.id, 'pack')}
-                                  className={`px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide ${
-                                    ut === 'pack' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                  }`}
-                                >
-                                  {item.product.unit}
-                                </button>
-                                <button
-                                  onClick={() => setUnitType(item.product.id, 'sub')}
-                                  className={`px-2 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide ${
-                                    ut === 'sub' ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                                  }`}
-                                >
-                                  {item.product.sub_unit}
-                                </button>
-                              </div>
-                            )}
-                            {offersEnabled && isOfferProduct(item.product.id, activeOffers) && (
-                              <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                                {t('pos.offer_no_manual_discount')}
-                              </p>
-                            )}
-                            </div>
-
-                            <div className="flex flex-col items-stretch sm:items-end gap-2 shrink-0 sm:min-w-[11rem]">
-                            {!isInsurancePos && !(offersEnabled && isOfferProduct(item.product.id, activeOffers)) && (
-                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 w-full sm:w-auto">
-                              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5 text-end">
-                                {t('pos.item_discount')}
-                              </p>
-                              <div className="flex flex-wrap items-stretch gap-2 justify-end">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={item.discount_value || ''}
-                                  onChange={(e) =>
-                                    setItemDiscount(
-                                      item.product.id,
-                                      item.discount_mode || 'amount',
-                                      Math.max(0, parseFloat(e.target.value) || 0),
-                                    )
-                                  }
-                                  placeholder={item.discount_mode === 'percent' ? '0' : '0.00'}
-                                  className="w-24 min-h-[36px] text-sm text-end font-semibold border-2 border-emerald-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-pharma-500 focus:ring-2 focus:ring-pharma-100 bg-white tabular-nums"
-                                />
-                                <DiscountModeToggle
-                                  size="sm"
-                                  mode={item.discount_mode || 'amount'}
-                                  onAmount={() =>
-                                    setItemDiscount(item.product.id, 'amount', item.discount_value || 0)
-                                  }
-                                  onPercent={() =>
-                                    setItemDiscount(item.product.id, 'percent', item.discount_value || 0)
-                                  }
-                                />
-                                {(item.discount_value || 0) > 0 && (
-                                  <p className="text-xs text-emerald-700 font-bold tabular-nums text-end mt-1 w-full">
-                                    − {formatMoney(calcLineDiscount(
-                                      item.quantity * item.unit_price,
-                                      item.discount_mode,
-                                      item.discount_value,
-                                    ))} {t('pos.egp')}
-                                  </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                                <span className="text-slate-500 tabular-nums">
+                                  {t('pos.egp')} {formatMoney(item.unit_price)} / {unitLabel}
+                                </span>
+                                <span className={`font-semibold tabular-nums rounded px-1.5 py-0.5 ${stockTone}`}>
+                                  {stock < 0
+                                    ? `${stock} ${t('pos.negative_stock')}`
+                                    : stock <= 0
+                                      ? t('pos.out_of_stock')
+                                      : `${formatStockInline(stock, item.product.pack_size, boxLabel, subLabel, midLabel || null, item.product.mid_size)} ${t('pos.in_stock')}`}
+                                </span>
+                                {(item.offer_discount || 0) > 0 && (
+                                  <span className="inline-flex items-center gap-1 font-bold text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">
+                                    <Tag size={10} /> {t('pos.offer_applied')} −{formatMoney(item.offer_discount || 0)}
+                                  </span>
                                 )}
                               </div>
                             </div>
-                            )}
-                            {isInsurancePos && (
-                              <div className="rounded-lg border border-sky-200 bg-sky-50/70 p-2 w-full sm:w-auto">
-                                <label className="text-[10px] font-bold uppercase tracking-wide text-sky-800 block mb-1 text-end">
-                                  {t('insurance.item_additional')}
-                                </label>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  step="0.01"
-                                  value={item.additional_amount || ''}
-                                  onChange={(e) =>
-                                    setItemAdditionalAmount(
-                                      item.product.id,
-                                      Math.max(0, parseFloat(e.target.value) || 0),
-                                    )
-                                  }
-                                  placeholder="0.00"
-                                  className="w-full min-h-[36px] text-sm text-end font-semibold border-2 border-sky-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-sky-500 bg-white tabular-nums"
-                                />
+
+                            {hasSub && (
+                              <div
+                                className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5"
+                                role="group"
+                                aria-label={t('pos.sell_unit') as string}
+                              >
+                                {units.map((u) => (
+                                  <button
+                                    key={u}
+                                    type="button"
+                                    onClick={() => setUnitType(item.product.id, u)}
+                                    className={`min-w-[4rem] px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                                      ut === u
+                                        ? 'bg-white text-pharma-700 shadow-sm ring-1 ring-pharma-200'
+                                        : 'text-slate-500 hover:text-slate-800'
+                                    }`}
+                                    title={u === 'pack' ? undefined
+                                      : `${u === 'mid' ? pack / (item.product.mid_size || 1) : pack} ${labelOf(u)} = 1 ${boxLabel}`}
+                                  >
+                                    {labelOf(u)}
+                                  </button>
+                                ))}
                               </div>
                             )}
-                          <div className="flex items-center justify-between sm:justify-end gap-2 w-full">
-                          <div className="flex items-center gap-1 bg-slate-50 rounded-xl p-1">
+
+                            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+                              <button
+                                type="button"
+                                onClick={() => updateQty(item.product.id, item.quantity - 1)}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 transition-all"
+                                aria-label="-"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                max={max}
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const v = parseInt(e.target.value || '0', 10)
+                                  if (!isNaN(v) && v > 0) updateQty(item.product.id, Math.min(v, max))
+                                }}
+                                className="w-12 text-center text-sm font-bold text-slate-800 tabular-nums bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-pharma-200 rounded"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => updateQty(item.product.id, item.quantity + 1)}
+                                disabled={item.quantity >= max}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 disabled:opacity-30 transition-all"
+                                aria-label="+"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+
+                            <div className="text-end min-w-[6rem]">
+                              <p className="font-bold text-pharma-700 tabular-nums text-base leading-tight">
+                                {formatMoney(itemTotal)}
+                              </p>
+                              <p className="text-[10px] text-slate-400 uppercase">{t('pos.egp')}</p>
+                            </div>
+
                             <button
-                              onClick={() => updateQty(item.product.id, item.quantity - 1)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"
+                              type="button"
+                              onClick={() => removeFromCart(item.product.id)}
+                              className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors p-1.5"
+                              title={t('common.delete') as string}
                             >
-                              <Minus size={13} />
-                            </button>
-                            <input
-                              type="number"
-                              min={1}
-                              max={max}
-                              value={item.quantity}
-                              onChange={(e) => {
-                                const v = parseInt(e.target.value || '0', 10)
-                                if (!isNaN(v) && v > 0) updateQty(item.product.id, Math.min(v, max))
-                              }}
-                              className="w-12 text-center text-sm font-bold text-slate-800 tabular-nums bg-transparent border-0 focus:outline-none focus:ring-2 focus:ring-pharma-200 rounded"
-                            />
-                            <button
-                              onClick={() => updateQty(item.product.id, item.quantity + 1)}
-                              disabled={item.quantity >= max}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 disabled:opacity-30 transition-all"
-                            >
-                              <Plus size={13} />
+                              <Trash2 size={15} />
                             </button>
                           </div>
-                          <div className="text-end font-bold text-pharma-700 tabular-nums text-sm min-w-[5.5rem]">
-                            {t('pos.egp')} {formatMoney(itemTotal)}
-                          </div>
-                          <button
-                            onClick={() => removeFromCart(item.product.id)}
-                            className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                          </div>
-                          </div>
-                          </div>
+
+                          {/* Secondary row: discount / insurance extra / dose label */}
+                          {(doseLabelsOn && !isInsurancePos) || isInsurancePos || !isOfferItem ? (
+                            <div className="mt-3 flex flex-wrap items-start gap-3">
+                              {!isInsurancePos && !isOfferItem && (
+                                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                    {t('pos.item_discount')}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={item.discount_value || ''}
+                                    onChange={(e) =>
+                                      setItemDiscount(
+                                        item.product.id,
+                                        item.discount_mode || 'amount',
+                                        Math.max(0, parseFloat(e.target.value) || 0),
+                                      )
+                                    }
+                                    placeholder={item.discount_mode === 'percent' ? '0' : '0.00'}
+                                    className="w-20 min-h-[32px] text-sm text-end font-semibold border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:border-pharma-500 focus:ring-2 focus:ring-pharma-100 bg-white tabular-nums"
+                                  />
+                                  <DiscountModeToggle
+                                    size="sm"
+                                    mode={item.discount_mode || 'amount'}
+                                    onAmount={() => setItemDiscount(item.product.id, 'amount', item.discount_value || 0)}
+                                    onPercent={() => setItemDiscount(item.product.id, 'percent', item.discount_value || 0)}
+                                  />
+                                  {(item.discount_value || 0) > 0 && (
+                                    <span className="text-xs text-pharma-700 font-bold tabular-nums">
+                                      − {formatMoney(calcLineDiscount(
+                                        item.quantity * item.unit_price,
+                                        item.discount_mode,
+                                        item.discount_value,
+                                      ))} {t('pos.egp')}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                              {isInsurancePos && (
+                                <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50/70 px-2 py-1.5">
+                                  <label className="text-[10px] font-bold uppercase tracking-wide text-sky-800">
+                                    {t('insurance.item_additional')}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={item.additional_amount || ''}
+                                    onChange={(e) =>
+                                      setItemAdditionalAmount(
+                                        item.product.id,
+                                        Math.max(0, parseFloat(e.target.value) || 0),
+                                      )
+                                    }
+                                    placeholder="0.00"
+                                    className="w-24 min-h-[32px] text-sm text-end font-semibold border border-sky-200 rounded-md px-2 py-1 focus:outline-none focus:border-sky-500 bg-white tabular-nums"
+                                  />
+                                </div>
+                              )}
+                              {doseLabelsOn && !isInsurancePos && (
+                                <div className="flex-1 min-w-[14rem]">
+                                  <PosItemDoseLabel
+                                    productId={item.product.id}
+                                    productName={name || item.product.name_en}
+                                    patientName={selectedCustomer?.name || ''}
+                                    defaultQty={item.quantity}
+                                    customPresets={doseLabelPresets}
+                                    pharmacyName={pharmacyName}
+                                    showPharmacyOnLabels={showPharmacyOnLabels}
+                                    onOpenFullEditor={(doseText) => openDoseLabelEditor(item, name || item.product.name_en, doseText)}
+                                    onDoseChange={(txt) => setDoseText(item.product.id, txt)}
+                                    includeOnReceipt={!!item.dose_on_receipt}
+                                    onReceiptToggle={(v) => setDoseOnReceipt(item.product.id, v)}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                          {isOfferItem && (
+                            <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                              {t('pos.offer_no_manual_discount')}
+                            </p>
+                          )}
                         </div>
                       )
                     })}
@@ -1153,13 +1194,24 @@ export default function POS() {
 
         {/* ──────────── Summary sidebar ──────────── */}
         <aside className="w-[340px] xl:w-[380px] flex-shrink-0 flex flex-col min-h-0 overflow-hidden border-s border-slate-200 bg-white shadow-xl">
-          <div className="shrink-0 px-5 py-4 border-b border-slate-100">
-            <h3 className="text-xs font-bold tracking-wider text-slate-400 uppercase">
+          <div className="shrink-0 px-5 py-3.5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-ink-900 to-ink-800">
+            <h3 className="text-xs font-bold tracking-wider text-white/80 uppercase">
               {t('payment.summary')}
             </h3>
+            <span className="text-[11px] font-semibold text-pharma-200 tabular-nums">
+              {displayCart.length} {t('pos.items_n')}
+            </span>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
+          {/* Sale type (POS vertical) — decides pricing rules, so it comes first */}
+          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+            <PosSaleTypePicker value={posSaleType} onChange={setPosSaleType} compact />
+            {posSaleType === 'insurance' && (
+              <p className="text-[10px] text-sky-700 mt-2 font-medium">{t('insurance.patient_auto_register')}</p>
+            )}
+          </div>
+
           {/* Customer */}
           <div className="px-5 py-4 space-y-3 border-b border-slate-100">
             <div className="relative">
@@ -1243,13 +1295,6 @@ export default function POS() {
                 </div>
               )}
             </div>
-
-            <div className="border-t border-dashed border-slate-200 pt-3 mt-1">
-              <PosSaleTypePicker value={posSaleType} onChange={setPosSaleType} compact />
-              {posSaleType === 'insurance' && (
-                <p className="text-[10px] text-sky-700 mt-2 font-medium">{t('insurance.patient_auto_register')}</p>
-              )}
-            </div>
           </div>
 
           {/* Totals */}
@@ -1300,19 +1345,19 @@ export default function POS() {
               </div>
             )}
 
-            <div className="border-t border-dashed border-slate-200 pt-3 mt-3" />
-
-            <div className="flex justify-between items-baseline">
-              <span className="font-bold text-slate-800 text-sm uppercase tracking-wide">
-                {t('pos.total')}
-              </span>
-              <span className="text-pharma-700 font-extrabold text-3xl tabular-nums leading-none">
-                {formatMoney(netTotal)}
-              </span>
+            <div className="rounded-2xl bg-gradient-to-br from-pharma-50 to-white border border-pharma-100 px-4 py-3">
+              <div className="flex justify-between items-baseline">
+                <span className="font-bold text-slate-700 text-sm uppercase tracking-wide">
+                  {t('pos.total')}
+                </span>
+                <span className="text-pharma-700 font-extrabold text-3xl tabular-nums leading-none">
+                  {formatMoney(netTotal)}
+                </span>
+              </div>
+              <p className="text-end text-[10px] text-slate-400 uppercase tracking-wider mt-1">
+                {t('pos.egp')}
+              </p>
             </div>
-            <p className="text-end text-[10px] text-slate-400 uppercase tracking-wider -mt-1">
-              {t('pos.egp')}
-            </p>
           </div>
           </div>
 

@@ -1130,7 +1130,9 @@ def apply_schema_to_all_tenants() -> dict:
             if data_warn:
                 out["column_warnings"].append({"slug": t["slug"], "warnings": data_warn})
             cur.execute(init_db.SQL)
-            ensure_default_platforms(cur)
+            # Platform helpers read rows by column name → needs a dict cursor.
+            dcur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            ensure_default_platforms(dcur)
             conn.commit()
             conn.close()
             out["ok"] += 1

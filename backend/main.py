@@ -19,8 +19,8 @@ from customer_treatments import router as customer_treatments_router
 from customers import router as customers_router
 from clinics import router as clinics_router
 
-app = FastAPI(title="PharmaPOS API", docs_url=None, redoc_url=None, openapi_url=None) \
-    if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="PharmaPOS API")
+app = FastAPI(title="FPS Pharmacy API", docs_url=None, redoc_url=None, openapi_url=None) \
+    if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="FPS Pharmacy API")
 
 # CORS: lock to explicit origins in production, allow wildcard only in dev.
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()
@@ -504,6 +504,9 @@ class ProductCreate(BaseModel):
     pack_size: Optional[int] = 1
     sub_unit: Optional[str] = None
     sub_price: Optional[float] = None
+    mid_unit: Optional[str] = None
+    mid_size: Optional[int] = None
+    mid_price: Optional[float] = None
     origin_type: Optional[str] = "local"
     medication_type: Optional[str] = None
     material_group: Optional[str] = "DL"
@@ -513,6 +516,13 @@ class ProductCreate(BaseModel):
 @app.post("/api/products")
 def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
     req.name_ar = (req.name_ar or "").strip() or None
+    from pack_units import validate_mid
+    req.mid_unit = (req.mid_unit or "").strip() or None
+    if not req.mid_unit:
+        req.mid_size = req.mid_price = None
+    mid_err = validate_mid(req.pack_size, req.mid_unit, req.mid_size)
+    if mid_err:
+        raise HTTPException(status_code=400, detail=mid_err)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -535,11 +545,14 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
             cost = default_cost_from_price(req.price)
         vat_rate = 0.14
         cur.execute(
-            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, avg_cost, vat_rate, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, origin_type, medication_type, material_group, is_service)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+            """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit, price, cost, avg_cost, vat_rate, stock, min_stock, expiry_date, branch_id, pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price, origin_type, medication_type, material_group, is_service)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
             (barcode, req.international_barcode, req.name_ar, req.name_en, req.category, req.unit,
-             req.price, cost, cost, vat_rate, req.stock, req.min_stock, req.expiry_date,
+             # stock starts at 0: add_batch_stock() below adds the opening quantity.
+             # Inserting req.stock here too made the first batch migration count it twice.
+             req.price, cost, cost, vat_rate, 0, req.min_stock, req.expiry_date,
              branch_id, max(1, req.pack_size or 1), req.sub_unit, req.sub_price,
+             req.mid_unit, req.mid_size, req.mid_price,
              cls["origin_type"], req.medication_type, cls["material_group"], cls["is_service"]),
         )
         product = cur.fetchone()
@@ -720,6 +733,13 @@ def lookup_seller_by_code(code: str, current_user=Depends(get_current_user)):
 
 # ─── SALES ───────────────────────────────────────────────────────────────────
 
+def _next_invoice_number(cur) -> str:
+    """Concurrency-safe sale/return number from a sequence (shared by both, as before)."""
+    cur.execute("SELECT nextval('invoice_number_seq') AS n")
+    n = int(cur.fetchone()["n"])
+    return f"INV-{datetime.now().strftime('%Y%m%d')}-{n:04d}"
+
+
 def _is_shipment_sale(sale_type: str, delivery_address: Optional[str]) -> bool:
     """Cash/delivery and digital (Talabat, etc.) orders with an address go to the delivery queue."""
     if sale_type == "delivery":
@@ -780,7 +800,7 @@ class InvoiceItemInput(BaseModel):
     offer_id: Optional[int] = None
     offer_discount: float = 0.0
     additional_amount: float = 0.0
-    # "pack" (main unit, default) or "sub" (inner unit when pack_size > 1)
+    # "pack" (box, default), "mid" (strip on 3-level products) or "sub" (smallest unit)
     unit_type: Optional[str] = "pack"
     dose_text: Optional[str] = None
 
@@ -854,9 +874,7 @@ def create_sale(req: SaleRequest,
         if req.type not in ("return", "cash", "insurance") and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
 
-        cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
-        count = cur.fetchone()["cnt"]
-        invoice_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
+        invoice_number = _next_invoice_number(cur)
 
         change = 0.0
         cash_amount_val = req.cash_amount
@@ -1177,7 +1195,7 @@ def create_sale(req: SaleRequest,
                 continue
             cur.execute(
                 """SELECT name_ar, name_en, barcode, stock, branch_id, active,
-                          unit, sub_unit, COALESCE(pack_size,1) AS pack_size
+                          unit, sub_unit, COALESCE(pack_size,1) AS pack_size, mid_unit, mid_size
                    FROM products WHERE id=%s FOR UPDATE""",
                 (item.product_id,),
             )
@@ -1189,22 +1207,12 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {prod['name_en']} belongs to a different branch",
                 )
-            # When pack_size > 1, products.stock is in sub-units (sachets, strips, etc.).
-            cur_pack = max(1, int(prod["pack_size"] or 1))
-            sub_unit = (prod.get("sub_unit") or "").strip()
-            sold_as_sub = (
-                (item.unit_type or "pack").strip().lower() == "sub"
-                and cur_pack > 1
-                and bool(sub_unit)
-            )
-            if sold_as_sub:
-                stock_used = int(item.quantity)
-                unit_label = sub_unit
-                line_pack = 1
-            else:
-                stock_used = int(item.quantity) * cur_pack
-                unit_label = prod["unit"] or "unit"
-                line_pack = cur_pack
+            # products.stock is in the smallest unit (tablets/strips) when pack_size > 1.
+            # line_pack = smallest units per sold unit; snapshotted for returns.
+            from pack_units import unit_label as _unit_label, unit_multiple
+            line_pack = unit_multiple(prod, item.unit_type)
+            stock_used = int(item.quantity) * line_pack
+            unit_label = _unit_label(prod, item.unit_type)
             offer_disc = float(item.offer_discount or 0)
             line_discount = float(item.discount or 0)
             if int(item.product_id) in offer_product_ids:
@@ -1742,9 +1750,7 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         from shifts import assert_open_shift_for_sales
         assert_open_shift_for_sales(cur, current_user["user_id"], return_branch_id)
 
-        cur.execute("SELECT (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns) AS cnt")
-        count = cur.fetchone()["cnt"]
-        return_number = f"INV-{datetime.now().strftime('%Y%m%d')}-{int(count)+1:04d}"
+        return_number = _next_invoice_number(cur)
 
         cur.execute(
             """INSERT INTO returns
@@ -2056,4 +2062,4 @@ def dashboard_alerts(request: Request,
 
 @app.get("/")
 def root():
-    return {"status": "PharmaPOS API running", "version": "2.0"}
+    return {"status": "FPS Pharmacy API running", "version": "2.0"}

@@ -105,6 +105,9 @@ type Product = {
   pack_size?: number | null
   sub_unit?: string | null
   sub_price?: number | null
+  mid_unit?: string | null
+  mid_size?: number | null
+  mid_price?: number | null
   supplier_id?: number | null
   supplier_name?: string | null
   last_po_supplier_name?: string | null
@@ -601,7 +604,9 @@ export default function Inventory() {
                             {it.unit}
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (
                               <div className="text-[10px] text-slate-400">
-                                1 {it.unit} = {it.pack_size} {it.sub_unit}
+                                1 {it.unit} = {it.mid_unit && it.mid_size
+                                  ? `${it.pack_size / it.mid_size} ${it.mid_unit} = `
+                                  : ''}{it.pack_size} {it.sub_unit}
                               </div>
                             )}
                           </td>
@@ -624,6 +629,8 @@ export default function Inventory() {
                                   it.pack_size,
                                   it.unit,
                                   it.sub_unit,
+                                  it.mid_unit,
+                                  it.mid_size,
                                 )}
                               </div>
                             )}
@@ -910,6 +917,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     pack_size: item?.pack_size?.toString() || '1',
     sub_unit: item?.sub_unit || '',
     sub_price: item?.sub_price != null ? String(item.sub_price) : '',
+    mid_unit: item?.mid_unit || '',
+    mid_size: item?.mid_size ? String(item.mid_size) : '',
+    mid_price: item?.mid_price != null ? String(item.mid_price) : '',
     material_group: itemExt?.material_group || (itemExt?.origin_type === 'imported' ? 'DI' : DEFAULT_MATERIAL_GROUP),
     medication_type: itemExt?.medication_type || '',
   })
@@ -917,6 +927,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
+  const midSize = parseInt(f.mid_size, 10) || 0
+  // Middle unit (Box → Strip → Tablet) is valid only when it divides the box evenly.
+  const midOn = !!f.mid_unit && packSize > 1 && midSize > 1 && midSize < packSize && packSize % midSize === 0
+  const midInvalid = !!f.mid_unit && packSize > 1 && !midOn
 
   const patchPricing = (driver: PricingDriver, value: string) => {
     setF((prev) => {
@@ -973,6 +987,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (midInvalid) {
+      setError(t('inventory.mid_invalid', { box: packSize }) as string)
+      return
+    }
     setSaving(true)
     try {
       const priceNum = parseFloat(f.price)
@@ -994,6 +1012,11 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         sub_price: packSize > 1
           ? (f.sub_price ? parseFloat(f.sub_price) : Math.round((priceNum / packSize) * 100) / 100)
           : null,
+        mid_unit: midOn ? f.mid_unit : null,
+        mid_size: midOn ? midSize : null,
+        mid_price: midOn
+          ? (f.mid_price ? parseFloat(f.mid_price) : Math.round((priceNum * midSize / packSize) * 100) / 100)
+          : null,
         material_group: f.material_group || DEFAULT_MATERIAL_GROUP,
         origin_type: originFromMaterialGroup(f.material_group || DEFAULT_MATERIAL_GROUP),
         medication_type: f.medication_type || null,
@@ -1007,7 +1030,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             return
           }
           await api.put(`/inventory/products/${item.id}`, payload)
-          if (newStock !== Number(item.stock)) {
+          // The server rescales stock when units-per-box changes; only adjust a real edit.
+          const oldPack = packSizeOf(item)
+          const rescaled = Math.round((Number(item.stock) * packSize) / oldPack)
+          if (newStock !== rescaled) {
             await api.post('/inventory/adjustments', {
               product_id: item.id,
               set_to: newStock,
@@ -1166,6 +1192,54 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               />
             </Field>
           </div>
+          {packSize > 1 && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-[11px] font-semibold text-slate-600 mb-2">{t('inventory.mid_title')}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Field label={t('inventory.f_mid_unit')}>
+                  <select
+                    value={f.mid_unit}
+                    onChange={e => setF({ ...f, mid_unit: e.target.value })}
+                    className="input"
+                  >
+                    <option value="">{t('inventory.sub_unit_none')}</option>
+                    <option value="strip">{t('inventory.su_strip')}</option>
+                    <option value="sachet">{t('inventory.su_sachet')}</option>
+                    <option value="vial">{t('inventory.su_vial')}</option>
+                    <option value="piece">{t('inventory.su_piece')}</option>
+                  </select>
+                </Field>
+                <Field label={t('inventory.f_mid_size', { mid: f.mid_unit || '…', sub: f.sub_unit || t('inventory.sub_unit_word') })}>
+                  <input
+                    type="number" min={2}
+                    value={f.mid_size}
+                    onChange={e => setF({ ...f, mid_size: e.target.value })}
+                    className="input"
+                    placeholder="10"
+                    disabled={!f.mid_unit}
+                  />
+                </Field>
+                <Field label={t('inventory.f_price_per', { unit: f.mid_unit || '…' })}>
+                  <input
+                    type="number" min={0} step="0.01"
+                    value={f.mid_price}
+                    onChange={e => setF({ ...f, mid_price: e.target.value })}
+                    className="input"
+                    placeholder={midOn && f.price ? (parseFloat(f.price) * midSize / packSize).toFixed(2) : ''}
+                    disabled={!f.mid_unit}
+                  />
+                </Field>
+              </div>
+              {midOn && (
+                <p className="text-[11px] text-pharma-700 mt-2 font-medium">
+                  1 {f.unit} = {packSize / midSize} {f.mid_unit} = {packSize} {f.sub_unit || t('inventory.sub_unit_word')}
+                </p>
+              )}
+              {midInvalid && (
+                <p className="text-[11px] text-red-600 mt-2">{t('inventory.mid_invalid', { box: packSize })}</p>
+              )}
+            </div>
+          )}
           {f.sub_unit && parseInt(f.pack_size) > 1 && (
             <p className="text-[11px] text-slate-500 mt-2">
               1 {f.unit} = {f.pack_size} {f.sub_unit}. {t('inventory.stock_tracked_in', { unit: f.sub_unit })}
@@ -2219,15 +2293,80 @@ function DoseLabelsTab() {
 
 // ─── Excel Upload Modal ────────────────────────────────────────────────
 
+interface ImportColumn {
+  index: number
+  header: string
+  field: string | null
+  confidence: 'high' | 'medium' | 'guess' | 'none'
+  samples: string[]
+}
+interface ImportPreview {
+  sheet_index: number
+  sheet_name: string
+  sheets: string[]
+  header_row: number
+  row_count: number
+  columns: ImportColumn[]
+  fields: { key: string; label_en: string; label_ar: string; required: boolean }[]
+}
+
+const CONFIDENCE_STYLE: Record<ImportColumn['confidence'], string> = {
+  high: 'bg-pharma-50 text-pharma-700 border-pharma-200',
+  medium: 'bg-amber-50 text-amber-700 border-amber-200',
+  guess: 'bg-sky-50 text-sky-700 border-sky-200',
+  none: 'bg-slate-50 text-slate-400 border-slate-200',
+}
+
 function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const isAr = i18n.language === 'ar'
   const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [mapping, setMapping] = useState<Record<number, string>>({})
+  const [analyzing, setAnalyzing] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<{ processed?: number; total?: number; message?: string } | null>(null)
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+  const pickFile = async (f: File | null) => {
+    setFile(f)
+    setPreview(null)
+    setMapping({})
+    setResult(null)
+    setError('')
+    if (!f) return
+    setAnalyzing(true)
+    const fd = new FormData()
+    fd.append('file', f)
+    try {
+      const { data } = await api.post<ImportPreview>('/inventory/bulk-upload/preview', fd, { timeout: 120000 })
+      setPreview(data)
+      const m: Record<number, string> = {}
+      data.columns.forEach((c) => { if (c.field) m[c.index] = c.field })
+      setMapping(m)
+    } catch (e: any) {
+      setError(formatApiError(e, t('inventory.upload_failed') as string))
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  // One column per field: choosing a field already used elsewhere frees that column.
+  const setColumnField = (index: number, field: string) => {
+    setMapping((prev) => {
+      const next: Record<number, string> = {}
+      Object.entries(prev).forEach(([k, v]) => { if (v !== field || !field) next[+k] = v })
+      if (field) next[index] = field
+      else delete next[index]
+      return next
+    })
+  }
+
+  const mappedFields = new Set(Object.values(mapping))
+  const hasName = mappedFields.has('name_en') || mappedFields.has('name_ar')
 
   const submit = async () => {
     if (!file) return
@@ -2237,6 +2376,11 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     setUploading(true)
     const fd = new FormData()
     fd.append('file', file)
+    if (preview) {
+      fd.append('mapping', JSON.stringify(mapping))
+      fd.append('sheet_index', String(preview.sheet_index))
+      fd.append('header_row', String(preview.header_row))
+    }
     try {
       const { data: start } = await api.post('/inventory/bulk-upload', fd, { timeout: 120000 })
       const jobId = start.job_id as string
@@ -2293,19 +2437,87 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
     <Modal wide onClose={onClose} title={t('inventory.bulk_upload')}>
       <div className="space-y-4 text-sm">
         <div className="bg-slate-50 p-4 rounded-lg text-slate-700">
-          <div className="font-semibold mb-1">{t('inventory.excel_help_title')}</div>
-          <div>{t('inventory.excel_help_cols')}</div>
-          <div className="text-xs mt-1 text-slate-600">{t('inventory.excel_help_auto')}</div>
-          <code className="block mt-2 text-xs bg-white p-3 rounded border border-slate-200 leading-relaxed">
-            Code, Material Name, [Name (Arabic)], International Barcode, Material Group, Stock, Unit, Sub unit, Subunit Quantity, Sales Price, Cost, Category, Min Stock, Expiry Date
-          </code>
-          <p className="text-[11px] text-slate-500 mt-1">{t('inventory.excel_help_optional_ar')}</p>
+          <div className="font-semibold mb-1">{t('inventory.import_any_title')}</div>
+          <div>{t('inventory.import_any_body')}</div>
+          <div className="text-xs mt-1 text-slate-600">{t('inventory.import_units_body')}</div>
           <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
             ⬇ {t('inventory.download_template')}
           </button>
         </div>
-        <input type="file" accept=".xlsx,.xls,.csv" onChange={e => setFile(e.target.files?.[0] || null)}
+        <input type="file" accept=".xlsx,.xlsm,.xls,.csv,.tsv,.txt,.htm,.html"
+          onChange={e => void pickFile(e.target.files?.[0] || null)}
           className="w-full p-2 border border-dashed border-slate-300 rounded-lg" />
+        {analyzing && (
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900">
+            {t('inventory.import_analyzing')}
+          </div>
+        )}
+        {preview && !result && (
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold text-slate-800">{t('inventory.import_mapping_title')}</div>
+              <div className="text-xs text-slate-500">
+                {t('inventory.import_detected', {
+                  sheet: preview.sheet_name,
+                  row: preview.header_row,
+                  count: preview.row_count,
+                })}
+              </div>
+            </div>
+            <p className="px-4 pt-2 text-xs text-slate-500">{t('inventory.import_mapping_hint')}</p>
+            <div className="max-h-[42vh] overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-white sticky top-0 shadow-sm">
+                  <tr className="text-slate-500">
+                    <th className="px-3 py-2 text-start font-semibold">{t('inventory.import_file_column')}</th>
+                    <th className="px-3 py-2 text-start font-semibold">{t('inventory.import_sample')}</th>
+                    <th className="px-3 py-2 text-start font-semibold">{t('inventory.import_fps_field')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.columns.map((c) => {
+                    const field = mapping[c.index] || ''
+                    const conf = field && field === c.field ? c.confidence : field ? 'high' : 'none'
+                    return (
+                      <tr key={c.index} className="border-t border-slate-100">
+                        <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">
+                          {c.header || <span className="text-slate-400">#{c.index + 1}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-slate-500 max-w-[16rem] truncate" title={c.samples.join(' · ')}>
+                          {c.samples.slice(0, 3).join(' · ') || '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={field}
+                              onChange={(e) => setColumnField(c.index, e.target.value)}
+                              className={`min-w-[12rem] text-xs rounded-lg border px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-pharma-200 ${field ? 'border-pharma-300 bg-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}
+                            >
+                              <option value="">{t('inventory.import_ignore')}</option>
+                              {preview.fields.map((f) => (
+                                <option key={f.key} value={f.key}>
+                                  {isAr ? f.label_ar : f.label_en}{f.required ? ' *' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            {field && (
+                              <span className={`text-[10px] font-semibold rounded-full border px-2 py-0.5 whitespace-nowrap ${CONFIDENCE_STYLE[conf]}`}>
+                                {t(`inventory.import_conf_${conf}`)}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {!hasName && (
+              <div className="px-4 py-2 text-xs text-red-600 border-t border-slate-100">{t('inventory.import_need_name')}</div>
+            )}
+          </div>
+        )}
         {error && <div className="text-red-600 text-sm whitespace-pre-wrap">{error}</div>}
         {uploading && progress && (
           <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg text-sm text-sky-900 space-y-1">
@@ -2343,7 +2555,7 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('common.close')}</button>
           {!result && (
-            <button onClick={submit} disabled={!file || uploading} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg disabled:opacity-50">
+            <button onClick={submit} disabled={!file || uploading || analyzing || (!!preview && !hasName)} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg disabled:opacity-50">
               {uploading ? t('common.loading') : t('inventory.upload')}
             </button>
           )}

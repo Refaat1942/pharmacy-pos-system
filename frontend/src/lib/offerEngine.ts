@@ -1,3 +1,4 @@
+import { unitsPerBox } from './packStock'
 import type { CartItem } from './api'
 
 export type OfferType =
@@ -65,37 +66,34 @@ export function isOfferProduct(productId: number, offers: PromoOffer[]): boolean
   return offerProductIds(offers).has(productId)
 }
 
-type UnitLine = { lineIdx: number; unitPrice: number; productId: number }
+type OfferCartLine = {
+  product_id: number
+  quantity: number
+  unit_price: number
+  unit_type?: 'pack' | 'mid' | 'sub'
+  /** How many of this line's unit make one box (strip line → strips per box). */
+  pack_size?: number
+}
 
-function flattenUnits(lines: { product_id: number; quantity: number; unit_price: number }[], productIds: Set<number>): UnitLine[] {
+/** `pack` = sub-units per box when the line is sold by strip, else 1. */
+type UnitLine = { lineIdx: number; unitPrice: number; productId: number; isSub: boolean; pack: number }
+
+function flattenUnits(lines: OfferCartLine[], productIds: Set<number>): UnitLine[] {
   const units: UnitLine[] = []
   lines.forEach((line, lineIdx) => {
     if (!productIds.has(line.product_id)) return
+    const pack = line.unit_type && line.unit_type !== 'pack' ? Math.max(1, line.pack_size || 1) : 1
     for (let q = 0; q < line.quantity; q++) {
-      units.push({ lineIdx, unitPrice: line.unit_price, productId: line.product_id })
+      units.push({ lineIdx, unitPrice: line.unit_price, productId: line.product_id, isSub: pack > 1, pack })
     }
   })
   return units
 }
 
-function computeOfferLineDiscounts(
-  offer: PromoOffer,
-  cartLines: { product_id: number; quantity: number; unit_price: number }[],
-): { byLine: Map<number, number>; total: number } {
-  const productIds = new Set(offer.product_ids || [])
-  const units = flattenUnits(cartLines, productIds)
-  if (!units.length) return { byLine: new Map(), total: 0 }
-
+/** Multi-buy discounts (second_half / bogo / buy2get1) — whole boxes only. */
+function multiBuyDiscounts(offer: PromoOffer, units: UnitLine[], pct: number): number[] {
   const perUnit = new Array(units.length).fill(0)
-  const pct = Number(offer.discount_percent ?? 50)
-  const amt = Number(offer.discount_amount ?? 0)
-
-  if (offer.offer_type === 'direct_percent') {
-    const rate = Math.max(0, Math.min(100, pct)) / 100
-    units.forEach((u, i) => { perUnit[i] = +(u.unitPrice * rate).toFixed(2) })
-  } else if (offer.offer_type === 'direct_amount') {
-    units.forEach((u, i) => { perUnit[i] = +Math.min(amt, u.unitPrice).toFixed(2) })
-  } else if (offer.offer_type === 'second_half') {
+  if (offer.offer_type === 'second_half') {
     const rate = Math.max(0, Math.min(100, pct)) / 100
     for (let i = 0; i + 1 < units.length; i += 2) {
       perUnit[i + 1] = +(units[i + 1].unitPrice * rate).toFixed(2)
@@ -111,6 +109,33 @@ function computeOfferLineDiscounts(
       const cheapest = trio.reduce((best, u, j) => (u.unitPrice < trio[best].unitPrice ? j : best), 0)
       perUnit[i + cheapest] = +trio[cheapest].unitPrice.toFixed(2)
     }
+  }
+  return perUnit
+}
+
+function computeOfferLineDiscounts(
+  offer: PromoOffer,
+  cartLines: OfferCartLine[],
+): { byLine: Map<number, number>; total: number } {
+  const productIds = new Set(offer.product_ids || [])
+  const units = flattenUnits(cartLines, productIds)
+  if (!units.length) return { byLine: new Map(), total: 0 }
+
+  const perUnit = new Array(units.length).fill(0)
+  const pct = Number(offer.discount_percent ?? 50)
+  const amt = Number(offer.discount_amount ?? 0)
+
+  if (offer.offer_type === 'direct_percent') {
+    const rate = Math.max(0, Math.min(100, pct)) / 100
+    units.forEach((u, i) => { perUnit[i] = +(u.unitPrice * rate).toFixed(2) })
+  } else if (offer.offer_type === 'direct_amount') {
+    // The amount is per box; a strip gets its proportional share.
+    units.forEach((u, i) => { perUnit[i] = +Math.min(amt / u.pack, u.unitPrice).toFixed(2) })
+  } else {
+    // Multi-buy offers count whole boxes only; loose strips never trigger them.
+    const boxIdx = units.map((u, i) => (u.isSub ? -1 : i)).filter((i) => i >= 0)
+    const boxDisc = multiBuyDiscounts(offer, boxIdx.map((i) => units[i]), pct)
+    boxIdx.forEach((i, j) => { perUnit[i] = boxDisc[j] })
   }
 
   const byLine = new Map<number, number>()
@@ -138,10 +163,12 @@ export function applyOffersToCart(items: CartItem[], offers: PromoOffer[]): {
     }
   }
 
-  const lines = items.map((i) => ({
+  const lines: OfferCartLine[] = items.map((i) => ({
     product_id: i.product.id,
     quantity: i.quantity,
     unit_price: i.unit_price,
+    unit_type: i.unit_type || 'pack',
+    pack_size: unitsPerBox(i.product, i.unit_type),
   }))
 
   const sorted = [...offers].sort((a, b) => (a.priority - b.priority) || (a.id - b.id))

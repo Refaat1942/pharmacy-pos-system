@@ -308,7 +308,7 @@ def _seed_demo_content(schema_name: str, admin_username: str) -> dict:
         cur.execute(
             """UPDATE pharmacy_profile SET
                name_ar = COALESCE(NULLIF(name_ar, ''), 'صيدلية العرض التجريبي'),
-               name_en = COALESCE(NULLIF(name_en, ''), 'Fratelanza Demo Pharmacy'),
+               name_en = COALESCE(NULLIF(name_en, ''), 'FPS Pharmacy Demo'),
                phone = COALESCE(NULLIF(phone, ''), '01000000001'),
                address_ar = COALESCE(NULLIF(address_ar, ''), 'Nasr City, Cairo'),
                address_en = COALESCE(NULLIF(address_en, ''), 'Nasr City, Cairo'),

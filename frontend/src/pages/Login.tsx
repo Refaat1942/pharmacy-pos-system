@@ -58,7 +58,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-ink-950 via-ink-800 to-pharma-950 flex items-center justify-center p-4">
       <button
         onClick={toggleLang}
         className="fixed top-4 end-4 flex items-center gap-2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-full text-sm transition-all"
@@ -69,7 +69,7 @@ export default function Login() {
 
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-pharma-600 rounded-2xl shadow-2xl mb-4 mx-auto">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-pharma-400 to-pharma-600 rounded-2xl shadow-2xl shadow-pharma-950/60 ring-1 ring-white/15 mb-4 mx-auto">
             <Pill className="w-12 h-12 text-white" strokeWidth={2.5} />
           </div>
           <h1 className="text-3xl font-bold text-white">{t('app_name')}</h1>

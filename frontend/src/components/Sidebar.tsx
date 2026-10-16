@@ -111,10 +111,10 @@ function NavLinks({
         to={to}
         tabIndex={-1}
         onMouseDown={(e) => e.preventDefault()}
-        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 group ${
+        className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300 group ${
           active
-            ? 'bg-pharma-600 text-white shadow-lg shadow-pharma-900/30 font-bold'
-            : 'text-white/60 hover:text-white hover:bg-white/5 font-medium'
+            ? 'bg-gradient-to-r from-pharma-600 to-pharma-500 text-white shadow-lg shadow-pharma-950/40 font-bold'
+            : 'text-slate-300/70 hover:text-white hover:bg-white/[0.06] font-medium'
         }`}
       >
         <span className="relative shrink-0">
@@ -149,7 +149,7 @@ function NavLinks({
       <>
         {sections.map(({ sectionKey, items: sectionItems }) => (
           <div key={sectionKey} className="mb-1">
-            <p className="px-3 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-white/45">
+            <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-pharma-300/60">
               {t(sectionKey)}
             </p>
             {sectionItems.map(renderItem)}
@@ -238,15 +238,15 @@ export default function Sidebar() {
   }, [location.pathname])
 
   return (
-    <aside className="w-56 flex-shrink-0 bg-slate-900 text-white flex flex-col h-screen shadow-2xl z-20">
+    <aside className="w-60 flex-shrink-0 bg-gradient-to-b from-ink-900 to-ink-950 text-white flex flex-col h-screen shadow-2xl z-20">
       {/* Brand */}
       <div className="px-5 py-5 border-b border-white/10 flex items-center gap-3 shrink-0">
-        <div className="bg-pharma-600 rounded-xl p-2 shadow-lg shadow-pharma-900/40">
+        <div className="bg-gradient-to-br from-pharma-400 to-pharma-600 rounded-xl p-2 shadow-lg shadow-pharma-950/50 ring-1 ring-white/10">
           <Pill size={20} className="text-white" strokeWidth={2.5} />
         </div>
         <div className="min-w-0">
-          <p className="font-bold text-sm leading-tight truncate">{t('app_name')}</p>
-          <p className="text-[10px] text-white/40 uppercase tracking-wider">{t('app_subtitle')}</p>
+          <p className="font-extrabold text-[15px] leading-tight truncate tracking-tight">{t('app_name')}</p>
+          <p className="text-[10px] text-pharma-200/60 uppercase tracking-wider">{t('app_subtitle')}</p>
         </div>
       </div>
 
@@ -261,7 +261,7 @@ export default function Sidebar() {
 
       {/* Pinned nav — fraud, stock reallocation, settings always visible */}
       {pinnedItems.length > 0 && (
-        <div className="shrink-0 border-t border-white/10 py-2 px-3 space-y-0.5 bg-slate-900">
+        <div className="shrink-0 border-t border-white/10 py-2 px-3 space-y-0.5 bg-ink-950/60">
           <NavLinks items={pinnedItems} locationPath={location.pathname} t={t} badges={navBadges} />
         </div>
       )}

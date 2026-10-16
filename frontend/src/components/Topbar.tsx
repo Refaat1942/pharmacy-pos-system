@@ -63,7 +63,7 @@ export default function Topbar() {
       </button>
 
       <div className="flex items-center gap-2 ps-3 border-s border-slate-200">
-        <div className="w-8 h-8 rounded-full bg-pharma-600 text-white flex items-center justify-center text-sm font-bold shadow">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pharma-500 to-pharma-700 text-white flex items-center justify-center text-sm font-bold shadow ring-2 ring-pharma-100">
           {initial}
         </div>
         <div className="hidden lg:block text-end leading-tight">

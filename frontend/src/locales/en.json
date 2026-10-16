@@ -1,11 +1,11 @@
 {
-  "app_name": "Fratelanza ERP",
-  "app_subtitle": "Management System",
+  "app_name": "FPS Pharmacy",
+  "app_subtitle": "Pharmacy ERP · POS",
   "copyright": "© 2026 Fratelanza. All rights reserved.",
   "copyright_short": "© 2026 Fratelanza",
   "login": {
     "title": "Welcome Back",
-    "subtitle": "Sign in to Fratelanza ERP Management System",
+    "subtitle": "Sign in to FPS Pharmacy",
     "username": "Username",
     "password": "Password",
     "sign_in": "Sign In",
@@ -444,7 +444,7 @@
     "cost": "Cost",
     "profit": "Profit",
     "payment_method": "Payment Method",
-    "sale_type": "Sale Type",
+    "sale_type": "Sale type",
     "return_type": "Return",
     "no_data": "No data for this period",
     "by_clinic": "Sales by Clinic",
@@ -527,7 +527,6 @@
     "terminal": "Terminal",
     "invoice_detail": "Invoices",
     "line_items": "Line items",
-    "sale_type": "Sale type",
     "sale_time": "Time",
     "net_total": "Net total",
     "unit_price": "Unit price",
@@ -1079,7 +1078,27 @@
     "st_report_other_hint": "Category / expiry only",
     "st_report_none": "None",
     "st_report_view": "View report",
-    "st_report_export": "Export Excel"
+    "st_report_export": "Export Excel",
+    "import_any_title": "Import items from any system",
+    "import_any_body": "Upload the item export from your old system — Excel (.xlsx / .xls), CSV or an HTML report, with headers in English, Arabic, French or any common language. FPS finds the header row and matches the columns for you; review the matching below before importing.",
+    "import_units_body": "Box & strip: if your file lists each item twice (a box row with Subunit Quantity 1 and a strip row with the number of strips and the strip price), both rows are merged into one item. Codes like PAC / STR / TAB / علبة / شريط are recognised.",
+    "import_analyzing": "Reading the file and detecting columns…",
+    "import_mapping_title": "Column matching",
+    "import_detected": "Sheet “{{sheet}}” · headers on row {{row}} · {{count}} rows",
+    "import_mapping_hint": "Check that each column of your file points to the right FPS field. Change any wrong match or set it to “Ignore”.",
+    "import_file_column": "Column in your file",
+    "import_sample": "Sample values",
+    "import_fps_field": "Imports into",
+    "import_ignore": "— Ignore —",
+    "import_conf_high": "Sure",
+    "import_conf_medium": "Likely",
+    "import_conf_guess": "Guessed — check",
+    "import_conf_none": "",
+    "import_need_name": "Select which column holds the item name.",
+    "mid_title": "Middle unit (optional) — for Box → Strip → Tablet. Set “Sub unit” to the smallest unit (e.g. Tablet) and “Units per box” to tablets per box.",
+    "f_mid_unit": "Middle unit",
+    "f_mid_size": "{{sub}} per {{mid}}",
+    "mid_invalid": "The middle unit size must divide the {{box}} units per box evenly (e.g. 30 = 3 × 10)."
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
@@ -1148,7 +1167,10 @@
     "by_amount": "In EGP",
     "by_percent": "In %",
     "from_clinic": "From clinic",
-    "clear_clinic": "Remove clinic"
+    "clear_clinic": "Remove clinic",
+    "clear_cart": "Clear",
+    "scan_or_type": "Scan or type",
+    "sell_unit": "Sell unit"
   },
   "payment": {
     "title": "Complete Payment",
@@ -1599,7 +1621,10 @@
     "pharmacy_price": "Pharm. price",
     "line_ex_tax": "Ex-tax",
     "drug_sales_tax": "Drug sales tax",
-    "net_total": "Net total"
+    "net_total": "Net total",
+    "buy_unit_hint": "Unit you are buying in — quantity, public price and cost are per this unit",
+    "unit_mid": "(strip)",
+    "unit_sub": "(small unit)"
   },
   "customers": {
     "title": "Customers",

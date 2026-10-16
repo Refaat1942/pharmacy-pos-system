@@ -340,7 +340,9 @@ def export_fraud_alerts(
 ):
     from excel_utils import xlsx_response
 
-    data = fraud_alerts(request, date_from, date_to, current_user=current_user)
+    # Called as a plain function: pass every Query() param explicitly, otherwise the
+    # FastAPI Query(None) default object leaks in and the export crashes (KeyError).
+    data = fraud_alerts(request, date_from, date_to, min_severity=None, current_user=current_user)
     headers = [
         "Severity", "Type", "Branch", "Seller EN", "Reference", "Amount",
         "Detail", "Occurred at",

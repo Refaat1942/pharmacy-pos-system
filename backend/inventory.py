@@ -1,5 +1,5 @@
 """Inventory & Stock module — items, manual adjustments, movement ledger."""
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
@@ -16,6 +16,7 @@ from deps import get_current_user, get_active_branch_id, requires_feature
 from tenant_ctx import get_current_schema
 from stock_batches import (
     add_batch_stock,
+    ensure_batches_migrated,
     deduct_stock_fefo,
     list_batches,
     set_batch_quantity,
@@ -216,6 +217,9 @@ class ProductUpdate(BaseModel):
     pack_size: Optional[int] = None
     sub_unit: Optional[str] = None
     sub_price: Optional[float] = None
+    mid_unit: Optional[str] = None
+    mid_size: Optional[int] = None
+    mid_price: Optional[float] = None
     origin_type: Optional[str] = None
     medication_type: Optional[str] = None
     material_group: Optional[str] = None
@@ -228,7 +232,8 @@ class ProductUpdate(BaseModel):
 
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
-                         "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type",
+                         "pack_size", "sub_unit", "sub_price", "mid_unit", "mid_size", "mid_price",
+                         "origin_type", "medication_type",
                          "material_group", "is_service", "supplier_id", "vat_rate", "avg_cost"}
 
 
@@ -270,10 +275,55 @@ def update_product(product_id: int, req: ProductUpdate,
         if not existing:
             raise HTTPException(status_code=404, detail="Product not found")
         _assert_branch_access(current_user, existing["branch_id"])
+        if "mid_unit" in fields:
+            fields["mid_unit"] = (fields["mid_unit"] or "").strip() or None
+            if not fields["mid_unit"]:
+                fields["mid_size"] = fields["mid_price"] = None
+        old_pack = _rescale_needed = None
+        if any(k in fields for k in ("pack_size", "mid_unit", "mid_size")):
+            from pack_units import validate_mid
+            cur.execute("SELECT pack_size, mid_unit, mid_size FROM products WHERE id=%s FOR UPDATE",
+                        (product_id,))
+            cur_row = cur.fetchone()
+            old_pack = max(1, int(cur_row["pack_size"] or 1))
+            new_pack = max(1, int(fields.get("pack_size", old_pack) or 1))
+            fields["pack_size"] = new_pack
+            mid_err = validate_mid(
+                new_pack,
+                fields.get("mid_unit", cur_row["mid_unit"]),
+                fields.get("mid_size", cur_row["mid_size"]),
+            )
+            if mid_err:
+                raise HTTPException(status_code=400, detail=mid_err)
+            _rescale_needed = new_pack != old_pack
         sets = ", ".join(f"{k}=%s" for k in fields.keys())
         values = list(fields.values()) + [product_id]
         cur.execute(f"UPDATE products SET {sets} WHERE id=%s RETURNING *", values)
         product = cur.fetchone()
+        if _rescale_needed:
+            # Stock is stored in the smallest unit; when units-per-box changes (e.g. a
+            # Box/Strip item gains tablets: 3 strips → 30 tablets) keep the same number
+            # of BOXES by rescaling every expiry lot.
+            new_pack = int(fields["pack_size"])
+            ensure_batches_migrated(cur, product_id)
+            cur.execute(
+                """UPDATE product_batches
+                   SET quantity = ROUND(quantity::numeric * %s / %s)::int
+                   WHERE product_id=%s""",
+                (new_pack, old_pack, product_id),
+            )
+            old_stock = int(product["stock"] or 0)
+            new_stock = sync_product_from_batches(cur, product_id)
+            if new_stock != old_stock:
+                log_movement(
+                    cur, product_id, existing["branch_id"], "adjustment",
+                    new_stock - old_stock, new_stock,
+                    reference_type="unit_change",
+                    reason=f"Units per box changed {old_pack} → {new_pack}; stock rescaled",
+                    user_id=current_user.get("user_id"),
+                )
+            cur.execute("SELECT * FROM products WHERE id=%s", (product_id,))
+            product = cur.fetchone()
         conn.commit()
         return dict(product)
     finally:
@@ -1599,11 +1649,20 @@ def _next_material_barcode(cur) -> str:
     return "3000001"
 
 
+def _num(val, default=None):
+    """Tolerant number parse (thousand separators, Arabic digits, currency text)."""
+    from import_mapper import parse_number
+    v = parse_number(val)
+    return default if v is None else v
+
+
 def _parse_bulk_row(r: dict, idx: int) -> dict:
-    from datetime import datetime as _dt, date as _date
+    from import_mapper import normalize_unit, parse_date
 
     name_en = _clean_cell_str(_row_get(r, "name_en", "name", "material name", "item name"))
-    name_ar = _clean_cell_str(_row_get(r, "name_ar", "arabic name", "name (arabic)")) or name_en
+    name_ar = _clean_cell_str(_row_get(r, "name_ar", "arabic name", "name (arabic)"))
+    name_en = name_en or name_ar
+    name_ar = name_ar or name_en
     barcode = _clean_barcode(_row_get(r, "barcode", "code", "material code", "item code"))
     intl_barcode = _clean_barcode(_row_get(
         r, "international barcode", "international_barcode",
@@ -1611,27 +1670,25 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
     ))
     category_raw = _row_get(r, "category")
     category = _clean_cell_str(category_raw) or None
-    unit = _clean_cell_str(_row_get(r, "unit", "material unit", "big unit", "main unit")) or "box"
-    price_raw = _row_get(r, "price", "sales price", "selling price", "material price")
-    price = float(price_raw) if price_raw not in (None, "") else 0.0
-    cost_val = _row_get(r, "cost", "cost price", "purchase price")
-    cost = float(cost_val) if cost_val not in (None, "") else None
+    unit = normalize_unit(_row_get(r, "unit", "material unit", "big unit", "main unit")) or "box"
+    price = _num(_row_get(r, "price", "sales price", "selling price", "material price"), 0.0)
+    cost = _num(_row_get(r, "cost", "cost price", "purchase price"))
+    sub_price_explicit = _num(_row_get(r, "sub_price", "strip price", "sub unit price"))
     disc_raw = _row_get(
         r, "discount %", "discount_pct", "discount percent", "discount percentage",
         "profit margin %", "margin %", "profit %",
     )
     if cost is None and price > 0 and disc_raw not in (None, ""):
         try:
-            disc = float(disc_raw)
-            if 0 <= disc <= 100:
+            disc = _num(disc_raw)
+            if disc is not None and 0 <= disc <= 100:
                 cost = round(price * (1 - disc / 100), 2)
         except (TypeError, ValueError):
             pass
     if cost is None and price > 0:
         from pricing import default_cost_from_price
         cost = default_cost_from_price(price)
-    min_raw = _row_get(r, "min_stock", "min stock", "minimum stock")
-    min_stock = int(float(min_raw)) if min_raw not in (None, "") else 5
+    min_stock = int(_num(_row_get(r, "min_stock", "min stock", "minimum stock"), 5))
 
     pack_raw = _row_get(r, "pack_size", "pack size",
                         "subunit quantity", "sub unit quantity", "subunit qty", "sub unit qty",
@@ -1646,37 +1703,23 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
                                  "unit classification", "small unit type") or "").strip()
 
     if pack_raw in (None, "") and sub_unit_name:
-        try:
-            pack_raw = float(sub_unit_name)
+        legacy_count = _num(sub_unit_name)
+        if legacy_count is not None and re.fullmatch(r"[\d.,\s]+", sub_unit_name):
+            pack_raw = legacy_count
             sub_unit_name = ""
-        except ValueError:
-            pass
 
-    pack_size = int(float(pack_raw)) if pack_raw not in (None, "") else 1
+    pack_size = int(round(_num(pack_raw, 1) or 1))
     if pack_size < 1:
         pack_size = 1
-    sub_unit_name = sub_unit_name.lower()
+    # PAC → box, STR → strip, شريط → strip …
+    sub_unit_name = normalize_unit(sub_unit_name)
 
-    qty_raw = _row_get(r, "stock", "quantity", "qty")
-    qty_provided = qty_raw not in (None, "")
-    qty_big = float(qty_raw) if qty_provided else 0.0
+    qty_val = _num(_row_get(r, "stock", "quantity", "qty"))
+    qty_provided = qty_val is not None
+    qty_big = qty_val if qty_provided else 0.0
 
-    expiry_date = None
-    exp_raw = _row_get(r, "expiry", "expiry date", "expiry_date",
-                       "expiration", "expiration date", "exp date", "exp")
-    if exp_raw not in (None, ""):
-        if isinstance(exp_raw, _dt):
-            expiry_date = exp_raw.date()
-        elif isinstance(exp_raw, _date):
-            expiry_date = exp_raw
-        else:
-            s = str(exp_raw).strip()
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"):
-                try:
-                    expiry_date = _dt.strptime(s, fmt).date()
-                    break
-                except ValueError:
-                    continue
+    expiry_date = parse_date(_row_get(r, "expiry", "expiry date", "expiry_date",
+                                      "expiration", "expiration date", "exp date", "exp"))
 
     from material_groups import infer_material_group, normalize_material_group, product_fields_from_material_group
     mg_raw = _row_get(
@@ -1695,9 +1738,23 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         mg = infer_material_group(category=category, origin_type=None)
     classification = product_fields_from_material_group(mg)
 
+    # Optional explicit middle level (single-row files): pack_size = smallest units per box.
+    mid_unit = normalize_unit(_row_get(r, "mid_unit", "middle unit")) or None
+    mid_size_val = _num(_row_get(r, "mid_size", "units per strip"))
+    mid_size = int(round(mid_size_val)) if mid_size_val else None
+    mid_price = _num(_row_get(r, "mid_price", "middle unit price"))
+    from pack_units import validate_mid
+    if not mid_unit or validate_mid(pack_size, mid_unit, mid_size):
+        mid_unit = mid_size = mid_price = None
+    elif not mid_price and price:
+        mid_price = round(price * mid_size / pack_size, 2)
+
     if pack_size > 1:
-        sub_unit = sub_unit_name or DEFAULT_SUB_UNIT
-        sub_price = round(price / pack_size, 2) if price else None
+        sub_unit = sub_unit_name if sub_unit_name and sub_unit_name != unit else DEFAULT_SUB_UNIT
+        if sub_price_explicit:
+            sub_price = round(sub_price_explicit, 2)
+        else:
+            sub_price = round(price / pack_size, 2) if price else None
         stock = int(round(qty_big * pack_size))
     else:
         sub_unit = None
@@ -1718,6 +1775,11 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         "pack_size": pack_size,
         "sub_unit": sub_unit,
         "sub_price": sub_price,
+        "sub_unit_name": sub_unit_name if sub_unit_name != unit else "",
+        "mid_unit": mid_unit,
+        "mid_size": mid_size,
+        "mid_price": mid_price,
+        "sub_price_explicit": bool(sub_price_explicit),
         "stock": stock,
         "qty_big": qty_big,
         "qty_provided": qty_provided,
@@ -1735,6 +1797,89 @@ def _outer_qty_from_row(row: dict) -> float:
     return float(row.get("qty_big") or 0)
 
 
+def _combine_unit_tier_rows(rows: list) -> Optional[dict]:
+    """One-row-per-unit exports: the same code listed once per selling unit.
+
+        Code     Unit Sub unit Subunit Qty Sales Price
+        3000109  PAC  STR      1           52.00   ← main unit (box) row
+        3000109  PAC  STR      2           26.00   ← sub unit: 2 strips per box, 26 each
+
+    The row with Subunit Qty 1 is the box (price + stock); a row with Subunit Qty > 1
+    describes the sub unit, and its price is the price of ONE sub unit. When several
+    sub rows exist (box → strip → tablet) the finest one (largest qty) is kept.
+    Returns None when the rows are not in this shape (handled by the generic merge).
+    """
+    base_rows = [r for r in rows if int(r["pack_size"] or 1) == 1]
+    sub_rows = [r for r in rows if int(r["pack_size"] or 1) > 1]
+    if not base_rows or not sub_rows:
+        return None
+
+    base = max(base_rows, key=lambda r: (bool(r.get("qty_provided")), float(r["price"] or 0)))
+    sub = max(sub_rows, key=lambda r: int(r["pack_size"]))
+    pack = int(sub["pack_size"])
+    # Box → Strip → Tablet: a coarser sub row whose qty divides the finest one is the
+    # middle unit (e.g. STR qty 2 + TAB qty 20 → 10 tablets per strip).
+    mid_row = None
+    for r in sorted(sub_rows, key=lambda r: int(r["pack_size"]), reverse=True):
+        q = int(r["pack_size"])
+        if 1 < q < pack and pack % q == 0 and (r.get("sub_unit_name") or "") != (sub.get("sub_unit_name") or ""):
+            mid_row = r
+            break
+    box_price = float(base["price"] or 0)
+    sub_row_price = float(sub["price"] or 0)
+
+    if sub.get("sub_price_explicit"):
+        sub_price = sub["sub_price"]
+    elif sub_row_price and (not box_price or sub_row_price < box_price):
+        # Normal case: the sub row carries the per-strip price — keep it as typed.
+        sub_price = round(sub_row_price, 2)
+    else:
+        # Sub row repeats the box price → derive the strip price.
+        sub_price = round(box_price / pack, 2) if box_price else None
+    if not box_price and sub_price:
+        box_price = round(sub_price * pack, 2)
+
+    sub_unit = sub.get("sub_unit_name") or next(
+        (r.get("sub_unit_name") for r in rows if r.get("sub_unit_name")), "") or DEFAULT_SUB_UNIT
+
+    merged = {**base}
+    merged["source_rows"] = [r["source_idx"] for r in rows]
+    merged["price"] = box_price
+    merged["pack_size"] = pack
+    merged["sub_unit"] = sub_unit
+    merged["sub_price"] = sub_price
+    if mid_row is not None:
+        mq = int(mid_row["pack_size"])
+        mid_row_price = float(mid_row["price"] or 0)
+        merged["mid_unit"] = mid_row.get("sub_unit_name") or "strip"
+        merged["mid_size"] = pack // mq
+        merged["mid_price"] = (
+            round(mid_row_price, 2) if mid_row_price and (not box_price or mid_row_price < box_price)
+            else (round(box_price / mq, 2) if box_price else None)
+        )
+    merged["min_stock"] = max(int(r["min_stock"] or 0) for r in rows)
+    if merged.get("cost") in (None, 0):
+        costs = [float(r["cost"]) for r in base_rows if r.get("cost")]
+        merged["cost"] = max(costs) if costs else None
+
+    # Stock column counts main units (boxes) on the box row; never sum tier rows.
+    stock_row = base if base.get("qty_provided") else next((r for r in rows if r.get("qty_provided")), None)
+    if stock_row is not None:
+        qty_big = _outer_qty_from_row(stock_row)
+        merged["qty_provided"] = True
+        merged["qty_big"] = qty_big
+        merged["stock"] = int(round(qty_big * pack))
+    else:
+        merged["qty_provided"] = False
+        merged["qty_big"] = 0
+        merged["stock"] = 0
+
+    for key in ("intl_barcode", "category", "expiry_date", "barcode", "name_ar"):
+        if not merged.get(key):
+            merged[key] = next((r[key] for r in rows if r.get(key)), merged.get(key))
+    return merged
+
+
 def _combine_bulk_duplicate_rows(rows: list) -> dict:
     """Merge duplicate codes — highest pack price wins; stock from that row only.
 
@@ -1744,6 +1889,10 @@ def _combine_bulk_duplicate_rows(rows: list) -> dict:
     """
     if len(rows) == 1:
         return {**rows[0], "source_rows": [rows[0]["source_idx"]]}
+
+    tiered = _combine_unit_tier_rows(rows)
+    if tiered is not None:
+        return tiered
 
     best_idx = max(range(len(rows)), key=lambda i: float(rows[i]["price"] or 0))
     best = rows[best_idx]
@@ -1924,43 +2073,20 @@ def bulk_template(current_user=Depends(get_current_user)):
     )
 
 
-def _load_bulk_rows_from_bytes(content: bytes, filename: str, on_progress=None) -> list:
-    """Parse Excel/CSV bytes into normalized header-keyed row dicts."""
-    from openpyxl import load_workbook
+def _load_bulk_rows_from_bytes(content: bytes, filename: str, on_progress=None,
+                               mapping: Optional[dict] = None, sheet_index: Optional[int] = None,
+                               header_row: Optional[int] = None) -> tuple:
+    """Parse any spreadsheet (xlsx/xls/html/csv, any header language) into canonical rows.
 
-    name = (filename or "").lower()
-    raw_rows = []
-    if name.endswith(".csv"):
-        import csv
-        text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        for i, row in enumerate(reader, start=1):
-            raw_rows.append(row)
-            if on_progress and i % 2000 == 0:
-                on_progress(message=f"Reading row {i:,}…")
-    else:
-        wb = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
-        try:
-            ws = wb.active
-            header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
-            if not header_row:
-                raise ValueError("First row must contain column headers")
-            headers = [str(c).strip().lower() if c is not None else "" for c in header_row]
-            if not any(headers):
-                raise ValueError("First row must contain column headers")
-            count = 0
-            for r in ws.iter_rows(min_row=2, values_only=True):
-                if not any(v not in (None, "") for v in r):
-                    continue
-                row = {headers[i]: r[i] for i in range(min(len(headers), len(r)))}
-                raw_rows.append(row)
-                count += 1
-                if on_progress and count % 2000 == 0:
-                    on_progress(message=f"Reading row {count:,}…")
-        finally:
-            wb.close()
-    return [{(str(k).strip().lower() if k is not None else ""): v for k, v in row.items()}
-            for row in raw_rows]
+    Returns (rows, first_data_row). Blank rows come back as {} so row numbers stay
+    aligned with the sheet for error messages.
+    """
+    from import_mapper import load_mapped_rows
+    rows, info = load_mapped_rows(
+        content, filename, mapping=mapping, sheet_index=sheet_index,
+        header_row=header_row, on_progress=on_progress,
+    )
+    return rows, info["first_data_row"]
 
 
 def _prefetch_existing_products(cur, branch_id) -> tuple:
@@ -2039,6 +2165,9 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     pack_size = row["pack_size"]
     sub_unit = row["sub_unit"]
     sub_price = row["sub_price"]
+    mid_unit = row.get("mid_unit")
+    mid_size = row.get("mid_size")
+    mid_price = row.get("mid_price")
     stock = row["stock"]
     qty_provided = row["qty_provided"]
     expiry_date = row["expiry_date"]
@@ -2069,13 +2198,14 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
         cur.execute(
             """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
                price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-               sub_price=%s, active=true, barcode=COALESCE(%s, barcode),
+               sub_price=%s, mid_unit=%s, mid_size=%s, mid_price=%s,
+               active=true, barcode=COALESCE(%s, barcode),
                international_barcode=COALESCE(%s, international_barcode),
                material_group=COALESCE(%s, material_group), origin_type=COALESCE(%s, origin_type),
                is_service=COALESCE(%s, is_service)
                WHERE id=%s""",
             (name_en, name_ar, category, unit, price, cost, min_stock,
-             pack_size, sub_unit, sub_price, barcode, intl_barcode,
+             pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price, barcode, intl_barcode,
              material_group, origin_type, is_service, existing["id"]),
         )
         _retire_duplicate_products(cur, branch_id, existing["id"], barcode or existing.get("barcode"), intl_barcode)
@@ -2116,12 +2246,12 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
 
     cur.execute(
         """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
-           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
-           material_group, origin_type, is_service)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
+           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price,
+           expiry_date, branch_id, material_group, origin_type, is_service)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
         (barcode, intl_barcode, name_ar, name_en, category, unit,
-         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
-         material_group, origin_type, is_service),
+         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price,
+         expiry_date, branch_id, material_group, origin_type, is_service),
     )
     new_row = cur.fetchone()
     new_id = new_row["id"]
@@ -2239,7 +2369,9 @@ def _bulk_job_prune_old(schema: Optional[str] = None):
 
 
 def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
-                         job_id: Optional[str] = None, schema: Optional[str] = None) -> dict:
+                         job_id: Optional[str] = None, schema: Optional[str] = None,
+                         mapping: Optional[dict] = None, sheet_index: Optional[int] = None,
+                         header_row: Optional[int] = None) -> dict:
     """Parse and import rows. Updates job_id progress when provided."""
     job_conn = get_db_connection(schema=schema) if job_id else None
 
@@ -2249,19 +2381,22 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
 
     progress(status="processing", message="Reading spreadsheet…")
     try:
-        raw_rows = _load_bulk_rows_from_bytes(
+        raw_rows, first_row = _load_bulk_rows_from_bytes(
             content, filename, on_progress=lambda **kw: progress(status="processing", **kw),
+            mapping=mapping, sheet_index=sheet_index, header_row=header_row,
         )
     except Exception as e:
         raise ValueError(f"Could not read upload file: {e}") from e
-    if not raw_rows:
+    if not any(raw_rows):
         raise ValueError("No data rows found below the header row")
 
     progress(message=f"Validating {len(raw_rows):,} rows…")
 
     parsed = []
     parse_errors = []
-    for idx, r in enumerate(raw_rows, start=2):
+    for idx, r in enumerate(raw_rows, start=first_row):
+        if not r:
+            continue
         try:
             row = _parse_bulk_row(r, idx)
             if not row["name_en"]:
@@ -2345,10 +2480,12 @@ def _execute_bulk_import(content: bytes, filename: str, branch_id: int, user_id,
 
 
 def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, user_id,
-                  schema: Optional[str] = None):
+                  schema: Optional[str] = None, mapping: Optional[dict] = None,
+                  sheet_index: Optional[int] = None, header_row: Optional[int] = None):
     try:
         result = _execute_bulk_import(
             content, filename, branch_id, user_id, job_id=job_id, schema=schema,
+            mapping=mapping, sheet_index=sheet_index, header_row=header_row,
         )
         _bulk_job_update(
             job_id,
@@ -2369,11 +2506,37 @@ def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, us
         )
 
 
+@router.post("/bulk-upload/preview")
+def bulk_upload_preview(file: UploadFile = File(...), current_user=Depends(get_current_user)):
+    """Detect sheet, header row and column meanings so the user can review them before importing."""
+    from import_mapper import FIELDS, analyze_file
+    content = file.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    try:
+        result = analyze_file(content, file.filename or "")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not read upload file: {e}")
+    result["fields"] = [
+        {"key": k, "label_en": v[1], "label_ar": v[2], "required": v[3]} for k, v in FIELDS.items()
+    ]
+    return result
+
+
 @router.post("/bulk-upload")
 def bulk_upload(file: UploadFile = File(...),
+                mapping: Optional[str] = Form(None),
+                sheet_index: Optional[int] = Form(None),
+                header_row: Optional[int] = Form(None),
                 current_user=Depends(get_current_user),
                 active_branch=Depends(get_active_branch_id)):
-    """Start bulk import in background; poll GET /bulk-upload/status/{job_id} for results."""
+    """Start bulk import in background; poll GET /bulk-upload/status/{job_id} for results.
+
+    ``mapping`` (optional JSON {column_index: field}) is the column mapping the user
+    confirmed on the preview screen; without it columns are auto-detected.
+    """
     branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
     if branch_id is None:
         raise HTTPException(
@@ -2385,6 +2548,16 @@ def bulk_upload(file: UploadFile = File(...),
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
+    mapping_obj = None
+    if mapping:
+        import json as _json
+        try:
+            mapping_obj = {int(k): v for k, v in _json.loads(mapping).items() if v}
+        except (ValueError, AttributeError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid column mapping")
+        if not any(v in ("name_en", "name_ar") for v in mapping_obj.values()):
+            raise HTTPException(status_code=400, detail="Map at least one column to the item name")
+
     schema = get_current_schema() or "public"
     _bulk_job_prune_old(schema)
     job_id = str(uuid.uuid4())
@@ -2392,7 +2565,8 @@ def bulk_upload(file: UploadFile = File(...),
 
     thread = threading.Thread(
         target=_run_bulk_job,
-        args=(job_id, content, file.filename or "", branch_id, current_user.get("user_id"), schema),
+        args=(job_id, content, file.filename or "", branch_id, current_user.get("user_id"), schema,
+              mapping_obj, sheet_index, header_row),
         daemon=True,
     )
     thread.start()
@@ -2401,6 +2575,10 @@ def bulk_upload(file: UploadFile = File(...),
 
 @router.get("/bulk-upload/status/{job_id}")
 def bulk_upload_status(job_id: str, current_user=Depends(get_current_user)):
+    try:
+        uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Import job not found or expired")
     job = _bulk_job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Import job not found or expired")
@@ -2834,12 +3012,14 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
                 cur.execute(
                     """INSERT INTO products
                        (barcode, name_ar, name_en, category, unit, sub_unit, pack_size, sub_price,
+                        mid_unit, mid_size, mid_price,
                         price, cost, stock, min_stock, expiry_date, branch_id, active)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
                        ON CONFLICT (barcode, branch_id) DO NOTHING
                        RETURNING id, stock""",
                     (src["barcode"], src["name_ar"], src["name_en"], src["category"],
                      src["unit"], src.get("sub_unit"), src.get("pack_size") or 1, src.get("sub_price"),
+                     src.get("mid_unit"), src.get("mid_size"), src.get("mid_price"),
                      src["price"], src["cost"],
                      src["min_stock"], src["expiry_date"], to_branch),
                 )

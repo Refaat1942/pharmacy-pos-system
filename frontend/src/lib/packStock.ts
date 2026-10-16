@@ -107,6 +107,8 @@ export function formatMajorSubLabel(
   packSize?: number | null,
   unit?: string | null,
   subUnit?: string | null,
+  midUnit?: string | null,
+  midSize?: number | null,
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
   if (pack <= 1) return ''
@@ -115,10 +117,18 @@ export function formatMajorSubLabel(
   const su = subUnit || 'unit'
   if (n < 0) return `${n} ${su}`
   const fullBoxes = Math.floor(n / pack)
-  const loose = n % pack
-  if (fullBoxes > 0 && loose > 0) return `${fullBoxes} ${u} + ${loose} ${su}`
-  if (fullBoxes > 0) return `${fullBoxes} ${u}`
-  return `${loose} ${su}`
+  let loose = n % pack
+  const parts: string[] = []
+  if (fullBoxes > 0) parts.push(`${fullBoxes} ${u}`)
+  // 3-level: Box + Strip + Tablet
+  const mid = midSize && midUnit && midSize > 1 && midSize < pack && pack % midSize === 0 ? midSize : 0
+  if (mid) {
+    const strips = Math.floor(loose / mid)
+    loose = loose % mid
+    if (strips > 0) parts.push(`${strips} ${midUnit}`)
+  }
+  if (loose > 0 || parts.length === 0) parts.push(`${loose} ${su}`)
+  return parts.join(' + ')
 }
 
 /**
@@ -130,11 +140,13 @@ export function formatStockInline(
   packSize?: number | null,
   unit?: string | null,
   subUnit?: string | null,
+  midUnit?: string | null,
+  midSize?: number | null,
 ): string {
   const pack = packSize && packSize > 1 ? packSize : 1
   const n = roundStockSubUnits(stockSubUnits)
   if (pack <= 1) return String(n)
-  const breakdown = formatMajorSubLabel(n, pack, unit, subUnit)
+  const breakdown = formatMajorSubLabel(n, pack, unit, subUnit, midUnit, midSize)
   return breakdown ? `${formatDecimalBoxes(n, pack)} (${breakdown})` : formatDecimalBoxes(n, pack)
 }
 
@@ -215,4 +227,55 @@ export function formatVarianceSubFraction(fraction: number): string {
   if (fraction === 0) return '0'
   const abs = trimDecimals(Math.abs(fraction))
   return fraction > 0 ? `+${abs}` : `-${abs}`
+}
+
+export type SellUnit = 'pack' | 'mid' | 'sub'
+
+type UnitProduct = {
+  price: number
+  pack_size?: number | null
+  sub_price?: number | null
+  mid_unit?: string | null
+  mid_size?: number | null
+  mid_price?: number | null
+}
+
+/** True when the product has a valid middle unit (Box → Strip → Tablet). */
+export function hasMidUnit(p: UnitProduct): boolean {
+  const pack = packSizeOf(p)
+  const mid = p.mid_size || 0
+  return !!p.mid_unit && mid > 1 && mid < pack && pack % mid === 0
+}
+
+/** Units the product can be sold/bought in, biggest first. */
+export function sellUnitsOf(p: UnitProduct): SellUnit[] {
+  if (packSizeOf(p) <= 1) return ['pack']
+  return hasMidUnit(p) ? ['pack', 'mid', 'sub'] : ['pack', 'sub']
+}
+
+/** Smallest units moved by 1 qty of this unit (mirrors backend pack_units.unit_multiple). */
+export function unitMultiple(p: UnitProduct, ut: SellUnit | undefined): number {
+  const pack = packSizeOf(p)
+  if (ut === 'mid' && hasMidUnit(p)) return p.mid_size as number
+  if (ut === 'sub' && pack > 1) return 1
+  return pack
+}
+
+/** How many of this unit make one box (box → 1, strip → strips per box, tablet → pack_size). */
+export function unitsPerBox(p: UnitProduct, ut: SellUnit | undefined): number {
+  return packSizeOf(p) / unitMultiple(p, ut)
+}
+
+/** Selling price of one unit: explicit sub/mid price, else box price split evenly (2 dp). */
+export function unitPrice(p: UnitProduct, ut: SellUnit | undefined): number {
+  const pack = packSizeOf(p)
+  if (ut === 'mid' && hasMidUnit(p)) {
+    if (p.mid_price != null && Number(p.mid_price) > 0) return Number(p.mid_price)
+    return +((p.price * (p.mid_size as number)) / pack).toFixed(2)
+  }
+  if (ut === 'sub' && pack > 1) {
+    if (p.sub_price != null && Number(p.sub_price) > 0) return Number(p.sub_price)
+    return +(p.price / pack).toFixed(2)
+  }
+  return p.price
 }

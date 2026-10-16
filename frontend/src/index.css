@@ -32,16 +32,16 @@ html[dir="ltr"] * {
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-slate-50 text-slate-900;
   margin: 0;
   padding: 0;
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { @apply bg-gray-100; }
-::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
-::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+::-webkit-scrollbar-track { @apply bg-transparent; }
+::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
+::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
 
 /* Cart item animation */
 @keyframes slideIn {
@@ -95,8 +95,8 @@ body {
   transform: scale(0.97);
 }
 @keyframes posCheckoutPulse {
-  0%, 100% { box-shadow: 0 10px 25px -5px rgba(13, 148, 136, 0.35); }
-  50% { box-shadow: 0 16px 34px -4px rgba(13, 148, 136, 0.48); }
+  0%, 100% { box-shadow: 0 10px 25px -5px rgba(20, 124, 125, 0.35); }
+  50% { box-shadow: 0 16px 34px -4px rgba(20, 124, 125, 0.48); }
 }
 .pos-action-checkout:not(:disabled) {
   animation: posCheckoutPulse 2.8s ease-in-out infinite;
@@ -123,7 +123,7 @@ body {
 }
 .pharmacy-name-anim {
   animation: pharmacyNameIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
-  background: linear-gradient(90deg, #0f766e 0%, #10b981 40%, #34d399 50%, #10b981 60%, #0f766e 100%);
+  background: linear-gradient(90deg, #136466 0%, #209a98 40%, #43b6b1 50%, #209a98 60%, #136466 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -137,14 +137,14 @@ body {
   display: inline-block;
   width: 6px; height: 6px;
   border-radius: 9999px;
-  background: #10b981;
-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+  background: #209a98;
+  box-shadow: 0 0 0 0 rgba(32, 154, 152, 0.6);
   animation: pharmacyPulse 2s ease-out infinite;
 }
 @keyframes pharmacyPulse {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
-  70%  { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(32, 154, 152, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(32, 154, 152, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(32, 154, 152, 0); }
 }
 
 /* Print styles */
@@ -353,7 +353,7 @@ body {
 
 /* POS animated offers button */
 .offers-glow-btn {
-  background: linear-gradient(135deg, #059669 0%, #0d9488 45%, #0891b2 100%);
+  background: linear-gradient(135deg, #147c7d 0%, #209a98 50%, #0e7490 100%);
   animation: offers-pulse 2.8s ease-in-out infinite;
 }
 .offers-glow-btn__shine {
@@ -372,7 +372,7 @@ body {
   animation: offers-sparkle 1.6s ease-in-out infinite;
 }
 @keyframes offers-pulse {
-  0%, 100% { box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35); transform: scale(1); }
+  0%, 100% { box-shadow: 0 4px 14px rgba(20, 124, 125, 0.35); transform: scale(1); }
   50% { box-shadow: 0 6px 22px rgba(8, 145, 178, 0.55); transform: scale(1.02); }
 }
 @keyframes offers-shine {

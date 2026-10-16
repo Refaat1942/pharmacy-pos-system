@@ -365,6 +365,17 @@ SELECT setval('purchase_order_seq',
 SELECT setval('stock_transfer_seq',
               GREATEST((SELECT COALESCE(MAX(id), 0) FROM stock_transfers), 1));
 
+-- Sale/return numbers (INV-YYYYMMDD-NNNN). Previously COUNT(*)+1, which gave two
+-- simultaneous checkouts the same number → unique violation → sale failed.
+-- Seeded past every number already issued; never moves backwards on restart.
+CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+SELECT setval('invoice_number_seq', GREATEST(
+    (SELECT last_value FROM invoice_number_seq),
+    (SELECT COUNT(*) FROM invoices) + (SELECT COUNT(*) FROM returns),
+    COALESCE((SELECT MAX(substring(invoice_number FROM '-([0-9]+)$')::bigint) FROM invoices), 0),
+    COALESCE((SELECT MAX(substring(return_invoice_number FROM '-([0-9]+)$')::bigint) FROM returns), 0),
+    1));
+
 -- Cash drawer / shifts
 CREATE TABLE IF NOT EXISTS shifts (
     id            SERIAL PRIMARY KEY,
@@ -454,6 +465,12 @@ END $$;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_unit  VARCHAR(30);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2);
+-- Optional middle unit for 3-level packs (Box → Strip → Tablet):
+--   sub_unit/pack_size then describe the SMALLEST unit (tablets per box) and
+--   mid_unit/mid_size the middle one (tablets per strip); stock stays in tablets.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_unit  VARCHAR(30);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_size  INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_price NUMERIC(10,2);
 ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100);
 
 -- Per-line unit label captured at sale time (e.g. "box" or "strip"), for receipts.
@@ -576,6 +593,11 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS discount_pct DECIMAL(6
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS vat_pct      DECIMAL(6,2) DEFAULT 0;
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS public_price DECIMAL(12,2);
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS sales_tax DECIMAL(12,4) DEFAULT 0;
+-- Free goods on a supplier line (e.g. 10 + 2 bonus). Was read/written by purchasing
+-- but never created, so every PO failed on schemas built from this file.
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFAULT 0;
+-- Unit the line was bought in: pack (box, default) / mid (strip) / sub (tablet).
+ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit_type VARCHAR(8) DEFAULT 'pack';
 
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name BOOLEAN DEFAULT true;
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_pharmacy_name_on_labels BOOLEAN DEFAULT true;
@@ -916,6 +938,9 @@ PRODUCT_COLUMN_MIGRATIONS = [
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS pack_size INTEGER DEFAULT 1",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_unit VARCHAR(30)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS sub_price NUMERIC(10,2)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_unit VARCHAR(30)",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_size INTEGER",
+    "ALTER TABLE products ADD COLUMN IF NOT EXISTS mid_price NUMERIC(10,2)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS international_barcode VARCHAR(100)",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL",
     "ALTER TABLE products ADD COLUMN IF NOT EXISTS material_group VARCHAR(20) DEFAULT 'DL'",

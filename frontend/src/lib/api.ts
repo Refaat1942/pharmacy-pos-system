@@ -65,6 +65,11 @@ export interface Product {
   pack_size?: number
   sub_unit?: string | null
   sub_price?: number | null
+  /** Optional middle unit (Box → Strip → Tablet). pack_size is then tablets per box. */
+  mid_unit?: string | null
+  /** Smallest units per middle unit (tablets per strip). */
+  mid_size?: number | null
+  mid_price?: number | null
   supplier_id?: number | null
   supplier_name?: string | null
   last_po_supplier_name?: string | null
@@ -167,9 +172,9 @@ export interface CartItem {
   discount_value?: number
   offer_id?: number
   offer_discount?: number
-  // 'pack' = sell as main unit (Box), 'sub' = sell as inner unit (Strip).
+  // 'pack' = Box, 'mid' = Strip (3-level products only), 'sub' = smallest unit (Strip/Tablet).
   // When pack_size <= 1 this is always 'pack'.
-  unit_type?: 'pack' | 'sub'
+  unit_type?: 'pack' | 'mid' | 'sub'
   dose_text?: string
   /** Print dose direction on customer receipt when checked. */
   dose_on_receipt?: boolean
@@ -699,6 +704,8 @@ export interface POItem {
   public_price?: number | null
   expiry_date?: string | null
   total?: number
+  /** Unit the line is bought in: box (default), strip ('mid') or smallest unit ('sub'). */
+  unit_type?: 'pack' | 'mid' | 'sub'
 }
 
 export interface PurchaseOrder {
