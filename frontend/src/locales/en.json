@@ -89,7 +89,23 @@
     "bar_size": "Barcode size",
     "bar_small": "Small",
     "bar_medium": "Medium",
-    "bar_large": "Large"
+    "bar_large": "Large",
+    "direct_ready": "Direct printing ready — exact label size, no Windows settings needed. Printer:",
+    "direct_print": "Print now ({{n}})",
+    "direct_sent": "✓ Sent {{n}} label(s) to the printer",
+    "direct_failed": "Printing failed",
+    "windows_print": "Windows print dialog",
+    "fine_tune": "Fine-tune",
+    "gap_mm": "Gap (mm)",
+    "move_right": "Move right (mm)",
+    "move_down": "Move down (mm)",
+    "darkness": "Darkness",
+    "rotate": "Turn 180°",
+    "offline_save": "Save items for offline",
+    "offline_saving": "Saving items for offline printing…",
+    "offline_saved": "✓ {{n}} items saved — labels can now be printed without internet (desktop icon “FPS Labels (offline)”).",
+    "bridge_missing": "One-time setup for perfect labels: install FPS Print Bridge on this PC (no printer settings needed afterwards). Run it once, then reopen this window.",
+    "bridge_download": "Download FPS Print Bridge"
   },
   "dose_labels": {
     "title": "Dose labels",
@@ -2102,5 +2118,21 @@
     "card_number": "Card number",
     "program": "Program",
     "combine_insurance": "Can combine with insurance"
+  },
+  "offline": {
+    "title": "Internet / offline status",
+    "online": "Online",
+    "offline": "Offline",
+    "online_long": "Online — sales go straight to the server.",
+    "offline_long": "No internet — keep selling. Sales are saved on this PC and upload automatically.",
+    "pending": "{{n}} sale(s) waiting to upload",
+    "sync_now": "Upload now",
+    "failed": "{{n}} offline sale(s) were rejected by the server",
+    "retry": "Try again",
+    "pack": "{{n}} products ready offline · {{at}}",
+    "no_pack": "Offline data not downloaded yet",
+    "refresh": "Refresh offline data",
+    "help": "Works offline: product search, scanning, cart, cash/visa/delivery/digital sales and receipts. Needs internet: insurance sales, loyalty redemption and back-office pages.",
+    "close_shift_pending": "{{n}} offline sale(s) on this PC are still waiting to upload. Connect to the internet and upload them before closing the shift, or the shift totals will miss them."
   }
 }

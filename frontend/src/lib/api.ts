@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { installOffline } from './offline'
 
 const api = axios.create({
   baseURL: '/api',
@@ -28,6 +29,8 @@ api.interceptors.response.use(
     return Promise.reject(err)
   }
 )
+
+installOffline(api)
 
 export default api
 

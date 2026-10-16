@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import OfflineBadge from './OfflineBadge'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { pageTitleKey } from '../lib/pageTitles'
 import { LogOut, Globe, Clock } from 'lucide-react'
@@ -51,6 +52,8 @@ export default function Topbar() {
           </div>
         )}
       </div>
+
+      <OfflineBadge />
 
       <BranchSwitcher />
 

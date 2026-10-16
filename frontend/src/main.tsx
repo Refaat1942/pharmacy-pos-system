@@ -9,3 +9,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>
 )
+
+// Offline support: cache the app shell so the POS opens without internet.
+if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* offline mode unavailable */ })
+  })
+}
