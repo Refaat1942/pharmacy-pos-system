@@ -19,8 +19,8 @@ from customer_treatments import router as customer_treatments_router
 from customers import router as customers_router
 from clinics import router as clinics_router
 
-app = FastAPI(title="PharmaPOS API", docs_url=None, redoc_url=None, openapi_url=None) \
-    if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="PharmaPOS API")
+app = FastAPI(title="FPS Pharmacy API", docs_url=None, redoc_url=None, openapi_url=None) \
+    if os.getenv("ENVIRONMENT") == "production" else FastAPI(title="FPS Pharmacy API")
 
 # CORS: lock to explicit origins in production, allow wildcard only in dev.
 _cors_env = os.getenv("CORS_ORIGINS", "").strip()
@@ -1192,14 +1192,15 @@ def create_sale(req: SaleRequest,
             # When pack_size > 1, products.stock is in sub-units (sachets, strips, etc.).
             cur_pack = max(1, int(prod["pack_size"] or 1))
             sub_unit = (prod.get("sub_unit") or "").strip()
+            # A sub-unit line must deduct sub-units even when the product has no
+            # sub_unit name set — otherwise a strip-priced line removes a whole box.
             sold_as_sub = (
                 (item.unit_type or "pack").strip().lower() == "sub"
                 and cur_pack > 1
-                and bool(sub_unit)
             )
             if sold_as_sub:
                 stock_used = int(item.quantity)
-                unit_label = sub_unit
+                unit_label = sub_unit or "piece"
                 line_pack = 1
             else:
                 stock_used = int(item.quantity) * cur_pack
@@ -2056,4 +2057,4 @@ def dashboard_alerts(request: Request,
 
 @app.get("/")
 def root():
-    return {"status": "PharmaPOS API running", "version": "2.0"}
+    return {"status": "FPS Pharmacy API running", "version": "2.0"}

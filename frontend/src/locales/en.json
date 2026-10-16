@@ -1,11 +1,11 @@
 {
-  "app_name": "Fratelanza ERP",
-  "app_subtitle": "Management System",
+  "app_name": "FPS Pharmacy",
+  "app_subtitle": "Pharmacy ERP · POS",
   "copyright": "© 2026 Fratelanza. All rights reserved.",
   "copyright_short": "© 2026 Fratelanza",
   "login": {
     "title": "Welcome Back",
-    "subtitle": "Sign in to Fratelanza ERP Management System",
+    "subtitle": "Sign in to FPS Pharmacy",
     "username": "Username",
     "password": "Password",
     "sign_in": "Sign In",
@@ -444,7 +444,7 @@
     "cost": "Cost",
     "profit": "Profit",
     "payment_method": "Payment Method",
-    "sale_type": "Sale Type",
+    "sale_type": "Sale type",
     "return_type": "Return",
     "no_data": "No data for this period",
     "by_clinic": "Sales by Clinic",
@@ -527,7 +527,6 @@
     "terminal": "Terminal",
     "invoice_detail": "Invoices",
     "line_items": "Line items",
-    "sale_type": "Sale type",
     "sale_time": "Time",
     "net_total": "Net total",
     "unit_price": "Unit price",
@@ -1148,7 +1147,10 @@
     "by_amount": "In EGP",
     "by_percent": "In %",
     "from_clinic": "From clinic",
-    "clear_clinic": "Remove clinic"
+    "clear_clinic": "Remove clinic",
+    "clear_cart": "Clear",
+    "scan_or_type": "Scan or type",
+    "sell_unit": "Sell unit"
   },
   "payment": {
     "title": "Complete Payment",

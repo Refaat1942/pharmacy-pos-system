@@ -22,8 +22,14 @@ def _unit_lines(cart_lines: list[dict], product_ids: set[int]) -> list[dict]:
             continue
         price = float(line["unit_price"])
         qty = int(line["quantity"])
+        # Strip/sub-unit lines carry the pack size so box-level offers scale correctly.
+        is_sub = str(line.get("unit_type") or "pack").strip().lower() == "sub"
+        pack = max(1, int(line.get("pack_size") or 1)) if is_sub else 1
         for _ in range(qty):
-            units.append({"line_idx": line_idx, "unit_price": price, "product_id": pid})
+            units.append({
+                "line_idx": line_idx, "unit_price": price, "product_id": pid,
+                "is_sub": is_sub and pack > 1, "pack": pack,
+            })
     return units
 
 
@@ -40,7 +46,7 @@ def compute_offer_line_discounts(
     cart_lines: list[dict],
 ) -> tuple[dict[int, float], float]:
     """
-    cart_lines: [{product_id, quantity, unit_price}, ...]
+    cart_lines: [{product_id, quantity, unit_price, unit_type?, pack_size?}, ...]
     Returns ({line_index: discount_amount}, total_savings).
     """
     product_ids = {int(p) for p in (offer.get("product_ids") or [])}
@@ -62,10 +68,29 @@ def compute_offer_line_discounts(
             per_unit[i] = round(u["unit_price"] * rate, 2)
 
     elif offer_type == "direct_amount":
+        # The amount is per box; a strip gets its proportional share.
         for i, u in enumerate(units):
-            per_unit[i] = round(min(amt, u["unit_price"]), 2)
+            per_unit[i] = round(min(amt / u["pack"], u["unit_price"]), 2)
 
-    elif offer_type == "second_half":
+    elif offer_type in ("second_half", "bogo", "buy2get1"):
+        # Multi-buy offers count whole boxes only; loose strips never trigger them.
+        box_idx = [i for i, u in enumerate(units) if not u["is_sub"]]
+        boxes = [units[i] for i in box_idx]
+        box_disc = _multi_buy_discounts(offer_type, boxes, pct)
+        for j, i in enumerate(box_idx):
+            per_unit[i] = box_disc[j]
+
+    else:
+        return {}, 0.0
+
+    by_line = _distribute(units, per_unit)
+    total = round(sum(per_unit), 2)
+    return by_line, total
+
+
+def _multi_buy_discounts(offer_type: str, units: list[dict], pct: float) -> list[float]:
+    per_unit = [0.0] * len(units)
+    if offer_type == "second_half":
         rate = max(0.0, min(100.0, pct)) / 100.0
         for i in range(0, len(units) - (len(units) % 2), 2):
             per_unit[i + 1] = round(units[i + 1]["unit_price"] * rate, 2)
@@ -81,12 +106,7 @@ def compute_offer_line_discounts(
             cheapest = min(range(3), key=lambda j: trio[j]["unit_price"])
             per_unit[i + cheapest] = round(trio[cheapest]["unit_price"], 2)
 
-    else:
-        return {}, 0.0
-
-    by_line = _distribute(units, per_unit)
-    total = round(sum(per_unit), 2)
-    return by_line, total
+    return per_unit
 
 
 def apply_offers_to_cart(

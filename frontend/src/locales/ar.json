@@ -1,11 +1,11 @@
 {
-  "app_name": "فراتيلانزا ERP",
-  "app_subtitle": "نظام إدارة الموارد",
+  "app_name": "FPS Pharmacy",
+  "app_subtitle": "نظام إدارة الصيدلية",
   "copyright": "© 2026 فراتيلانزا. جميع الحقوق محفوظة.",
   "copyright_short": "© 2026 فراتيلانزا",
   "login": {
     "title": "أهلاً بك",
-    "subtitle": "تسجيل الدخول إلى نظام إدارة فراتيلانزا",
+    "subtitle": "تسجيل الدخول إلى نظام FPS Pharmacy",
     "username": "اسم المستخدم",
     "password": "كلمة المرور",
     "sign_in": "تسجيل الدخول",
@@ -812,7 +812,6 @@
     "terminal": "الطرفية",
     "invoice_detail": "الفواتير",
     "line_items": "بنود الأصناف",
-    "sale_type": "نوع البيع",
     "sale_time": "الوقت",
     "net_total": "صافي الإجمالي",
     "unit_price": "سعر الوحدة",
@@ -1146,7 +1145,10 @@
     "by_amount": "بالجنيه",
     "by_percent": "بالنسبة %",
     "from_clinic": "من عيادة",
-    "clear_clinic": "إزالة العيادة"
+    "clear_clinic": "إزالة العيادة",
+    "clear_cart": "مسح",
+    "scan_or_type": "امسح أو اكتب",
+    "sell_unit": "وحدة البيع"
   },
   "payment": {
     "title": "إتمام الدفع",

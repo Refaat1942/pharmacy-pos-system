@@ -933,7 +933,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 async function downloadUserManual(lang: 'en' | 'ar') {
   const res = await api.get(`/settings/user-manual/${lang}`, { responseType: 'blob' })
-  const filename = lang === 'ar' ? 'PharmaPOS_User_Manual_AR.md' : 'PharmaPOS_User_Manual_EN.md'
+  const filename = lang === 'ar' ? 'FPS_Pharmacy_User_Manual_AR.md' : 'FPS_Pharmacy_User_Manual_EN.md'
   const blob = new Blob([res.data], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

@@ -196,8 +196,8 @@ def _admin(user):
 
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 USER_MANUAL_FILES = {
-    "en": ("USER_MANUAL_EN.md", "PharmaPOS_User_Manual_EN.md"),
-    "ar": ("USER_MANUAL_AR.md", "PharmaPOS_User_Manual_AR.md"),
+    "en": ("USER_MANUAL_EN.md", "FPS_Pharmacy_User_Manual_EN.md"),
+    "ar": ("USER_MANUAL_AR.md", "FPS_Pharmacy_User_Manual_AR.md"),
 }
 
 

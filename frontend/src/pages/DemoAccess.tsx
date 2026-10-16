@@ -114,7 +114,7 @@ export default function DemoAccess() {
         <div className="inline-flex items-center justify-center w-16 h-16 bg-pharma-600 rounded-2xl shadow-xl mb-5">
           <Pill size={32} strokeWidth={2.5} />
         </div>
-        <h1 className="text-2xl font-extrabold tracking-tight">Fratelanza POS Demo</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">FPS Pharmacy Demo</h1>
         <p className="text-white/60 mt-2 text-sm">Opening your trial — no login required</p>
 
         {(loading || starting) && (
