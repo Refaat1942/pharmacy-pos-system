@@ -1,10 +1,15 @@
 /**
  * Barcode / QR label printing through the Windows (OS) print dialog.
  *
- * FPS has no label-size settings: one label = one printed page, and the page size
- * is whatever paper size is set for the printer in Windows (Printing preferences →
- * Stock / Paper size). Each label stretches to fill that page, so the same print
- * works on any roll the printer is set up for.
+ * FPS has no label-size settings: the page size is whatever paper size is set for the
+ * printer in Windows (Printing preferences → Stock / Paper size) = one gap-to-gap
+ * section of the roll. The roll in use is 2-up (two labels, a thin cut, then the gap),
+ * so each page holds two labels stacked, filled in order: 4 barcodes = 2 pages.
+ *
+ *   [label 1]
+ *   [label 2]  gap
+ *   [label 3]
+ *   [label 4]  gap …
  */
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
@@ -79,6 +84,8 @@ function formatExpiry(raw?: string | null): string {
 // they print crisp and scan; the widest module size that fits the label is picked
 // with container queries once the real (Windows) paper size is known.
 const DOT_MM = 25.4 / 203
+// Labels between two gaps of the roll (2-up roll: label, label, gap).
+const LABELS_PER_PAGE = 2
 const MODULE_DOTS = [4, 3, 2, 1]
 // Share of the label width the bars may take (the rest is quiet zone).
 const BAR_SHARE = 0.86
@@ -105,10 +112,12 @@ const BASE_STYLES = `
   #print-toolbar button { padding: 8px 16px; background: #147c7d; color: #fff; font-weight: 700;
     border: 0; border-radius: 8px; cursor: pointer; }
   .sheet { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; background: #f1f5f9; }
-  /* On screen: a 38 × 12 mm sample. In print: exactly one page (the Windows paper size). */
-  .label { width: 38mm; height: 12mm; container: label / size; box-sizing: border-box; overflow: hidden;
-    background: #fff; outline: 1px dashed #cbd5e1; display: flex; }
-  .col, .qr-wrap { box-sizing: border-box; padding: 4cqh 3cqw; }
+  /* On screen: a 38 × 25 mm sample page. In print: exactly one page (the Windows paper size). */
+  .page { width: 38mm; height: 25mm; display: flex; flex-direction: column; background: #fff; }
+  .label { width: 100%; height: 50%; flex: 0 0 50%; container: label / size; box-sizing: border-box;
+    overflow: hidden; outline: 1px dashed #cbd5e1; display: flex; }
+  /* Side margin keeps text off the edge the print head cannot reach. */
+  .col, .qr-wrap { box-sizing: border-box; padding: 5cqh 6cqw; }
   .col { display: flex; flex-direction: column; align-items: center; width: 100%; height: 100%; min-width: 0; }
   .line { display: flex; justify-content: space-between; gap: 2cqw; width: 100%; flex: 0 0 auto;
     font-size: clamp(1.3mm, 15cqh, 3.2mm); line-height: 1.1; font-weight: 700; white-space: nowrap; }
@@ -124,8 +133,9 @@ const BASE_STYLES = `
   @media print {
     #print-toolbar { display: none !important; }
     .sheet { display: block; padding: 0; background: #fff; }
-    .label { width: 100vw; height: 100vh; outline: none; break-after: page; page-break-after: always; }
-    .label:last-child { break-after: auto; page-break-after: auto; }
+    .page { width: 100vw; height: 100vh; overflow: hidden; break-after: page; page-break-after: always; }
+    .page:last-child { break-after: auto; page-break-after: auto; }
+    .label { outline: none; }
   }
 `
 
@@ -139,9 +149,14 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
     return e
   }
 
-  for (const it of list) {
+  let page: HTMLElement | null = null
+  for (const [i, it] of list.entries()) {
+    if (i % LABELS_PER_PAGE === 0) {
+      page = el('div', 'page')
+      sheet.appendChild(page)
+    }
     const label = el('div', 'label')
-    sheet.appendChild(label)
+    page!.appendChild(label)
     const price = c.showPrice && it.price != null ? Number(it.price).toFixed(2) : ''
     const exp = c.showExpiry ? formatExpiry(it.expiryDate) : ''
     const name = c.showName ? it.name || '' : ''

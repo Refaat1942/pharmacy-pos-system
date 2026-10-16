@@ -62,7 +62,7 @@
     "choose_printer": "Print ({{n}})",
     "popup_blocked": "Pop-up blocked. Allow pop-ups for this site to print barcode labels.",
     "print_toolbar_btn": "Print",
-    "windows_only_hint": "Labels print on the paper size set for the printer in Windows (Printing preferences). One barcode per label. In the print window: Margins None, Scale 100% (or Default)."
+    "windows_only_hint": "Two labels print on each page (label, label, gap). In Windows Printing preferences set the paper size to one gap-to-gap section, two labels: 1.50 × 0.98 in (38 × 25 mm). In the print window: Margins None."
   },
   "dose_labels": {
     "title": "Dose labels",
