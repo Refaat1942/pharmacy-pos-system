@@ -124,6 +124,7 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
                 onChange={(v) => set('preset', v)}
                 options={[
                   { value: '25x5', label: '25 × 5 mm' },
+                  { value: '38x10', label: '38 × 10 mm' },
                   { value: '38x12', label: '38 × 12 mm' },
                   { value: 'custom', label: t('bulk_barcode.size_custom') },
                 ]}
