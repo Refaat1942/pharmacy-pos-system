@@ -2,12 +2,16 @@
  * Barcode / QR label printing through the Windows (OS) print dialog.
  *
  * No printer-specific code (no Zebra ZPL, no calibration offsets): we lay out one
- * printed PAGE per label ROW at the exact physical size, and the installed Windows
- * printer driver handles the label gap. Set the same paper size in the printer's
- * Windows "Printing preferences" (e.g. 38 × 12 mm, or 78 × 12 mm for 2-across).
+ * printed PAGE per gap-to-gap section of the roll at the exact physical size, and the
+ * installed Windows printer driver feeds to the next gap. Set the same paper size in
+ * the printer's Windows "Printing preferences" (e.g. 38 × 12 mm, or 38 × 25 mm when
+ * two labels sit between gaps).
  *
- *   1 per row:  [label]            gap  [label]            …
- *   2 per row:  [label] [label]    gap  [label] [label]    …
+ *   1 per gap:  [label] gap [label] gap …
+ *   2 per gap:  [label]        ← two labels stacked between gaps (e.g. 38 × 25 roll)
+ *               [label] gap
+ *               [label]
+ *               [label] gap …
  */
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
@@ -15,16 +19,19 @@ import api from './api'
 
 export type LabelPreset = '25x5' | '38x12' | 'custom'
 export type CodeKind = 'barcode' | 'qr'
+export type BarSize = 'small' | 'medium' | 'large'
 
 export interface LabelPrefs {
   preset: LabelPreset
   customW: number
   customH: number
-  /** Labels across the roll: 1 = label, gap, label … ; 2 = two labels, gap, two labels … */
-  perRow: 1 | 2
-  /** Horizontal gap between the two labels of a row (mm). */
-  colGap: number
+  /** Labels between two gaps of the roll: 1, or 2 stacked (label, label, gap, label, label …). */
+  perPage: 1 | 2
+  /** Space between the two stacked labels of a page (mm). */
+  pairGap: number
   code: CodeKind
+  /** How much of the label the bars take. */
+  barSize: BarSize
   showName: boolean
   showPrice: boolean
   showExpiry: boolean
@@ -58,16 +65,17 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   preset: '38x12',
   customW: 38,
   customH: 12,
-  perRow: 1,
-  colGap: 2,
+  perPage: 2,
+  pairGap: 1,
   code: 'barcode',
+  barSize: 'medium',
   showName: true,
   showPrice: true,
   showExpiry: true,
   showPharmacy: false,
 }
 
-const PREFS_KEY = 'fps_label_prefs_v2'
+const PREFS_KEY = 'fps_label_prefs_v3'
 
 function clamp(v: number, lo: number, hi: number, fallback: number): number {
   return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -80,8 +88,9 @@ export function loadLabelPrefs(): LabelPrefs {
     return {
       ...DEFAULT_LABEL_PREFS,
       ...p,
-      perRow: p.perRow === 2 ? 2 : 1,
+      perPage: p.perPage === 1 ? 1 : 2,
       code: p.code === 'qr' ? 'qr' : 'barcode',
+      barSize: p.barSize === 'small' || p.barSize === 'large' ? p.barSize : 'medium',
     }
   } catch {
     return { ...DEFAULT_LABEL_PREFS }
@@ -103,10 +112,17 @@ export function labelDims(p: LabelPrefs): { wMm: number; hMm: number } {
   return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x12']
 }
 
-/** Width of one printed row (= the paper width to set in the Windows printer). */
-export function rowWidthMm(p: LabelPrefs): number {
-  const { wMm } = labelDims(p)
-  return p.perRow === 2 ? wMm * 2 + clamp(p.colGap, 0, 20, 2) : wMm
+/** Size of one printed page = one gap-to-gap section (the paper size to set in Windows). */
+export function pageSizeMm(p: LabelPrefs): { wMm: number; hMm: number } {
+  const { wMm, hMm } = labelDims(p)
+  return { wMm, hMm: p.perPage === 2 ? +(hMm * 2 + clamp(p.pairGap, 0, 10, 1)).toFixed(2) : hMm }
+}
+
+// Share of the label the bars take (width %, height % of the label).
+const BAR_SIZE: Record<BarSize, { w: number; h: number }> = {
+  small: { w: 55, h: 34 },
+  medium: { w: 72, h: 44 },
+  large: { w: 92, h: 58 },
 }
 
 export function buildConfig(prefs: LabelPrefs, pharmacyName: string): LabelPrintConfig {
@@ -153,13 +169,18 @@ function formatExpiry(raw?: string | null): string {
   return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(-2)}`
 }
 
+// Thermal label printers (Xprinter XP-370B etc.) are 203 dpi = 8 dots/mm.
+const DOT_MM = 25.4 / 203
+const MIN_DOTS = 2
+
 function buildStyles(c: LabelPrintConfig): string {
-  const row = rowWidthMm(c)
+  const page = pageSizeMm(c)
+  const bar = BAR_SIZE[c.barSize] ?? BAR_SIZE.medium
   const tiny = c.hMm < 9
   const font = Math.min(3.2, Math.max(1.4, c.hMm * 0.15))
   const pad = tiny ? 0.3 : 0.6
   return `
-    @page { size: ${row}mm ${c.hMm}mm; margin: 0; }
+    @page { size: ${page.wMm}mm ${page.hMm}mm; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
     body { font-family: Arial, Helvetica, sans-serif; color: #000; }
     #print-toolbar { position: sticky; top: 0; z-index: 9; padding: 10px 14px; background: #effaf9;
@@ -167,16 +188,18 @@ function buildStyles(c: LabelPrintConfig): string {
     #print-toolbar button { padding: 8px 16px; background: #147c7d; color: #fff; font-weight: 700;
       border: 0; border-radius: 8px; cursor: pointer; }
     .sheet { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; background: #f1f5f9; }
-    .row { width: ${row}mm; height: ${c.hMm}mm; display: flex; gap: ${c.perRow === 2 ? c.colGap : 0}mm;
-      overflow: hidden; box-sizing: border-box; background: #fff; }
-    .label { width: ${c.wMm}mm; height: ${c.hMm}mm; flex: 0 0 ${c.wMm}mm; box-sizing: border-box;
+    .row { width: ${page.wMm}mm; height: ${page.hMm}mm; display: flex; flex-direction: column;
+      gap: ${c.perPage === 2 ? c.pairGap : 0}mm; overflow: hidden; box-sizing: border-box; background: #fff; }
+    .label { width: ${c.wMm}mm; height: ${c.hMm}mm; flex: 0 0 ${c.hMm}mm; box-sizing: border-box;
       padding: ${pad}mm ${tiny ? 0.8 : 1.2}mm; overflow: hidden; display: flex; outline: 1px dashed #cbd5e1; }
     .label.blank { outline-color: transparent; }
-    .col { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
+    .col { display: flex; flex-direction: column; justify-content: center; align-items: center;
+      width: 100%; height: 100%; min-width: 0; }
+    .col .line { width: 100%; }
     .line { display: flex; justify-content: space-between; gap: 1mm; font-size: ${font}mm; line-height: 1.05;
       font-weight: 700; white-space: nowrap; }
     .line .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .bars { flex: 1 1 auto; min-height: 0; width: 100%; display: block; }
+    .bars { flex: 0 0 auto; width: ${tiny ? 100 : bar.w}%; height: ${tiny ? 100 : bar.h}%; display: block; margin: 0.3mm auto 0; }
     .digits { font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
     .qr-wrap { display: flex; gap: 1mm; width: 100%; height: 100%; align-items: center; min-width: 0; }
     .qr { height: 100%; aspect-ratio: 1 / 1; flex: 0 0 auto; image-rendering: pixelated; }
@@ -203,9 +226,9 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
     return e
   }
 
-  for (let i = 0; i < list.length; i += c.perRow) {
+  for (let i = 0; i < list.length; i += c.perPage) {
     const row = el('div', 'row')
-    for (let k = 0; k < c.perRow; k++) {
+    for (let k = 0; k < c.perPage; k++) {
       const it = list[i + k]
       const label = el('div', it ? 'label' : 'label blank')
       row.appendChild(label)
@@ -243,22 +266,30 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
       }
       const svg = doc.createElementNS(svgNS, 'svg') as unknown as SVGSVGElement
       svg.setAttribute('class', 'bars')
+      // width: 1 → the SVG is exactly one unit per barcode module.
       try {
         JsBarcode(svg, it.barcode, {
-          format: detectFormat(it.barcode), displayValue: false, margin: 0, width: 2, height: 60,
+          format: detectFormat(it.barcode), displayValue: false, margin: 0, width: 1, height: 60,
           lineColor: '#000', background: '#fff',
         })
       } catch {
-        JsBarcode(svg, it.barcode, { format: 'CODE128', displayValue: false, margin: 0, width: 2, height: 60 })
+        JsBarcode(svg, it.barcode, { format: 'CODE128', displayValue: false, margin: 0, width: 1, height: 60 })
       }
-      const vw = parseFloat(svg.getAttribute('width') || '0')
+      const modules = parseFloat(svg.getAttribute('width') || '0')
       const vh = parseFloat(svg.getAttribute('height') || '0')
-      if (vw && vh) {
-        // Stretch to the label box: uniform bar scaling keeps the code scannable.
-        svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+      if (modules && vh) {
+        svg.setAttribute('viewBox', `0 0 ${modules} ${vh}`)
         svg.setAttribute('preserveAspectRatio', 'none')
         svg.removeAttribute('width')
         svg.removeAttribute('height')
+        // Snap every bar to whole printer dots so thermal printers draw it cleanly:
+        // the widest module that fits the chosen bar size, never under 2 dots
+        // (0.25 mm) unless the label itself is too narrow.
+        const innerW = c.wMm - (tiny ? 1.6 : 2.4)
+        const maxW = tiny ? innerW : (innerW * (BAR_SIZE[c.barSize] ?? BAR_SIZE.medium).w) / 100
+        let dots = Math.floor(maxW / (modules * DOT_MM))
+        if (dots < MIN_DOTS) dots = Math.max(1, Math.min(MIN_DOTS, Math.floor(innerW / (modules * DOT_MM))))
+        svg.style.width = `${(modules * dots * DOT_MM).toFixed(3)}mm`
       }
       col.appendChild(svg as unknown as Node)
       if (!tiny) {
@@ -338,7 +369,8 @@ export async function openLabelPrintWindow(
   btn.type = 'button'
   btn.textContent = labels.printToolbar
   btn.onclick = () => { w.focus(); w.print() }
-  bar.append(btn, `${rowWidthMm(config)} × ${config.hMm} mm`)
+  const ps = pageSizeMm(config)
+  bar.append(btn, `${ps.wMm} × ${ps.hMm} mm`)
   w.document.body.appendChild(bar)
   const sheet = w.document.createElement('div')
   sheet.className = 'sheet'

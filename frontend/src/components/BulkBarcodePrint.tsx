@@ -9,11 +9,12 @@ import {
   labelDims,
   loadLabelPrefs,
   openLabelPrintWindow,
-  rowWidthMm,
+  pageSizeMm,
   saveLabelPrefs,
   type LabelEntry,
   type LabelPrefs,
   type LabelPreset,
+  type BarSize,
 } from '../lib/labelPrint'
 
 export interface BulkItem {
@@ -143,22 +144,34 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
               )}
             </div>
             <div>
-              <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.per_row')}</p>
+              <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.per_page')}</p>
               <Segmented<1 | 2>
-                value={prefs.perRow}
-                onChange={(v) => set('perRow', v)}
+                value={prefs.perPage}
+                onChange={(v) => set('perPage', v)}
                 options={[
-                  { value: 1, label: t('bulk_barcode.per_row_1') },
-                  { value: 2, label: t('bulk_barcode.per_row_2') },
+                  { value: 1, label: t('bulk_barcode.per_page_1') },
+                  { value: 2, label: t('bulk_barcode.per_page_2') },
                 ]}
               />
-              {prefs.perRow === 2 && (
-                <label className="flex items-center gap-1 mt-2">{t('bulk_barcode.col_gap')}
-                  <input type="number" min={0} max={20} step={0.5} value={prefs.colGap}
-                    onChange={(e) => set('colGap', Math.max(0, parseFloat(e.target.value) || 0))}
+              {prefs.perPage === 2 && (
+                <label className="flex items-center gap-1 mt-2">{t('bulk_barcode.pair_gap')}
+                  <input type="number" min={0} max={10} step={0.5} value={prefs.pairGap}
+                    onChange={(e) => set('pairGap', Math.max(0, parseFloat(e.target.value) || 0))}
                     className="w-16 border border-slate-300 rounded px-2 py-1" /> mm
                 </label>
               )}
+            </div>
+            <div>
+              <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.bar_size')}</p>
+              <Segmented<BarSize>
+                value={prefs.barSize}
+                onChange={(v) => set('barSize', v)}
+                options={[
+                  { value: 'small', label: t('bulk_barcode.bar_small') },
+                  { value: 'medium', label: t('bulk_barcode.bar_medium') },
+                  { value: 'large', label: t('bulk_barcode.bar_large') },
+                ]}
+              />
             </div>
             <div>
               <p className="text-slate-600 font-semibold mb-1.5">{t('bulk_barcode.type')}</p>
@@ -186,20 +199,25 @@ export default function BulkBarcodePrint({ items, onClose }: Props) {
             <p className="text-slate-600 font-semibold">{t('bulk_barcode.preview_title')}</p>
             <div className="rounded-lg border border-slate-200 bg-white p-3 overflow-x-auto">
               {[0, 1].map((r) => (
-                <div key={r} className="flex mb-2 last:mb-0" style={{ gap: prefs.perRow === 2 ? px(prefs.colGap) : 0 }}>
-                  {Array.from({ length: prefs.perRow }).map((_, c) => (
-                    <div key={c} className="border border-dashed border-slate-400 rounded-sm flex items-center justify-center bg-white overflow-hidden"
-                      style={{ width: px(dims.wMm), height: px(dims.hMm), flex: `0 0 ${px(dims.wMm)}` }}>
+                // One block = one gap-to-gap page of the roll; the dashed line between blocks is the gap.
+                <div key={r} className="flex flex-col items-center mb-3 last:mb-0 pb-3 last:pb-0 border-b-2 border-dashed border-amber-300 last:border-b-0"
+                  style={{ gap: prefs.perPage === 2 ? px(prefs.pairGap) : 0 }}>
+                  {Array.from({ length: prefs.perPage }).map((_, c) => (
+                    <div key={c} className="border border-slate-400 rounded-sm flex items-center justify-center bg-white overflow-hidden"
+                      style={{ width: px(dims.wMm), height: px(dims.hMm), flex: `0 0 ${px(dims.hMm)}` }}>
                       {prefs.code === 'qr'
                         ? <QrCode size={Math.max(12, dims.hMm * 4)} className="text-slate-800" />
-                        : <Barcode size={Math.max(14, dims.hMm * 4)} className="text-slate-800" style={{ width: '80%' }} />}
+                        : <Barcode className="text-slate-800" style={{
+                            width: `${{ small: 55, medium: 72, large: 92 }[prefs.barSize]}%`,
+                            height: `${{ small: 34, medium: 44, large: 58 }[prefs.barSize]}%`,
+                          }} />}
                     </div>
                   ))}
                 </div>
               ))}
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              {t('bulk_barcode.windows_hint', { w: rowWidthMm(prefs), h: dims.hMm })}
+              {t('bulk_barcode.windows_hint', pageSizeMm(prefs))}
             </p>
             {sample && (
               <p className="text-[11px] text-slate-400">{t('bulk_barcode.sample', { name: sample.name })}</p>
