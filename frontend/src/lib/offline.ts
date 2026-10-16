@@ -11,6 +11,10 @@
  *   PC at once and is queued.
  * - The last days' invoices (with items) are kept too, so a receipt can be found and a
  *   return made offline; the return is queued like a sale.
+ * - Delivery status changes are queued too.
+ * - A cashier who logged in on this PC before can log in / unlock offline (password
+ *   checked against a salted PBKDF2 hash kept on the PC). Each queued item is uploaded
+ *   with the login of the cashier who made it, while that login is still valid.
  * - One queue, uploaded in order (open shift → sales → close shift) when the network
  *   returns; the server de-duplicates every upload by client_uuid.
  *
@@ -203,7 +207,7 @@ export async function searchOfflineProducts(q: string, limit = 60): Promise<any[
 }
 
 // ─── offline queue (sales + shift open/close) ─────────────────────────────
-type QueueKind = 'sale' | 'shift_open' | 'shift_close' | 'return'
+type QueueKind = 'sale' | 'shift_open' | 'shift_close' | 'return' | 'delivery'
 interface QueuedSale {
   client_uuid: string
   created_at: string
@@ -215,6 +219,8 @@ interface QueuedSale {
   /** Missing on entries saved before shifts could be queued → 'sale'. */
   kind?: QueueKind
   url?: string
+  /** Login of the cashier who made it, so the upload is credited to them. */
+  token?: string | null
 }
 
 const queueKey = () => `sales-queue|${scope().split('|')[0]}`
@@ -253,7 +259,7 @@ async function queueSale(payload: any): Promise<{ invoice: any; items: any[] }> 
   const q = await readQueue()
   q.push({
     client_uuid: payload.client_uuid || uuid(), created_at: now.toISOString(), number, scope: scope(),
-    branch: localStorage.getItem('pharma_active_branch'), payload,
+    branch: localStorage.getItem('pharma_active_branch'), payload, token: localStorage.getItem('pharma_token'),
   })
   await writeQueue(q)
 
@@ -297,6 +303,7 @@ async function queueEntry(kind: QueueKind, url: string, payload: any, number: st
   q.push({
     client_uuid: uuid(), created_at: now, number, scope: scope(),
     branch: localStorage.getItem('pharma_active_branch'), payload, kind, url,
+    token: localStorage.getItem('pharma_token'),
   })
   await writeQueue(q)
   return now
@@ -381,8 +388,9 @@ async function doFlush(api: AxiosInstance): Promise<void> {
     let q = await readQueue()
     for (const sale of q.filter((s) => !s.error)) {
       try {
+        const own = sale.token && tokenValid(sale.token) ? { Authorization: `Bearer ${sale.token}` } : {}
         await api.post(sale.url || '/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
-          headers: { 'X-Offline-Skip': '1', ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}) },
+          headers: { 'X-Offline-Skip': '1', ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}), ...own },
         })
         q = (await readQueue()).filter((s) => s.client_uuid !== sale.client_uuid)
         await writeQueue(q)
@@ -405,6 +413,52 @@ export async function retryFailed(api: AxiosInstance): Promise<void> {
   await flushQueue(api)
 }
 
+// ─── offline login ─────────────────────────────────────────────────────────
+interface SavedLogin { salt: string; hash: string; token: string; user: any; tenant: any; saved_at: string }
+const loginKey = (slug: string, username: string) => `login|${slug.trim().toLowerCase()}|${username.trim().toLowerCase()}`
+
+function tokenValid(token: string): boolean {
+  try {
+    const exp = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp
+    return !exp || exp * 1000 > Date.now() + 60_000
+  } catch {
+    return false
+  }
+}
+
+const b64 = (buf: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+
+async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits'])
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 150_000 }, key, 256)
+  return b64(bits)
+}
+
+/** After a successful online login: keep what is needed to log this cashier in offline. */
+export async function rememberLogin(slug: string, username: string, password: string, data: { token: string; user: any; tenant?: any }) {
+  try {
+    if (!crypto?.subtle) return
+    const salt = crypto.getRandomValues(new Uint8Array(16))
+    const saved: SavedLogin = {
+      salt: b64(salt), hash: await pbkdf2(password, salt), token: data.token, user: data.user,
+      tenant: data.tenant ?? null, saved_at: new Date().toISOString(),
+    }
+    await idbSet(loginKey(slug, username), saved)
+  } catch { /* offline login is a convenience */ }
+}
+
+/** Log in with no internet: only cashiers who logged in on this PC before, with the same password. */
+export async function offlineLogin(slug: string, username: string, password: string): Promise<SavedLogin | null> {
+  try {
+    const saved = await idbGet<SavedLogin>(loginKey(slug, username))
+    if (!saved || !crypto?.subtle) return null
+    const salt = new Uint8Array(Uint8Array.from(atob(saved.salt), (c) => c.charCodeAt(0)))
+    return (await pbkdf2(password, salt)) === saved.hash ? saved : null
+  } catch {
+    return null
+  }
+}
+
 // ─── axios wiring ──────────────────────────────────────────────────────────
 function cacheKey(cfg: InternalAxiosRequestConfig): string {
   const params = cfg.params ? JSON.stringify(cfg.params) : ''
@@ -420,9 +474,10 @@ const POS_PATHS = /^\/(sales$|products$|shifts\b|customers|offers\/active|settin
 const SHIFT_CLOSE = /^\/shifts\/-?\d+\/close$/
 const SALE_RETURN = /^\/sales\/(-?\d+)\/return$/
 const SALE_GET = /^\/sales\/(-?\d+)$/
+const DELIVERY_STATUS = /^\/sales\/(\d+)\/delivery-status$/
 const SHIFT_REPORT = /^\/shifts\/(-?\d+)\/report$/
 /** Writes that depend on queued ones (a sale needs its shift): upload the queue first. */
-const ORDERED_WRITES = /^\/(sales$|sales\/-?\d+\/return$|shifts\/)/
+const ORDERED_WRITES = /^\/(sales$|sales\/-?\d+\/(return|delivery-status)$|shifts\/)/
 
 export function installOffline(api: AxiosInstance): void {
   api.interceptors.request.use(async (cfg) => {
@@ -497,6 +552,11 @@ export function installOffline(api: AxiosInstance): void {
         if (url === '/sales' && payload?.type !== 'return') return fakeResponse(cfg, await queueSale(payload))
         if (url === '/shifts/open') return fakeResponse(cfg, await queueShiftOpen(payload))
         if (SHIFT_CLOSE.test(url)) return fakeResponse(cfg, await queueShiftClose(url, payload))
+        const dlv = DELIVERY_STATUS.exec(url)
+        if (dlv) {
+          await queueEntry('delivery', url, payload, `DELIVERY-${dlv[1]}`)
+          return fakeResponse(cfg, { id: Number(dlv[1]), delivery_status: payload?.status, offline: true })
+        }
         const ret = SALE_RETURN.exec(url)
         if (ret) {
           if (Number(ret[1]) < 0) {
