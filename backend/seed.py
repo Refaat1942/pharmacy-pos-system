@@ -10,7 +10,18 @@ import psycopg2.extras
 
 
 def seed():
-    conn = get_db_connection()
+    # Seed the default pharmacy in ITS OWN schema, never 'public' (every tenant's
+    # search_path falls back to public). bootstrap_platform() also moves a legacy
+    # public default tenant into its own schema.
+    from platform_db import (
+        DEFAULT_TENANT_SLUG, apply_schema_to_all_tenants, bootstrap_platform, get_tenant_by_slug,
+    )
+    bootstrap_platform()
+    apply_schema_to_all_tenants()
+    tenant = get_tenant_by_slug(DEFAULT_TENANT_SLUG)
+    if not tenant or tenant["schema_name"] == "public":
+        raise SystemExit("Default pharmacy is not in its own schema; refusing to seed into public.")
+    conn = get_db_connection(schema=tenant["schema_name"])
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     cur.execute("""

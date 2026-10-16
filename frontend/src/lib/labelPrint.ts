@@ -1,57 +1,34 @@
+/**
+ * Barcode / QR label printing through the Windows (OS) print dialog.
+ *
+ * No printer-specific code (no Zebra ZPL, no calibration offsets): we lay out one
+ * printed PAGE per label ROW at the exact physical size, and the installed Windows
+ * printer driver handles the label gap. Set the same paper size in the printer's
+ * Windows "Printing preferences" (e.g. 38 × 12 mm, or 78 × 12 mm for 2-across).
+ *
+ *   1 per row:  [label]            gap  [label]            …
+ *   2 per row:  [label] [label]    gap  [label] [label]    …
+ */
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import api from './api'
 
-export type LabelSize = 'strip38' | 'small' | 'medium' | 'large' | 'custom'
-
-export interface LabelDims {
-  wMm: number
-  hMm: number
-}
-
-const PROFILE_DIMS: Record<Exclude<LabelSize, 'custom'>, LabelDims> = {
-  strip38: { wMm: 38, hMm: 12 },
-  small: { wMm: 40, hMm: 20 },
-  medium: { wMm: 50, hMm: 25 },
-  large: { wMm: 80, hMm: 50 },
-}
-
-export const CUSTOM_DEFAULT: LabelDims = { wMm: 38, hMm: 11 }
-
-export interface LabelStyle {
-  barcodeHeightMm: number
-  barcodeScaleMm: number
-  fontSizeMm: number
-  paddingMm: number
-  offsetYMm: number
-  offsetXMm: number
-  topRowOffsetMm: number
-}
+export type LabelPreset = '25x5' | '38x12' | 'custom'
+export type CodeKind = 'barcode' | 'qr'
 
 export interface LabelPrefs {
-  size?: string
-  useQR?: boolean
-  showName?: boolean
-  showPrice?: boolean
-  showExpiry?: boolean
-  customW?: number
-  customH?: number
-  overrides?: Partial<LabelStyle>
-  layout?: 'page' | 'grid' | 'paired'
-  columns?: number
-  rowGap?: number
-  colGap?: number
-  groupSize?: number
-  groupGap?: number
-}
-
-export interface GridOpts {
-  layout: 'page' | 'grid' | 'paired'
-  columns: number
-  rowGap: number
+  preset: LabelPreset
+  customW: number
+  customH: number
+  /** Labels across the roll: 1 = label, gap, label … ; 2 = two labels, gap, two labels … */
+  perRow: 1 | 2
+  /** Horizontal gap between the two labels of a row (mm). */
   colGap: number
-  groupSize: number
-  groupGap: number
+  code: CodeKind
+  showName: boolean
+  showPrice: boolean
+  showExpiry: boolean
+  showPharmacy: boolean
 }
 
 export interface LabelEntry {
@@ -61,15 +38,9 @@ export interface LabelEntry {
   expiryDate?: string | null
 }
 
-export interface LabelPrintConfig {
-  dims: LabelDims
-  style: LabelStyle
-  gridOpts: GridOpts
-  useQR: boolean
-  showName: boolean
-  showPrice: boolean
-  showExpiry: boolean
-  showPharmacy: boolean
+export interface LabelPrintConfig extends LabelPrefs {
+  wMm: number
+  hMm: number
   pharmacyName: string
 }
 
@@ -78,407 +49,253 @@ export interface LabelPrintDialogLabels {
   popupBlocked: string
 }
 
-export const LABEL_PREFS_KEY = 'pharma_label_print_prefs'
-
-function clampMm(v: number, fallback: number): number {
-  if (!Number.isFinite(v) || v <= 0) return fallback
-  return Math.min(200, Math.max(5, v))
+export const PRESET_DIMS: Record<Exclude<LabelPreset, 'custom'>, { wMm: number; hMm: number }> = {
+  '25x5': { wMm: 25, hMm: 5 },
+  '38x12': { wMm: 38, hMm: 12 },
 }
 
-export function dimsFor(size: LabelSize, customW: number, customH: number): LabelDims {
-  if (size === 'custom') {
-    return { wMm: clampMm(customW, CUSTOM_DEFAULT.wMm), hMm: clampMm(customH, CUSTOM_DEFAULT.hMm) }
-  }
-  return PROFILE_DIMS[size]
+export const DEFAULT_LABEL_PREFS: LabelPrefs = {
+  preset: '38x12',
+  customW: 38,
+  customH: 12,
+  perRow: 1,
+  colGap: 2,
+  code: 'barcode',
+  showName: true,
+  showPrice: true,
+  showExpiry: true,
+  showPharmacy: false,
 }
 
-export function defaultStyle({ hMm }: LabelDims): LabelStyle {
-  const short = hMm < 16
-  return {
-    barcodeHeightMm: short ? 5 : 10,
-    barcodeScaleMm: short ? 0.3 : 0.5,
-    fontSizeMm: short ? 1.5 : 2.5,
-    paddingMm: short ? 0 : 1.5,
-    offsetYMm: 0,
-    offsetXMm: 0,
-    topRowOffsetMm: 0,
-  }
-}
+const PREFS_KEY = 'fps_label_prefs_v2'
 
-export function normalizeSize(s?: string): LabelSize {
-  if (s === 'strip38' || s === 'small' || s === 'medium' || s === 'large' || s === 'custom') return s
-  if (s === 'sm') return 'small'
-  if (s === 'lg' || s === 'zebra2x3') return 'large'
-  if (s === 'thermal') return 'strip38'
-  return 'custom'
+function clamp(v: number, lo: number, hi: number, fallback: number): number {
+  return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
 }
 
 export function loadLabelPrefs(): LabelPrefs {
   try {
-    const raw = localStorage.getItem(LABEL_PREFS_KEY)
-    return raw ? (JSON.parse(raw) as LabelPrefs) : {}
+    const raw = localStorage.getItem(PREFS_KEY)
+    const p = raw ? (JSON.parse(raw) as Partial<LabelPrefs>) : {}
+    return {
+      ...DEFAULT_LABEL_PREFS,
+      ...p,
+      perRow: p.perRow === 2 ? 2 : 1,
+      code: p.code === 'qr' ? 'qr' : 'barcode',
+    }
   } catch {
-    return {}
+    return { ...DEFAULT_LABEL_PREFS }
   }
 }
 
 export function saveLabelPrefs(prefs: LabelPrefs): void {
   try {
-    localStorage.setItem(LABEL_PREFS_KEY, JSON.stringify(prefs))
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs))
   } catch {
-    /* ignore quota / privacy-mode errors */
+    /* private mode / quota — prefs are a convenience only */
   }
 }
 
-function detectType(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'ITF14' | 'CODE128' {
-  const s = v.trim()
-  if (/^\d{13}$/.test(s)) return 'EAN13'
-  if (/^\d{8}$/.test(s)) return 'EAN8'
-  if (/^\d{12}$/.test(s)) return 'UPC'
-  if (/^\d{14}$/.test(s)) return 'ITF14'
-  return 'CODE128'
-}
-
-export async function renderBarcodeDataUrl(
-  value: string,
-  useQR: boolean,
-  style: LabelStyle,
-): Promise<string | null> {
-  try {
-    if (useQR) {
-      const scale = Math.max(3, Math.round((style.barcodeHeightMm * 3.8) / 12))
-      return await QRCode.toDataURL(value, { margin: 0, scale, errorCorrectionLevel: 'M' })
-    }
-    const c = document.createElement('canvas')
-    JsBarcode(c, value, {
-      format: detectType(value),
-      displayValue: true,
-      width: Math.max(1, style.barcodeScaleMm * 3.8),
-      height: Math.max(10, style.barcodeHeightMm * 3.8),
-      margin: 0,
-      font: 'Arial Black, Arial, sans-serif',
-      fontSize: Math.max(6, style.fontSizeMm * 3.8),
-      fontOptions: 'bold',
-      textMargin: 1,
-      lineColor: '#000000',
-      background: '#ffffff',
-    })
-    return c.toDataURL('image/png')
-  } catch {
-    return null
+export function labelDims(p: LabelPrefs): { wMm: number; hMm: number } {
+  if (p.preset === 'custom') {
+    return { wMm: clamp(p.customW, 10, 120, 38), hMm: clamp(p.customH, 4, 100, 12) }
   }
+  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x12']
 }
 
-export function buildLabelStyles(dims: LabelDims, style: LabelStyle, grid: GridOpts): string {
-  const w = `${dims.wMm}mm`
-  const h = `${dims.hMm}mm`
-  const imgMaxH = `${Math.max(4, dims.hMm * 0.55).toFixed(1)}mm`
-  const isGrid = grid.layout === 'grid'
-  const isPaired = grid.layout === 'paired'
-  const cols = Math.max(1, Math.round(grid.columns) || 1)
-
-  const pageW = isGrid ? (cols * dims.wMm + (cols - 1) * grid.colGap).toFixed(2) + 'mm' : w
-  const pageH = isPaired ? `25mm` : (isGrid ? 'auto' : h)
-
-  const cellH = isPaired ? '12.5mm' : `${Math.max(4, dims.hMm).toFixed(2)}mm`
-
-  const sheetScreen = isGrid
-    ? `display: grid; grid-template-columns: repeat(${cols}, ${w}); column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center; padding: 16px; background: #f1f5f9;`
-    : `display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; background: #f1f5f9;`
-  const sheetPrint = isGrid
-    ? `padding: 0; margin: 0; background: #fff; column-gap: ${grid.colGap}mm; row-gap: ${grid.rowGap}mm; justify-content: center; justify-items: center;`
-    : `display: block; padding: 0; margin: 0; background: #fff; gap: 0;`
-
-  const cellBreak = 'page-break-inside: avoid; break-inside: avoid;'
-  const shiftTransform = (style.offsetXMm || style.offsetYMm)
-    ? `transform: translate(${style.offsetXMm}mm, ${style.offsetYMm}mm);`
-    : ''
-
-  return `
-    @page { size: ${pageW} ${pageH}; margin: 0; }
-    html, body { margin: 0; padding: 0; background: #fff; }
-    body { font-family: 'Arial Black', Arial, sans-serif; color: #000; font-weight: 700; }
-    #print-toolbar {
-      position: sticky; top: 0; z-index: 99; padding: 12px 16px; background: #ecfdf5;
-      border-bottom: 2px solid #10b981; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    }
-    #print-toolbar button { padding: 10px 18px; background: #059669; color: #fff; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-    .sheet { ${sheetScreen} }
-
-    .paired-page {
-      width: ${pageW};
-      height: ${pageH};
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      margin: 0;
-      padding: 0;
-      page-break-after: always;
-      break-after: page;
-      overflow: hidden;
-    }
-
-    .cell {
-      direction: ltr;
-      width: ${w}; height: ${cellH}; box-sizing: border-box; overflow: hidden;
-      padding: ${style.paddingMm}mm; margin: 0 auto; background: #fff;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 0.5mm;
-      ${isPaired ? '' : cellBreak}
-      border: 1px dashed #cbd5e1;
-    }
-    .shift { display: flex; flex-direction: column; justify-content: space-between; align-items: stretch; width: 100%; height: 100%; max-width: 100%; ${shiftTransform} }
-
-    .top-row { display: flex; justify-content: space-between; align-items: flex-start; width: 100%; gap: 1mm; transform: translateY(${style.topRowOffsetMm || 0}mm); }
-    .t-left { text-align: left; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 0.8; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .t-right { text-align: right; font-size: ${style.fontSizeMm}mm; font-weight: 900; line-height: 1; white-space: nowrap; margin-left: auto; padding-left: 1mm; }
-
-    .bc-wrap { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; width: 100%; }
-    img, svg { max-width: 100%; max-height: ${imgMaxH}; width: auto; height: auto; object-fit: contain; display: block; }
-    svg { shape-rendering: crispEdges; }
-
-    .bottom-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 1mm; }
-    .b-left { text-align: left; font-size: ${Math.max(1, style.fontSizeMm - 0.3)}mm; font-weight: 900; line-height: 1; white-space: nowrap; margin-right: auto; padding-right: 1mm; }
-    .b-right { text-align: right; text-transform: uppercase; font-size: ${Math.max(1, style.fontSizeMm - 0.3)}mm; font-weight: 900; line-height: 1; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-
-    .group-gap { width: 100%; height: ${grid.groupGap}mm; grid-column: 1 / -1; }
-
-    @media print {
-      #print-toolbar { display: none !important; }
-      .sheet { ${sheetPrint} }
-
-      .paired-page {
-        page-break-after: always !important;
-        break-after: page !important;
-        border: none !important;
-      }
-
-      .cell {
-        box-sizing: border-box !important;
-        overflow: hidden !important;
-        width: ${w} !important;
-        height: ${cellH} !important;
-        max-height: ${cellH} !important;
-        margin: 0 !important;
-        border: none !important;
-        page-break-inside: avoid !important;
-        break-inside: avoid !important;
-        ${isGrid || isPaired ? '' : 'page-break-after: auto !important; break-after: auto !important;'}
-      }
-      ${isGrid || isPaired ? '' : '.cell:last-child { page-break-after: auto !important; break-after: auto !important; }'}
-      .shift { gap: 0 !important; height: 100% !important; }
-      img, svg { margin: 0 auto !important; }
-      html, body { margin: 0 !important; padding: 0 !important; }
-      @page { size: ${pageW} ${pageH}; margin: 0; }
-    }
-  `
+/** Width of one printed row (= the paper width to set in the Windows printer). */
+export function rowWidthMm(p: LabelPrefs): number {
+  const { wMm } = labelDims(p)
+  return p.perRow === 2 ? wMm * 2 + clamp(p.colGap, 0, 20, 2) : wMm
 }
 
-function buildConfigFromPrefs(prefs: LabelPrefs, pharmacyName: string, showPharmacy: boolean): LabelPrintConfig {
-  const size = normalizeSize(prefs.size ?? 'custom')
-  const customW = prefs.customW ?? CUSTOM_DEFAULT.wMm
-  const customH = prefs.customH ?? CUSTOM_DEFAULT.hMm
-  const dims = dimsFor(size, customW, customH)
-  const style = { ...defaultStyle(dims), ...(prefs.overrides ?? {}) }
-  return {
-    dims,
-    style,
-    gridOpts: {
-      layout: prefs.layout ?? 'paired',
-      columns: prefs.columns ?? 1,
-      rowGap: prefs.rowGap ?? 0,
-      colGap: prefs.colGap ?? 0,
-      groupSize: prefs.groupSize ?? 0,
-      groupGap: prefs.groupGap ?? 0,
-    },
-    useQR: prefs.useQR ?? false,
-    showName: prefs.showName ?? true,
-    showPrice: prefs.showPrice ?? true,
-    showExpiry: prefs.showExpiry ?? true,
-    showPharmacy,
-    pharmacyName,
-  }
+export function buildConfig(prefs: LabelPrefs, pharmacyName: string): LabelPrintConfig {
+  return { ...prefs, ...labelDims(prefs), pharmacyName }
 }
 
-type PharmacyProfile = {
-  name_ar?: string
-  name_en?: string
-  show_pharmacy_name_on_labels?: boolean
-  label_print_settings?: LabelPrefs | null
-}
-
+/** Saved prefs (this computer) + pharmacy name from the profile. */
 export async function loadEffectiveLabelPrintConfig(
   isAr: boolean,
   fallbackPharmacyName = '',
 ): Promise<LabelPrintConfig> {
-  let prefs = loadLabelPrefs()
+  const prefs = loadLabelPrefs()
   try {
-    const r = await api.get<PharmacyProfile>('/settings/profile')
-    const p = r.data
-    const nm = (isAr ? p.name_ar : p.name_en) || p.name_en || p.name_ar || ''
-    const pharmacyName = nm.trim() || fallbackPharmacyName
-    const showPharmacy = p.show_pharmacy_name_on_labels !== false
-    if (p.label_print_settings && Object.keys(p.label_print_settings).length) {
-      prefs = { ...prefs, ...p.label_print_settings }
-    }
-    return buildConfigFromPrefs(prefs, pharmacyName, showPharmacy)
+    const r = await api.get<{ name_ar?: string; name_en?: string }>('/settings/profile')
+    const nm = ((isAr ? r.data.name_ar : r.data.name_en) || r.data.name_en || r.data.name_ar || '').trim()
+    return buildConfig(prefs, nm || fallbackPharmacyName)
   } catch {
-    return buildConfigFromPrefs(prefs, fallbackPharmacyName, true)
+    return buildConfig(prefs, fallbackPharmacyName)
   }
 }
 
-export function expandLabelPrintList(
-  entries: LabelEntry[],
-  qtyByIndex: number[],
-  gridOpts: GridOpts,
-): LabelEntry[] {
-  const printList: LabelEntry[] = []
-  entries.forEach((entry, idx) => {
-    let n = qtyByIndex[idx] ?? 1
-    if (n <= 0) return
-    if (gridOpts.layout === 'paired' && n % 2 !== 0) n += 1
-    for (let i = 0; i < n; i++) printList.push(entry)
+/** Repeat each entry by its quantity. With 2 per row an odd total leaves the last slot blank. */
+export function expandLabelPrintList(entries: LabelEntry[], qtyByIndex: number[], _unused?: unknown): LabelEntry[] {
+  const out: LabelEntry[] = []
+  entries.forEach((e, i) => {
+    const n = Math.max(0, qtyByIndex[i] ?? 1)
+    for (let k = 0; k < n; k++) out.push(e)
   })
-  return printList
+  return out
 }
 
-export async function fillLabelSheet(
-  doc: Document,
-  sheet: HTMLElement,
-  printList: LabelEntry[],
-  config: LabelPrintConfig,
-): Promise<void> {
-  const { style, gridOpts, useQR, showName, showPrice, showExpiry, showPharmacy, pharmacyName } = config
+function detectFormat(v: string): 'EAN13' | 'EAN8' | 'UPC' | 'CODE128' {
+  const s = v.trim()
+  if (/^\d{13}$/.test(s)) return 'EAN13'
+  if (/^\d{8}$/.test(s)) return 'EAN8'
+  if (/^\d{12}$/.test(s)) return 'UPC'
+  return 'CODE128'
+}
+
+function formatExpiry(raw?: string | null): string {
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.valueOf())) return String(raw)
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(-2)}`
+}
+
+function buildStyles(c: LabelPrintConfig): string {
+  const row = rowWidthMm(c)
+  const tiny = c.hMm < 9
+  const font = Math.min(3.2, Math.max(1.4, c.hMm * 0.15))
+  const pad = tiny ? 0.3 : 0.6
+  return `
+    @page { size: ${row}mm ${c.hMm}mm; margin: 0; }
+    html, body { margin: 0; padding: 0; background: #fff; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+    #print-toolbar { position: sticky; top: 0; z-index: 9; padding: 10px 14px; background: #effaf9;
+      border-bottom: 2px solid #147c7d; display: flex; gap: 12px; align-items: center; font: 13px Arial; }
+    #print-toolbar button { padding: 8px 16px; background: #147c7d; color: #fff; font-weight: 700;
+      border: 0; border-radius: 8px; cursor: pointer; }
+    .sheet { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px; background: #f1f5f9; }
+    .row { width: ${row}mm; height: ${c.hMm}mm; display: flex; gap: ${c.perRow === 2 ? c.colGap : 0}mm;
+      overflow: hidden; box-sizing: border-box; background: #fff; }
+    .label { width: ${c.wMm}mm; height: ${c.hMm}mm; flex: 0 0 ${c.wMm}mm; box-sizing: border-box;
+      padding: ${pad}mm ${tiny ? 0.8 : 1.2}mm; overflow: hidden; display: flex; outline: 1px dashed #cbd5e1; }
+    .label.blank { outline-color: transparent; }
+    .col { display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; }
+    .line { display: flex; justify-content: space-between; gap: 1mm; font-size: ${font}mm; line-height: 1.05;
+      font-weight: 700; white-space: nowrap; }
+    .line .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .bars { flex: 1 1 auto; min-height: 0; width: 100%; display: block; }
+    .digits { font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
+    .qr-wrap { display: flex; gap: 1mm; width: 100%; height: 100%; align-items: center; min-width: 0; }
+    .qr { height: 100%; aspect-ratio: 1 / 1; flex: 0 0 auto; image-rendering: pixelated; }
+    .qr-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; gap: 0.3mm;
+      font-size: ${tiny ? Math.max(1.2, c.hMm * 0.3) : font}mm; font-weight: 700; line-height: 1.05; }
+    .qr-text div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    @media print {
+      #print-toolbar { display: none !important; }
+      .sheet { display: block; padding: 0; background: #fff; }
+      .row { page-break-after: always; break-after: page; }
+      .row:last-child { page-break-after: auto; break-after: auto; }
+      .label { outline: none; }
+    }
+  `
+}
+
+async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], c: LabelPrintConfig) {
+  const tiny = c.hMm < 9
   const svgNS = 'http://www.w3.org/2000/svg'
+  const el = (tag: string, cls?: string, text?: string) => {
+    const e = doc.createElement(tag)
+    if (cls) e.className = cls
+    if (text != null) e.textContent = text
+    return e
+  }
 
-  for (let i = 0; i < printList.length; i++) {
-    const it = printList[i]
-    let container = sheet
+  for (let i = 0; i < list.length; i += c.perRow) {
+    const row = el('div', 'row')
+    for (let k = 0; k < c.perRow; k++) {
+      const it = list[i + k]
+      const label = el('div', it ? 'label' : 'label blank')
+      row.appendChild(label)
+      if (!it) continue
 
-    if (gridOpts.layout === 'paired') {
-      if (i % 2 === 0) {
-        const pageWrap = doc.createElement('div')
-        pageWrap.className = 'paired-page'
-        sheet.appendChild(pageWrap)
+      const price = c.showPrice && it.price != null ? Number(it.price).toFixed(2) : ''
+      const exp = c.showExpiry ? formatExpiry(it.expiryDate) : ''
+      const name = c.showName ? it.name || '' : ''
+
+      if (c.code === 'qr') {
+        const wrap = el('div', 'qr-wrap')
+        const img = doc.createElement('img')
+        img.className = 'qr'
+        img.src = await QRCode.toDataURL(it.barcode, { margin: 0, scale: 6, errorCorrectionLevel: 'M' })
+        wrap.appendChild(img)
+        const text = el('div', 'qr-text')
+        if (tiny) {
+          text.appendChild(el('div', '', it.barcode))
+        } else {
+          if (name) text.appendChild(el('div', '', name))
+          if (price || exp) text.appendChild(el('div', '', [price, exp && `EXP ${exp}`].filter(Boolean).join('  ')))
+          text.appendChild(el('div', '', it.barcode))
+          if (c.showPharmacy && c.pharmacyName && c.hMm >= 14) text.appendChild(el('div', '', c.pharmacyName))
+        }
+        wrap.appendChild(text)
+        label.appendChild(wrap)
+        continue
       }
-      container = sheet.lastElementChild as HTMLElement
-    } else if (gridOpts.layout === 'grid' && gridOpts.groupSize > 0 && i > 0 && i % gridOpts.groupSize === 0) {
-      const gap = doc.createElement('div')
-      gap.className = 'group-gap'
-      sheet.appendChild(gap)
-    }
 
-    const cell = doc.createElement('div')
-    cell.className = 'cell'
-    const shift = doc.createElement('div')
-    shift.className = 'shift'
-    cell.appendChild(shift)
-
-    const hasPrice = showPrice && it.price != null
-
-    let expStr = ''
-    if (showExpiry && it.expiryDate) {
-      const d = new Date(it.expiryDate)
-      if (!isNaN(d.valueOf())) {
-        const mm = String(d.getMonth() + 1).padStart(2, '0')
-        const yy = String(d.getFullYear()).slice(-2)
-        expStr = `${mm}/${yy}`
-      } else {
-        expStr = String(it.expiryDate).replace(/exp/i, '').trim()
+      const col = el('div', 'col')
+      if (!tiny && (name || price)) {
+        const top = el('div', 'line')
+        top.append(el('span', 'grow', name), el('span', '', price))
+        col.appendChild(top)
       }
-    }
-
-    const top = doc.createElement('div')
-    top.className = 'top-row'
-    const tLeft = doc.createElement('span')
-    tLeft.className = 't-left'
-    tLeft.textContent = showName ? (it.name ?? '') : ''
-    const tRight = doc.createElement('span')
-    tRight.className = 't-right'
-    tRight.textContent = hasPrice ? Number(it.price).toFixed(2) : ''
-    top.append(tLeft, tRight)
-    shift.appendChild(top)
-
-    const qrUrl = useQR ? await renderBarcodeDataUrl(it.barcode, true, style) : null
-    if (useQR && !qrUrl) continue
-
-    const bcWrap = doc.createElement('div')
-    bcWrap.className = 'bc-wrap'
-    shift.appendChild(bcWrap)
-    if (useQR) {
-      const img = doc.createElement('img')
-      img.src = qrUrl as string
-      bcWrap.appendChild(img)
-    } else {
-      const svg = doc.createElementNS(svgNS, 'svg')
-      bcWrap.appendChild(svg)
+      const svg = doc.createElementNS(svgNS, 'svg') as unknown as SVGSVGElement
+      svg.setAttribute('class', 'bars')
       try {
         JsBarcode(svg, it.barcode, {
-          format: detectType(it.barcode),
-          displayValue: true,
-          width: Math.max(1, style.barcodeScaleMm * 3.8),
-          height: Math.max(10, style.barcodeHeightMm * 3.8),
-          margin: 0,
-          font: 'Arial Black, Arial, sans-serif',
-          fontSize: Math.max(6, style.fontSizeMm * 3.8),
-          fontOptions: 'bold',
-          textMargin: 1,
-          lineColor: '#000000',
-          background: '#ffffff',
+          format: detectFormat(it.barcode), displayValue: false, margin: 0, width: 2, height: 60,
+          lineColor: '#000', background: '#fff',
         })
-        const vw = parseFloat(svg.getAttribute('width') || '0')
-        const vh = parseFloat(svg.getAttribute('height') || '0')
-        if (vw > 0 && vh > 0) {
-          svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
-          svg.setAttribute('preserveAspectRatio', 'xMidYMid meet')
-          svg.removeAttribute('width')
-          svg.removeAttribute('height')
-        }
       } catch {
-        if (svg.parentNode === bcWrap) bcWrap.removeChild(svg)
+        JsBarcode(svg, it.barcode, { format: 'CODE128', displayValue: false, margin: 0, width: 2, height: 60 })
       }
+      const vw = parseFloat(svg.getAttribute('width') || '0')
+      const vh = parseFloat(svg.getAttribute('height') || '0')
+      if (vw && vh) {
+        // Stretch to the label box: uniform bar scaling keeps the code scannable.
+        svg.setAttribute('viewBox', `0 0 ${vw} ${vh}`)
+        svg.setAttribute('preserveAspectRatio', 'none')
+        svg.removeAttribute('width')
+        svg.removeAttribute('height')
+      }
+      col.appendChild(svg as unknown as Node)
+      if (!tiny) {
+        col.appendChild(el('div', 'digits', it.barcode))
+        const pharm = c.showPharmacy && c.pharmacyName ? c.pharmacyName : ''
+        if (exp || pharm) {
+          const bottom = el('div', 'line')
+          bottom.append(el('span', '', exp && `EXP ${exp}`), el('span', 'grow', pharm))
+          ;(bottom.lastChild as HTMLElement).style.textAlign = 'end'
+          col.appendChild(bottom)
+        }
+      }
+      label.appendChild(col)
     }
-
-    const bottom = doc.createElement('div')
-    bottom.className = 'bottom-row'
-    const bLeft = doc.createElement('span')
-    bLeft.className = 'b-left'
-    bLeft.textContent = expStr
-    const bRight = doc.createElement('span')
-    bRight.className = 'b-right'
-    bRight.textContent = showPharmacy && pharmacyName ? pharmacyName : ''
-    bottom.append(bLeft, bRight)
-    shift.appendChild(bottom)
-
-    container.appendChild(cell)
+    sheet.appendChild(row)
   }
 }
 
-export function waitForLabelImages(doc: Document): Promise<void> {
+function waitForImages(doc: Document): Promise<void> {
   return Promise.all(
-    Array.from(doc.images).map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          if (img.complete) resolve()
-          else {
-            img.onload = () => resolve()
-            img.onerror = () => resolve()
-          }
-        }),
-    ),
+    Array.from(doc.images).map((img) =>
+      img.complete ? Promise.resolve() : new Promise<void>((r) => { img.onload = () => r(); img.onerror = () => r() })),
   ).then(() => undefined)
 }
 
+/**
+ * openPrinterDialog = true → straight to the Windows print dialog (choose printer, Print).
+ * false → preview window with a Print button.
+ */
 export async function openLabelPrintWindow(
-  printList: LabelEntry[],
+  list: LabelEntry[],
   config: LabelPrintConfig,
   labels: LabelPrintDialogLabels,
-  openPrinterDialog = false,
+  openPrinterDialog = true,
   windowName = 'PRINT_LABELS',
 ): Promise<void> {
-  if (printList.length === 0) return
-
-  const { dims, style, gridOpts } = config
+  if (!list.length) return
 
   if (openPrinterDialog) {
     const iframe = document.createElement('iframe')
@@ -487,28 +304,19 @@ export async function openLabelPrintWindow(
     document.body.appendChild(iframe)
     const win = iframe.contentWindow
     const doc = win?.document
-    if (!win || !doc) {
-      document.body.removeChild(iframe)
-      return
-    }
+    if (!win || !doc) { iframe.remove(); return }
     doc.open()
-    doc.write('<!doctype html><html><head><title> </title></head><body></body></html>')
+    doc.write('<!doctype html><html><head><meta charset="utf-8"><title> </title></head><body></body></html>')
     doc.close()
-    const styleEl = doc.createElement('style')
-    styleEl.textContent = buildLabelStyles(dims, style, gridOpts)
-    doc.head.appendChild(styleEl)
+    const style = doc.createElement('style')
+    style.textContent = buildStyles(config)
+    doc.head.appendChild(style)
     const sheet = doc.createElement('div')
     sheet.className = 'sheet'
     doc.body.appendChild(sheet)
-    await fillLabelSheet(doc, sheet, printList, config)
-    await waitForLabelImages(doc)
-    const cleanup = () => {
-      try {
-        if (iframe.parentNode) document.body.removeChild(iframe)
-      } catch {
-        /* ignore */
-      }
-    }
+    await fillSheet(doc, sheet, list, config)
+    await waitForImages(doc)
+    const cleanup = () => { try { iframe.remove() } catch { /* ignore */ } }
     win.onafterprint = cleanup
     win.focus()
     win.print()
@@ -517,29 +325,25 @@ export async function openLabelPrintWindow(
   }
 
   const w = window.open('', windowName, 'width=820,height=640,scrollbars=yes')
-  if (!w) {
-    alert(labels.popupBlocked)
-    return
-  }
-  w.document.title = ' '
-  const styleEl = w.document.createElement('style')
-  styleEl.textContent = buildLabelStyles(dims, style, gridOpts)
-  w.document.head.appendChild(styleEl)
-  const toolbar = w.document.createElement('div')
-  toolbar.id = 'print-toolbar'
+  if (!w) { alert(labels.popupBlocked); return }
+  w.document.open()
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title> </title></head><body></body></html>')
+  w.document.close()
+  const style = w.document.createElement('style')
+  style.textContent = buildStyles(config)
+  w.document.head.appendChild(style)
+  const bar = w.document.createElement('div')
+  bar.id = 'print-toolbar'
   const btn = w.document.createElement('button')
   btn.type = 'button'
   btn.textContent = labels.printToolbar
-  btn.onclick = () => {
-    w.focus()
-    w.print()
-  }
-  toolbar.append(btn)
-  w.document.body.appendChild(toolbar)
+  btn.onclick = () => { w.focus(); w.print() }
+  bar.append(btn, `${rowWidthMm(config)} × ${config.hMm} mm`)
+  w.document.body.appendChild(bar)
   const sheet = w.document.createElement('div')
   sheet.className = 'sheet'
   w.document.body.appendChild(sheet)
-  await fillLabelSheet(w.document, sheet, printList, config)
-  await waitForLabelImages(w.document)
+  await fillSheet(w.document, sheet, list, config)
+  await waitForImages(w.document)
   w.focus()
 }

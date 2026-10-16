@@ -211,6 +211,23 @@ export default function Platform() {
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
 
+  const resetAdminPassword = async (t: Tenant) => {
+    const username = prompt(`Admin username for "${t.name}" (pharmacy code: ${t.slug})`, 'admin')
+    if (!username) return
+    const suggested = Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) =>
+      'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'[b % 56]).join('')
+    const password = prompt('New password (min 6 characters). Keep the suggestion or type your own:', suggested)
+    if (!password) return
+    try {
+      const { data } = await platformAPI.resetAdminPassword(t.id, password, username.trim())
+      alert(
+        `Login details for "${t.name}"\n\n` +
+        `Pharmacy code: ${data.pharmacy_code}\nUsername: ${data.username}\nPassword: ${password}\n\n` +
+        (data.created ? 'A new admin user was created.' : 'Password updated.'),
+      )
+    } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
+  }
+
   const runMigration = async () => {
     if (!confirm('Apply latest schema to ALL tenants? (safe / idempotent)')) return
     setMigrating(true)
@@ -398,7 +415,10 @@ export default function Platform() {
                             <FileText size={14} />
                           </Link>
                         )}
-                        {t.schema_name !== 'public' && (
+                        <button onClick={() => resetAdminPassword(t)} className="text-slate-500 hover:text-indigo-700 mx-1" title="Reset admin password">
+                          <KeyRound size={14} />
+                        </button>
+                        {t.schema_name !== 'public' && t.slug !== 'fratelanza' && (
                           <button onClick={() => setDeleting(t)} className="text-red-500 hover:text-red-700 mx-1" title="Delete">
                             <Trash2 size={14} />
                           </button>

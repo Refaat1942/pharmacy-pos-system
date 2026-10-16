@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { X, RefreshCw, Printer, Download, Check } from 'lucide-react'
 import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
-import { appendLabelMeta, formatExpiryForLabel } from '../lib/barcodeLabel'
+import { formatExpiryForLabel } from '../lib/barcodeLabel'
+import { expandLabelPrintList, loadEffectiveLabelPrintConfig, openLabelPrintWindow, type LabelEntry } from '../lib/labelPrint'
 
 type CodeType = 'CODE128' | 'EAN13' | 'EAN8' | 'CODE39' | 'UPC' | 'ITF14' | 'QR'
 
@@ -52,7 +53,7 @@ function validForType(value: string, type: CodeType): boolean {
 }
 
 export default function BarcodeDesigner({ initialValue, productName, expiryDate, onClose, onUse }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [type, setType] = useState<CodeType>('CODE128')
   const [value, setValue] = useState(initialValue || '')
   const [showText, setShowText] = useState(true)
@@ -153,73 +154,22 @@ export default function BarcodeDesigner({ initialValue, productName, expiryDate,
     setTimeout(() => URL.revokeObjectURL(url), 500)
   }
 
-  const openPrintWindow = (title: string, bodyBuilder: (doc: Document) => void, styleCss: string) => {
-    const w = window.open('', 'PRINT')
-    if (!w) return
-    w.document.title = title
-    const style = w.document.createElement('style')
-    style.textContent = styleCss
-    w.document.head.appendChild(style)
-    bodyBuilder(w.document)
-    const script = w.document.createElement('script')
-    script.textContent = 'window.onload=function(){window.print();setTimeout(function(){window.close()},500)}'
-    w.document.body.appendChild(script)
+  // Prints use the same label size / layout as "Barcode labels" (saved on this
+  // computer) and go through the Windows print dialog.
+  const printLabels = async (count: number) => {
+    if (!valid) return
+    const config = await loadEffectiveLabelPrintConfig(i18n.language === 'ar')
+    if (type === 'QR') config.code = 'qr'
+    const entry: LabelEntry = { barcode: value, name: productName, price: null, expiryDate: showExpiry ? expiryDate : null }
+    await openLabelPrintWindow(expandLabelPrintList([entry], [count]), config, {
+      printToolbar: t('bulk_barcode.print_toolbar_btn') as string,
+      popupBlocked: t('bulk_barcode.popup_blocked') as string,
+    }, true)
   }
 
-  const printOne = async () => {
-    const c = await renderToCanvas()
-    if (!c) return
-    const url = c.toDataURL('image/png')
-    openPrintWindow(`Barcode ${value}`, (doc) => {
-      const wrap = doc.createElement('div')
-      wrap.className = 'label'
-      appendLabelMeta(wrap, doc, {
-        productName,
-        expiryDate: showExpiry ? expiryDate : null,
-        expiryPrefix: t('barcode_studio.exp_label'),
-      })
-      const img = doc.createElement('img')
-      img.src = url
-      wrap.appendChild(img)
-      doc.body.appendChild(wrap)
-    }, `body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#fff}
-      .label{text-align:center;font-family:Inter,sans-serif}
-      .name{font-size:12px;margin-bottom:4px;color:#0f172a;font-weight:600}
-      .expiry{font-size:11px;margin-bottom:6px;color:#b45309;font-weight:600}
-      img{max-width:80mm}
-      @media print { @page { margin: 4mm } }`)
-  }
+  const printOne = () => printLabels(1)
 
-  const printSheet = async () => {
-    const c = await renderToCanvas()
-    if (!c) return
-    const url = c.toDataURL('image/png')
-    const n = Math.max(1, Math.min(120, sheetCount | 0))
-    openPrintWindow(`Barcode sheet ${value}`, (doc) => {
-      const grid = doc.createElement('div')
-      grid.className = 'grid'
-      for (let i = 0; i < n; i++) {
-        const cell = doc.createElement('div')
-        cell.className = 'cell'
-        appendLabelMeta(cell, doc, {
-          productName,
-          expiryDate: showExpiry ? expiryDate : null,
-          expiryPrefix: t('barcode_studio.exp_label'),
-        })
-        const img = doc.createElement('img')
-        img.src = url
-        cell.appendChild(img)
-        grid.appendChild(cell)
-      }
-      doc.body.appendChild(grid)
-    }, `body{margin:8mm;font-family:Inter,sans-serif;background:#fff;color:#0f172a}
-      .grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:6mm}
-      .cell{border:1px dashed #cbd5e1;border-radius:4px;padding:4mm;text-align:center;page-break-inside:avoid}
-      .name{font-size:10px;margin-bottom:2px;font-weight:600}
-      .expiry{font-size:9px;margin-bottom:4px;color:#b45309;font-weight:600}
-      img{max-width:100%;height:auto}
-      @media print { .cell{border-color:transparent} @page { margin: 6mm } }`)
-  }
+  const printSheet = () => printLabels(Math.max(1, Math.min(500, sheetCount | 0)))
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -359,7 +309,7 @@ export default function BarcodeDesigner({ initialValue, productName, expiryDate,
               <p className="text-[11px] font-semibold text-slate-700 mb-2">{t('barcode_studio.print_sheet')}</p>
               <div className="flex items-center gap-2">
                 <label className="text-[11px] text-slate-600">{t('barcode_studio.print_sheet_count')}</label>
-                <input type="number" min={1} max={120} value={sheetCount}
+                <input type="number" min={1} max={500} value={sheetCount}
                   onChange={(e) => setSheetCount(Number(e.target.value))}
                   className="w-20 border border-slate-300 rounded px-2 py-1 text-sm" />
                 <button type="button" onClick={printSheet} disabled={!valid}

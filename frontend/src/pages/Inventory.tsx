@@ -2553,13 +2553,17 @@ function ExcelUploadModal({ onClose, onDone }: { onClose: () => void; onDone: ()
           </div>
         )}
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-          <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('common.close')}</button>
-          {!result && (
-            <button onClick={submit} disabled={!file || uploading || analyzing || (!!preview && !hasName)} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg disabled:opacity-50">
-              {uploading ? t('common.loading') : t('inventory.upload')}
-            </button>
+          {result ? (
+            // One button after the import: closes and refreshes the item list.
+            <button onClick={onDone} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg">{t('common.close')}</button>
+          ) : (
+            <>
+              <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">{t('common.cancel')}</button>
+              <button onClick={submit} disabled={!file || uploading || analyzing || (!!preview && !hasName)} className="px-4 py-2 bg-pharma-600 hover:bg-pharma-700 text-white rounded-lg disabled:opacity-50">
+                {uploading ? t('common.loading') : t('inventory.upload')}
+              </button>
+            </>
           )}
-          {result && <button onClick={onDone} className="px-4 py-2 bg-pharma-600 text-white rounded-lg">{t('common.close')}</button>}
         </div>
       </div>
     </Modal>
