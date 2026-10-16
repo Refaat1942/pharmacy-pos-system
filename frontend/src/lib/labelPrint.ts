@@ -91,7 +91,8 @@ export function loadLabelPrefs(): LabelPrefs {
     return {
       ...DEFAULT_LABEL_PREFS,
       ...p,
-      perPage: p.perPage === 2 ? 2 : 1,
+      // Every roll in use is one label per gap; the 2-per-gap layout printed across the gap.
+      perPage: 1,
       code: p.code === 'qr' ? 'qr' : 'barcode',
       barSize: p.barSize === 'small' || p.barSize === 'large' ? p.barSize : 'medium',
     }
@@ -182,6 +183,12 @@ function buildStyles(c: LabelPrintConfig): string {
   const tiny = c.hMm < 9
   const font = Math.min(3.2, Math.max(1.4, c.hMm * 0.15))
   const pad = tiny ? 0.3 : 0.6
+  // Bars get an exact height in mm: whatever the text lines leave free, so nothing is
+  // clipped at the label edge and the digits never overlap the bars.
+  const lineH = font * 1.05
+  const digitsH = Math.max(1.3, font * 0.85) + 0.3
+  const textH = lineH + digitsH + (c.hMm < 14 ? 0 : lineH)
+  const barsH = Math.max(2, (c.hMm - pad * 2 - textH - 0.6) * { small: 0.7, medium: 0.85, large: 1 }[c.barSize])
   return `
     @page { size: ${page.wMm}mm ${page.hMm}mm; margin: 0; }
     html, body { margin: 0; padding: 0; background: #fff; }
@@ -200,11 +207,11 @@ function buildStyles(c: LabelPrintConfig): string {
       width: 100%; height: 100%; min-width: 0; }
     .col .line { width: 100%; }
     .line { display: flex; justify-content: space-between; gap: 1mm; font-size: ${font}mm; line-height: 1.05;
-      font-weight: 700; white-space: nowrap; }
+      font-weight: 700; white-space: nowrap; flex: 0 0 auto; }
     .line .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
     .bars { flex: 0 0 auto; width: ${tiny ? 100 : bar.w}%; display: block; margin: 0.3mm auto 0;
-      height: ${tiny ? 100 : c.hMm < 12 ? Math.min(bar.h, 36) : bar.h}%; }
-    .digits { margin-top: 0.3mm; font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
+      height: ${tiny ? '100%' : `${barsH.toFixed(2)}mm`}; shape-rendering: crispEdges; }
+    .digits { flex: 0 0 auto; margin-top: 0.3mm; font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
     .qr-wrap { display: flex; gap: 1mm; width: 100%; height: 100%; align-items: center; min-width: 0; }
     .qr { height: 100%; aspect-ratio: 1 / 1; flex: 0 0 auto; image-rendering: pixelated; }
     .qr-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; gap: 0.3mm;
@@ -263,9 +270,9 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
         continue
       }
 
-      // Labels under 12 mm (e.g. 38 × 10): expiry moves up next to the price and the
-      // bottom line is dropped, so nothing spills past the label edge.
-      const compact = c.hMm < 12
+      // Labels under 14 mm (37 × 12, 38 × 10 …): expiry moves up next to the price and
+      // the bottom line is dropped, leaving the height to the bars.
+      const compact = c.hMm < 14
       const col = el('div', 'col')
       const right = compact ? [price, exp].filter(Boolean).join(' · ') : price
       if (!tiny && (name || right)) {
