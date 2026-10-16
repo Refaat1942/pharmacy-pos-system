@@ -17,7 +17,7 @@ import JsBarcode from 'jsbarcode'
 import QRCode from 'qrcode'
 import api from './api'
 
-export type LabelPreset = '25x5' | '38x12' | 'custom'
+export type LabelPreset = '25x5' | '38x10' | '38x12' | 'custom'
 export type CodeKind = 'barcode' | 'qr'
 export type BarSize = 'small' | 'medium' | 'large'
 
@@ -58,13 +58,14 @@ export interface LabelPrintDialogLabels {
 
 export const PRESET_DIMS: Record<Exclude<LabelPreset, 'custom'>, { wMm: number; hMm: number }> = {
   '25x5': { wMm: 25, hMm: 5 },
+  '38x10': { wMm: 38, hMm: 10 },
   '38x12': { wMm: 38, hMm: 12 },
 }
 
 export const DEFAULT_LABEL_PREFS: LabelPrefs = {
-  preset: '38x12',
+  preset: '38x10',
   customW: 38,
-  customH: 12,
+  customH: 10,
   perPage: 1,
   pairGap: 1,
   code: 'barcode',
@@ -75,7 +76,7 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   showPharmacy: false,
 }
 
-const PREFS_KEY = 'fps_label_prefs_v4'
+const PREFS_KEY = 'fps_label_prefs_v5'
 
 function clamp(v: number, lo: number, hi: number, fallback: number): number {
   return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -109,7 +110,7 @@ export function labelDims(p: LabelPrefs): { wMm: number; hMm: number } {
   if (p.preset === 'custom') {
     return { wMm: clamp(p.customW, 10, 120, 38), hMm: clamp(p.customH, 4, 100, 12) }
   }
-  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x12']
+  return PRESET_DIMS[p.preset] ?? PRESET_DIMS['38x10']
 }
 
 /** Size of one printed page = one gap-to-gap section (the paper size to set in Windows). */
@@ -199,8 +200,9 @@ function buildStyles(c: LabelPrintConfig): string {
     .line { display: flex; justify-content: space-between; gap: 1mm; font-size: ${font}mm; line-height: 1.05;
       font-weight: 700; white-space: nowrap; }
     .line .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .bars { flex: 0 0 auto; width: ${tiny ? 100 : bar.w}%; height: ${tiny ? 100 : bar.h}%; display: block; margin: 0.3mm auto 0; }
-    .digits { font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
+    .bars { flex: 0 0 auto; width: ${tiny ? 100 : bar.w}%; display: block; margin: 0.3mm auto 0;
+      height: ${tiny ? 100 : c.hMm < 12 ? Math.min(bar.h, 36) : bar.h}%; }
+    .digits { margin-top: 0.3mm; font-size: ${Math.max(1.3, font * 0.85)}mm; text-align: center; letter-spacing: 0.3mm; line-height: 1; font-weight: 700; }
     .qr-wrap { display: flex; gap: 1mm; width: 100%; height: 100%; align-items: center; min-width: 0; }
     .qr { height: 100%; aspect-ratio: 1 / 1; flex: 0 0 auto; image-rendering: pixelated; }
     .qr-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; flex: 1; gap: 0.3mm;
@@ -209,7 +211,8 @@ function buildStyles(c: LabelPrintConfig): string {
     @media print {
       #print-toolbar { display: none !important; }
       .sheet { display: block; padding: 0; background: #fff; }
-      .row { page-break-after: always; break-after: page; }
+      .row { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; }
+      .row + .row { page-break-before: always; break-before: page; }
       .row:last-child { page-break-after: auto; break-after: auto; }
       .label { outline: none; }
     }
@@ -258,10 +261,14 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
         continue
       }
 
+      // Labels under 12 mm (e.g. 38 × 10): expiry moves up next to the price and the
+      // bottom line is dropped, so nothing spills past the label edge.
+      const compact = c.hMm < 12
       const col = el('div', 'col')
-      if (!tiny && (name || price)) {
+      const right = compact ? [price, exp].filter(Boolean).join(' · ') : price
+      if (!tiny && (name || right)) {
         const top = el('div', 'line')
-        top.append(el('span', 'grow', name), el('span', '', price))
+        top.append(el('span', 'grow', name), el('span', '', right))
         col.appendChild(top)
       }
       const svg = doc.createElementNS(svgNS, 'svg') as unknown as SVGSVGElement
@@ -295,7 +302,7 @@ async function fillSheet(doc: Document, sheet: HTMLElement, list: LabelEntry[], 
       if (!tiny) {
         col.appendChild(el('div', 'digits', it.barcode))
         const pharm = c.showPharmacy && c.pharmacyName ? c.pharmacyName : ''
-        if (exp || pharm) {
+        if (!compact && (exp || pharm)) {
           const bottom = el('div', 'line')
           bottom.append(el('span', '', exp && `EXP ${exp}`), el('span', 'grow', pharm))
           ;(bottom.lastChild as HTMLElement).style.textAlign = 'end'
