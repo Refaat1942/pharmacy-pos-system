@@ -18,6 +18,12 @@ from auth import hash_password
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_-]{2,29}$")
 RESERVED_SLUGS = {"platform", "public", "default", "_platform", "admin", "tenant"}
 
+# The owner's own pharmacy. It used to live in the shared 'public' schema; it now has
+# its own schema like every other tenant (see migrate_default_tenant_out_of_public).
+DEFAULT_TENANT_SLUG = "fratelanza"
+DEFAULT_TENANT_SCHEMA = "tenant_fratelanza"
+_PUBLIC_MOVE_LOCK = 774_201_001
+
 # Master list of toggleable features. Keys are stable; UI uses labels.
 # `default` = which features are enabled when a tenant is provisioned.
 FEATURES_CATALOG = [
@@ -507,9 +513,94 @@ CREATE INDEX IF NOT EXISTS demo_packs_token_idx ON platform.demo_packs(token);
 
 # ─── Bootstrap ──────────────────────────────────────────────────────────────
 
+def migrate_default_tenant_out_of_public() -> Optional[dict]:
+    """One-time move of a tenant still mapped to 'public' into its own schema.
+
+    Every tenant's search_path is "<schema>, public", so anything left in public is
+    a fallback every tenant can read. ALTER ... SET SCHEMA moves each table with its
+    rows, indexes, constraints, triggers and owned (SERIAL) sequences — no copy.
+    Runs in ONE transaction (all-or-nothing) under an advisory lock so several
+    workers starting together cannot race. Extension objects (pg_trgm …) stay in
+    public. Returns a summary, or None when there is nothing to do.
+    """
+    conn = get_raw_connection()
+    conn.autocommit = False
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [_PUBLIC_MOVE_LOCK])
+        cur.execute(
+            "SELECT id, slug FROM platform.tenants WHERE schema_name = 'public' ORDER BY id LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return None
+        tid, slug = row
+        target = DEFAULT_TENANT_SCHEMA if slug == DEFAULT_TENANT_SLUG else f"tenant_{slug.replace('-', '_')}"
+        from db import _SCHEMA_RE
+        if not _SCHEMA_RE.match(target):
+            raise ValueError(f"Invalid target schema {target!r}")
+
+        cur.execute(
+            "SELECT COUNT(*) FROM pg_tables WHERE schemaname = %s", [target]
+        )
+        if cur.fetchone()[0]:
+            raise RuntimeError(
+                f"Schema {target} already has tables — refusing to merge '{slug}' from public. "
+                "Inspect both schemas manually."
+            )
+        cur.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(target)))
+
+        # Relations in public that are not owned by an extension.
+        ext_owned = """
+            NOT EXISTS (SELECT 1 FROM pg_depend d
+                        WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e')
+        """
+        cur.execute(
+            f"""SELECT c.relname, c.relkind FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm') AND {ext_owned}
+                  AND NOT (c.relkind = 'r' AND c.relispartition)
+                ORDER BY c.relkind, c.relname"""
+        )
+        rels = cur.fetchall()
+        moved_tables = 0
+        for name, kind in rels:
+            stmt = {"r": "ALTER TABLE {}.{} SET SCHEMA {}", "p": "ALTER TABLE {}.{} SET SCHEMA {}",
+                    "v": "ALTER VIEW {}.{} SET SCHEMA {}",
+                    "m": "ALTER MATERIALIZED VIEW {}.{} SET SCHEMA {}"}[kind]
+            cur.execute(sql.SQL(stmt).format(
+                sql.Identifier("public"), sql.Identifier(name), sql.Identifier(target)))
+            moved_tables += kind in ("r", "p")
+
+        # Stand-alone sequences (invoice_number_seq, purchase_order_seq …). SERIAL
+        # sequences already moved with their tables.
+        cur.execute(
+            f"""SELECT c.relname FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public' AND c.relkind = 'S' AND {ext_owned}"""
+        )
+        seqs = [r[0] for r in cur.fetchall()]
+        for name in seqs:
+            cur.execute(sql.SQL("ALTER SEQUENCE {}.{} SET SCHEMA {}").format(
+                sql.Identifier("public"), sql.Identifier(name), sql.Identifier(target)))
+
+        cur.execute("UPDATE platform.tenants SET schema_name = %s WHERE id = %s", [target, tid])
+        conn.commit()
+        summary = {"slug": slug, "schema": target, "tables": moved_tables, "sequences": len(seqs)}
+        print(f"[platform] moved tenant '{slug}' out of public -> {target}: {summary}")
+        return summary
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def bootstrap_platform() -> None:
     """Create the platform schema, seed the default super-admin and the
-    default tenant (mapped to the existing 'public' schema)."""
+    default tenant (in its own schema), and move a legacy 'public' default
+    tenant into its own schema."""
     conn = get_raw_connection()
     conn.autocommit = True
     try:
@@ -545,15 +636,25 @@ def bootstrap_platform() -> None:
             )
             print(f"[platform] seeded super-admin '{u}' (change password ASAP)")
 
-        # Default tenant pointing at the existing public schema
+        # Default tenant in its own schema (never 'public', which every tenant's
+        # search_path falls back to — data there would be visible to all tenants).
         cur.execute("SELECT COUNT(*) FROM platform.tenants")
         if cur.fetchone()[0] == 0:
             cur.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(DEFAULT_TENANT_SCHEMA))
+            )
+            cur.execute(
                 """INSERT INTO platform.tenants(slug, name, schema_name, status, plan)
                    VALUES (%s, %s, %s, 'active', 'pilot')""",
-                ["fratelanza", "Fratelanza Pharmacy", "public"],
+                [DEFAULT_TENANT_SLUG, "Fratelanza Pharmacy", DEFAULT_TENANT_SCHEMA],
             )
-            print("[platform] seeded default tenant 'fratelanza' -> public schema")
+            print(f"[platform] seeded default tenant '{DEFAULT_TENANT_SLUG}' -> {DEFAULT_TENANT_SCHEMA}")
+
+        try:
+            migrate_default_tenant_out_of_public()
+        except Exception as e:
+            # Rolled back as a unit: the tenant keeps working from public until fixed.
+            print(f"[platform] WARNING: could not move default tenant out of public: {e}")
 
         cur.execute("SELECT pg_advisory_lock(%s)", [_FEATURE_ROLLOUT_LOCK])
         try:
@@ -1082,12 +1183,57 @@ def update_tenant(tid: int, fields: dict) -> dict:
         conn.close()
 
 
+def reset_tenant_admin_password(tid: int, new_password: str, username: str = "admin") -> dict:
+    """Set (or create) a pharmacy's admin login. Used by the super-admin panel and
+    by `python reset_admin_password.py` when an owner is locked out."""
+    if len(new_password or "") < 6:
+        raise ValueError("Password must be at least 6 characters")
+    username = (username or "admin").strip()
+    if not username:
+        raise ValueError("Username is required")
+    t = get_tenant_by_id(tid)
+    if not t:
+        raise ValueError("Tenant not found")
+    conn = get_raw_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql.SQL("SET search_path TO {}, public").format(sql.Identifier(t["schema_name"])))
+        cur.execute(
+            """UPDATE users SET password_hash=%s, role='admin', status='active'
+               WHERE username=%s RETURNING id""",
+            [hash_password(new_password), username],
+        )
+        created = cur.fetchone() is None
+        if created:
+            cur.execute("SELECT id FROM branches ORDER BY id LIMIT 1")
+            br = cur.fetchone()
+            if not br:
+                cur.execute(
+                    """INSERT INTO branches(name_ar, name_en, address, phone)
+                       VALUES (%s, %s, '', '') RETURNING id""",
+                    ["الفرع الرئيسي", "Main Branch"],
+                )
+                br = cur.fetchone()
+            cur.execute(
+                """INSERT INTO users(username, password_hash, name_ar, name_en, role, branch_id, status)
+                   VALUES (%s, %s, %s, %s, 'admin', %s, 'active')""",
+                [username, hash_password(new_password), "المدير", "Administrator", br[0]],
+            )
+        conn.commit()
+        return {"pharmacy_code": t["slug"], "username": username, "created": created}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def delete_tenant(tid: int) -> None:
     t = get_tenant_by_id(tid)
     if not t:
         raise ValueError("Tenant not found")
-    if t["schema_name"] in ("public", "platform"):
-        raise ValueError("Refusing to drop a system schema")
+    if t["schema_name"] in ("public", "platform") or t["slug"] == DEFAULT_TENANT_SLUG:
+        raise ValueError("Refusing to drop a system schema or the default pharmacy")
     # Drop schema first
     conn = get_raw_connection()
     conn.autocommit = True
@@ -1130,6 +1276,13 @@ def apply_schema_to_all_tenants() -> dict:
             if data_warn:
                 out["column_warnings"].append({"slug": t["slug"], "warnings": data_warn})
             cur.execute(init_db.SQL)
+            conn.commit()
+            # Second pass: on a brand-new schema the column/data migrations above ran
+            # before the tables existed (products.avg_cost etc. were missing until
+            # the NEXT restart, so seeding/selling failed on first boot). Idempotent.
+            if col_warn or data_warn:
+                init_db.apply_product_columns(cur, conn)
+                init_db.apply_data_migrations(cur, conn)
             # Platform helpers read rows by column name → needs a dict cursor.
             dcur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             ensure_default_platforms(dcur)

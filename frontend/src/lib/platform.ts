@@ -115,6 +115,9 @@ export const platformAPI = {
   }) => platformApi.post<Tenant>('/tenants', data),
   updateTenant: (id: number, data: Partial<Tenant>) =>
     platformApi.patch<Tenant>(`/tenants/${id}`, data),
+  resetAdminPassword: (id: number, new_password: string, username = 'admin') =>
+    platformApi.post<{ pharmacy_code: string; username: string; created: boolean }>(
+      `/tenants/${id}/reset-admin-password`, { username, new_password }),
   deleteTenant: (id: number, confirm_slug: string) =>
     platformApi.delete(`/tenants/${id}`, { params: { confirm_slug } }),
   migrateAll: () => platformApi.post<{ ok: number; failed: { slug: string; error: string }[] }>('/migrate-all'),

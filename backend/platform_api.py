@@ -177,6 +177,20 @@ def tenant_stats(tid: int, admin=Depends(get_super_admin)):
     return platform_db.get_tenant_stats(t)
 
 
+class ResetAdminIn(BaseModel):
+    username: str = "admin"
+    new_password: str = Field(min_length=6)
+
+
+@router.post("/tenants/{tid}/reset-admin-password")
+def reset_admin_password(tid: int, body: ResetAdminIn, admin=Depends(get_super_admin)):
+    """Set (or create) a pharmacy's admin login — for owners who are locked out."""
+    try:
+        return platform_db.reset_tenant_admin_password(tid, body.new_password, body.username)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.get("/features-catalog")
 def features_catalog(admin=Depends(get_super_admin)):
     return {

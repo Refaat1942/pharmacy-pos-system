@@ -1074,9 +1074,31 @@ ETA_MIGRATIONS = [
 ]
 
 
+def _rollback_keep_search_path(cur, conn, search_path: str) -> None:
+    """Roll back a failed statement WITHOUT losing the tenant search_path.
+
+    `SET search_path` is transactional: rolling back the transaction it ran in
+    silently resets it to the default ("$user", public). Every later statement then
+    hits the shared public schema — on a brand-new tenant schema this created all of
+    its tables in public. Re-apply and commit so the setting survives.
+    """
+    conn.rollback()
+    cur.execute("SELECT set_config('search_path', %s, false)", (search_path,))
+    conn.commit()
+
+
+def _current_search_path(cur, conn) -> str:
+    cur.execute("SHOW search_path")
+    path = cur.fetchone()
+    path = path[0] if not isinstance(path, dict) else path["search_path"]
+    conn.commit()  # make the caller's SET search_path permanent for this session
+    return path
+
+
 def apply_data_migrations(cur, conn) -> list:
     """One-time data fixes tracked in schema_data_migrations (per tenant schema)."""
     warnings = []
+    search_path = _current_search_path(cur, conn)
     migrations = [
         (
             "cost_from_price_20pct_v1",
@@ -1117,7 +1139,7 @@ def apply_data_migrations(cur, conn) -> list:
             )
             conn.commit()
     except Exception as e:
-        conn.rollback()
+        _rollback_keep_search_path(cur, conn, search_path)
         warnings.append(f"data migration -> {e}")
     return warnings
 
@@ -1125,6 +1147,7 @@ def apply_data_migrations(cur, conn) -> list:
 def apply_product_columns(cur, conn) -> list:
     """Ensure product columns required by bulk upload / multi-unit exist. Commits per statement."""
     warnings = []
+    search_path = _current_search_path(cur, conn)
     for stmt in (
         PRODUCT_COLUMN_MIGRATIONS
         + BULK_UPLOAD_MIGRATIONS
@@ -1137,7 +1160,7 @@ def apply_product_columns(cur, conn) -> list:
             cur.execute(stmt)
             conn.commit()
         except Exception as e:
-            conn.rollback()
+            _rollback_keep_search_path(cur, conn, search_path)
             warnings.append(f"{stmt[:72].strip()}… -> {e}")
     return warnings
 
