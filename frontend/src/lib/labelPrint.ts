@@ -113,11 +113,14 @@ const BASE_STYLES = `
     border: 0; border-radius: 8px; cursor: pointer; }
   .sheet { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; background: #f1f5f9; }
   /* On screen: a 38 × 25 mm sample page. In print: exactly one page (the Windows paper size). */
-  .page { width: 38mm; height: 25mm; display: flex; flex-direction: column; background: #fff; }
-  .label { width: 100%; height: 50%; flex: 0 0 50%; container: label / size; box-sizing: border-box;
+  /* Each label takes 46% of the page; the 8% left over sits at the cut between the
+     two labels, so nothing is printed across it. */
+  .page { width: 38mm; height: 25mm; display: flex; flex-direction: column; justify-content: space-between;
+    background: #fff; }
+  .label { width: 100%; height: 46%; flex: 0 0 46%; container: label / size; box-sizing: border-box;
     overflow: hidden; outline: 1px dashed #cbd5e1; display: flex; }
   /* Side margin keeps text off the edge the print head cannot reach. */
-  .col, .qr-wrap { box-sizing: border-box; padding: 5cqh 6cqw; }
+  .col, .qr-wrap { box-sizing: border-box; padding: 9cqh 6cqw 7cqh; }
   .col { display: flex; flex-direction: column; align-items: center; width: 100%; height: 100%; min-width: 0; }
   .line { display: flex; justify-content: space-between; gap: 2cqw; width: 100%; flex: 0 0 auto;
     font-size: clamp(1.3mm, 15cqh, 3.2mm); line-height: 1.1; font-weight: 700; white-space: nowrap; }
@@ -133,7 +136,7 @@ const BASE_STYLES = `
   @media print {
     #print-toolbar { display: none !important; }
     .sheet { display: block; padding: 0; background: #fff; }
-    .page { width: 100vw; height: 100vh; overflow: hidden; break-after: page; page-break-after: always; }
+    .page { width: 100vw; height: 100vh; overflow: hidden; display: flex; break-after: page; page-break-after: always; }
     .page:last-child { break-after: auto; page-break-after: auto; }
     .label { outline: none; }
   }
