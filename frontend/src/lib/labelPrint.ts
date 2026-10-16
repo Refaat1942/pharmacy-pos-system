@@ -65,7 +65,7 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   preset: '38x12',
   customW: 38,
   customH: 12,
-  perPage: 2,
+  perPage: 1,
   pairGap: 1,
   code: 'barcode',
   barSize: 'medium',
@@ -75,7 +75,7 @@ export const DEFAULT_LABEL_PREFS: LabelPrefs = {
   showPharmacy: false,
 }
 
-const PREFS_KEY = 'fps_label_prefs_v3'
+const PREFS_KEY = 'fps_label_prefs_v4'
 
 function clamp(v: number, lo: number, hi: number, fallback: number): number {
   return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
@@ -88,7 +88,7 @@ export function loadLabelPrefs(): LabelPrefs {
     return {
       ...DEFAULT_LABEL_PREFS,
       ...p,
-      perPage: p.perPage === 1 ? 1 : 2,
+      perPage: p.perPage === 2 ? 2 : 1,
       code: p.code === 'qr' ? 'qr' : 'barcode',
       barSize: p.barSize === 'small' || p.barSize === 'large' ? p.barSize : 'medium',
     }
