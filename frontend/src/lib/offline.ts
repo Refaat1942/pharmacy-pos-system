@@ -9,6 +9,8 @@
  *   the receipt still prints (temporary number OFF-…).
  * - Opening and closing a cash shift work the same way: the shift opens/closes on this
  *   PC at once and is queued.
+ * - The last days' invoices (with items) are kept too, so a receipt can be found and a
+ *   return made offline; the return is queued like a sale.
  * - One queue, uploaded in order (open shift → sales → close shift) when the network
  *   returns; the server de-duplicates every upload by client_uuid.
  *
@@ -111,10 +113,66 @@ export async function syncOfflinePack(api: AxiosInstance): Promise<void> {
     await idbSet(`pack|${scope()}`, data)
     packMem = null
     await loadPack()
+    const inv = await api.get<InvoicePack>('/pos/offline-invoices', { headers: { 'X-Offline-Skip': '1' } })
+    await idbSet(invoicesKey(), inv.data)
   } catch {
     /* keep the previous pack */
   } finally {
     packSyncing = false
+  }
+}
+
+// ─── recent invoices (for offline receipt lookup + returns) ────────────────
+interface InvoicePack { generated_at: string; invoices: any[]; items: any[] }
+const invoicesKey = () => `invoices|${scope()}`
+
+async function offlineInvoice(id: number): Promise<{ invoice: any; items: any[] } | null> {
+  const pack = await idbGet<InvoicePack>(invoicesKey())
+  const invoice = pack?.invoices.find((i) => i.id === id)
+  if (!pack || !invoice) return null
+  // Returns made offline and not uploaded yet count as returned already.
+  const queued = (await readQueue()).filter((q) => q.kind === 'return' && q.payload?.invoice_id === id)
+  const extra = new Map<number, number>()
+  queued.forEach((q) => (q.payload.items || []).forEach((it: any) =>
+    extra.set(it.invoice_item_id, (extra.get(it.invoice_item_id) || 0) + Number(it.sub_quantity ?? it.quantity ?? 0))))
+  const items = pack.items.filter((it) => it.invoice_id === id)
+    .map((it) => ({ ...it, returned_sub: Number(it.returned_sub || 0) + (extra.get(it.id) || 0) }))
+  return { invoice, items }
+}
+
+async function searchOfflineInvoices(q: string): Promise<any[]> {
+  const pack = await idbGet<InvoicePack>(invoicesKey())
+  const query = normalize(q)
+  if (!pack || !query) return []
+  const hit = new Set<number>()
+  pack.items.forEach((it) => {
+    if (String(it.barcode || '').toLowerCase().includes(query)
+      || normalize(`${it.product_name_en || ''} ${it.product_name_ar || ''}`).includes(query)) hit.add(it.invoice_id)
+  })
+  return pack.invoices.filter((i) => hit.has(i.id) || String(i.invoice_number || '').toLowerCase().includes(query)).slice(0, 50)
+}
+
+/** Queue a return of an invoice the server already has; answer like the server would. */
+async function queueReturn(url: string, invoiceId: number, payload: any): Promise<any> {
+  const local = await offlineInvoice(invoiceId)
+  if (!local) throw new Error('This receipt is not saved on this PC — the return needs internet.')
+  let total = 0
+  for (const r of payload?.items || []) {
+    const it = local.items.find((x) => x.id === r.invoice_item_id)
+    if (!it) throw new Error('Item not found on this receipt.')
+    const pack = Math.max(1, Number(it.pack_size || 1))
+    const sub = Number(r.sub_quantity ?? Number(r.quantity || 0) * pack)
+    const left = Number(it.quantity) * pack - Number(it.returned_sub || 0)
+    if (sub <= 0 || sub > left) throw new Error(`Return qty ${sub} exceeds remaining ${left}`)
+    total += (Number(it.unit_price) / pack) * sub
+  }
+  const seq = Number(localStorage.getItem('fps_offline_ret_seq') || '0') + 1
+  localStorage.setItem('fps_offline_ret_seq', String(seq))
+  const number = `OFF-R-${terminalId()}-${String(seq).padStart(4, '0')}`
+  const createdAt = await queueEntry('return', url, { ...payload, invoice_id: invoiceId, total_returned: +total.toFixed(2) }, number)
+  return {
+    id: -seq, original_invoice_id: invoiceId, return_invoice_number: number, type: 'partial',
+    total_returned: +total.toFixed(2), reason: payload?.reason ?? null, created_at: createdAt, offline: true,
   }
 }
 
@@ -145,7 +203,7 @@ export async function searchOfflineProducts(q: string, limit = 60): Promise<any[
 }
 
 // ─── offline queue (sales + shift open/close) ─────────────────────────────
-type QueueKind = 'sale' | 'shift_open' | 'shift_close'
+type QueueKind = 'sale' | 'shift_open' | 'shift_close' | 'return'
 interface QueuedSale {
   client_uuid: string
   created_at: string
@@ -264,6 +322,8 @@ async function queueShiftOpen(payload: any): Promise<any> {
 async function localBreakdown(shift: any): Promise<any> {
   const since = shift?.opened_at ? new Date(shift.opened_at).getTime() : 0
   const sales = (await readQueue()).filter((s) => (s.kind ?? 'sale') === 'sale' && new Date(s.created_at).getTime() >= since)
+  const returns = (await readQueue()).filter((s) => s.kind === 'return' && new Date(s.created_at).getTime() >= since)
+  const returnsValue = returns.reduce((t, s) => t + Number(s.payload?.total_returned || 0), 0)
   let cash = 0, visa = 0, account = 0, other = 0, total = 0, collected = 0, change = 0
   for (const s of sales) {
     const p = s.payload || {}
@@ -284,8 +344,9 @@ async function localBreakdown(shift: any): Promise<any> {
   const r = (n: number) => Math.round(n * 100) / 100
   return {
     cash_sales: r(cash), visa_sales: r(visa), account_sales: r(account), other_sales: r(other), total_sales: r(total),
-    invoice_count: sales.length, cash_collected: r(collected), cash_change: r(change), returns_value: 0, returns_count: 0,
-    expected_cash: r(Number(shift?.opening_cash || 0) + collected - change), offline: true,
+    invoice_count: sales.length, cash_collected: r(collected), cash_change: r(change),
+    returns_value: r(returnsValue), returns_count: returns.length,
+    expected_cash: r(Number(shift?.opening_cash || 0) + collected - change - returnsValue), offline: true,
   }
 }
 
@@ -357,9 +418,11 @@ function fakeResponse(cfg: InternalAxiosRequestConfig, data: any): AxiosResponse
 const MAX_CACHE_BYTES = 2_000_000
 const POS_PATHS = /^\/(sales$|products$|shifts\b|customers|offers\/active|settings\/profile|digital-platforms|employees|pos\b|pos-|pos_)/
 const SHIFT_CLOSE = /^\/shifts\/-?\d+\/close$/
+const SALE_RETURN = /^\/sales\/(-?\d+)\/return$/
+const SALE_GET = /^\/sales\/(-?\d+)$/
 const SHIFT_REPORT = /^\/shifts\/(-?\d+)\/report$/
 /** Writes that depend on queued ones (a sale needs its shift): upload the queue first. */
-const ORDERED_WRITES = /^\/(sales$|shifts\/)/
+const ORDERED_WRITES = /^\/(sales$|sales\/-?\d+\/return$|shifts\/)/
 
 export function installOffline(api: AxiosInstance): void {
   api.interceptors.request.use(async (cfg) => {
@@ -411,6 +474,18 @@ export function installOffline(api: AxiosInstance): void {
             return fakeResponse(cfg, { report_type: 'X', shift: cur, breakdown: await localBreakdown(cur), pending_deliveries: 0 })
           }
         }
+        const sale = SALE_GET.exec(url)
+        if (sale) {
+          const cachedSale = await idbGet(cacheKey(cfg))
+          const fromPack = await offlineInvoice(Number(sale[1]))
+          // Prefer the recent-invoices copy: it includes returns queued on this PC.
+          if (fromPack) return fakeResponse(cfg, fromPack)
+          if (cachedSale !== undefined) return fakeResponse(cfg, cachedSale)
+        }
+        if (url === '/sales/search' && cfg.params?.q != null) {
+          const cachedSearch = await idbGet(cacheKey(cfg))
+          return fakeResponse(cfg, cachedSearch ?? await searchOfflineInvoices(String(cfg.params.q)))
+        }
         if (url === '/products' && cfg.params?.q != null) {
           return fakeResponse(cfg, await searchOfflineProducts(String(cfg.params.q)))
         }
@@ -422,6 +497,19 @@ export function installOffline(api: AxiosInstance): void {
         if (url === '/sales' && payload?.type !== 'return') return fakeResponse(cfg, await queueSale(payload))
         if (url === '/shifts/open') return fakeResponse(cfg, await queueShiftOpen(payload))
         if (SHIFT_CLOSE.test(url)) return fakeResponse(cfg, await queueShiftClose(url, payload))
+        const ret = SALE_RETURN.exec(url)
+        if (ret) {
+          if (Number(ret[1]) < 0) {
+            return Promise.reject(Object.assign(new Error('This sale is still waiting to upload — make the return after it uploads.'), {
+              response: { status: 400, data: { detail: 'This sale is still waiting to upload — make the return after it uploads.' } },
+            }))
+          }
+          try {
+            return fakeResponse(cfg, await queueReturn(url, Number(ret[1]), payload))
+          } catch (e: any) {
+            return Promise.reject(Object.assign(e, { response: { status: 400, data: { detail: e.message } } }))
+          }
+        }
       }
       return Promise.reject(err)
     },

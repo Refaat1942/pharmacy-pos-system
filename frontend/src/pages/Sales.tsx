@@ -221,8 +221,9 @@ export default function Sales() {
         setSelectedSale(null)
         loadInvoices()
       }, 1500)
-    } catch (e) {
+    } catch (e: any) {
       console.error(e)
+      alert(e?.response?.data?.detail || e?.message || 'Return failed')
     } finally {
       setReturnLoading(false)
     }
