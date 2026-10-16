@@ -200,6 +200,6 @@ export async function openEmployeeBarcodeLabelPrint(
     price: null,
     expiryDate: null,
   }
-  const printList = expandLabelPrintList([entry], [1], config.gridOpts)
+  const printList = expandLabelPrintList([entry], [1])
   await openLabelPrintWindow(printList, config, labels, false, 'PRINT_EMP_BARCODE')
 }
