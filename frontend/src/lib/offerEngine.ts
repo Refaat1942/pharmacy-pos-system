@@ -1,3 +1,4 @@
+import { unitsPerBox } from './packStock'
 import type { CartItem } from './api'
 
 export type OfferType =
@@ -69,7 +70,8 @@ type OfferCartLine = {
   product_id: number
   quantity: number
   unit_price: number
-  unit_type?: 'pack' | 'sub'
+  unit_type?: 'pack' | 'mid' | 'sub'
+  /** How many of this line's unit make one box (strip line → strips per box). */
   pack_size?: number
 }
 
@@ -80,7 +82,7 @@ function flattenUnits(lines: OfferCartLine[], productIds: Set<number>): UnitLine
   const units: UnitLine[] = []
   lines.forEach((line, lineIdx) => {
     if (!productIds.has(line.product_id)) return
-    const pack = line.unit_type === 'sub' ? Math.max(1, line.pack_size || 1) : 1
+    const pack = line.unit_type && line.unit_type !== 'pack' ? Math.max(1, line.pack_size || 1) : 1
     for (let q = 0; q < line.quantity; q++) {
       units.push({ lineIdx, unitPrice: line.unit_price, productId: line.product_id, isSub: pack > 1, pack })
     }
@@ -166,7 +168,7 @@ export function applyOffersToCart(items: CartItem[], offers: PromoOffer[]): {
     quantity: i.quantity,
     unit_price: i.unit_price,
     unit_type: i.unit_type || 'pack',
-    pack_size: i.product.pack_size || 1,
+    pack_size: unitsPerBox(i.product, i.unit_type),
   }))
 
   const sorted = [...offers].sort((a, b) => (a.priority - b.priority) || (a.id - b.id))

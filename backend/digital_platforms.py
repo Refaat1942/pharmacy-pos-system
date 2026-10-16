@@ -50,7 +50,7 @@ def _row_to_dict(row) -> dict:
 
 
 def list_platforms(cur, *, active_only: bool = True) -> list[dict]:
-    ensure_default_platforms(cur)
+    ensure_default_platforms(cur)  # get_platform() below never re-enters the linking step
     where = "WHERE active = true" if active_only else ""
     cur.execute(
         f"""
@@ -64,7 +64,9 @@ def list_platforms(cur, *, active_only: bool = True) -> list[dict]:
 
 
 def get_platform(cur, platform_key: str) -> Optional[dict]:
-    ensure_default_platforms(cur)
+    # link_customers=False: ensure_platform_customer() calls get_platform(), so linking
+    # here would recurse forever (RecursionError on every platform lookup).
+    ensure_default_platforms(cur, link_customers=False)
     cur.execute(
         """
         SELECT id, platform_key, name_en, name_ar, customer_id, badge_color, active, sort_order

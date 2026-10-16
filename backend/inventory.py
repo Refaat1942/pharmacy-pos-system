@@ -16,6 +16,7 @@ from deps import get_current_user, get_active_branch_id, requires_feature
 from tenant_ctx import get_current_schema
 from stock_batches import (
     add_batch_stock,
+    ensure_batches_migrated,
     deduct_stock_fefo,
     list_batches,
     set_batch_quantity,
@@ -216,6 +217,9 @@ class ProductUpdate(BaseModel):
     pack_size: Optional[int] = None
     sub_unit: Optional[str] = None
     sub_price: Optional[float] = None
+    mid_unit: Optional[str] = None
+    mid_size: Optional[int] = None
+    mid_price: Optional[float] = None
     origin_type: Optional[str] = None
     medication_type: Optional[str] = None
     material_group: Optional[str] = None
@@ -228,7 +232,8 @@ class ProductUpdate(BaseModel):
 
 ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en", "category", "unit",
                          "price", "cost", "min_stock", "expiry_date", "active",
-                         "pack_size", "sub_unit", "sub_price", "origin_type", "medication_type",
+                         "pack_size", "sub_unit", "sub_price", "mid_unit", "mid_size", "mid_price",
+                         "origin_type", "medication_type",
                          "material_group", "is_service", "supplier_id", "vat_rate", "avg_cost"}
 
 
@@ -270,10 +275,55 @@ def update_product(product_id: int, req: ProductUpdate,
         if not existing:
             raise HTTPException(status_code=404, detail="Product not found")
         _assert_branch_access(current_user, existing["branch_id"])
+        if "mid_unit" in fields:
+            fields["mid_unit"] = (fields["mid_unit"] or "").strip() or None
+            if not fields["mid_unit"]:
+                fields["mid_size"] = fields["mid_price"] = None
+        old_pack = _rescale_needed = None
+        if any(k in fields for k in ("pack_size", "mid_unit", "mid_size")):
+            from pack_units import validate_mid
+            cur.execute("SELECT pack_size, mid_unit, mid_size FROM products WHERE id=%s FOR UPDATE",
+                        (product_id,))
+            cur_row = cur.fetchone()
+            old_pack = max(1, int(cur_row["pack_size"] or 1))
+            new_pack = max(1, int(fields.get("pack_size", old_pack) or 1))
+            fields["pack_size"] = new_pack
+            mid_err = validate_mid(
+                new_pack,
+                fields.get("mid_unit", cur_row["mid_unit"]),
+                fields.get("mid_size", cur_row["mid_size"]),
+            )
+            if mid_err:
+                raise HTTPException(status_code=400, detail=mid_err)
+            _rescale_needed = new_pack != old_pack
         sets = ", ".join(f"{k}=%s" for k in fields.keys())
         values = list(fields.values()) + [product_id]
         cur.execute(f"UPDATE products SET {sets} WHERE id=%s RETURNING *", values)
         product = cur.fetchone()
+        if _rescale_needed:
+            # Stock is stored in the smallest unit; when units-per-box changes (e.g. a
+            # Box/Strip item gains tablets: 3 strips → 30 tablets) keep the same number
+            # of BOXES by rescaling every expiry lot.
+            new_pack = int(fields["pack_size"])
+            ensure_batches_migrated(cur, product_id)
+            cur.execute(
+                """UPDATE product_batches
+                   SET quantity = ROUND(quantity::numeric * %s / %s)::int
+                   WHERE product_id=%s""",
+                (new_pack, old_pack, product_id),
+            )
+            old_stock = int(product["stock"] or 0)
+            new_stock = sync_product_from_batches(cur, product_id)
+            if new_stock != old_stock:
+                log_movement(
+                    cur, product_id, existing["branch_id"], "adjustment",
+                    new_stock - old_stock, new_stock,
+                    reference_type="unit_change",
+                    reason=f"Units per box changed {old_pack} → {new_pack}; stock rescaled",
+                    user_id=current_user.get("user_id"),
+                )
+            cur.execute("SELECT * FROM products WHERE id=%s", (product_id,))
+            product = cur.fetchone()
         conn.commit()
         return dict(product)
     finally:
@@ -1688,6 +1738,17 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         mg = infer_material_group(category=category, origin_type=None)
     classification = product_fields_from_material_group(mg)
 
+    # Optional explicit middle level (single-row files): pack_size = smallest units per box.
+    mid_unit = normalize_unit(_row_get(r, "mid_unit", "middle unit")) or None
+    mid_size_val = _num(_row_get(r, "mid_size", "units per strip"))
+    mid_size = int(round(mid_size_val)) if mid_size_val else None
+    mid_price = _num(_row_get(r, "mid_price", "middle unit price"))
+    from pack_units import validate_mid
+    if not mid_unit or validate_mid(pack_size, mid_unit, mid_size):
+        mid_unit = mid_size = mid_price = None
+    elif not mid_price and price:
+        mid_price = round(price * mid_size / pack_size, 2)
+
     if pack_size > 1:
         sub_unit = sub_unit_name if sub_unit_name and sub_unit_name != unit else DEFAULT_SUB_UNIT
         if sub_price_explicit:
@@ -1715,6 +1776,9 @@ def _parse_bulk_row(r: dict, idx: int) -> dict:
         "sub_unit": sub_unit,
         "sub_price": sub_price,
         "sub_unit_name": sub_unit_name if sub_unit_name != unit else "",
+        "mid_unit": mid_unit,
+        "mid_size": mid_size,
+        "mid_price": mid_price,
         "sub_price_explicit": bool(sub_price_explicit),
         "stock": stock,
         "qty_big": qty_big,
@@ -1753,6 +1817,14 @@ def _combine_unit_tier_rows(rows: list) -> Optional[dict]:
     base = max(base_rows, key=lambda r: (bool(r.get("qty_provided")), float(r["price"] or 0)))
     sub = max(sub_rows, key=lambda r: int(r["pack_size"]))
     pack = int(sub["pack_size"])
+    # Box → Strip → Tablet: a coarser sub row whose qty divides the finest one is the
+    # middle unit (e.g. STR qty 2 + TAB qty 20 → 10 tablets per strip).
+    mid_row = None
+    for r in sorted(sub_rows, key=lambda r: int(r["pack_size"]), reverse=True):
+        q = int(r["pack_size"])
+        if 1 < q < pack and pack % q == 0 and (r.get("sub_unit_name") or "") != (sub.get("sub_unit_name") or ""):
+            mid_row = r
+            break
     box_price = float(base["price"] or 0)
     sub_row_price = float(sub["price"] or 0)
 
@@ -1776,6 +1848,15 @@ def _combine_unit_tier_rows(rows: list) -> Optional[dict]:
     merged["pack_size"] = pack
     merged["sub_unit"] = sub_unit
     merged["sub_price"] = sub_price
+    if mid_row is not None:
+        mq = int(mid_row["pack_size"])
+        mid_row_price = float(mid_row["price"] or 0)
+        merged["mid_unit"] = mid_row.get("sub_unit_name") or "strip"
+        merged["mid_size"] = pack // mq
+        merged["mid_price"] = (
+            round(mid_row_price, 2) if mid_row_price and (not box_price or mid_row_price < box_price)
+            else (round(box_price / mq, 2) if box_price else None)
+        )
     merged["min_stock"] = max(int(r["min_stock"] or 0) for r in rows)
     if merged.get("cost") in (None, 0):
         costs = [float(r["cost"]) for r in base_rows if r.get("cost")]
@@ -2084,6 +2165,9 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
     pack_size = row["pack_size"]
     sub_unit = row["sub_unit"]
     sub_price = row["sub_price"]
+    mid_unit = row.get("mid_unit")
+    mid_size = row.get("mid_size")
+    mid_price = row.get("mid_price")
     stock = row["stock"]
     qty_provided = row["qty_provided"]
     expiry_date = row["expiry_date"]
@@ -2114,13 +2198,14 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
         cur.execute(
             """UPDATE products SET name_en=%s, name_ar=%s, category=COALESCE(%s, category), unit=%s,
                price=%s, cost=%s, min_stock=%s, pack_size=%s, sub_unit=%s,
-               sub_price=%s, active=true, barcode=COALESCE(%s, barcode),
+               sub_price=%s, mid_unit=%s, mid_size=%s, mid_price=%s,
+               active=true, barcode=COALESCE(%s, barcode),
                international_barcode=COALESCE(%s, international_barcode),
                material_group=COALESCE(%s, material_group), origin_type=COALESCE(%s, origin_type),
                is_service=COALESCE(%s, is_service)
                WHERE id=%s""",
             (name_en, name_ar, category, unit, price, cost, min_stock,
-             pack_size, sub_unit, sub_price, barcode, intl_barcode,
+             pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price, barcode, intl_barcode,
              material_group, origin_type, is_service, existing["id"]),
         )
         _retire_duplicate_products(cur, branch_id, existing["id"], barcode or existing.get("barcode"), intl_barcode)
@@ -2161,12 +2246,12 @@ def _apply_bulk_row(cur, row: dict, branch_id, user_id, by_barcode, by_intl, aut
 
     cur.execute(
         """INSERT INTO products (barcode, international_barcode, name_ar, name_en, category, unit,
-           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
-           material_group, origin_type, is_service)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
+           price, cost, stock, min_stock, pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price,
+           expiry_date, branch_id, material_group, origin_type, is_service)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, stock""",
         (barcode, intl_barcode, name_ar, name_en, category, unit,
-         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, expiry_date, branch_id,
-         material_group, origin_type, is_service),
+         price, cost, 0, min_stock, pack_size, sub_unit, sub_price, mid_unit, mid_size, mid_price,
+         expiry_date, branch_id, material_group, origin_type, is_service),
     )
     new_row = cur.fetchone()
     new_id = new_row["id"]
@@ -2490,6 +2575,10 @@ def bulk_upload(file: UploadFile = File(...),
 
 @router.get("/bulk-upload/status/{job_id}")
 def bulk_upload_status(job_id: str, current_user=Depends(get_current_user)):
+    try:
+        uuid.UUID(job_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Import job not found or expired")
     job = _bulk_job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Import job not found or expired")
@@ -2923,12 +3012,14 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
                 cur.execute(
                     """INSERT INTO products
                        (barcode, name_ar, name_en, category, unit, sub_unit, pack_size, sub_price,
+                        mid_unit, mid_size, mid_price,
                         price, cost, stock, min_stock, expiry_date, branch_id, active)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,%s,%s,true)
                        ON CONFLICT (barcode, branch_id) DO NOTHING
                        RETURNING id, stock""",
                     (src["barcode"], src["name_ar"], src["name_en"], src["category"],
                      src["unit"], src.get("sub_unit"), src.get("pack_size") or 1, src.get("sub_price"),
+                     src.get("mid_unit"), src.get("mid_size"), src.get("mid_price"),
                      src["price"], src["cost"],
                      src["min_stock"], src["expiry_date"], to_branch),
                 )

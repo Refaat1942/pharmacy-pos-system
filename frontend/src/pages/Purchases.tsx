@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { sellUnitsOf, unitPrice, unitsPerBox } from '../lib/packStock'
 import { useTranslation } from 'react-i18next'
 import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer } from 'lucide-react'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
@@ -37,11 +38,25 @@ type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
 
 type POExpiryLot = { expiry_date: string; quantity: number | '' }
 
+type POUnitProduct = {
+  price: number
+  cost?: number | null
+  unit?: string | null
+  pack_size?: number | null
+  sub_unit?: string | null
+  sub_price?: number | null
+  mid_unit?: string | null
+  mid_size?: number | null
+  mid_price?: number | null
+}
+
 type POItemDraft = Omit<POItem, 'quantity' | 'bonus_qty'> & {
   quantity: number | ''
   bonus_qty?: number | ''
   expiry_lots: POExpiryLot[]
   sales_tax?: number
+  /** Packaging of the existing product — enables buying by Box / Strip / Tablet. */
+  unit_product?: POUnitProduct
 }
 
 function defaultExpiryLots(qty: number | '' = ''): POExpiryLot[] {
@@ -392,6 +407,18 @@ function CreatePOModal({
           public_price: p.price ?? null,
           expiry_date: null,
           expiry_lots: defaultExpiryLots(''),
+          unit_type: 'pack',
+          unit_product: {
+            price: Number(p.price) || 0,
+            cost: p.cost,
+            unit: p.unit,
+            pack_size: p.pack_size,
+            sub_unit: p.sub_unit,
+            sub_price: p.sub_price,
+            mid_unit: p.mid_unit,
+            mid_size: p.mid_size,
+            mid_price: p.mid_price,
+          },
         }]
       })
       setSearch('')
@@ -498,6 +525,7 @@ function CreatePOModal({
           vat_pct: 0,
           public_price: i.public_price ?? undefined,
           expiry_date: i.expiry_date || undefined,
+          unit_type: i.product_id ? (i.unit_type || 'pack') : 'pack',
         }}),
       })
       onSaved({ poId: res.data.po_id, received: receiveImmediately })
@@ -620,8 +648,38 @@ function CreatePOModal({
                 return (
                 <div key={i} className="bg-white p-2 rounded-lg space-y-2 border-2 border-slate-200">
                   <div className="grid grid-cols-12 gap-2 items-center">
-                    <input className="input po-field col-span-2 text-xs" placeholder={t('purchases.col_name') as string}
-                           value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
+                    <div className="col-span-2 space-y-1">
+                      <input className="input po-field w-full text-xs" placeholder={t('purchases.col_name') as string}
+                             value={it.product_name_en || ''} onChange={(e) => update(i, { product_name_en: e.target.value })} />
+                      {it.unit_product && sellUnitsOf(it.unit_product).length > 1 && (
+                        <div className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5" title={t('purchases.buy_unit_hint') as string}>
+                          {sellUnitsOf(it.unit_product).map((u) => {
+                            const up = it.unit_product as POUnitProduct
+                            const label = u === 'pack' ? up.unit : u === 'mid' ? up.mid_unit : up.sub_unit
+                            const active = (it.unit_type || 'pack') === u
+                            return (
+                              <button
+                                key={u}
+                                type="button"
+                                onClick={() => {
+                                  if (active) return
+                                  // Prices are per bought unit: rescale from the box values.
+                                  const perBox = unitsPerBox(up, u)
+                                  update(i, {
+                                    unit_type: u,
+                                    public_price: unitPrice(up, u),
+                                    unit_cost: +(((Number(up.cost) || 0) / perBox)).toFixed(4),
+                                  })
+                                }}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded ${active ? 'bg-white text-pharma-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                              >
+                                {label || u}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                     <input type="number" min={1} className="input po-field col-span-1 text-xs text-end" placeholder={t('purchases.qty') as string}
                            title={t('purchases.qty_packs_hint') as string}
                            value={it.quantity === '' ? '' : it.quantity}
@@ -786,7 +844,12 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
                 <tr key={it.id} className="border-t border-slate-100">
                   <td className="px-3 py-2">{i18n.language === 'ar' ? it.product_name_ar : it.product_name_en}</td>
                   <td className="px-3 py-2 font-mono text-xs">{it.barcode || '—'}</td>
-                  <td className="px-3 py-2 text-end">{formatInt(it.quantity)}</td>
+                  <td className="px-3 py-2 text-end">
+                    {formatInt(it.quantity)}
+                    {it.unit_type && it.unit_type !== 'pack' && (
+                      <span className="ms-1 text-[10px] text-slate-500">{t(`purchases.unit_${it.unit_type}`)}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-end text-emerald-700">{formatInt(it.bonus_qty || 0)}</td>
                   <td className="px-3 py-2 text-end">{it.public_price != null ? formatMoney(it.public_price) : formatMoney(it.unit_cost)}</td>
                   <td className="px-3 py-2 text-end">{formatMoney(it.unit_cost)}</td>

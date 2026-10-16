@@ -14,3 +14,5 @@ Products can be sold by a pack (e.g. box) or its sub-unit (e.g. strip). `pack_si
 - Restoring stock on return must add back sub-units (quantity*pack), not the sold-unit count — restocking only the sold-unit count is a silent under-restock bug for packs.
 - Proportional refunds round to 2 decimals per line, so repeated partial returns can drift ~0.01; accepted tradeoff.
 - Legacy rows that predate the snapshot fall back to current product config (best effort only).
+
+**3 levels (Box → Strip → Tablet):** optional `mid_unit` / `mid_size` (smallest units per strip) / `mid_price`. Stock stays in the SMALLEST unit and `pack_size` = smallest units per box, so all 2-level math (returns, transfers, stock-take) is unchanged. Sale/PO `unit_type`: pack | mid | sub; backend `pack_units.unit_multiple()` (frontend `packStock.unitMultiple`) gives smallest units per 1 qty and is snapshotted as invoice_items.pack_size. `pack_size % mid_size == 0` is enforced. Changing `pack_size` on an existing product rescales all batch quantities (same number of boxes).

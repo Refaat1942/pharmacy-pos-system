@@ -105,6 +105,9 @@ type Product = {
   pack_size?: number | null
   sub_unit?: string | null
   sub_price?: number | null
+  mid_unit?: string | null
+  mid_size?: number | null
+  mid_price?: number | null
   supplier_id?: number | null
   supplier_name?: string | null
   last_po_supplier_name?: string | null
@@ -601,7 +604,9 @@ export default function Inventory() {
                             {it.unit}
                             {it.pack_size && it.pack_size > 1 && it.sub_unit && (
                               <div className="text-[10px] text-slate-400">
-                                1 {it.unit} = {it.pack_size} {it.sub_unit}
+                                1 {it.unit} = {it.mid_unit && it.mid_size
+                                  ? `${it.pack_size / it.mid_size} ${it.mid_unit} = `
+                                  : ''}{it.pack_size} {it.sub_unit}
                               </div>
                             )}
                           </td>
@@ -624,6 +629,8 @@ export default function Inventory() {
                                   it.pack_size,
                                   it.unit,
                                   it.sub_unit,
+                                  it.mid_unit,
+                                  it.mid_size,
                                 )}
                               </div>
                             )}
@@ -910,6 +917,9 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
     pack_size: item?.pack_size?.toString() || '1',
     sub_unit: item?.sub_unit || '',
     sub_price: item?.sub_price != null ? String(item.sub_price) : '',
+    mid_unit: item?.mid_unit || '',
+    mid_size: item?.mid_size ? String(item.mid_size) : '',
+    mid_price: item?.mid_price != null ? String(item.mid_price) : '',
     material_group: itemExt?.material_group || (itemExt?.origin_type === 'imported' ? 'DI' : DEFAULT_MATERIAL_GROUP),
     medication_type: itemExt?.medication_type || '',
   })
@@ -917,6 +927,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const [error, setError] = useState('')
   const [showBarcodeDesigner, setShowBarcodeDesigner] = useState(false)
   const packSize = Math.max(1, parseInt(f.pack_size, 10) || 1)
+  const midSize = parseInt(f.mid_size, 10) || 0
+  // Middle unit (Box → Strip → Tablet) is valid only when it divides the box evenly.
+  const midOn = !!f.mid_unit && packSize > 1 && midSize > 1 && midSize < packSize && packSize % midSize === 0
+  const midInvalid = !!f.mid_unit && packSize > 1 && !midOn
 
   const patchPricing = (driver: PricingDriver, value: string) => {
     setF((prev) => {
@@ -973,6 +987,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    if (midInvalid) {
+      setError(t('inventory.mid_invalid', { box: packSize }) as string)
+      return
+    }
     setSaving(true)
     try {
       const priceNum = parseFloat(f.price)
@@ -994,6 +1012,11 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
         sub_price: packSize > 1
           ? (f.sub_price ? parseFloat(f.sub_price) : Math.round((priceNum / packSize) * 100) / 100)
           : null,
+        mid_unit: midOn ? f.mid_unit : null,
+        mid_size: midOn ? midSize : null,
+        mid_price: midOn
+          ? (f.mid_price ? parseFloat(f.mid_price) : Math.round((priceNum * midSize / packSize) * 100) / 100)
+          : null,
         material_group: f.material_group || DEFAULT_MATERIAL_GROUP,
         origin_type: originFromMaterialGroup(f.material_group || DEFAULT_MATERIAL_GROUP),
         medication_type: f.medication_type || null,
@@ -1007,7 +1030,10 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
             return
           }
           await api.put(`/inventory/products/${item.id}`, payload)
-          if (newStock !== Number(item.stock)) {
+          // The server rescales stock when units-per-box changes; only adjust a real edit.
+          const oldPack = packSizeOf(item)
+          const rescaled = Math.round((Number(item.stock) * packSize) / oldPack)
+          if (newStock !== rescaled) {
             await api.post('/inventory/adjustments', {
               product_id: item.id,
               set_to: newStock,
@@ -1166,6 +1192,54 @@ function ItemFormModal({ item, onClose, onSaved }: { item?: Product; onClose: ()
               />
             </Field>
           </div>
+          {packSize > 1 && (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+              <p className="text-[11px] font-semibold text-slate-600 mb-2">{t('inventory.mid_title')}</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Field label={t('inventory.f_mid_unit')}>
+                  <select
+                    value={f.mid_unit}
+                    onChange={e => setF({ ...f, mid_unit: e.target.value })}
+                    className="input"
+                  >
+                    <option value="">{t('inventory.sub_unit_none')}</option>
+                    <option value="strip">{t('inventory.su_strip')}</option>
+                    <option value="sachet">{t('inventory.su_sachet')}</option>
+                    <option value="vial">{t('inventory.su_vial')}</option>
+                    <option value="piece">{t('inventory.su_piece')}</option>
+                  </select>
+                </Field>
+                <Field label={t('inventory.f_mid_size', { mid: f.mid_unit || '…', sub: f.sub_unit || t('inventory.sub_unit_word') })}>
+                  <input
+                    type="number" min={2}
+                    value={f.mid_size}
+                    onChange={e => setF({ ...f, mid_size: e.target.value })}
+                    className="input"
+                    placeholder="10"
+                    disabled={!f.mid_unit}
+                  />
+                </Field>
+                <Field label={t('inventory.f_price_per', { unit: f.mid_unit || '…' })}>
+                  <input
+                    type="number" min={0} step="0.01"
+                    value={f.mid_price}
+                    onChange={e => setF({ ...f, mid_price: e.target.value })}
+                    className="input"
+                    placeholder={midOn && f.price ? (parseFloat(f.price) * midSize / packSize).toFixed(2) : ''}
+                    disabled={!f.mid_unit}
+                  />
+                </Field>
+              </div>
+              {midOn && (
+                <p className="text-[11px] text-pharma-700 mt-2 font-medium">
+                  1 {f.unit} = {packSize / midSize} {f.mid_unit} = {packSize} {f.sub_unit || t('inventory.sub_unit_word')}
+                </p>
+              )}
+              {midInvalid && (
+                <p className="text-[11px] text-red-600 mt-2">{t('inventory.mid_invalid', { box: packSize })}</p>
+              )}
+            </div>
+          )}
           {f.sub_unit && parseInt(f.pack_size) > 1 && (
             <p className="text-[11px] text-slate-500 mt-2">
               1 {f.unit} = {f.pack_size} {f.sub_unit}. {t('inventory.stock_tracked_in', { unit: f.sub_unit })}

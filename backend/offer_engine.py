@@ -22,8 +22,8 @@ def _unit_lines(cart_lines: list[dict], product_ids: set[int]) -> list[dict]:
             continue
         price = float(line["unit_price"])
         qty = int(line["quantity"])
-        # Strip/sub-unit lines carry the pack size so box-level offers scale correctly.
-        is_sub = str(line.get("unit_type") or "pack").strip().lower() == "sub"
+        # Strip/tablet lines carry "how many of this unit make a box" as pack_size.
+        is_sub = str(line.get("unit_type") or "pack").strip().lower() in ("sub", "mid")
         pack = max(1, int(line.get("pack_size") or 1)) if is_sub else 1
         for _ in range(qty):
             units.append({

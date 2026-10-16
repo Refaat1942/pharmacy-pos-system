@@ -33,6 +33,9 @@ FIELDS: dict[str, tuple[str, str, str, bool]] = {
     "unit":           ("unit", "Main unit (box)", "الوحدة الكبرى (علبة)", False),
     "sub_unit":       ("sub_unit", "Sub unit (strip)", "الوحدة الصغرى (شريط)", False),
     "pack_size":      ("pack_size", "Sub units per box", "عدد الوحدات الصغرى في العلبة", False),
+    "mid_unit":       ("mid_unit", "Middle unit (strip, 3-level)", "الوحدة الوسطى (شريط)", False),
+    "mid_size":       ("mid_size", "Smallest units per middle unit", "عدد الوحدات الصغرى في الوسطى", False),
+    "mid_price":      ("mid_price", "Middle unit price", "سعر الوحدة الوسطى", False),
     "stock":          ("stock", "Stock (boxes)", "الرصيد (علب)", False),
     "price":          ("price", "Selling price", "سعر البيع", False),
     "sub_price":      ("sub_price", "Sub-unit (strip) price", "سعر الوحدة الصغرى", False),
@@ -98,6 +101,18 @@ SYNONYMS: dict[str, list[str]] = {
         "inhalt", "umrechnungsfaktor",
         "عدد الوحدات الصغري", "عدد الوحدات", "عدد الشرائط", "عدد الاشرطه", "معامل التحويل", "التحويل",
         "عدد التجزئه", "محتوي العبوه", "الكميه في العلبه",
+    ],
+    "mid_unit": [
+        "mid unit", "mid_unit", "middle unit", "medium unit", "intermediate unit", "second unit",
+        "الوحده الوسطي", "وحده وسطي", "الوحده المتوسطه",
+    ],
+    "mid_size": [
+        "mid size", "mid_size", "middle unit quantity", "middle unit qty", "units per strip",
+        "tablets per strip", "capsules per strip", "pieces per strip", "units per middle unit",
+        "عدد الاقراص في الشريط", "عدد الوحدات في الشريط", "عدد الوحدات الصغري في الوسطي",
+    ],
+    "mid_price": [
+        "mid price", "mid_price", "middle unit price", "medium unit price", "سعر الوحده الوسطي",
     ],
     "stock": [
         "stock", "quantity", "qty", "qty on hand", "quantity on hand", "on hand", "balance", "available",

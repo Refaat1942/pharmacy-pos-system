@@ -33,7 +33,7 @@ import api from '../lib/api'
 import type { Product, CartItem, Customer, SaleResponse, Prescription, CustomerTreatmentPlan } from '../lib/api'
 import i18n from '../lib/i18n'
 import { formatMoney } from '../lib/formatNumber'
-import { formatStockInline } from '../lib/packStock'
+import { formatStockInline, sellUnitsOf, unitPrice, type SellUnit } from '../lib/packStock'
 import {
   barcodeSearchQueries,
   looksLikeScannerInput,
@@ -123,12 +123,6 @@ function DiscountModeToggle({
 
 const normalizeItems = (items: CartItem[]): CartItem[] => items.map(normalizeItem)
 
-/** Price of one sub-unit (strip): explicit sub_price, else box price ÷ pack size, rounded to piasters. */
-const subUnitPrice = (p: Product): number => {
-  const pack = Math.max(1, p.pack_size || 1)
-  if (p.sub_price != null && Number(p.sub_price) > 0) return Number(p.sub_price)
-  return +(p.price / pack).toFixed(2)
-}
 
 function loadJSON<T>(key: string, fallback: T): T {
   try {
@@ -415,7 +409,7 @@ export default function POS() {
   }, [])
 
   // Selling is allowed even when stock is zero or negative; replenishment nets it out.
-  const maxQty = useCallback((_p: Product, _unit_type: 'pack' | 'sub') => {
+  const maxQty = useCallback((_p: Product, _unit_type: SellUnit) => {
     return 999999
   }, [])
 
@@ -598,13 +592,12 @@ export default function POS() {
 
   // Toggle sell unit (box vs strip). The typed count is kept as-is (3 boxes → 3 strips);
   // it is never converted, so the cashier always sees the number they entered.
-  const setUnitType = useCallback((productId: number, ut: 'pack' | 'sub') => {
+  const setUnitType = useCallback((productId: number, ut: SellUnit) => {
     setCartItems((prev) => prev.map((i) => {
       if (i.product.id !== productId) return i
       if ((i.unit_type || 'pack') === ut) return i
-      const pack = Math.max(1, i.product.pack_size || 1)
-      if (ut === 'sub' && pack <= 1) return i
-      const price = ut === 'sub' ? subUnitPrice(i.product) : i.product.price
+      if (!sellUnitsOf(i.product).includes(ut)) return i
+      const price = unitPrice(i.product, ut)
       const q = i.quantity
       return { ...i, unit_type: ut, unit_price: price, quantity: q, discount: calcLineDiscount(q * price, i.discount_mode, i.discount_value) }
     }))
@@ -911,7 +904,7 @@ export default function POS() {
                                   ? `${p.stock} ${t('pos.negative_stock')}`
                                   : isOut
                                   ? t('pos.out_of_stock')
-                                  : `${formatStockInline(p.stock, p.pack_size, unitName(p.unit, 'box'), unitName(p.sub_unit, 'piece'))} ${t('pos.in_stock')}`}
+                                  : `${formatStockInline(p.stock, p.pack_size, unitName(p.unit, 'box'), unitName(p.sub_unit, 'piece'), p.mid_unit ? unitName(p.mid_unit, 'piece') : null, p.mid_size)} ${t('pos.in_stock')}`}
                               </span>
                             </div>
                           </div>
@@ -920,12 +913,14 @@ export default function POS() {
                               {t('pos.egp')} {formatMoney(p.price)}
                               <span className="ms-1 text-[10px] font-semibold text-slate-400">/ {unitName(p.unit, 'box')}</span>
                             </p>
-                            {(p.pack_size || 1) > 1 && (
-                              <p className="text-[11px] text-slate-500 tabular-nums">
-                                {t('pos.egp')} {formatMoney(subUnitPrice(p))}
-                                <span className="ms-1 text-[10px] text-slate-400">/ {unitName(p.sub_unit, 'piece')} · {p.pack_size}×</span>
+                            {sellUnitsOf(p).filter((u) => u !== 'pack').map((u) => (
+                              <p key={u} className="text-[11px] text-slate-500 tabular-nums">
+                                {t('pos.egp')} {formatMoney(unitPrice(p, u))}
+                                <span className="ms-1 text-[10px] text-slate-400">
+                                  / {u === 'mid' ? unitName(p.mid_unit, 'piece') : unitName(p.sub_unit, 'piece')}
+                                </span>
                               </p>
-                            )}
+                            ))}
                           </div>
                           {idx === highlight && (
                             <CornerDownLeft size={14} className="text-pharma-500 flex-shrink-0" />
@@ -987,12 +982,15 @@ export default function POS() {
                       const name = lang === 'ar' ? item.product.name_ar : item.product.name_en
                       const itemTotal = item.quantity * item.unit_price - item.discount
                       const pack = Math.max(1, item.product.pack_size || 1)
-                      const hasSub = pack > 1
-                      const ut = hasSub ? (item.unit_type || 'pack') : 'pack'
+                      const units = sellUnitsOf(item.product)
+                      const hasSub = units.length > 1
+                      const ut: SellUnit = units.includes(item.unit_type || 'pack') ? (item.unit_type || 'pack') : 'pack'
                       const max = maxQty(item.product, ut)
                       const boxLabel = unitName(item.product.unit, 'box')
                       const subLabel = unitName(item.product.sub_unit, 'piece')
-                      const unitLabel = ut === 'sub' ? subLabel : boxLabel
+                      const midLabel = item.product.mid_unit ? unitName(item.product.mid_unit, 'piece') : ''
+                      const labelOf = (u: SellUnit) => (u === 'sub' ? subLabel : u === 'mid' ? midLabel : boxLabel)
+                      const unitLabel = labelOf(ut)
                       const isOfferItem = offersEnabled && isOfferProduct(item.product.id, activeOffers)
                       const stock = item.product.stock
                       const stockTone = stock < 0
@@ -1017,7 +1015,7 @@ export default function POS() {
                                     ? `${stock} ${t('pos.negative_stock')}`
                                     : stock <= 0
                                       ? t('pos.out_of_stock')
-                                      : `${formatStockInline(stock, item.product.pack_size, boxLabel, subLabel)} ${t('pos.in_stock')}`}
+                                      : `${formatStockInline(stock, item.product.pack_size, boxLabel, subLabel, midLabel || null, item.product.mid_size)} ${t('pos.in_stock')}`}
                                 </span>
                                 {(item.offer_discount || 0) > 0 && (
                                   <span className="inline-flex items-center gap-1 font-bold text-pharma-700 bg-pharma-100 px-2 py-0.5 rounded-full">
@@ -1033,7 +1031,7 @@ export default function POS() {
                                 role="group"
                                 aria-label={t('pos.sell_unit') as string}
                               >
-                                {(['pack', 'sub'] as const).map((u) => (
+                                {units.map((u) => (
                                   <button
                                     key={u}
                                     type="button"
@@ -1043,9 +1041,10 @@ export default function POS() {
                                         ? 'bg-white text-pharma-700 shadow-sm ring-1 ring-pharma-200'
                                         : 'text-slate-500 hover:text-slate-800'
                                     }`}
-                                    title={u === 'sub' ? `${pack} ${subLabel} = 1 ${boxLabel}` : undefined}
+                                    title={u === 'pack' ? undefined
+                                      : `${u === 'mid' ? pack / (item.product.mid_size || 1) : pack} ${labelOf(u)} = 1 ${boxLabel}`}
                                   >
-                                    {u === 'pack' ? boxLabel : subLabel}
+                                    {labelOf(u)}
                                   </button>
                                 ))}
                               </div>

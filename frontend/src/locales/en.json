@@ -1094,7 +1094,11 @@
     "import_conf_medium": "Likely",
     "import_conf_guess": "Guessed — check",
     "import_conf_none": "",
-    "import_need_name": "Select which column holds the item name."
+    "import_need_name": "Select which column holds the item name.",
+    "mid_title": "Middle unit (optional) — for Box → Strip → Tablet. Set “Sub unit” to the smallest unit (e.g. Tablet) and “Units per box” to tablets per box.",
+    "f_mid_unit": "Middle unit",
+    "f_mid_size": "{{sub}} per {{mid}}",
+    "mid_invalid": "The middle unit size must divide the {{box}} units per box evenly (e.g. 30 = 3 × 10)."
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
@@ -1617,7 +1621,10 @@
     "pharmacy_price": "Pharm. price",
     "line_ex_tax": "Ex-tax",
     "drug_sales_tax": "Drug sales tax",
-    "net_total": "Net total"
+    "net_total": "Net total",
+    "buy_unit_hint": "Unit you are buying in — quantity, public price and cost are per this unit",
+    "unit_mid": "(strip)",
+    "unit_sub": "(small unit)"
   },
   "customers": {
     "title": "Customers",
