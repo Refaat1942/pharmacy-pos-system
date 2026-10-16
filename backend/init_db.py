@@ -513,6 +513,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS counted_visa  NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS variance_visa NUMERIC(10,2);
 ALTER TABLE shifts ADD COLUMN IF NOT EXISTS shift_type    VARCHAR(20);
+-- Offline POS: shifts opened/closed with no internet are uploaded later; the ids make
+-- a re-sent upload return the saved shift instead of failing or duplicating.
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS client_uuid       VARCHAR(64);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS close_client_uuid VARCHAR(64);
+ALTER TABLE shifts ADD COLUMN IF NOT EXISTS is_offline        BOOLEAN DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_client_uuid ON shifts(client_uuid) WHERE client_uuid IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_shifts_close_client_uuid ON shifts(close_client_uuid) WHERE close_client_uuid IS NOT NULL;
 
 -- Receipt display toggles + barcode + customizable shift windows
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_sale_type BOOLEAN DEFAULT true;
