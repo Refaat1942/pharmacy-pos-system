@@ -10,3 +10,10 @@
 - public/sw.js caches the app shell only; never /api or /downloads.
 - db.py `_apply_search_path` commits after SET: otherwise a later rollback silently resets
   search_path to public ("relation invoices does not exist").
+- One ordered queue (kinds: sale, shift_open, shift_close, return, delivery). Shifts/returns
+  endpoints accept client_uuid + offline_created_at (dedup + real time). shift id <= 0 on
+  close = "my open shift". Recent invoices pack: GET /api/pos/offline-invoices (3 days).
+- Offline login/unlock: PBKDF2 hash saved per slug|username after online login (IndexedDB).
+- Each queue entry keeps the cashier's token + branch; api.ts must not overwrite headers a
+  caller set (it used to, which also silently broke the Dashboard branch filter).
+- Still online-only by design: insurance, loyalty redemption, back-office writes.
