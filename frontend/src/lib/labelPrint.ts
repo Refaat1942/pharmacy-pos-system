@@ -108,7 +108,8 @@ const BASE_STYLES = `
   /* On screen: a 38 × 12 mm sample. In print: exactly one page (the Windows paper size). */
   .label { width: 38mm; height: 12mm; container: label / size; box-sizing: border-box; overflow: hidden;
     background: #fff; outline: 1px dashed #cbd5e1; display: flex; }
-  .col, .qr-wrap { box-sizing: border-box; padding: 4cqh 3cqw; }
+  /* Side margin keeps text off the edge the print head cannot reach. */
+  .col, .qr-wrap { box-sizing: border-box; padding: 5cqh 6cqw; }
   .col { display: flex; flex-direction: column; align-items: center; width: 100%; height: 100%; min-width: 0; }
   .line { display: flex; justify-content: space-between; gap: 2cqw; width: 100%; flex: 0 0 auto;
     font-size: clamp(1.3mm, 15cqh, 3.2mm); line-height: 1.1; font-weight: 700; white-space: nowrap; }
