@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+import psycopg2.errors
 import psycopg2.extras
 import os
 import time
@@ -385,6 +386,46 @@ def unlock_terminal(req: UnlockRequest, request: Request, current_user=Depends(g
 
 # ─── PRODUCTS ────────────────────────────────────────────────────────────────
 
+@app.get("/api/pos/offline-pack")
+def pos_offline_pack(current_user=Depends(get_current_user), active_branch=Depends(get_active_branch_id)):
+    """Everything the POS needs to keep selling without internet, for one branch.
+
+    Downloaded by each POS terminal while online and kept in the browser
+    (IndexedDB); offline sales are uploaded later via POST /api/sales with a
+    client_uuid. Rows are arrays (not objects) to keep 25k+ products small.
+    """
+    branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cols = ["id", "barcode", "international_barcode", "name_en", "name_ar", "category", "unit",
+                "price", "stock", "min_stock", "expiry_date", "pack_size", "sub_unit", "sub_price",
+                "mid_unit", "mid_size", "mid_price"]
+        cur.execute(
+            f"""SELECT {', '.join(cols)} FROM products
+                WHERE active = true AND (branch_id = %s OR branch_id IS NULL)
+                ORDER BY id""",
+            (branch_id,),
+        )
+        rows = []
+        for r in cur.fetchall():
+            r = list(r)
+            for i, v in enumerate(r):
+                if isinstance(v, (date, datetime)):
+                    r[i] = v.isoformat()
+                elif v is not None and not isinstance(v, (int, float, str, bool)):
+                    r[i] = float(v)  # Decimal
+            rows.append(r)
+        return {
+            "branch_id": branch_id,
+            "generated_at": datetime.now().isoformat(),
+            "product_columns": cols,
+            "products": rows,
+        }
+    finally:
+        conn.close()
+
+
 @app.get("/api/products")
 def search_products(q: str = "",
                     current_user=Depends(get_current_user),
@@ -559,6 +600,7 @@ def create_product(req: ProductCreate, current_user=Depends(get_current_user)):
         if req.stock and req.stock > 0:
             add_batch_stock(cur, product["id"], branch_id, req.stock, req.expiry_date)
             new_stock = sync_product_from_batches(cur, product["id"])
+            product["stock"] = new_stock  # row was inserted with 0; report the real stock
             log_movement(
                 cur, product["id"], branch_id, "initial",
                 req.stock, new_stock,
@@ -834,6 +876,40 @@ class SaleRequest(BaseModel):
     insurance_plan_id: Optional[int] = None
     insurance_patient_fields: Optional[dict] = None
     discount_card_id: Optional[int] = None
+    # Offline POS upload: client-generated id (idempotency) + when the sale really happened.
+    client_uuid: Optional[str] = None
+    offline_created_at: Optional[datetime] = None
+
+
+def _sale_response(cur, invoice_id: int) -> dict:
+    cur.execute(
+        """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
+                  c.name AS customer_name,
+                  b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
+                  b.address AS branch_address, b.phone AS branch_phone
+           FROM invoices i
+           LEFT JOIN users u ON i.seller_id = u.id
+           LEFT JOIN customers c ON i.customer_id = c.id
+           LEFT JOIN branches b ON i.branch_id = b.id
+           WHERE i.id=%s""",
+        (invoice_id,),
+    )
+    full_invoice = cur.fetchone()
+    cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
+    items = cur.fetchall()
+    return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
+
+
+def _offline_sale_time(req: "SaleRequest") -> Optional[datetime]:
+    """When the sale was made offline (clamped to the last 30 days, never the future)."""
+    if not req.client_uuid or not req.offline_created_at:
+        return None
+    from datetime import timedelta
+    ts = req.offline_created_at
+    if ts.tzinfo is not None:
+        ts = ts.astimezone().replace(tzinfo=None)  # invoices.created_at is server-local naive
+    now = datetime.now()
+    return max(now - timedelta(days=30), min(ts, now))
 
 
 @app.post("/api/sales")
@@ -843,11 +919,28 @@ def create_sale(req: SaleRequest,
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        client_uuid = (req.client_uuid or "").strip()[:64] or None
+        offline_at = _offline_sale_time(req)
+        if client_uuid:
+            # Retried upload of a sale already saved → return it, never duplicate.
+            cur.execute("SELECT id FROM invoices WHERE client_uuid=%s", (client_uuid,))
+            dup = cur.fetchone()
+            if dup:
+                return _sale_response(cur, dup["id"])
+        if offline_at is not None:
+            if req.type == "insurance":
+                raise HTTPException(400, "Insurance sales cannot be made offline")
+            if int(req.loyalty_points_redeemed or 0) > 0:
+                raise HTTPException(400, "Loyalty points cannot be redeemed offline")
+
         if req.type != "return":
             if active_branch is None:
                 raise HTTPException(400, "Active branch is required to complete a sale")
-            from shifts import assert_open_shift_for_sales
-            assert_open_shift_for_sales(cur, current_user["user_id"], active_branch)
+            if offline_at is None:
+                # Offline sales were made during the shift that was open then; they are
+                # matched to it by time, so the shift may already be closed at upload.
+                from shifts import assert_open_shift_for_sales
+                assert_open_shift_for_sales(cur, current_user["user_id"], active_branch)
 
         if req.type == "digital":
             from feature_access import user_feature_option
@@ -1100,7 +1193,7 @@ def create_sale(req: SaleRequest,
                     status_code=400,
                     detail=f"Product {item.product_id} belongs to branch {p['branch_id']}, not active branch {branch_id}",
                 )
-            if req.type != "return":
+            if req.type != "return" and offline_at is None:
                 assert_sellable(cur, item.product_id, today)
 
         clinic_id = None
@@ -1149,8 +1242,8 @@ def create_sale(req: SaleRequest,
                 offer_ids, offer_savings, offer_names,
                 loyalty_points_earned, loyalty_points_redeemed, loyalty_discount,
                 insurance_company_id, insurance_plan_id, discount_card_id,
-                insurance_snapshot, insurance_totals)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING *""",
+                insurance_snapshot, insurance_totals, client_uuid, is_offline, created_at)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, NOW())) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, invoice_discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
@@ -1161,7 +1254,8 @@ def create_sale(req: SaleRequest,
              loyalty_points_earned, loyalty_points_redeemed, loyalty_discount,
              insurance_company_id, insurance_plan_id, discount_card_id_val,
              psycopg2.extras.Json(insurance_snapshot) if insurance_snapshot else None,
-             psycopg2.extras.Json(insurance_totals) if insurance_totals else None),
+             psycopg2.extras.Json(insurance_totals) if insurance_totals else None,
+             client_uuid, offline_at is not None, offline_at),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
@@ -1284,25 +1378,19 @@ def create_sale(req: SaleRequest,
                 conn.commit()
         except Exception:
             conn.rollback()
-        cur.execute(
-            """SELECT i.*, u.name_en AS seller_name_en, u.name_ar AS seller_name_ar,
-                      c.name AS customer_name,
-                      b.name_en AS branch_name_en, b.name_ar AS branch_name_ar,
-                      b.address AS branch_address, b.phone AS branch_phone
-               FROM invoices i
-               LEFT JOIN users u ON i.seller_id = u.id
-               LEFT JOIN customers c ON i.customer_id = c.id
-               LEFT JOIN branches b ON i.branch_id = b.id
-               WHERE i.id=%s""",
-            (invoice_id,),
-        )
-        full_invoice = cur.fetchone()
-        cur.execute("SELECT * FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
-        items = cur.fetchall()
-        return {"invoice": dict(full_invoice), "items": [dict(i) for i in items]}
+        return _sale_response(cur, invoice_id)
     except HTTPException:
         conn.rollback()
         raise
+    except psycopg2.errors.UniqueViolation as e:
+        conn.rollback()
+        # Two uploads of the same offline sale raced — return the one that won.
+        if req.client_uuid and "client_uuid" in str(e):
+            cur.execute("SELECT id FROM invoices WHERE client_uuid=%s", ((req.client_uuid or "").strip()[:64],))
+            row = cur.fetchone()
+            if row:
+                return _sale_response(cur, row["id"])
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { flushQueue, listQueuedSales } from '../lib/offline'
 import { useTranslation } from 'react-i18next'
 import { Lock, Unlock, FileText, X, AlertCircle, FileDown } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -168,6 +169,13 @@ export default function Shifts() {
     if (!current) return
     if (pendingDeliveries > 0) {
       setCloseError(t('shifts.close_blocked_pending') as string)
+      return
+    }
+    // Offline sales are matched to the shift by time: upload them before closing.
+    await flushQueue(api)
+    const waiting = (await listQueuedSales()).filter((q) => !q.error).length
+    if (waiting > 0) {
+      setCloseError(t('offline.close_shift_pending', { n: waiting }) as string)
       return
     }
     setCloseError(null)

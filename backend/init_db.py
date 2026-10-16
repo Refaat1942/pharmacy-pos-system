@@ -805,6 +805,11 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_card_id INTEGER REFERENCE
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_snapshot JSONB;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS insurance_totals JSONB;
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS claim_id INTEGER;
+-- Offline POS: sales made without internet are uploaded later with a client-generated
+-- id so a retried upload can never create the invoice twice.
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(64);
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_client_uuid ON invoices(client_uuid) WHERE client_uuid IS NOT NULL;
 
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS insurance_line JSONB;
 

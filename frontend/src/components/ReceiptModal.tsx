@@ -178,7 +178,7 @@ export default function ReceiptModal({ sale, onNewSale, onClose, onSaleUpdate }:
 
   // ETA e-receipt QR (shown when middleware returns QrUrl after submission)
   useEffect(() => {
-    if (!etaFeatureOn || !invoice.id) {
+    if (!etaFeatureOn || !invoice.id || invoice.id < 0) { // offline receipts have no ETA submission yet
       setEtaQrImage(null)
       setEtaQrPending(false)
       return

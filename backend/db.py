@@ -36,6 +36,9 @@ def _apply_search_path(conn, schema: str) -> None:
         sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema))
     )
     cur.close()
+    # Commit so the setting is session-wide: SET inside an open transaction is undone
+    # by a later conn.rollback(), silently pointing the connection at 'public'.
+    conn.commit()
 
 
 def get_db_connection(schema: Optional[str] = None):
