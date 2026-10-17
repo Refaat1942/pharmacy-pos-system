@@ -20,7 +20,15 @@ export default function OfflineBadge() {
   const [busy, setBusy] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
+  const [toast, setToast] = useState(false)
   useEffect(() => onOfflineStatus(setSt), [])
+  // A back-office change was saved offline: say so, since the page shows old data.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const show = () => { setToast(true); clearTimeout(timer); timer = setTimeout(() => setToast(false), 4000) }
+    window.addEventListener('fps-offline-queued', show)
+    return () => { window.removeEventListener('fps-offline-queued', show); clearTimeout(timer) }
+  }, [])
   useEffect(() => {
     if (!open) return
     void listQueuedSales().then((q) => setFailed(q.filter((s) => s.error)))
@@ -57,6 +65,11 @@ export default function OfflineBadge() {
           <span className="inline-flex items-center gap-0.5"><AlertTriangle size={13} />{st.failed}</span>
         )}
       </button>
+      {toast && (
+        <div className="fixed bottom-5 start-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
+          {t('offline.saved_offline')}
+        </div>
+      )}
       {open && (
         <div className="absolute end-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-4 text-xs space-y-3">
           <p className="font-bold text-slate-800 text-sm">
