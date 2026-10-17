@@ -28,6 +28,7 @@ type Breakdown = {
   total_sales: number; invoice_count: number
   cash_collected: number; cash_change: number
   returns_value: number; returns_count: number
+  cash_refunds?: number; debt_cash?: number; debt_card?: number
   expected_cash: number
 }
 
@@ -432,6 +433,15 @@ export default function Shifts() {
                 <Line label={t('shifts.other_sales')} value={fmt(reportShift.breakdown.other_sales)} />
                 <Line label={t('shifts.total_sales')} value={fmt(reportShift.breakdown.total_sales)} bold />
                 <Line label={t('shifts.returns')} value={fmt(reportShift.breakdown.returns_value)} negative />
+                {(reportShift.breakdown.cash_refunds ?? reportShift.breakdown.returns_value) !== reportShift.breakdown.returns_value && (
+                  <Line label={t('shifts.cash_refunds')} value={fmt(reportShift.breakdown.cash_refunds ?? 0)} negative />
+                )}
+                {(reportShift.breakdown.debt_cash || 0) + (reportShift.breakdown.debt_card || 0) > 0 && (
+                  <>
+                    <Line label={t('shifts.debt_cash')} value={fmt(reportShift.breakdown.debt_cash || 0)} />
+                    <Line label={t('shifts.debt_card')} value={fmt(reportShift.breakdown.debt_card || 0)} />
+                  </>
+                )}
               </div>
 
               <div className="border-t border-slate-200 pt-3">
