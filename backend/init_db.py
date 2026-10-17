@@ -289,6 +289,7 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
 CREATE INDEX IF NOT EXISTS idx_po_supplier ON purchase_orders(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_po_branch ON purchase_orders(branch_id);
 CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status, created_at DESC);
+ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS parent_po_id INTEGER REFERENCES purchase_orders(id);
 
 CREATE TABLE IF NOT EXISTS purchase_order_items (
     id SERIAL PRIMARY KEY,

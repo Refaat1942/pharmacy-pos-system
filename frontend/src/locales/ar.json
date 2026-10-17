@@ -1610,7 +1610,13 @@
     "buy_unit_hint": "الوحدة التي تشتري بها — الكمية والسعر والتكلفة لكل وحدة منها",
     "unit_mid": "(شريط)",
     "unit_sub": "(وحدة صغرى)",
-    "status_imported": "مستوردة"
+    "status_imported": "مستوردة",
+    "edit_title": "تعديل أمر شراء",
+    "edit": "تعديل",
+    "receive_partial": "استلام جزئي",
+    "recv_now": "المستلم الآن (كمية / بونص / صلاحية)",
+    "delivery_invoice": "رقم فاتورة التسليم",
+    "confirm_partial": "استلام {{n}} صنف"
   },
   "customers": {
     "title": "العملاء",

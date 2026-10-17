@@ -510,61 +510,120 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
     )
 
 
-@router.post("/purchase-orders")
-def create_po(req: POIn, current_user=Depends(get_current_user)):
-    require_user_feature(current_user, "purchases")
+def _validate_po(cur, req: POIn) -> float:
+    """Check supplier, branch and lines; return the invoice total."""
     if not req.items:
         raise HTTPException(status_code=400, detail="At least one item required")
     if req.discount < 0 or req.tax < 0:
         raise HTTPException(status_code=400, detail="Discount and tax cannot be negative")
+    cur.execute("SELECT id FROM suppliers WHERE id=%s AND active=true", (req.supplier_id,))
+    if not cur.fetchone():
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+    cur.execute("SELECT id FROM branches WHERE id=%s", (req.branch_id,))
+    if not cur.fetchone():
+        raise HTTPException(status_code=400, detail="Invalid branch")
+
+    for it in req.items:
+        if it.quantity <= 0:
+            raise HTTPException(status_code=400, detail="Quantity must be positive")
+        if it.bonus_qty < 0:
+            raise HTTPException(status_code=400, detail="Bonus quantity cannot be negative")
+        if it.unit_cost < 0:
+            raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
+        if it.discount_pct < 0 or it.discount_pct > 100:
+            raise HTTPException(status_code=400, detail="Discount % must be between 0 and 100")
+        if it.vat_pct < 0:
+            raise HTTPException(status_code=400, detail="VAT % cannot be negative")
+        if it.public_price is not None and it.public_price < 0:
+            raise HTTPException(status_code=400, detail="Public price cannot be negative")
+    # Supplier consistency: if any selected product has a preferred supplier set,
+    # it must match the PO's supplier (NULL = unassigned, allowed). Prevents
+    # the replenishment flow (or any UI) from sending mixed-supplier POs.
+    product_ids = [int(i.product_id) for i in req.items if i.product_id]
+    if product_ids:
+        cur.execute(
+            "SELECT id, supplier_id FROM products WHERE id = ANY(%s)",
+            (product_ids,),
+        )
+        mismatched = [int(r["id"]) for r in cur.fetchall()
+                      if r["supplier_id"] not in (None, req.supplier_id)]
+        if mismatched:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
+            )
+    subtotal_net, total_vat = _po_sums(req)
+    total = subtotal_net - req.discount + total_vat + req.tax
+    if total < 0:
+        raise HTTPException(status_code=400, detail="Discount cannot exceed invoice total")
+    return total
+
+
+def _po_sums(req: POIn) -> tuple[float, float]:
+    subtotal_net = sum(
+        _line_ex_tax(i.quantity, i.public_price, i.sales_tax, i.discount_pct, i.unit_cost)
+        for i in req.items
+    )
+    total_vat = sum(_line_tax_amount(i.quantity, i.sales_tax) for i in req.items)
+    return subtotal_net, total_vat
+
+
+def _insert_po_items(cur, po_id: int, req: POIn) -> None:
+    for it in req.items:
+        # Snapshot product names from product if product_id given
+        pname_ar = it.product_name_ar
+        pname_en = it.product_name_en
+        barcode = it.barcode
+        if it.product_id:
+            cur.execute("SELECT name_ar, name_en, barcode FROM products WHERE id=%s",
+                        (it.product_id,))
+            p = cur.fetchone()
+            if not p:
+                raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
+            pname_ar = pname_ar or p["name_ar"]
+            pname_en = pname_en or p["name_en"]
+            barcode = barcode or p["barcode"]
+        if not pname_en:
+            raise HTTPException(status_code=400, detail="Product name required")
+        pub, pharmacy, stax, retail = _resolve_line_pricing(it)
+        line_total = _line_gross(it.quantity, pub, stax, it.discount_pct, pharmacy)
+        cur.execute(
+            """INSERT INTO purchase_order_items
+               (po_id, product_id, barcode, product_name_ar, product_name_en,
+                quantity, bonus_qty, unit_cost, discount_pct, vat_pct, sales_tax, public_price,
+                expiry_date, total, unit_type)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (po_id, it.product_id, barcode, pname_ar, pname_en,
+             it.quantity, it.bonus_qty, pharmacy, it.discount_pct, 0, stax,
+             # No public price on the line (e.g. a PO from the shortages screen): store
+             # none, so receiving keeps the product's selling price instead of
+             # overwriting it with the cost.
+             retail if it.public_price is not None else None, it.expiry_date, line_total,
+             (it.unit_type or "pack") if it.product_id else "pack"),
+        )
+
+
+def _receive_all(cur, po: dict, current_user: dict) -> None:
+    cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s ORDER BY id", (po["id"],))
+    for row in cur.fetchall():
+        _receive_po_line(cur, row, po, po["branch_id"], current_user)
+    cur.execute(
+        """UPDATE purchase_orders
+           SET status='received', received_by=%s, received_at=NOW()
+           WHERE id=%s""",
+        (current_user.get("user_id"), po["id"]),
+    )
+
+
+@router.post("/purchase-orders")
+def create_po(req: POIn, current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "purchases")
     _assert_po_branch_access(current_user, req.branch_id)
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id FROM suppliers WHERE id=%s AND active=true", (req.supplier_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=400, detail="Invalid supplier")
-        cur.execute("SELECT id FROM branches WHERE id=%s", (req.branch_id,))
-        if not cur.fetchone():
-            raise HTTPException(status_code=400, detail="Invalid branch")
-
-        for it in req.items:
-            if it.quantity <= 0:
-                raise HTTPException(status_code=400, detail="Quantity must be positive")
-            if it.bonus_qty < 0:
-                raise HTTPException(status_code=400, detail="Bonus quantity cannot be negative")
-            if it.unit_cost < 0:
-                raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
-            if it.discount_pct < 0 or it.discount_pct > 100:
-                raise HTTPException(status_code=400, detail="Discount % must be between 0 and 100")
-            if it.vat_pct < 0:
-                raise HTTPException(status_code=400, detail="VAT % cannot be negative")
-            if it.public_price is not None and it.public_price < 0:
-                raise HTTPException(status_code=400, detail="Public price cannot be negative")
-        # Supplier consistency: if any selected product has a preferred supplier set,
-        # it must match the PO's supplier (NULL = unassigned, allowed). Prevents
-        # the replenishment flow (or any UI) from sending mixed-supplier POs.
-        product_ids = [int(i.product_id) for i in req.items if i.product_id]
-        if product_ids:
-            cur.execute(
-                "SELECT id, supplier_id FROM products WHERE id = ANY(%s)",
-                (product_ids,),
-            )
-            mismatched = [int(r["id"]) for r in cur.fetchall()
-                          if r["supplier_id"] not in (None, req.supplier_id)]
-            if mismatched:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Items belong to a different supplier (ids: {mismatched[:10]})",
-                )
-        subtotal_net = sum(
-            _line_ex_tax(i.quantity, i.public_price, i.sales_tax, i.discount_pct, i.unit_cost)
-            for i in req.items
-        )
-        total_vat = sum(_line_tax_amount(i.quantity, i.sales_tax) for i in req.items)
-        total = subtotal_net - req.discount + total_vat + req.tax
-        if total < 0:
-            raise HTTPException(status_code=400, detail="Discount cannot exceed invoice total")
+        total = _validate_po(cur, req)
+        subtotal_net, total_vat = _po_sums(req)
 
         cur.execute("SELECT nextval('purchase_order_seq') AS n")
         seq_n = cur.fetchone()["n"]
@@ -582,56 +641,11 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
              current_user.get("user_id")),
         )
         po_id = cur.fetchone()["id"]
+        _insert_po_items(cur, po_id, req)
 
-        for it in req.items:
-            if it.quantity <= 0:
-                raise HTTPException(status_code=400, detail="Quantity must be positive")
-            if it.unit_cost < 0:
-                raise HTTPException(status_code=400, detail="Unit cost cannot be negative")
-            # Snapshot product names from product if product_id given
-            pname_ar = it.product_name_ar
-            pname_en = it.product_name_en
-            barcode = it.barcode
-            if it.product_id:
-                cur.execute("SELECT name_ar, name_en, barcode FROM products WHERE id=%s",
-                            (it.product_id,))
-                p = cur.fetchone()
-                if not p:
-                    raise HTTPException(status_code=404, detail=f"Product {it.product_id} not found")
-                pname_ar = pname_ar or p["name_ar"]
-                pname_en = pname_en or p["name_en"]
-                barcode = barcode or p["barcode"]
-            if not pname_en:
-                raise HTTPException(status_code=400, detail="Product name required")
-            pub, pharmacy, stax, retail = _resolve_line_pricing(it)
-            line_total = _line_gross(it.quantity, pub, stax, it.discount_pct, pharmacy)
-            cur.execute(
-                """INSERT INTO purchase_order_items
-                   (po_id, product_id, barcode, product_name_ar, product_name_en,
-                    quantity, bonus_qty, unit_cost, discount_pct, vat_pct, sales_tax, public_price,
-                    expiry_date, total, unit_type)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (po_id, it.product_id, barcode, pname_ar, pname_en,
-                 it.quantity, it.bonus_qty, pharmacy, it.discount_pct, 0, stax,
-                 # No public price on the line (e.g. a PO from the shortages screen): store
-                 # none, so receiving keeps the product's selling price instead of
-                 # overwriting it with the cost.
-                 retail if it.public_price is not None else None, it.expiry_date, line_total,
-                 (it.unit_type or "pack") if it.product_id else "pack"),
-            )
-
-        po_row = {"id": po_id, "po_number": po_number, "branch_id": req.branch_id}
         status = "draft"
         if req.receive_immediately:
-            cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s", (po_id,))
-            for row in cur.fetchall():
-                _receive_po_line(cur, row, po_row, req.branch_id, current_user)
-            cur.execute(
-                """UPDATE purchase_orders
-                   SET status='received', received_by=%s, received_at=NOW()
-                   WHERE id=%s""",
-                (current_user.get("user_id"), po_id),
-            )
+            _receive_all(cur, {"id": po_id, "po_number": po_number, "branch_id": req.branch_id}, current_user)
             status = "received"
 
         conn.commit()
@@ -642,6 +656,49 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
             "total": total,
             "status": status,
         }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+@router.put("/purchase-orders/{po_id:int}")
+def update_po(po_id: int, req: POIn, current_user=Depends(get_current_user)):
+    """Edit a draft PO (header and lines); optionally receive it right away."""
+    require_user_feature(current_user, "purchases")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT * FROM purchase_orders WHERE id=%s FOR UPDATE", (po_id,))
+        po = cur.fetchone()
+        if not po:
+            raise HTTPException(status_code=404, detail="PO not found")
+        if po["status"] != "draft":
+            raise HTTPException(status_code=400, detail="Only a draft purchase order can be edited")
+        _assert_po_branch_access(current_user, po["branch_id"])
+        _assert_po_branch_access(current_user, req.branch_id)
+        total = _validate_po(cur, req)
+        subtotal_net, total_vat = _po_sums(req)
+        cur.execute(
+            """UPDATE purchase_orders SET supplier_id=%s, branch_id=%s,
+                      supplier_invoice_number=%s, supplier_invoice_date=%s,
+                      subtotal=%s, discount=%s, tax=%s, total=%s, notes=%s
+               WHERE id=%s""",
+            (req.supplier_id, req.branch_id, req.supplier_invoice_number, req.supplier_invoice_date,
+             subtotal_net, req.discount, total_vat + req.tax, total, req.notes, po_id),
+        )
+        cur.execute("DELETE FROM purchase_order_items WHERE po_id=%s", (po_id,))
+        _insert_po_items(cur, po_id, req)
+        status = "draft"
+        if req.receive_immediately:
+            _receive_all(cur, {"id": po_id, "po_number": po["po_number"], "branch_id": req.branch_id}, current_user)
+            status = "received"
+        conn.commit()
+        return {"ok": True, "po_id": po_id, "po_number": po["po_number"], "total": total, "status": status}
     except HTTPException:
         conn.rollback()
         raise
@@ -718,10 +775,126 @@ def get_po(po_id: int, current_user=Depends(get_current_user)):
     return out
 
 
+class ReceiveLineIn(BaseModel):
+    item_id: int
+    quantity: int = 0
+    bonus_qty: Optional[int] = None
+    expiry_date: Optional[date] = None
+
+
+class ReceiveIn(BaseModel):
+    # Omit lines to receive everything. Otherwise only these quantities arrive now:
+    # they become a received PO of their own and the rest stays on this draft.
+    lines: Optional[List[ReceiveLineIn]] = None
+    supplier_invoice_number: Optional[str] = None
+    supplier_invoice_date: Optional[date] = None
+
+
+def _split_received(cur, po: dict, items: list, req: ReceiveIn, current_user: dict) -> dict:
+    """Move the delivered part of a draft PO into a new received PO, receive it,
+    and shrink the draft. Header discount / tax follow the share of the value."""
+    by_id = {it["id"]: it for it in items}
+    picked = []
+    for ln in req.lines or []:
+        it = by_id.get(ln.item_id)
+        if not it:
+            raise HTTPException(status_code=400, detail=f"Line {ln.item_id} is not on this purchase order")
+        q = int(ln.quantity or 0)
+        b = int(ln.bonus_qty if ln.bonus_qty is not None else (it["bonus_qty"] or 0 if q >= it["quantity"] else 0))
+        if q < 0 or q > int(it["quantity"]) or b < 0 or b > int(it["bonus_qty"] or 0):
+            raise HTTPException(status_code=400, detail=f"Received quantity for '{it['product_name_en']}' is more than ordered")
+        if q or b:
+            picked.append((it, q, b, ln.expiry_date))
+    if not picked:
+        raise HTTPException(status_code=400, detail="Nothing to receive")
+    full = all(
+        q == int(it["quantity"]) and b == int(it["bonus_qty"] or 0) for it, q, b, _ in picked
+    ) and len(picked) == len(items)
+    if full:
+        # Everything left on the PO arrived: receive the PO itself.
+        for it, _, _, exp in picked:
+            if exp:
+                cur.execute("UPDATE purchase_order_items SET expiry_date=%s WHERE id=%s", (exp, it["id"]))
+        if req.supplier_invoice_number or req.supplier_invoice_date:
+            cur.execute(
+                """UPDATE purchase_orders SET supplier_invoice_number=COALESCE(%s, supplier_invoice_number),
+                          supplier_invoice_date=COALESCE(%s, supplier_invoice_date) WHERE id=%s""",
+                (req.supplier_invoice_number, req.supplier_invoice_date, po["id"]),
+            )
+        _receive_all(cur, po, current_user)
+        return {"received_po_id": po["id"], "received_po_number": po["po_number"], "status": "received"}
+
+    lines_total = sum(float(it["total"] or 0) for it in items) or 1.0
+    part_total = sum(float(it["total"] or 0) * q / int(it["quantity"]) for it, q, b, _ in picked)
+    r = part_total / lines_total
+    share = {k: round(float(po[k] or 0) * r, 2) for k in ("subtotal", "discount", "tax", "total")}
+
+    cur.execute("SELECT COUNT(*) AS n FROM purchase_orders WHERE parent_po_id=%s", (po["id"],))
+    n = int(cur.fetchone()["n"]) + 1
+    child_number = f"{po['po_number']}-R{n}"
+    cur.execute(
+        """INSERT INTO purchase_orders
+           (po_number, supplier_id, branch_id, status, supplier_invoice_number, supplier_invoice_date,
+            subtotal, discount, tax, total, notes, created_by, parent_po_id)
+           VALUES (%s,%s,%s,'draft',%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+        (child_number, po["supplier_id"], po["branch_id"],
+         req.supplier_invoice_number or po["supplier_invoice_number"],
+         req.supplier_invoice_date or po["supplier_invoice_date"],
+         share["subtotal"], share["discount"], share["tax"], share["total"],
+         po["notes"], current_user.get("user_id"), po["id"]),
+    )
+    child_id = cur.fetchone()["id"]
+    for it, q, b, exp in picked:
+        if q:
+            cur.execute(
+                """INSERT INTO purchase_order_items
+                   (po_id, product_id, barcode, product_name_ar, product_name_en, quantity, bonus_qty,
+                    unit_cost, discount_pct, vat_pct, sales_tax, public_price, expiry_date, total, unit_type)
+                   SELECT %s, product_id, barcode, product_name_ar, product_name_en, %s, %s,
+                          unit_cost, discount_pct, vat_pct, sales_tax, public_price, COALESCE(%s, expiry_date),
+                          ROUND(total * %s, 2), unit_type
+                   FROM purchase_order_items WHERE id=%s""",
+                (child_id, q, b, exp, q / int(it["quantity"]), it["id"]),
+            )
+        else:
+            # Bonus-only delivery: a zero-cost line for the free units.
+            cur.execute(
+                """INSERT INTO purchase_order_items
+                   (po_id, product_id, barcode, product_name_ar, product_name_en, quantity, bonus_qty,
+                    unit_cost, discount_pct, vat_pct, sales_tax, public_price, expiry_date, total, unit_type)
+                   SELECT %s, product_id, barcode, product_name_ar, product_name_en, %s, 0,
+                          0, 0, 0, 0, public_price, COALESCE(%s, expiry_date), 0, unit_type
+                   FROM purchase_order_items WHERE id=%s""",
+                (child_id, b, exp, it["id"]),
+            )
+        left_q, left_b = int(it["quantity"]) - q, int(it["bonus_qty"] or 0) - b
+        if left_q <= 0 and left_b <= 0:
+            cur.execute("DELETE FROM purchase_order_items WHERE id=%s", (it["id"],))
+        elif left_q <= 0:
+            # Only free units still to come: keep them as a zero-cost line.
+            cur.execute(
+                "UPDATE purchase_order_items SET quantity=%s, bonus_qty=0, unit_cost=0, sales_tax=0, total=0 WHERE id=%s",
+                (left_b, it["id"]),
+            )
+        else:
+            cur.execute(
+                "UPDATE purchase_order_items SET quantity=%s, bonus_qty=%s, total=ROUND(total * %s, 2) WHERE id=%s",
+                (left_q, left_b, left_q / int(it["quantity"]), it["id"]),
+            )
+    child = {"id": child_id, "po_number": child_number, "branch_id": po["branch_id"]}
+    _receive_all(cur, child, current_user)
+    cur.execute(
+        """UPDATE purchase_orders SET subtotal=subtotal-%s, discount=discount-%s, tax=tax-%s, total=total-%s
+           WHERE id=%s""",
+        (share["subtotal"], share["discount"], share["tax"], share["total"], po["id"]),
+    )
+    return {"received_po_id": child_id, "received_po_number": child_number, "status": "partial"}
+
+
 @router.post("/purchase-orders/{po_id:int}/receive")
-def receive_po(po_id: int, current_user=Depends(get_current_user)):
+def receive_po(po_id: int, req: Optional[ReceiveIn] = None, current_user=Depends(get_current_user)):
     """Receive PO: add stock to branch, log purchase movements,
-    update product cost + expiry_date when provided."""
+    update product cost + expiry_date when provided. With `lines`, receive only part."""
     require_user_feature(current_user, "purchases")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -733,19 +906,20 @@ def receive_po(po_id: int, current_user=Depends(get_current_user)):
         if po["status"] != "draft":
             raise HTTPException(status_code=400, detail=f"Cannot receive PO in status '{po['status']}'")
         _assert_po_branch_access(current_user, po["branch_id"])
-        branch_id = po["branch_id"]
 
-        cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s", (po_id,))
-        items = cur.fetchall()
-        for it in items:
-            _receive_po_line(cur, it, po, branch_id, current_user)
+        if req and req.lines is not None:
+            cur.execute("SELECT * FROM purchase_order_items WHERE po_id=%s ORDER BY id FOR UPDATE", (po_id,))
+            out = _split_received(cur, po, cur.fetchall(), req, current_user)
+            conn.commit()
+            return {"ok": True, **out}
 
-        cur.execute(
-            """UPDATE purchase_orders
-               SET status='received', received_by=%s, received_at=NOW()
-               WHERE id=%s""",
-            (current_user.get("user_id"), po_id),
-        )
+        if req and (req.supplier_invoice_number or req.supplier_invoice_date):
+            cur.execute(
+                """UPDATE purchase_orders SET supplier_invoice_number=COALESCE(%s, supplier_invoice_number),
+                          supplier_invoice_date=COALESCE(%s, supplier_invoice_date) WHERE id=%s""",
+                (req.supplier_invoice_number, req.supplier_invoice_date, po_id),
+            )
+        _receive_all(cur, po, current_user)
         conn.commit()
         return {"ok": True, "status": "received"}
     except HTTPException:
