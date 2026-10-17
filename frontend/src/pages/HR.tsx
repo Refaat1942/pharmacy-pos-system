@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { UserPlus, Edit2, Trash2, Calendar as CalIcon, DollarSign, Check, X, RotateCw, ShieldAlert, QrCode, Printer, Download } from 'lucide-react'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import { downloadApiExcel } from '../lib/downloadExcel'
 import api from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { allowedHrTabs, canAccessHr, canManageEmployees, canRecordAttendance, hasHrTab } from '../lib/hrAccess'
@@ -369,9 +370,18 @@ function AttendanceTab() {
   return (
     <div className="space-y-3">
       <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.date')}</label>
-          <DateInput value={date} onChange={setDate} className="input text-sm" />
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase tracking-wider">{t('hr.date')}</label>
+            <DateInput value={date} onChange={setDate} className="input text-sm" />
+          </div>
+          <button
+            onClick={() => downloadApiExcel('/hr/attendance/monthly-sheet', `attendance-${date.slice(0, 7)}.xlsx`, { month: date.slice(0, 7) })
+              .catch(() => alert(t('hr.export_failed')))}
+            className="flex items-center gap-1.5 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium px-3 py-1.5 rounded-lg text-sm"
+            title={t('hr.monthly_sheet_hint') as string}>
+            <Download size={14} /> {t('hr.monthly_sheet', { month: date.slice(0, 7) })}
+          </button>
         </div>
         {mayRecord ? (
           <button onClick={() => { setForm({ ...form, work_date: date }); setShowAdd(true) }} className="flex items-center gap-2 bg-pharma-600 hover:bg-pharma-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm">

@@ -337,7 +337,10 @@
     "perf_top": "Top seller",
     "no_sales_in_range": "No sales in this date range",
     "no_checkout": "No check-out",
-    "incomplete_warning": "These days have a check-in without a check-out and are paid 0 hours until you complete them in Attendance:"
+    "incomplete_warning": "These days have a check-in without a check-out and are paid 0 hours until you complete them in Attendance:",
+    "monthly_sheet": "Monthly sheet {{month}}",
+    "monthly_sheet_hint": "Excel: every employee × every day of the month, with totals",
+    "export_failed": "Export failed"
   },
   "clock": {
     "title": "Employee Time Clock",
