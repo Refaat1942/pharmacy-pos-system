@@ -319,46 +319,54 @@ assert _catalog_features == ALL_FEATURE_KEYS, (
 )
 
 # Default feature bundles per plan (used when seeding platform.plans).
+# Insurance and HR are also sold as add-ons: switch them on per pharmacy.
+_BASIC_FEATURES = [
+    "dashboard", "pos", "sales", "returns", "inventory", "expiry", "purchases", "suppliers",
+    "customers", "shifts", "settings", "eta",
+]
 _PLAN_FEATURE_PRESETS: dict[str, list[str]] = {
-    "basic": [
-        "dashboard", "pos", "sales", "returns", "inventory", "customers", "shifts", "settings", "eta",
-    ],
-    "pro": [
-        "dashboard", "pos", "sales", "returns", "inventory", "transfers", "expiry",
-        "purchases", "suppliers", "customers", "shifts", "settings", "clinics", "offers", "eta",
+    "basic": _BASIC_FEATURES,
+    "pro": _BASIC_FEATURES + [
+        "reports", "offers", "loyalty", "discount_cards", "clinics", "pos_counseling", "ai_assistant",
     ],
     "enterprise": list(ALL_FEATURE_KEYS),
 }
 
-# Seed defaults for platform.plans (editable via Control Platform).
+# Seed defaults for platform.plans (editable via Control Platform). Prices are EGP per
+# month before VAT; yearly = 10 months. Bump PLAN_DEFAULTS_VERSION to push new limits
+# and features to existing plan rows once (later edits in the platform are kept).
+PLAN_DEFAULTS_VERSION = 2
 DEFAULT_PLANS = [
     {
         "key": "basic",
         "label": "Basic",
         "max_users": 3,
         "max_branches": 1,
-        "price_le": 1000,
-        "notes": "Core POS, inventory, customers, shifts",
+        "price_le": 450,
+        "notes": "One pharmacy: POS (box/strip/tablet), sales, returns, stock & expiry, purchases, "
+                 "suppliers, customer accounts, shifts, ETA e-receipt, labels, offline. Yearly 4,500.",
         "features": _PLAN_FEATURE_PRESETS["basic"],
         "sort_order": 1,
     },
     {
         "key": "pro",
         "label": "Pro",
-        "max_users": 60,
-        "max_branches": 5,
-        "price_le": 2000,
-        "notes": "Multi-branch stock, purchases, clinics, offers",
+        "max_users": 8,
+        "max_branches": 2,
+        "price_le": 850,
+        "notes": "Up to 2 branches: Basic + reports, offers, loyalty, discount cards, clinics, "
+                 "smart counseling, AI assistant. Yearly 8,500.",
         "features": _PLAN_FEATURE_PRESETS["pro"],
         "sort_order": 2,
     },
     {
         "key": "enterprise",
-        "label": "Enterprise",
-        "max_users": 100,
-        "max_branches": 10,
-        "price_le": 4500,
-        "notes": "All modules — insurance, HR, fraud, loyalty, AI assistant",
+        "label": "Chains",
+        "max_users": 25,
+        "max_branches": 3,
+        "price_le": 1800,
+        "notes": "Chains, 3 branches included (+400/month per extra branch): everything incl. "
+                 "transfers, all-branch stock, smart reallocation, insurance, HR & payroll, fraud watch. Yearly 18,000.",
         "features": _PLAN_FEATURE_PRESETS["enterprise"],
         "sort_order": 3,
     },
@@ -716,6 +724,7 @@ def bootstrap_platform() -> None:
 def _seed_plans(cur) -> None:
     """Insert default plans; update label/price/notes on existing rows but preserve edited limits."""
     import json as _json
+    cur.execute("ALTER TABLE platform.plans ADD COLUMN IF NOT EXISTS defaults_version INT DEFAULT 0")
     # Retire legacy plan keys; move customers to enterprise.
     cur.execute(
         """UPDATE platform.tenants SET plan = 'enterprise'
@@ -739,6 +748,14 @@ def _seed_plans(cur) -> None:
                 _json.dumps(normalize_features(p["features"])),
                 p["sort_order"],
             ],
+        )
+        # One-time push of new default limits/features to existing rows.
+        cur.execute(
+            """UPDATE platform.plans SET max_users=%s, max_branches=%s, features=%s::jsonb,
+                      defaults_version=%s
+               WHERE key=%s AND COALESCE(defaults_version, 0) < %s""",
+            [p["max_users"], p["max_branches"], _json.dumps(normalize_features(p["features"])),
+             PLAN_DEFAULTS_VERSION, p["key"], PLAN_DEFAULTS_VERSION],
         )
 
 
