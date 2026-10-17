@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime, date
 from typing import Optional, List
 from pydantic import BaseModel
-from auth import create_token, verify_password, verify_token
+from auth import create_token, verify_password, verify_token, hash_password, is_weak_password
 from db import get_db_connection
 from deps import get_current_user, get_active_branch_id, resolve_analytics_branch
 from tenant_ctx import set_current_schema
@@ -252,11 +252,19 @@ def login(req: LoginRequest, request: Request):
         (req.username,)
     )
     user = cur.fetchone()
-    conn.close()
     if not user or not verify_password(req.password, user["password_hash"]):
+        conn.close()
         _login_throttle_record_failure(throttle_key)
         raise HTTPException(status_code=401, detail="Invalid pharmacy code or credentials")
     _login_throttle_clear(throttle_key)
+    # An admin on a default / trivial password must change it before working.
+    must_change = bool(user.get("must_change_password"))
+    if (user["role"] == "admin" and not must_change and not tenant.get("is_demo")
+            and is_weak_password(req.password, user["username"])):
+        must_change = True
+        cur.execute("UPDATE users SET must_change_password=true WHERE id=%s", (user["id"],))
+        conn.commit()
+    conn.close()
     token = create_token({
         "scope": "tenant",
         "tenant_slug": tenant["slug"],
@@ -278,6 +286,7 @@ def login(req: LoginRequest, request: Request):
             "role": user["role"],
             "branch_id": user["branch_id"],
             "permissions": user.get("permissions"),
+            "must_change_password": must_change,
         },
         "tenant": {
             "slug": tenant["slug"],
@@ -329,7 +338,8 @@ def get_me(current_user=Depends(get_current_user)):
                 uconn = get_db_connection(schema=t["schema_name"])
                 ucur = uconn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
                 ucur.execute(
-                    "SELECT id, username, name_ar, name_en, role, branch_id, permissions, status FROM users WHERE id=%s",
+                    "SELECT id, username, name_ar, name_en, role, branch_id, permissions, status,"
+                    " COALESCE(must_change_password, false) AS must_change_password FROM users WHERE id=%s",
                     (uid,),
                 )
                 row = ucur.fetchone()
@@ -345,12 +355,46 @@ def get_me(current_user=Depends(get_current_user)):
                         "role": row["role"],
                         "branch_id": row["branch_id"],
                         "permissions": row.get("permissions"),
+                        "must_change_password": bool(row.get("must_change_password")),
                     }
         except HTTPException:
             raise
         except Exception:
             pass
     return {**current_user, "tenant": tenant_payload, "user": user_payload}
+
+
+class ChangeOwnPasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/change-password")
+def change_own_password(body: ChangeOwnPasswordIn, request: Request, current_user=Depends(get_current_user)):
+    uid = current_user.get("user_id")
+    throttle_key = f"{request.client.host if request.client else 'unknown'}|pwchange|{uid}"
+    _login_throttle_check(throttle_key)
+    if is_weak_password(body.new_password, current_user.get("username") or ""):
+        raise HTTPException(status_code=400, detail="Choose a stronger password: at least 6 characters, not a common one and not the username")
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="The new password must be different")
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT password_hash FROM users WHERE id=%s FOR UPDATE", (uid,))
+        row = cur.fetchone()
+        if not row or not verify_password(body.current_password, row["password_hash"]):
+            _login_throttle_record_failure(throttle_key)
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+        cur.execute(
+            "UPDATE users SET password_hash=%s, must_change_password=false WHERE id=%s",
+            (hash_password(body.new_password), uid),
+        )
+        conn.commit()
+        _login_throttle_clear(throttle_key)
+        return {"ok": True}
+    finally:
+        conn.close()
 
 
 class UnlockRequest(BaseModel):

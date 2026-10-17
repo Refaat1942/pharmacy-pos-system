@@ -83,15 +83,16 @@ def log_movement(cur, product_id: int, branch_id, movement_type: str,
                  reference_type: Optional[str] = None,
                  reference_id: Optional[int] = None,
                  reason: Optional[str] = None,
-                 user_id: Optional[int] = None):
+                 user_id: Optional[int] = None,
+                 reason_code: Optional[str] = None):
     """Insert a stock movement row. Caller manages transaction."""
     cur.execute(
         """INSERT INTO stock_movements
            (product_id, branch_id, movement_type, quantity, balance_after,
-            reference_type, reference_id, reason, user_id)
-           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            reference_type, reference_id, reason, user_id, reason_code)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (product_id, branch_id, movement_type, quantity, balance_after,
-         reference_type, reference_id, reason, user_id),
+         reference_type, reference_id, reason, user_id, reason_code),
     )
 
 
@@ -865,11 +866,15 @@ def list_branches(current_user=Depends(get_current_user)):
 
 # ─── MANUAL STOCK ADJUSTMENT ────────────────────────────────────────────────
 
+ADJUSTMENT_REASONS = ("damaged", "expired", "lost", "theft", "count", "internal_use", "sample", "found", "other")
+
+
 class AdjustmentRequest(BaseModel):
     product_id: int
     delta: Optional[int] = None  # positive or negative change
     set_to: Optional[int] = None  # exact stock in sub-units (pack-aware count)
     reason: str
+    reason_code: Optional[str] = None  # one of ADJUSTMENT_REASONS, for the shrinkage report
 
 
 @router.post("/adjustments")
@@ -919,6 +924,7 @@ def create_adjustment(req: AdjustmentRequest,
                 delta, new_stock,
                 reference_type="adjustment", reason=req.reason,
                 user_id=current_user.get("user_id"),
+                reason_code=req.reason_code if req.reason_code in ADJUSTMENT_REASONS else "other",
             )
         conn.commit()
         return {"ok": True, "new_stock": new_stock}
@@ -1078,6 +1084,7 @@ def apply_stocktake(req: StocktakeRequest,
                     reference_type="stocktake", reference_id=run_id,
                     reason=reason,
                     user_id=current_user.get("user_id"),
+                    reason_code="count",
                 )
             cur.execute(
                 """INSERT INTO stocktake_lines
@@ -1307,6 +1314,43 @@ def clear_branch_history(req: ClearHistoryRequest,
 
 
 # ─── STOCK MOVEMENT REPORT ─────────────────────────────────────────────────
+
+@router.get("/adjustments/summary")
+def adjustments_summary(start_date: Optional[date] = None, end_date: Optional[date] = None,
+                        branch_id: Optional[int] = None, current_user=Depends(get_current_user)):
+    """Manual adjustments by reason — units and value at average cost (shrinkage report)."""
+    if current_user.get("role") != "admin":
+        branch_id = current_user.get("branch_id") or -1
+    where, params = ["m.movement_type = 'adjustment'"], []
+    if branch_id:
+        where.append("m.branch_id = %s"); params.append(branch_id)
+    if start_date:
+        where.append("DATE(m.created_at) >= %s"); params.append(start_date)
+    if end_date:
+        where.append("DATE(m.created_at) <= %s"); params.append(end_date)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    # Stock is in the smallest unit and avg_cost is per box.
+    unit_cost = "COALESCE(p.avg_cost, p.cost, 0) / GREATEST(COALESCE(p.pack_size, 1), 1)"
+    cur.execute(
+        f"""SELECT COALESCE(m.reason_code, CASE WHEN m.reference_type = 'stocktake' THEN 'count' ELSE 'other' END) AS reason_code, COUNT(*)::int AS lines,
+                   COALESCE(SUM(-m.quantity) FILTER (WHERE m.quantity < 0), 0)::int AS units_out,
+                   COALESCE(SUM(m.quantity) FILTER (WHERE m.quantity > 0), 0)::int AS units_in,
+                   ROUND(COALESCE(SUM(-m.quantity * {unit_cost}) FILTER (WHERE m.quantity < 0), 0)::numeric, 2) AS value_out,
+                   ROUND(COALESCE(SUM(m.quantity * {unit_cost}) FILTER (WHERE m.quantity > 0), 0)::numeric, 2) AS value_in
+            FROM stock_movements m LEFT JOIN products p ON p.id = m.product_id
+            WHERE {' AND '.join(where)}
+            GROUP BY 1 ORDER BY value_out DESC""",
+        params,
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return {
+        "rows": rows,
+        "value_out": round(sum(float(r["value_out"]) for r in rows), 2),
+        "value_in": round(sum(float(r["value_in"]) for r in rows), 2),
+    }
+
 
 @router.get("/movements")
 def list_movements(product_id: Optional[int] = None,

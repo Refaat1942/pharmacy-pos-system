@@ -4,7 +4,7 @@ from typing import Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from auth import create_token, verify_password, verify_token
+from auth import create_token, verify_password, verify_token, is_weak_password
 from deps import get_super_admin
 import platform_db
 
@@ -40,6 +40,7 @@ def platform_login(req: PlatformLoginIn, request: Request):
             "id": admin["id"],
             "username": admin["username"],
             "name": admin.get("name"),
+            "weak_password": is_weak_password(req.password, admin["username"]),
         },
     }
 
@@ -60,6 +61,8 @@ def change_password(body: ChangePasswordIn, admin=Depends(get_super_admin)):
     full = platform_db.get_super_admin_by_username(admin["username"])
     if not full or not verify_password(body.current_password, full["password_hash"]):
         raise HTTPException(400, "Current password is incorrect")
+    if is_weak_password(body.new_password, admin["username"]):
+        raise HTTPException(400, "Choose a stronger password: not a common one and not the username")
     platform_db.change_super_admin_password(admin["sa_id"], body.new_password)
     return {"ok": True}
 

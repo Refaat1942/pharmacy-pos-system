@@ -83,6 +83,7 @@ export interface PlatformAdmin {
   username: string
   name: string | null
   last_login_at: string | null
+  weak_password?: boolean
 }
 
 export const platformAPI = {

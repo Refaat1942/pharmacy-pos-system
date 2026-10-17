@@ -506,7 +506,7 @@ def reset_password(user_id: int, body: PasswordReset, current_user: dict = Depen
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (pw, user_id))
+        cur.execute("UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s", (pw, user_id))
         if cur.rowcount == 0:
             raise HTTPException(404, "User not found")
         conn.commit()
