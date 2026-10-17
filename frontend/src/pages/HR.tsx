@@ -64,7 +64,9 @@ const slipProrated = (s: Slip) => {
   return Math.round(Number(s.base_salary || 0) * hrs / STANDARD_MONTH_HOURS * 100) / 100
 }
 const slipNetPreview = (s: Slip) => slipProrated(s) + Number(s.bonus || 0) - Number(s.penalties || 0) - Number(s.deductions || 0)
-const today = () => new Date().toISOString().slice(0, 10)
+// Local date (toISOString is UTC: between midnight and 3 am Cairo it gave yesterday).
+const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const today = () => localISO(new Date())
 const ym = () => today().slice(0, 7)
 
 export default function HR() {
@@ -402,7 +404,11 @@ function AttendanceTab() {
                 <td className="px-3 py-2.5 font-medium">{r.employee_name}</td>
                 <td className="px-3 py-2.5 text-slate-600">{r.work_date}</td>
                 <td className="px-3 py-2.5 font-mono text-slate-700">{r.check_in || '—'}</td>
-                <td className="px-3 py-2.5 font-mono text-slate-700">{r.check_out || '—'}</td>
+                <td className="px-3 py-2.5 font-mono text-slate-700">
+                  {r.check_out || (r.check_in && r.status === 'present'
+                    ? <span className="text-amber-700 font-sans font-semibold text-xs bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{t('hr.no_checkout')}</span>
+                    : '—')}
+                </td>
                 <td className="px-3 py-2.5 text-end font-mono">{r.hours ?? '—'}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : r.status === 'absent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{t(`hr.status_${r.status}`)}</span>
@@ -505,7 +511,9 @@ function PayrollTab() {
   const generate = async () => {
     try {
       const r = await api.post(`/hr/payroll/generate?period_month=${period}`)
-      alert(`${r.data.created} slips created (${r.data.total_employees} employees)`)
+      const inc: { employee: string; days: number }[] = r.data.incomplete || []
+      alert(`${r.data.created} slips created (${r.data.total_employees} employees)`
+        + (inc.length ? `\n\n${t('hr.incomplete_warning')}\n${inc.map((x) => `• ${x.employee}: ${x.days}`).join('\n')}` : ''))
       await load()
     } catch (e: any) { alert(e?.response?.data?.detail || 'Failed') }
   }
@@ -688,7 +696,7 @@ type SellerRow = {
 
 function PerformanceTab() {
   const { t } = useTranslation()
-  const start = (() => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10) })()
+  const start = (() => { const d = new Date(); d.setDate(1); return localISO(d) })()
   const [from, setFrom] = useState(start)
   const [to, setTo] = useState(today())
   const [rows, setRows] = useState<SellerRow[]>([])

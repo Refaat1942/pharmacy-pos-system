@@ -3,7 +3,9 @@ from calendar import monthrange
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+import os
 import hashlib
 import secrets
 import psycopg2.extras
@@ -13,8 +15,8 @@ from deps import get_current_user, get_active_branch_id
 
 def _generate_clock_code(eid: int, name: str) -> str:
     """Deterministic-ish, short, scanner-friendly employee code."""
-    raw = f"{eid}|{name}|{secrets.token_hex(4)}"
-    short = hashlib.md5(raw.encode("utf-8")).hexdigest()[:6].upper()
+    raw = f"{eid}|{name}|{secrets.token_hex(8)}"
+    short = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:6].upper()
     return f"EMP-{eid:04d}-{short}"
 
 
@@ -43,12 +45,6 @@ STANDARD_HOURS_PER_DAY = 8
 PAYROLL_STANDARD_MONTH_HOURS = PAYROLL_WORKING_DAYS * STANDARD_HOURS_PER_DAY
 
 
-def _prorated_base(base_salary, days_worked) -> float:
-    base = float(base_salary or 0)
-    days = int(days_worked or 0)
-    return min(base, round(base * days / PAYROLL_WORKING_DAYS, 2))
-
-
 def _prorated_base_hours(base_salary, hours_worked) -> float:
     base = float(base_salary or 0)
     hours = float(hours_worked or 0)
@@ -70,9 +66,14 @@ def _attendance_payroll_stats(cur, employee_id: int, period_month: str, hours_al
         SELECT COUNT(DISTINCT work_date) FILTER (WHERE status = 'present')::int AS days,
                COUNT(DISTINCT work_date) FILTER (WHERE status = 'absent')::int AS absent,
                COUNT(DISTINCT work_date) FILTER (WHERE status = 'leave')::int AS leave_days,
+               COUNT(DISTINCT work_date) FILTER (
+                 WHERE status = 'present' AND check_in IS NOT NULL AND check_out IS NULL)::int AS incomplete,
                COALESCE(SUM(
                  CASE
                    WHEN status <> 'present' THEN 0
+                   -- Checked in but never checked out: no hours until HR completes the day
+                   -- (it used to count as a full 8-hour day).
+                   WHEN check_in IS NOT NULL AND check_out IS NULL AND hours IS NULL THEN 0
                    WHEN COALESCE(allowed, false)
                      THEN GREATEST(COALESCE(hours, %(std)s), %(std)s)
                    WHEN COALESCE(hours, %(std)s) < %(std)s
@@ -82,15 +83,16 @@ def _attendance_payroll_stats(cur, employee_id: int, period_month: str, hours_al
                  END
                ), 0) AS hours
         FROM attendance
-        WHERE employee_id = %(eid)s AND TO_CHAR(work_date, 'YYYY-MM') = %(pm)s
+        WHERE employee_id = %(eid)s AND work_date BETWEEN %(d1)s AND %(d2)s
     """, {"std": STANDARD_HOURS_PER_DAY, "allow": float(hours_allowance or 0),
-          "eid": employee_id, "pm": period_month})
+          "eid": employee_id, "d1": _period_bounds(period_month)[1], "d2": _period_bounds(period_month)[2]})
     row = cur.fetchone() or {}
     return {
         "days_worked": int(row.get("days") or 0),
         "absent_days": int(row.get("absent") or 0),
         "leave_days": int(row.get("leave_days") or 0),
         "hours_worked": float(row.get("hours") or 0),
+        "incomplete_days": int(row.get("incomplete") or 0),
     }
 
 
@@ -238,145 +240,184 @@ def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
 # ─── Self-service clock-in / clock-out ─────────────────────────────────────
 class ClockIn(BaseModel):
     code: str = Field(min_length=1, max_length=60)
+    # Punch made on an offline clock PC and uploaded later: when it really happened.
+    offline_created_at: Optional[datetime] = None
+
+
+PHARMACY_TZ = ZoneInfo(os.getenv("PHARMACY_TZ", "Africa/Cairo"))
+# Scans closer together than this are the same punch (scanner double-read, nervous
+# second scan) — never a 0-hour check-out.
+DUPLICATE_SCAN = timedelta(minutes=2)
+# An open check-in older than this is not closed by the next scan (forgotten
+# check-out); the next scan starts a new day instead.
+MAX_SHIFT = timedelta(hours=16)
+
+
+def _pharmacy_now() -> datetime:
+    """Local pharmacy time (naive), whatever timezone the server runs in."""
+    return datetime.now(PHARMACY_TZ).replace(tzinfo=None, microsecond=0)
+
+
+def _punch_time(body: "ClockIn") -> datetime:
+    now = _pharmacy_now()
+    ts = body.offline_created_at
+    if not ts:
+        return now
+    if ts.tzinfo is not None:
+        ts = ts.astimezone(PHARMACY_TZ).replace(tzinfo=None)
+    # Offline punches are accepted for up to 2 days back, never in the future.
+    return max(now - timedelta(days=2), min(ts.replace(microsecond=0), now))
+
+
+def _find_employee(cur, raw: str):
+    code = raw.upper()
+    norm = _normalize_code(raw)
+    # Exact (case-insensitive) match first, then a normalized match that ignores
+    # hyphens/spaces a scanner may have dropped or altered.
+    cur.execute("SELECT id, name, role, branch_id, active FROM employees WHERE UPPER(clock_code)=%s", [code])
+    emp = cur.fetchone()
+    if not emp and norm:
+        cur.execute(f"SELECT id, name, role, branch_id, active FROM employees WHERE {_CLOCK_CODE_NORMALIZED_SQL}=%s",
+                    [norm])
+        emp = cur.fetchone()
+    if emp:
+        return emp
+    # A user *login* card (USR-...) works too: it resolves to the linked employee,
+    # creating and linking one for an active user who has none yet.
+    cur.execute(
+        """SELECT id, name_en, name_ar, role, branch_id, employee_id, COALESCE(status, 'active') AS status
+           FROM users
+           WHERE UPPER(card_code) = %s OR UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s
+           LIMIT 1 FOR UPDATE""",
+        [code, norm],
+    )
+    u = cur.fetchone()
+    if not u:
+        return None
+    if u["employee_id"]:
+        cur.execute("SELECT id, name, role, branch_id, active FROM employees WHERE id=%s", [u["employee_id"]])
+        return cur.fetchone()
+    if u["status"] != "active":
+        return None
+    emp_name = (u.get("name_en") or u.get("name_ar") or "Staff").strip()
+    cur.execute(
+        """INSERT INTO employees (name, role, branch_id, active, base_salary)
+           VALUES (%s, %s, %s, TRUE, 0) RETURNING id, name, role, branch_id, active""",
+        [emp_name, u.get("role") or None, u.get("branch_id")],
+    )
+    emp = cur.fetchone()
+    cur.execute("UPDATE employees SET clock_code = %s WHERE id = %s", [_generate_clock_code(emp["id"], emp_name), emp["id"]])
+    cur.execute("UPDATE users SET employee_id = %s WHERE id = %s", [emp["id"], u["id"]])
+    return emp
 
 
 @router.post("/clock")
-def clock_punch(body: ClockIn, current_user=Depends(get_current_user)):
-    """Toggle attendance for the employee owning `code`. First scan of the day
-    creates a check-in; second scan sets check-out and computes hours. Any
-    authenticated tenant user can call this so a shared tablet near the door
-    works regardless of which cashier is logged in."""
+def clock_punch(body: ClockIn, current_user=Depends(get_current_user),
+                active_branch=Depends(get_active_branch_id)):
+    """Toggle attendance for the employee owning `code`: first scan = check-in,
+    next scan = check-out (also across midnight for night shifts). Any logged-in
+    user of the employee's branch can run the shared clock PC.
+
+    Errors carry a stable `code` so the clock screen can show them translated."""
     raw = (body.code or "").strip()
-    code = raw.upper()
-    norm = _normalize_code(raw)
-    if not code:
-        raise HTTPException(400, "Code required")
+    if not raw:
+        raise HTTPException(400, detail={"code": "code_required", "message": "Code required"})
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # Try an exact (case-insensitive) match first, then fall back to a
-        # normalized match that ignores hyphens/spaces/other separators a
-        # scanner may have dropped or altered.
-        cur.execute(
-            "SELECT id, name, role, branch_id, active FROM employees WHERE UPPER(clock_code)=%s",
-            [code],
-        )
-        emp = cur.fetchone()
-        if not emp and norm:
-            cur.execute(
-                f"SELECT id, name, role, branch_id, active FROM employees "
-                f"WHERE {_CLOCK_CODE_NORMALIZED_SQL}=%s",
-                [norm],
-            )
-            emp = cur.fetchone()
-        # Also accept a user *login* card (USR-...). Resolve it to the
-        # employee linked on the user account so the same card works for both
-        # unlocking a terminal and punching attendance.
+        emp = _find_employee(cur, raw)
         if not emp:
-            cur.execute(
-                """SELECT e.id, e.name, e.role, e.branch_id, e.active
-                   FROM users u
-                   JOIN employees e ON e.id = u.employee_id
-                   WHERE UPPER(u.card_code) = %s
-                      OR UPPER(REGEXP_REPLACE(u.card_code, '[^A-Za-z0-9]', '', 'g')) = %s
-                   LIMIT 1""",
-                [code, norm],
-            )
-            emp = cur.fetchone()
-        # Manual-entry convenience: allow typing just the employee number
-        # (e.g. "1" or "0001" for employee id 1).
-        if not emp and raw.isdigit():
-            cur.execute(
-                "SELECT id, name, role, branch_id, active FROM employees WHERE id=%s",
-                [int(raw)],
-            )
-            emp = cur.fetchone()
-        # If the code is a known login card but the user has no employee yet,
-        # auto-create and link one so any staff member can clock in with their
-        # existing login card — no manual setup needed.
-        if not emp and (code or norm):
-            cur.execute(
-                """SELECT id, name_en, name_ar, role, branch_id, employee_id
-                   FROM users
-                   WHERE UPPER(card_code) = %s
-                      OR UPPER(REGEXP_REPLACE(card_code, '[^A-Za-z0-9]', '', 'g')) = %s
-                   LIMIT 1""",
-                [code, norm],
-            )
-            u = cur.fetchone()
-            if u:
-                emp_name = (u.get("name_en") or u.get("name_ar") or "Staff").strip()
-                emp_role = u.get("role") or None
-                cur.execute(
-                    """INSERT INTO employees (name, role, branch_id, active, base_salary)
-                       VALUES (%s, %s, %s, TRUE, 0) RETURNING id, name, role, branch_id, active""",
-                    [emp_name, emp_role, u.get("branch_id")],
-                )
-                emp = cur.fetchone()
-                cur.execute(
-                    "UPDATE employees SET clock_code = %s WHERE id = %s",
-                    [_generate_clock_code(emp["id"], emp_name), emp["id"]],
-                )
-                cur.execute(
-                    "UPDATE users SET employee_id = %s WHERE id = %s",
-                    [emp["id"], u["id"]],
-                )
-        if not emp:
-            raise HTTPException(404, "Unknown employee code")
+            conn.rollback()
+            raise HTTPException(404, detail={"code": "unknown_code", "message": "Unknown employee code"})
         if not emp["active"]:
-            raise HTTPException(400, "Employee is inactive")
-        today = date.today()
-        now_t = datetime.now().time().replace(microsecond=0)
-        actor_id = current_user.get("id") if isinstance(current_user, dict) else getattr(current_user, "id", None)
+            raise HTTPException(400, detail={"code": "inactive", "message": "Employee is inactive"})
+        if (current_user.get("role") != "admin" and active_branch is not None and emp["branch_id"] is not None
+                and int(emp["branch_id"]) != int(active_branch)):
+            raise HTTPException(403, detail={"code": "other_branch", "message": "Employee belongs to another branch"})
+
+        at = _punch_time(body)
+        today, now_t = at.date(), at.time()
+        actor_id = current_user.get("user_id")
+        # Lock this employee's recent rows so two scans at the same moment queue up.
+        cur.execute("SELECT id FROM employees WHERE id=%s FOR UPDATE", [emp["id"]])
         cur.execute(
-            "SELECT * FROM attendance WHERE employee_id=%s AND work_date=%s FOR UPDATE",
-            [emp["id"], today],
+            """SELECT * FROM attendance WHERE employee_id=%s AND work_date BETWEEN %s AND %s
+               ORDER BY work_date DESC""",
+            [emp["id"], today - timedelta(days=1), today],
         )
-        existing = cur.fetchone()
-        if not existing:
+        rows = [dict(r) for r in cur.fetchall()]
+        last_punch = max((r["punched_at"] for r in rows if r.get("punched_at")), default=None)
+        if last_punch and abs(at - last_punch) < DUPLICATE_SCAN:
+            conn.rollback()
+            last = rows[0]
+            return {
+                "action": "duplicate",
+                "employee": {"id": emp["id"], "name": emp["name"], "role": emp["role"]},
+                "attendance": last, "time": last_punch.strftime("%H:%M"),
+            }
+
+        # An open check-in from today, or from yesterday's night shift, is closed by this scan.
+        open_row = next((r for r in rows if r["check_in"] is not None and r["check_out"] is None
+                         and timedelta(0) <= at - datetime.combine(r["work_date"], r["check_in"]) <= MAX_SHIFT), None)
+        today_row = next((r for r in rows if r["work_date"] == today), None)
+        if open_row:
+            started = datetime.combine(open_row["work_date"], open_row["check_in"])
+            hours = round((at - started).total_seconds() / 3600, 2)
             cur.execute(
-                """INSERT INTO attendance(employee_id, work_date, check_in, status, punched_by_user_id, punched_at)
-                   VALUES (%s, %s, %s, 'present', %s, now()) RETURNING *""",
-                [emp["id"], today, now_t, actor_id],
+                """UPDATE attendance SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=%s
+                   WHERE id=%s RETURNING *""",
+                [now_t, hours, actor_id, at, open_row["id"]],
             )
-            row = dict(cur.fetchone())
-            action = "check_in"
-        elif existing["check_in"] is None:
+            row, action = dict(cur.fetchone()), "check_out"
+        elif today_row and today_row["check_in"] is not None:
+            # Already checked out today: the latest scan is the real leaving time.
+            started = datetime.combine(today_row["work_date"], today_row["check_in"])
+            hours = round(max(0.0, (at - started).total_seconds() / 3600), 2)
             cur.execute(
-                """UPDATE attendance
-                      SET check_in=%s, status='present', punched_by_user_id=%s, punched_at=now()
-                    WHERE id=%s RETURNING *""",
-                [now_t, actor_id, existing["id"]],
+                """UPDATE attendance SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=%s
+                   WHERE id=%s RETURNING *""",
+                [now_t, hours, actor_id, at, today_row["id"]],
             )
-            row = dict(cur.fetchone())
-            action = "check_in"
-        elif existing["check_out"] is None:
-            hours = _calc_hours(existing["check_in"], now_t)
-            cur.execute(
-                """UPDATE attendance
-                      SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=now()
-                    WHERE id=%s RETURNING *""",
-                [now_t, hours, actor_id, existing["id"]],
-            )
-            row = dict(cur.fetchone())
-            action = "check_out"
+            row, action = dict(cur.fetchone()), "check_out_updated"
         else:
-            hours = _calc_hours(existing["check_in"], now_t)
             cur.execute(
-                """UPDATE attendance
-                      SET check_out=%s, hours=%s, punched_by_user_id=%s, punched_at=now()
-                    WHERE id=%s RETURNING *""",
-                [now_t, hours, actor_id, existing["id"]],
+                """INSERT INTO attendance (employee_id, work_date, check_in, status, punched_by_user_id, punched_at)
+                   VALUES (%s, %s, %s, 'present', %s, %s)
+                   ON CONFLICT (employee_id, work_date) DO UPDATE
+                     SET check_in=EXCLUDED.check_in, status='present', check_out=NULL, hours=NULL,
+                         punched_by_user_id=EXCLUDED.punched_by_user_id, punched_at=EXCLUDED.punched_at
+                   RETURNING *""",
+                [emp["id"], today, now_t, actor_id, at],
             )
-            row = dict(cur.fetchone())
-            action = "check_out_updated"
+            row, action = dict(cur.fetchone()), "check_in"
         conn.commit()
         return {
             "action": action,
             "employee": {"id": emp["id"], "name": emp["name"], "role": emp["role"]},
             "attendance": row,
             "time": now_t.strftime("%H:%M"),
+            "hours": float(row["hours"]) if row.get("hours") is not None else None,
         }
+    finally:
+        cur.close(); conn.close()
+
+
+@router.post("/employees/{eid}/regenerate-code")
+def regenerate_clock_code(eid: int, current_user=Depends(get_current_user)):
+    """Lost or copied card: issue a new random code; the old card stops working."""
+    _require_manage_employees(current_user)
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT id, name FROM employees WHERE id=%s", [eid])
+        emp = cur.fetchone()
+        if not emp:
+            raise HTTPException(404, "Employee not found")
+        cur.execute("UPDATE employees SET clock_code=%s WHERE id=%s RETURNING id, name, clock_code",
+                    [_generate_clock_code(eid, emp["name"]), eid])
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
     finally:
         cur.close(); conn.close()
 
@@ -430,7 +471,10 @@ def attendance_roster(current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id, name FROM employees WHERE active = TRUE ORDER BY name")
+        sql, params = "SELECT id, name FROM employees WHERE active = TRUE", []
+        if current_user.get("role") != "admin":
+            sql += " AND (branch_id IS NULL OR branch_id = %s)"; params.append(current_user.get("branch_id"))
+        cur.execute(sql + " ORDER BY name", params)
         return [dict(r) for r in cur.fetchall()]
     finally:
         cur.close(); conn.close()
@@ -479,11 +523,15 @@ def list_attendance(
         if employee_id: where.append("a.employee_id=%s"); params.append(employee_id)
         if date_from: where.append("a.work_date >= %s"); params.append(date_from)
         if date_to: where.append("a.work_date <= %s"); params.append(date_to)
+        if current_user.get("role") != "admin":
+            # Branch staff see their own branch's attendance only.
+            where.append("(e.branch_id IS NULL OR e.branch_id = %s)"); params.append(current_user.get("branch_id"))
         cur.execute(f"""
-            SELECT a.*, e.name AS employee_name
+            SELECT a.*, e.name AS employee_name, e.branch_id,
+                   (a.status = 'present' AND a.check_in IS NOT NULL AND a.check_out IS NULL) AS incomplete
             FROM attendance a JOIN employees e ON e.id = a.employee_id
             WHERE {' AND '.join(where)}
-            ORDER BY a.work_date DESC, e.name LIMIT 500
+            ORDER BY a.work_date DESC, e.name LIMIT 3000
         """, params)
         return [dict(r) for r in cur.fetchall()]
     finally:
@@ -494,9 +542,17 @@ def list_attendance(
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
     _require_record_attendance(current_user)
     hours = _calc_hours(body.check_in, body.check_out)
+    if hours is not None and hours >= 15:
+        # e.g. in 17:00 / out 09:00 typed by mistake would silently become 16 h.
+        raise HTTPException(400, "Check-out looks earlier than check-in — please check the times")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        if current_user.get('role') != 'admin':
+            cur.execute("SELECT branch_id FROM employees WHERE id=%s", [body.employee_id])
+            e = cur.fetchone()
+            if not e or (e["branch_id"] is not None and e["branch_id"] != current_user.get("branch_id")):
+                raise HTTPException(403, "Employee belongs to another branch")
         if current_user.get('role') == 'admin':
             allowed_val = body.allowed
         else:
@@ -505,15 +561,19 @@ def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)
             ex = cur.fetchone()
             allowed_val = bool(ex['allowed']) if ex and ex['allowed'] is not None else False
         cur.execute("""
-            INSERT INTO attendance(employee_id, work_date, check_in, check_out, hours, status, notes, allowed)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO attendance(employee_id, work_date, check_in, check_out, hours, status, notes, allowed,
+                                   edited_by, edited_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now())
             ON CONFLICT (employee_id, work_date) DO UPDATE SET
               check_in=EXCLUDED.check_in, check_out=EXCLUDED.check_out,
               hours=EXCLUDED.hours, status=EXCLUDED.status, notes=EXCLUDED.notes,
-              allowed=EXCLUDED.allowed
+              allowed=EXCLUDED.allowed, edited_by=EXCLUDED.edited_by, edited_at=now(),
+              -- keep what the clock recorded before the first manual change
+              clock_check_in=COALESCE(attendance.clock_check_in, attendance.check_in),
+              clock_check_out=COALESCE(attendance.clock_check_out, attendance.check_out)
             RETURNING *
         """, [body.employee_id, body.work_date, body.check_in, body.check_out,
-              hours, body.status, body.notes, allowed_val])
+              hours, body.status, body.notes, allowed_val, current_user.get("user_id")])
         row = dict(cur.fetchone()); conn.commit(); return row
     finally:
         cur.close(); conn.close()
@@ -578,11 +638,14 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        cur.execute("SELECT id, base_salary, COALESCE(hours_allowance, 0) AS hours_allowance FROM employees WHERE active=true")
+        cur.execute("SELECT id, name, base_salary, COALESCE(hours_allowance, 0) AS hours_allowance FROM employees WHERE active=true")
         emps = cur.fetchall()
         created = 0
+        incomplete = []
         for e in emps:
             stats = _attendance_payroll_stats(cur, e['id'], period_month, float(e['hours_allowance'] or 0))
+            if stats['incomplete_days']:
+                incomplete.append({"employee": e['name'], "days": stats['incomplete_days']})
             days = stats['days_worked']
             hours = stats['hours_worked']
             prorated = _prorated_base_hours(e['base_salary'], hours)
@@ -599,7 +662,9 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
                   PAYROLL_WORKING_DAYS, PAYROLL_STANDARD_MONTH_HOURS, net])
             if cur.rowcount > 0: created += 1
         conn.commit()
-        return {"created": created, "total_employees": len(emps), "period_month": period_month}
+        # Days with a check-in but no check-out are paid 0 h until HR completes them.
+        return {"created": created, "total_employees": len(emps), "period_month": period_month,
+                "incomplete": incomplete}
     finally:
         cur.close(); conn.close()
 
