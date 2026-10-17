@@ -267,6 +267,8 @@ export default function POS() {
           how_to: data.how_to || [],
           warnings: data.warnings || [],
           interactions: data.interactions || [],
+          pregnancy_caution: !!data.pregnancy_caution,
+          dose_helper: data.dose_helper || null,
           related_products: counselingRelatedOn ? (data.related_products || []) : [],
         },
       ].slice(-3))

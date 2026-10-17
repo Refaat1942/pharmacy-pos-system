@@ -301,6 +301,17 @@ export interface CounselingSuggestion {
   warnings?: string[]
   suggestions?: string[]
   interactions?: CounselingInteraction[]
+  pregnancy_caution?: boolean
+  dose_helper?: DoseHelper | null
+}
+
+export interface DoseHelper {
+  drug: 'paracetamol' | 'ibuprofen'
+  mg_per_ml: number
+  mg_per_kg: number
+  times_per_day: number
+  min_weight_kg: number
+  max_dose_mg: number
 }
 
 export interface CounselingInteraction {

@@ -1965,7 +1965,15 @@
     "add_to_cart": "Add to cart",
     "how_to": "How to take",
     "warnings": "Warnings",
-    "interaction_with": "Interaction with: {{name}}"
+    "interaction_with": "Interaction with: {{name}}",
+    "ask_pregnancy": "Ask: pregnant or breastfeeding? This medicine needs care in pregnancy",
+    "dose_title": "Child dose calculator",
+    "weight_kg": "Weight",
+    "kg": "kg",
+    "ml": "ml",
+    "dose_too_small": "Under {{kg}} kg — refer to a doctor",
+    "dose_rule_paracetamol": "15 mg/kg per dose every 4–6 h, max {{n}} times a day",
+    "dose_rule_ibuprofen": "10 mg/kg per dose every 6–8 h after food, max {{n}} times a day (from 3 months)"
   },
   "insurance": {
     "title": "Insurance Management",

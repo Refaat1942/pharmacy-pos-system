@@ -93,6 +93,24 @@ CLASS_KEYS: dict[str, list[str]] = {
     "probiotic": ["probiotic", "lacteol", "enterogermina", "بروبيوتيك", "لاكتيول"],
     "folic_acid": ["folic acid", "folicap", "فوليك"],
     "vitamin_d": ["vitamin d", "devarol", "cholecalciferol", "ديفارول", "فيتامين د"],
+    "isotretinoin": ["isotretinoin", "roaccutane", "acnotin", "isotrex gel", "روكيوتان", "أكنوتين"],
+    "valproate": ["valproate", "valproic", "depakine", "depakote", "ديباكين"],
+    "antispasmodic": ["hyoscine", "buscopan", "mebeverine", "duspatalin", "colospasmin", "spasmo", "otilonium",
+                      "spasmomen", "بسكوبان", "دوسباتالين", "كولوسبازمين"],
+    "laxative": ["lactulose", "duphalac", "bisacodyl", "dulcolax", "senna", "glycerin supp", "دوفالاك", "دولكولاكس"],
+    "acyclovir": ["acyclovir", "aciclovir", "zovirax", "valacyclovir", "valtrex", "زوفيراكس"],
+    "anthelmintic": ["mebendazole", "vermox", "albendazole", "alzental", "ivermectin", "iverzine", "فيرموكس", "ألزنتال"],
+    "ondansetron": ["ondansetron", "zofran", "danset", "زوفران"],
+    "dextromethorphan": ["dextromethorphan", "tussilar", "بلوكوف"],
+    "tretinoin_topical": ["tretinoin", "retin-a", "adapalene", "differin", "benzoyl peroxide", "acnevir", "ديفرين"],
+    "minoxidil": ["minoxidil", "regaine", "hair grow", "مينوكسيديل"],
+    "duphaston": ["dydrogesterone", "duphaston", "دوفاستون"],
+}
+
+# Classes to flag when the customer may be pregnant (ask before dispensing).
+PREGNANCY_RISK = {
+    "ace_arb", "statin", "tetracycline", "quinolone", "methotrexate", "anticoagulant", "isotretinoin",
+    "valproate", "minoxidil", "tretinoin_topical", "nsaid", "anthelmintic",
 }
 
 # class id → how to take / warnings / suggestions. Short lines; ar + en.
@@ -404,6 +422,64 @@ CLASS_TIPS: dict[str, dict[str, list[str] | list]] = {
         "how_ar": ["يفضل قبل الحمل بشهور وأول ٣ شهور"], "how_en": ["Ideally before conception and in the first trimester"], "warn_ar": [], "warn_en": [],
         "sug_ar": [], "sug_en": [], "related": [],
     },
+    "isotretinoin": {
+        "how_ar": ["مع الأكل", "مرطب للشفايف والجلد طول فترة العلاج"], "how_en": ["With food", "Lip balm and moisturiser throughout"],
+        "warn_ar": ["ممنوع تماماً في الحمل — اختبار حمل ومنع حمل أثناء العلاج وبعده بشهر", "ممنوع مع التتراسيكلين وفيتامين أ", "تحاليل دهون وكبد دورية"],
+        "warn_en": ["Absolutely not in pregnancy — test and contraception during and 1 month after", "Not with tetracyclines or vitamin A", "Regular lipid / liver tests"],
+        "sug_ar": ["مرطب شفايف", "واقي شمس"], "sug_en": ["Lip balm", "Sunscreen"], "related": ["lip", "sunscreen", "spf", "واقي شمس"],
+    },
+    "valproate": {
+        "how_ar": ["مع الأكل وفي نفس المواعيد"], "how_en": ["With food at fixed times"],
+        "warn_ar": ["خطر كبير على الجنين — السيدات في سن الإنجاب يحتاجوا منع حمل ومتابعة طبيب", "متوقفهوش فجأة"],
+        "warn_en": ["High risk to an unborn baby — women of child-bearing age need contraception and a doctor", "Do not stop suddenly"],
+        "sug_ar": [], "sug_en": [], "related": [],
+    },
+    "antispasmodic": {
+        "how_ar": ["قبل الأكل بربع ساعة (الميبيفرين)، أو عند اللزوم (البسكوبان)"], "how_en": ["15 min before meals (mebeverine) or when needed (hyoscine)"],
+        "warn_ar": ["ألم شديد مستمر أو مع حرارة أو قيء = طبيب"], "warn_en": ["Severe or persistent pain, or with fever / vomiting = see a doctor"],
+        "sug_ar": [], "sug_en": [], "related": [],
+    },
+    "laxative": {
+        "how_ar": ["اشرب ماية كتير وزوّد الألياف", "البيساكوديل بالليل والمفعول الصبح"], "how_en": ["Plenty of water and fibre", "Bisacodyl at night works by morning"],
+        "warn_ar": ["متستخدمهوش أكتر من أسبوع من غير استشارة"], "warn_en": ["Not for more than a week without advice"],
+        "sug_ar": ["ألياف"], "sug_en": ["Fibre supplement"], "related": ["fibre", "fiber", "ألياف"],
+    },
+    "acyclovir": {
+        "how_ar": ["ابدأ أول ما تظهر الأعراض", "الكريم ٥ مرات في اليوم"], "how_en": ["Start at the first sign", "Cream 5 times a day"],
+        "warn_ar": ["اشرب ماية كفاية مع الأقراص"], "warn_en": ["Drink enough water with tablets"],
+        "sug_ar": [], "sug_en": [], "related": [],
+    },
+    "anthelmintic": {
+        "how_ar": ["الأسرة كلها تتعالج في نفس الوقت", "جرعة تانية بعد أسبوعين غالباً"], "how_en": ["Treat the whole family together", "Usually a second dose after 2 weeks"],
+        "warn_ar": ["مش للأطفال تحت سنتين والحوامل من غير طبيب", "اغسل الإيد كويس وقص الضوافر"], "warn_en": ["Not under 2 years or in pregnancy without a doctor", "Wash hands and cut nails"],
+        "sug_ar": [], "sug_en": [], "related": [],
+    },
+    "ondansetron": {
+        "how_ar": ["قبل السبب (أكل/علاج) بنص ساعة، الأقراص الذايبة على اللسان"], "how_en": ["30 min before the trigger; melt tablets on the tongue"],
+        "warn_ar": ["ممكن إمساك أو صداع"], "warn_en": ["May cause constipation or headache"],
+        "sug_ar": ["محلول جفاف"], "sug_en": ["ORS"], "related": ["ors", "محلول جفاف"],
+    },
+    "dextromethorphan": {
+        "how_ar": ["للكحة الناشفة بس"], "how_en": ["For dry cough only"],
+        "warn_ar": ["مش مع الكحة اللي فيها بلغم", "حذر مع مضادات الاكتئاب"], "warn_en": ["Not for chesty cough", "Caution with antidepressants"],
+        "sug_ar": ["أقراص استحلاب", "عسل"], "sug_en": ["Lozenges", "Honey"], "related": ["lozenge", "honey", "عسل"],
+    },
+    "tretinoin_topical": {
+        "how_ar": ["طبقة رفيعة بالليل على جلد ناشف", "النتيجة بعد ٦–٨ أسابيع"], "how_en": ["Thin layer at night on dry skin", "Results after 6–8 weeks"],
+        "warn_ar": ["احمرار وتقشير أول أسابيع طبيعي", "واقي شمس الصبح ضروري", "ممنوع في الحمل"],
+        "warn_en": ["Redness and peeling in the first weeks is normal", "Sunscreen every morning", "Not in pregnancy"],
+        "sug_ar": ["واقي شمس", "مرطب خفيف"], "sug_en": ["Sunscreen", "Light moisturiser"], "related": ["sunscreen", "spf", "moistur", "واقي شمس"],
+    },
+    "minoxidil": {
+        "how_ar": ["مرتين يومياً على فروة ناشفة", "النتيجة بعد ٣–٦ شهور ولازم الاستمرار"], "how_en": ["Twice daily on a dry scalp", "Results after 3–6 months; keep using"],
+        "warn_ar": ["تساقط زيادة أول أسابيع طبيعي", "ممنوع في الحمل والرضاعة"], "warn_en": ["Extra shedding in the first weeks is normal", "Not in pregnancy or breastfeeding"],
+        "sug_ar": ["شامبو مناسب"], "sug_en": ["Suitable shampoo"], "related": ["shampoo", "شامبو"],
+    },
+    "duphaston": {
+        "how_ar": ["حسب جدول الطبيب بالظبط"], "how_en": ["Exactly per the doctor's schedule"],
+        "warn_ar": ["متوقفهوش من نفسك في الحمل"], "warn_en": ["Do not stop on your own in pregnancy"],
+        "sug_ar": ["حمض الفوليك"], "sug_en": ["Folic acid"], "related": ["folic", "فوليك"],
+    },
     "vitamin_d": {
         "how_ar": ["مع وجبة فيها دهون"], "how_en": ["With a meal that has some fat"],
         "warn_ar": ["متزودش عن الجرعة الموصوفة"], "warn_en": ["Do not exceed the prescribed dose"],
@@ -485,6 +561,12 @@ INTERACTIONS: list[tuple[str, str, str, str, str]] = [
      "Steroids raise blood sugar — monitor glucose."),
     ("beta_blocker", "salbutamol", "medium", "بعض حاصرات بيتا ممكن تضيّق الشعب — حذر مع الربو.",
      "Some beta-blockers can tighten airways — caution in asthma."),
+    ("isotretinoin", "tetracycline", "high", "الروكيوتان مع الدوكسيسيكلين/التتراسيكلين — خطر ارتفاع ضغط المخ. ممنوع.",
+     "Isotretinoin with a tetracycline — risk of raised brain pressure. Do not combine."),
+    ("dextromethorphan", "ssri", "medium", "دواء الكحة ده مع مضاد الاكتئاب — خطر متلازمة السيروتونين.",
+     "Dextromethorphan with an SSRI — serotonin-syndrome risk."),
+    ("ondansetron", "ssri", "low", "الأوندانسيترون مع مضادات الاكتئاب — راقب أعراض السيروتونين.",
+     "Ondansetron with SSRIs — watch for serotonin symptoms."),
     ("methotrexate", "nsaid", "high", "الميثوتريكسات مع مضادات الالتهاب — خطر سمية. استشر الطبيب.",
      "Methotrexate with NSAIDs — toxicity risk. Check with the doctor."),
 ]
@@ -520,7 +602,31 @@ def tips_for(classes: list[str], lang: str) -> dict[str, Any]:
                 if line not in dst:
                     dst.append(line)
         related += [r for r in t.get("related", []) if r not in related]
-    return {"how_to": how[:4], "warnings": warn[:4], "suggestions": sug[:3], "related_terms": related}
+    pregnancy = any(c in PREGNANCY_RISK for c in classes)
+    return {"how_to": how[:4], "warnings": warn[:4], "suggestions": sug[:3], "related_terms": related,
+            "pregnancy_caution": pregnancy}
+
+
+_CONC = re.compile(r"(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+)?)\s*ml", re.I)
+_IBU = ("ibuprofen", "brufen", "ايبوبروفين", "بروفين", "kidofen", "cetafen")
+
+
+def dose_helper(name_en: str, name_ar: str, classes: list[str]) -> dict | None:
+    """Weight-based child dose for paracetamol / ibuprofen liquids, from the strength
+    printed in the name (e.g. 120mg/5ml). Paracetamol 15 mg/kg up to 4 times a day;
+    ibuprofen 10 mg/kg up to 3 times a day, from 3 months / 5 kg."""
+    blob = _norm(f"{name_en} {name_ar}").translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
+    m = _CONC.search(blob)
+    if not m:
+        return None
+    mg_per_ml = float(m.group(1)) / float(m.group(2))
+    if "paracetamol" in classes:
+        return {"drug": "paracetamol", "mg_per_ml": round(mg_per_ml, 3), "mg_per_kg": 15, "times_per_day": 4,
+                "min_weight_kg": 3, "max_dose_mg": 1000}
+    if "nsaid" in classes and any(_hit(k, blob) for k in _IBU):
+        return {"drug": "ibuprofen", "mg_per_ml": round(mg_per_ml, 3), "mg_per_kg": 10, "times_per_day": 3,
+                "min_weight_kg": 5, "max_dose_mg": 400}
+    return None
 
 
 def cart_interactions(new_classes: list[str], cart: list[tuple[str, list[str]]], lang: str) -> list[dict]:
