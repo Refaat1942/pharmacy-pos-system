@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertOctagon, AlertTriangle, CheckCircle2, Lightbulb, Plus, Stethoscope, X } from 'lucide-react'
-import type { CounselingInteraction, Product } from '../lib/api'
+import type { CounselingInteraction, DoseHelper, Product } from '../lib/api'
 import i18n from '../lib/i18n'
 
 export interface CounselingTip {
@@ -13,6 +14,31 @@ export interface CounselingTip {
   how_to?: string[]
   warnings?: string[]
   interactions?: CounselingInteraction[]
+  pregnancy_caution?: boolean
+  dose_helper?: DoseHelper | null
+}
+
+/** Child weight → ml per dose for a paracetamol / ibuprofen liquid. */
+function DoseCalc({ h }: { h: DoseHelper }) {
+  const { t } = useTranslation()
+  const [kg, setKg] = useState('')
+  const w = Number(kg)
+  const mg = w > 0 ? Math.min(w * h.mg_per_kg, h.max_dose_mg) : 0
+  const ml = mg > 0 ? Math.round((mg / h.mg_per_ml) * 10) / 10 : 0
+  return (
+    <div className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5 text-xs text-violet-900">
+      <div className="font-semibold mb-1">{t('counseling.dose_title')}</div>
+      <div className="flex items-center gap-1.5">
+        <input type="number" min={0} step="0.5" value={kg} onChange={(e) => setKg(e.target.value)} placeholder={t('counseling.weight_kg') as string}
+          className="w-20 border border-violet-300 rounded px-1.5 py-0.5 bg-white" />
+        <span>{t('counseling.kg')}</span>
+        {w > 0 && (w < h.min_weight_kg
+          ? <span className="text-red-700 font-semibold">{t('counseling.dose_too_small', { kg: h.min_weight_kg })}</span>
+          : <span className="font-bold">= {ml} {t('counseling.ml')} ({Math.round(mg)} mg)</span>)}
+      </div>
+      <div className="mt-1 text-[11px] text-violet-700">{t(`counseling.dose_rule_${h.drug}`, { n: h.times_per_day })}</div>
+    </div>
+  )
 }
 
 const SEVERITY: Record<string, string> = {
@@ -75,6 +101,12 @@ export default function PosCounselingTips({
                 {it.message}
               </div>
             ))}
+            {tip.pregnancy_caution && (
+              <div className="rounded-lg bg-pink-50 border border-pink-200 text-pink-900 px-2 py-1 text-xs font-semibold">
+                🤰 {t('counseling.ask_pregnancy')}
+              </div>
+            )}
+            {tip.dose_helper && <DoseCalc h={tip.dose_helper} />}
             {(tip.how_to || []).length > 0 ? (
               <div>
                 <p className="text-[10px] font-semibold uppercase text-teal-700 mb-0.5">{t('counseling.how_to')}</p>
