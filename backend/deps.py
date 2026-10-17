@@ -8,6 +8,35 @@ from auth import verify_token
 security = HTTPBearer()
 
 
+# Role / branch / permissions / status are re-read from the database (cached briefly),
+# so deactivating, demoting or moving a user takes effect within seconds instead of
+# when their 12-hour token expires.
+_USER_TTL = 20.0
+_user_cache: dict = {}
+
+
+def _live_user(payload: dict) -> Optional[dict]:
+    import time
+    from db import get_db_connection
+    key = (payload.get("tenant_slug"), payload.get("user_id"))
+    hit = _user_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _USER_TTL:
+        return hit[1]
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT role, branch_id, permissions, COALESCE(status, 'active') FROM users WHERE id=%s",
+                    (payload.get("user_id"),))
+        row = cur.fetchone()
+    finally:
+        conn.close()
+    live = {"role": row[0], "branch_id": row[1], "permissions": row[2], "status": row[3]} if row else None
+    _user_cache[key] = (time.monotonic(), live)
+    if len(_user_cache) > 5000:
+        _user_cache.clear()
+    return live
+
+
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     payload = verify_token(token)
@@ -18,7 +47,26 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             status_code=403,
             detail="Platform admin token cannot be used for tenant endpoints",
         )
+    if payload.get("tenant_slug") and payload.get("user_id"):
+        try:
+            live = _live_user(payload)
+        except Exception:
+            live = {}  # never lock everyone out because of this check
+        if live is None or (live and live["status"] != "active"):
+            raise HTTPException(status_code=401, detail="Account is inactive or was removed")
+        if live:
+            payload = {**payload, "role": live["role"], "branch_id": live["branch_id"],
+                       "permissions": live["permissions"]}
     return payload
+
+
+def _non_admin_branch(current_user) -> int:
+    """A non-admin always works in one branch; with none assigned they get nothing
+    (None would mean "all branches" to the callers)."""
+    b = current_user.get("branch_id")
+    if b is None:
+        raise HTTPException(status_code=403, detail="No branch assigned to this user — ask an admin")
+    return b
 
 
 def requires_feature(key: str):
@@ -105,7 +153,7 @@ def get_active_branch_id(request: Request, current_user=Depends(get_current_user
         if raw in ("0", "all", "ALL"):
             return None
         return requested if requested is not None else user_branch
-    return user_branch
+    return _non_admin_branch(current_user)
 
 
 def resolve_analytics_branch(request: Request, current_user) -> Optional[int]:
@@ -115,7 +163,7 @@ def resolve_analytics_branch(request: Request, current_user) -> Optional[int]:
     Non-admins are always pinned to their branch.
     """
     if current_user.get("role") != "admin":
-        return current_user.get("branch_id")
+        return _non_admin_branch(current_user)
     raw = request.headers.get("X-Active-Branch")
     if not raw or raw in ("0", "all", "ALL"):
         return None

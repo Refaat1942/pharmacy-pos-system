@@ -100,3 +100,9 @@ export function formatReminderSchedule(
   const tm = normalizeReminderTime(time)
   return `${date} ${tm}`
 }
+
+/** YYYY-MM-DD of a date in the PC's local time (toISOString would give the UTC date:
+ *  in Cairo that is still yesterday until 2–3 am). */
+export function localIsoDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}

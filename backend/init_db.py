@@ -846,6 +846,15 @@ ALTER TABLE returns ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(64);
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
 -- How the refund was given: cash (from the drawer), card, or account (credit on the customer).
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_method VARCHAR(10);
+-- Indexes behind dashboards, reports, shifts and account balances.
+CREATE INDEX IF NOT EXISTS idx_invoices_branch_created ON invoices(branch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_invoices_created ON invoices(created_at);
+CREATE INDEX IF NOT EXISTS idx_invoices_customer_pm ON invoices(customer_id, payment_method);
+CREATE INDEX IF NOT EXISTS idx_invoices_seller_branch_created ON invoices(seller_id, branch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_returns_branch_created ON returns(branch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_returns_seller_branch_created ON returns(seller_id, branch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_return_items_invoice_item ON return_items(invoice_item_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid) WHERE client_uuid IS NOT NULL;
 -- Opening balances carried over from the old system (smart import / manual).
 -- Customers: positive = the customer owes us. Suppliers: positive = we owe the supplier.

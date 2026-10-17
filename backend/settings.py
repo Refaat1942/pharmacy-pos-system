@@ -1,3 +1,4 @@
+import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -343,6 +344,8 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
     _admin(current_user)
     if body.role not in ALLOWED_ROLES:
         raise HTTPException(400, f"Invalid role. Must be one of {sorted(ALLOWED_ROLES)}")
+    if body.role != "admin" and body.branch_id is None:
+        raise HTTPException(400, "Choose a branch for this user")
     if not body.password or len(body.password) < 4:
         raise HTTPException(400, "Password is required (min 4 chars)")
     pw = hash_password(body.password)
@@ -366,11 +369,9 @@ def create_user(body: UserIn, current_user: dict = Depends(get_current_user)):
               body.branch_id, body.salary,
               psycopg2.extras.Json(perms) if perms is not None else None))
         uid = cur.fetchone()['id']
-        cur.execute("""
-            UPDATE users
-               SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)
-             WHERE id = %s AND card_code IS NULL
-        """, (uid,))
+        # Random, not derived from id/username (those codes unlock terminals and could be guessed).
+        cur.execute("UPDATE users SET card_code = %s WHERE id = %s AND card_code IS NULL",
+                    (f"USR-{uid:04d}-{secrets.token_hex(3).upper()}", uid))
         is_delivery = body.is_delivery or body.role == "delivery"
         _sync_user_delivery_employee(
             cur, uid, body.name_en, body.name_ar, body.branch_id, is_delivery,
@@ -413,6 +414,18 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
         before = cur.fetchone()
         if not before:
             raise HTTPException(404, "User not found")
+        new_role = patch.get("role", before["role"])
+        new_branch = patch["branch_id"] if "branch_id" in patch else before["branch_id"]
+        if new_role != "admin" and new_branch is None:
+            raise HTTPException(400, "Choose a branch for this user")
+        demoting = before["role"] == "admin" and (new_role != "admin" or patch.get("status") == "inactive")
+        if demoting:
+            if int(current_user.get("user_id") or 0) == int(user_id):
+                raise HTTPException(400, "You cannot remove your own admin access")
+            cur.execute("SELECT COUNT(*) AS n FROM users WHERE role='admin' AND COALESCE(status,'active')='active' "
+                        "AND id<>%s", (user_id,))
+            if cur.fetchone()["n"] < 1:
+                raise HTTPException(400, "Cannot remove the last active admin")
         if fields:
             values.append(user_id)
             cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
@@ -437,6 +450,8 @@ def update_user(user_id: int, body: UserPatch, current_user: dict = Depends(get_
                 cur, user_id, name_en, name_ar, branch_id, is_delivery, before["employee_id"],
             )
         conn.commit()
+        from deps import _user_cache
+        _user_cache.clear()  # role / branch / status changes apply at once
         return {"ok": True}
     finally:
         cur.close()

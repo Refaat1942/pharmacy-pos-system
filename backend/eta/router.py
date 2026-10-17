@@ -237,12 +237,23 @@ def get_readiness(environment: str = "staging", current_user=Depends(get_current
         conn.close()
 
 
+def _assert_invoice_branch(cur, invoice_id: int, current_user) -> None:
+    """Non-admins only see invoices of their own branch (customer data on the document)."""
+    if current_user.get("role") == "admin":
+        return
+    cur.execute("SELECT branch_id FROM invoices WHERE id=%s", (invoice_id,))
+    row = cur.fetchone()
+    if not row or row["branch_id"] != current_user.get("branch_id"):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+
 @router.get("/invoice/{invoice_id}/receipt", dependencies=[Depends(requires_feature("eta")), Depends(requires_feature_option("eta", "receipts"))])
 def get_invoice_eta_receipt(invoice_id: int, current_user=Depends(get_current_user)):
     """QR URL and status for printing on the customer receipt."""
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        _assert_invoice_branch(cur, invoice_id, current_user)
         cur.execute("SELECT id, type FROM invoices WHERE id = %s", (invoice_id,))
         inv = cur.fetchone()
         if not inv:
@@ -280,6 +291,7 @@ def preview_invoice_document(invoice_id: int, current_user=Depends(get_current_u
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        _assert_invoice_branch(cur, invoice_id, current_user)
         creds = credentials_for_api(cur, environment="staging")
         walk_in = (creds or {}).get("walk_in") or DEFAULT_WALK_IN
         invoice, items, customer, device = load_invoice_bundle(cur, invoice_id)

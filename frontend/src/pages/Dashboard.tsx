@@ -13,13 +13,13 @@ import type {
   DashboardSummary, SalesSeriesPoint, TopProduct, TopSeller, DashboardAlerts, PnlSummary,
 } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { formatDate } from '../lib/formatDate'
+import { formatDate, localIsoDate } from '../lib/formatDate'
 import type { Branch } from '../lib/api'
 import { formatMoney, formatNumber } from '../lib/formatNumber'
 
 type Period = 'today' | 'month' | 'year'
-const todayStr = () => new Date().toISOString().slice(0, 10)
-const monthStartStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10) }
+const todayStr = () => localIsoDate()
+const monthStartStr = () => { const d = new Date(); d.setDate(1); return localIsoDate(d) }
 const yearStartStr = () => { const d = new Date(); return `${d.getFullYear()}-01-01` }
 function periodRange(p: Period): { date_from: string; date_to: string } {
   const to = todayStr()
