@@ -171,3 +171,30 @@ def resolve_analytics_branch(request: Request, current_user) -> Optional[int]:
         return int(raw)
     except ValueError:
         return None
+
+
+# Same rules as the menu (frontend/src/lib/routeAccess.ts canAccessFeature), enforced on
+# the server for actions that change stock, prices or purchases — so a user the menu
+# hides a page from can't do it by calling the API directly.
+_BRANCH_ROLE_FEATURES = {"pos", "sales", "expiry", "shifts", "hr", "transfers", "branches_stock"}
+
+
+def user_can_feature(user: dict, *features: str) -> bool:
+    role = user.get("role")
+    if role == "admin":
+        return True
+    perms = user.get("permissions")
+    for f in features:
+        if f in ("settings", "clinics"):
+            continue
+        if role == "branch" and f not in _BRANCH_ROLE_FEATURES:
+            continue
+        if isinstance(perms, list) and f not in perms:
+            continue
+        return True
+    return False
+
+
+def require_user_feature(user: dict, *features: str) -> None:
+    if not user_can_feature(user, *features):
+        raise HTTPException(status_code=403, detail="You are not allowed to do this")
