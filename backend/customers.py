@@ -670,7 +670,7 @@ def customer_statement(customer_id: int, current_user=Depends(get_current_user))
                WHERE i.customer_id=%s AND i.payment_method='account'
                      AND i.type!='return' AND i.branch_id=%s
                UNION ALL
-               SELECT 'payment' AS kind, cp.id, cp.reference, cp.paid_at AS at,
+               SELECT CASE WHEN cp.payment_method = 'return' THEN 'return' ELSE 'payment' END AS kind, cp.id, cp.reference, cp.paid_at AS at,
                       0 AS debit, cp.amount AS credit, cp.notes
                FROM customer_payments cp
                JOIN invoices i ON cp.invoice_id = i.id
@@ -685,7 +685,7 @@ def customer_statement(customer_id: int, current_user=Depends(get_current_user))
                FROM invoices
                WHERE customer_id=%s AND payment_method='account' AND type!='return'
                UNION ALL
-               SELECT 'payment' AS kind, id, reference, paid_at AS at,
+               SELECT CASE WHEN payment_method = 'return' THEN 'return' ELSE 'payment' END AS kind, id, reference, paid_at AS at,
                       0 AS debit, amount AS credit, notes
                FROM customer_payments
                WHERE customer_id=%s

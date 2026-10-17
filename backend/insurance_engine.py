@@ -250,7 +250,9 @@ def calculate_insurance_sale(
         product = products.get(pid) or {}
         qty = Decimal(str(item.get("quantity") or 0))
         unit_price = Decimal(str(item.get("unit_price") or 0))
-        line_disc = Decimal(str(item.get("discount") or 0)) + Decimal(str(item.get("offer_discount") or 0))
+        # The POS already includes the offer in `discount`; adding offer_discount again
+        # under-billed both insurer and patient. Use the larger of the two.
+        line_disc = max(Decimal(str(item.get("discount") or 0)), Decimal(str(item.get("offer_discount") or 0)))
         line_gross = max(Decimal("0"), qty * unit_price - line_disc)
         gross += line_gross
 

@@ -230,6 +230,8 @@ def reverse_loyalty_on_return(
     earned = int(inv["earned"] or 0)
     if earned > 0:
         claw = int(math.floor(earned * (return_amount / orig_net)))
+        # Points already spent can't be taken back below zero — the return still goes through.
+        claw = min(claw, max(0, get_customer_points(cur, customer_id)))
         if claw > 0:
             _record_transaction(
                 cur,

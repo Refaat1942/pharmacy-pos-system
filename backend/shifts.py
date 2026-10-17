@@ -28,13 +28,13 @@ class CloseShiftIn(BaseModel):
 
 
 def _offline_time(client_uuid: Optional[str], ts: Optional[datetime]) -> Optional[datetime]:
-    """When an offline action happened (clamped to the last 30 days, never the future)."""
+    """When an offline action happened (clamped to the last 3 days, never the future)."""
     if not client_uuid or not ts:
         return None
     if ts.tzinfo is not None:
         ts = ts.astimezone().replace(tzinfo=None)  # shifts timestamps are server-local naive
     now = datetime.now()
-    return max(now - timedelta(days=30), min(ts, now))
+    return max(now - timedelta(days=3), min(ts, now))
 
 
 def _count_pending_deliveries(cur, shift) -> int:
@@ -90,6 +90,8 @@ def _compute_expected(cur, shift) -> dict:
 
     cur.execute("""
         SELECT COALESCE(SUM(total_returned), 0)::float AS returns_value,
+               COALESCE(SUM(total_returned) FILTER (WHERE COALESCE(refund_method, 'cash') = 'cash'), 0)::float
+                 AS cash_refunds,
                COUNT(*)::int AS returns_count
         FROM returns
         WHERE seller_id = %s AND branch_id = %s
@@ -98,7 +100,8 @@ def _compute_expected(cur, shift) -> dict:
     rets = dict(cur.fetchone())
 
     cash_in = sales['cash_collected'] - sales['cash_change']
-    expected_cash = float(shift['opening_cash']) + cash_in - rets['returns_value']
+    # Card and on-account refunds don't leave the drawer.
+    expected_cash = float(shift['opening_cash']) + cash_in - rets['cash_refunds']
     return {
         **sales,
         **rets,

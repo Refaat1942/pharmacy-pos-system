@@ -147,13 +147,19 @@ def apply_offers_to_cart(
     return enriched, used_offer_ids, total_savings
 
 
-def active_offer_product_ids(cur) -> set[int]:
-    """Product IDs in any active promotional offer group."""
+def active_offer_product_ids(cur, branch_id: int | None = None) -> set[int]:
+    """Product IDs in a promotional offer running today (and for this branch) — the
+    same rule the POS uses to show offers, so an expired offer never blocks a
+    manual discount at checkout."""
+    from datetime import date
+    from offers import _branch_ok, _date_ok
     cur.execute(
         """
-        SELECT DISTINCT pop.product_id
+        SELECT o.id, o.valid_from, o.valid_to, o.branch_ids, pop.product_id
         FROM promo_offer_products pop
         JOIN promo_offers o ON o.id = pop.offer_id AND o.active = true
         """
     )
-    return {int(r["product_id"]) for r in cur.fetchall()}
+    today = date.today()
+    return {int(r["product_id"]) for r in cur.fetchall()
+            if _date_ok(r, today) and _branch_ok(r, branch_id)}

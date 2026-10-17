@@ -1464,7 +1464,8 @@
     "col_region": "المنطقة",
     "col_address_details": "تفاصيل العنوان",
     "address_details_placeholder": "الشارع، رقم العقار، الشقة…",
-    "bulk_upload": "استيراد من برنامج قديم"
+    "bulk_upload": "استيراد من برنامج قديم",
+    "kind_opening": "رصيد افتتاحي"
   },
   "purchases": {
     "title": "أوامر الشراء",
@@ -1651,7 +1652,9 @@
     "staff_note_placeholder": "أضف ملاحظة عن هذا العميل…",
     "staff_note_delete_confirm": "حذف هذه الملاحظة؟",
     "whatsapp_chat": "واتساب",
-    "whatsapp_open": "فتح محادثة واتساب"
+    "whatsapp_open": "فتح محادثة واتساب",
+    "kind_opening": "رصيد افتتاحي",
+    "kind_return": "مرتجع (لصالح العميل)"
   },
   "dashboard": {
     "title": "لوحة التحكم التشغيلية",
