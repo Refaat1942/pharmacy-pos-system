@@ -13,12 +13,13 @@ import i18n from '../lib/i18n'
 import PhoneField from '../components/PhoneField'
 import { isValidPhone } from '../lib/phone'
 import DateInput from '../components/DateInput'
+import { LeavesTab, AdvancesTab } from '../components/HrLeavesAdvances'
 
 type Employee = {
   id: number; name: string; role: string | null; branch_id: number | null
   base_salary: number; hire_date: string | null; phone: string | null
   national_id: string | null; active: boolean; notes: string | null
-  clock_code: string | null; hours_allowance: number | null
+  clock_code: string | null; hours_allowance: number | null; annual_leave_days?: number | null
   branch_name_en?: string; branch_name_ar?: string
 }
 type Att = { id: number; employee_id: number; employee_name: string; work_date: string; check_in: string | null; check_out: string | null; hours: number | null; status: string; notes: string | null; allowed: boolean }
@@ -30,6 +31,7 @@ type Slip = {
   absent_days: number; leave_days: number
   standard_days: number | null; standard_hours: number | null
   net_amount: number; status: 'draft'|'paid'; paid_at: string | null; notes: string | null
+  advance_deduction?: number | null
   employee_phone?: string | null; employee_national_id?: string | null
   employee_hire_date?: string | null; branch_name_en?: string | null; branch_name_ar?: string | null
 }
@@ -48,7 +50,7 @@ type PayslipDetail = {
     absent_days: number; leave_days: number
   }
   earnings: { base_salary: number; prorated_base: number; bonus: number }
-  deductions_detail: { penalties: number; other_deductions: number; total_deductions: number }
+  deductions_detail: { penalties: number; other_deductions: number; advances?: number; total_deductions: number }
   net_amount: number
 }
 type Branch = { id: number; name_en: string; name_ar: string }
@@ -64,7 +66,7 @@ const slipProrated = (s: Slip) => {
   const hrs = s.hours_worked != null ? Number(s.hours_worked) : Number(s.days_worked || 0) * 8
   return Math.round(Number(s.base_salary || 0) * hrs / STANDARD_MONTH_HOURS * 100) / 100
 }
-const slipNetPreview = (s: Slip) => slipProrated(s) + Number(s.bonus || 0) - Number(s.penalties || 0) - Number(s.deductions || 0)
+const slipNetPreview = (s: Slip) => slipProrated(s) + Number(s.bonus || 0) - Number(s.penalties || 0) - Number(s.deductions || 0) - Number(s.advance_deduction || 0)
 // Local date (toISOString is UTC: between midnight and 3 am Cairo it gave yesterday).
 const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const today = () => localISO(new Date())
@@ -78,15 +80,17 @@ export default function HR() {
     () => allowedHrTabs(user).filter((tab) => hrTabEnabled(tab, hasFeatureOption)),
     [user, hasFeatureOption],
   )
-  const [tab, setTab] = useState<'employees' | 'attendance' | 'payroll' | 'performance'>(
-    () => allowedTabs[0] ?? 'attendance',
-  )
+  type Tab = 'employees' | 'attendance' | 'leaves' | 'payroll' | 'advances' | 'performance'
+  // Leaves go with attendance and advances with payroll (same permission).
+  const visibleTabs = useMemo(() => allowedTabs.flatMap((k): Tab[] =>
+    k === 'attendance' ? ['attendance', 'leaves'] : k === 'payroll' ? ['payroll', 'advances'] : [k]), [allowedTabs])
+  const [tab, setTab] = useState<Tab>(() => visibleTabs[0] ?? 'attendance')
 
   useEffect(() => {
-    if (!allowedTabs.includes(tab)) {
-      setTab(allowedTabs[0] ?? 'attendance')
+    if (!visibleTabs.includes(tab)) {
+      setTab(visibleTabs[0] ?? 'attendance')
     }
-  }, [allowedTabs, tab])
+  }, [visibleTabs, tab])
 
   if (!canAccessHr(user)) {
     return (
@@ -118,7 +122,7 @@ export default function HR() {
         </div>
 
         <div className="flex gap-1 border-b border-slate-200">
-          {allowedTabs.map((k) => (
+          {visibleTabs.map((k) => (
             <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? 'border-pharma-600 text-pharma-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               {t(`hr.tab_${k}`)}
             </button>
@@ -130,6 +134,12 @@ export default function HR() {
         )}
         {tab === 'attendance' && (
           hasHrTab(user, 'attendance') ? <AttendanceTab /> : <HrUnauthorized />
+        )}
+        {tab === 'leaves' && (
+          hasHrTab(user, 'attendance') ? <LeavesTab /> : <HrUnauthorized />
+        )}
+        {tab === 'advances' && (
+          hasHrTab(user, 'payroll') ? <AdvancesTab /> : <HrUnauthorized />
         )}
         {tab === 'payroll' && (
           hasHrTab(user, 'payroll') ? <PayrollTab /> : <HrUnauthorized />
@@ -167,6 +177,7 @@ function EmployeesTab() {
         phone: editing.phone || null, national_id: editing.national_id || null,
         notes: editing.notes || null, active: editing.active !== false,
         hours_allowance: editing.hours_allowance || 0,
+        annual_leave_days: editing.annual_leave_days ?? null,
       }
       if (editing.id) await api.put(`/hr/employees/${editing.id}`, body)
       else await api.post('/hr/employees', body)
@@ -292,6 +303,7 @@ function EmployeesTab() {
             </Field>
             <Field label={t('hr.base_salary')}><input type="number" className="input w-full" value={editing.base_salary ?? 0} onChange={(e) => setEditing({ ...editing, base_salary: Number(e.target.value) })} /></Field>
             <Field label={t('hr.hours_allowance')}><input type="number" step="0.25" min="0" className="input w-full" value={editing.hours_allowance ?? 0} onChange={(e) => setEditing({ ...editing, hours_allowance: Number(e.target.value) })} /><div className="text-[11px] text-slate-400 mt-1">{t('hr.hours_allowance_hint')}</div></Field>
+            <Field label={t('hr.annual_leave_days')}><input type="number" min="0" max="60" className="input w-full" value={editing.annual_leave_days ?? 21} onChange={(e) => setEditing({ ...editing, annual_leave_days: Number(e.target.value) })} /><div className="text-[11px] text-slate-400 mt-1">{t('hr.annual_leave_hint')}</div></Field>
             <Field label={t('hr.hire_date')}><DateInput className="input w-full" value={editing.hire_date || ''} onChange={(v) => setEditing({ ...editing, hire_date: v })} /></Field>
             <Field label={t('hr.phone')}><PhoneField className="input w-full" value={editing.phone || ''} onChange={(v) => setEditing({ ...editing, phone: v })} /></Field>
             <Field label={t('hr.national_id')}><input className="input w-full" value={editing.national_id || ''} onChange={(e) => setEditing({ ...editing, national_id: e.target.value })} /></Field>
@@ -640,7 +652,10 @@ function PayrollTab() {
                 <td className="px-3 py-2.5 text-end font-mono">{fmt(r.base_salary)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-emerald-700">{fmt(r.bonus)}</td>
                 <td className="px-3 py-2.5 text-end font-mono text-orange-600">{fmt(r.penalties ?? 0)}</td>
-                <td className="px-3 py-2.5 text-end font-mono text-red-600">{fmt(r.deductions)}</td>
+                <td className="px-3 py-2.5 text-end font-mono text-red-600">
+                  {fmt(r.deductions)}
+                  {Number(r.advance_deduction || 0) > 0 && <div className="text-[10px] text-rose-700">{t('hr.advance_short')}: {fmt(r.advance_deduction)}</div>}
+                </td>
                 <td className="px-3 py-2.5 text-end font-mono font-bold">{fmt(r.net_amount)}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{t(`hr.slip_${r.status}`)}</span>
@@ -676,6 +691,9 @@ function PayrollTab() {
             <Field label={t('hr.bonus')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.bonus} onChange={(e) => setEditing({ ...editing, bonus: Number(e.target.value) })} /></Field>
             <Field label={t('hr.penalties')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.penalties ?? 0} onChange={(e) => setEditing({ ...editing, penalties: Number(e.target.value) })} /></Field>
             <Field label={t('hr.deductions')}><input type="number" min={0} step="0.01" className="input w-full" value={editing.deductions} onChange={(e) => setEditing({ ...editing, deductions: Number(e.target.value) })} /></Field>
+            {Number(editing.advance_deduction || 0) > 0 && (
+              <div className="text-xs text-rose-700 bg-rose-50 rounded-lg p-2">{t('hr.advance_installment')}: <span className="font-mono font-semibold">{fmt(editing.advance_deduction)}</span></div>
+            )}
             <Field label={t('common.notes')}><textarea className="input w-full" rows={2} value={editing.notes || ''} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></Field>
             <div className="bg-slate-50 rounded-lg p-2 text-sm flex justify-between">
               <span>{t('hr.net_amount')}</span>
@@ -953,6 +971,9 @@ function PayslipPrintModal({ slipId, onClose }: { slipId: number; onClose: () =>
                     <tr className="border-t"><td className="px-3 py-2 text-emerald-700">{t('hr.bonus')}</td><td className="px-3 py-2 text-end font-mono text-emerald-700">+ {fmt(data.earnings.bonus)}</td></tr>
                     <tr className="border-t"><td className="px-3 py-2 text-orange-700">{t('hr.penalties')}</td><td className="px-3 py-2 text-end font-mono text-orange-700">− {fmt(data.deductions_detail.penalties)}</td></tr>
                     <tr className="border-t"><td className="px-3 py-2 text-red-700">{t('hr.deductions')}</td><td className="px-3 py-2 text-end font-mono text-red-700">− {fmt(data.deductions_detail.other_deductions)}</td></tr>
+                    {Number(data.deductions_detail.advances || 0) > 0 && (
+                      <tr className="border-t"><td className="px-3 py-2 text-rose-700">{t('hr.advance_installment')}</td><td className="px-3 py-2 text-end font-mono text-rose-700">− {fmt(data.deductions_detail.advances)}</td></tr>
+                    )}
                     <tr className="border-t bg-pharma-50"><td className="px-3 py-2 font-bold">{t('hr.net_amount')}</td><td className="px-3 py-2 text-end font-mono font-bold text-pharma-800 text-base">{fmt(data.net_amount)}</td></tr>
                   </tbody>
                 </table>

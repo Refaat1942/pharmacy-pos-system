@@ -343,7 +343,13 @@
     "incomplete_warning": "These days have a check-in without a check-out and are paid 0 hours until you complete them in Attendance:",
     "monthly_sheet": "Monthly sheet {{month}}",
     "monthly_sheet_hint": "Excel: every employee × every day of the month, with totals",
-    "export_failed": "Export failed"
+    "export_failed": "Export failed",
+    "tab_leaves": "Leaves",
+    "tab_advances": "Advances",
+    "annual_leave_days": "Annual leave (days)",
+    "annual_leave_hint": "21 days by labour law; 30 after 10 years of service or age 50",
+    "advance_short": "Advance",
+    "advance_installment": "Advance installment"
   },
   "clock": {
     "title": "Employee Time Clock",
@@ -2196,5 +2202,43 @@
     "unit_pack": "Box",
     "unit_mid": "Strip",
     "unit_sub": "Unit"
+  },
+  "hr_leaves": {
+    "year": "Year",
+    "new": "New leave",
+    "entitlement": "Entitled",
+    "used": "Used",
+    "remaining": "Left",
+    "type": "Type",
+    "from": "From",
+    "to": "To",
+    "days": "Days",
+    "empty": "No leaves",
+    "type_annual": "Annual",
+    "type_casual": "Casual",
+    "type_sick": "Sick",
+    "type_unpaid": "Unpaid",
+    "cancel": "Cancel leave",
+    "cancel_confirm": "Cancel this leave? Its days are removed from attendance.",
+    "paid_hint": "Paid — counts as a full day in payroll",
+    "unpaid_hint": "Unpaid — not paid in payroll",
+    "skipped": "Days the employee actually worked were kept as work: {{days}}"
+  },
+  "hr_advances": {
+    "new": "New advance",
+    "outstanding": "Outstanding advances",
+    "open_count": "{{n}} open",
+    "date": "Date",
+    "amount": "Amount",
+    "installments": "Installments",
+    "installment": "Monthly installment",
+    "repaid": "Repaid",
+    "remaining": "Left",
+    "settled": "Settled",
+    "per_month": "per month",
+    "empty": "No advances",
+    "cancel": "Cancel advance",
+    "cancel_confirm": "Cancel this advance? Installments on unpaid slips are released.",
+    "hint": "The installment is deducted automatically when payroll is generated for the month, never more than the net salary."
   }
 }
