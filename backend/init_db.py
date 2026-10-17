@@ -534,6 +534,8 @@ ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS show_barcode   BOOLEAN DEF
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_morning_start TIME DEFAULT '06:00';
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_evening_start TIME DEFAULT '14:00';
 ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS shift_night_start   TIME DEFAULT '22:00';
+-- Max discount % for non-admin users at the till (NULL = no limit).
+ALTER TABLE pharmacy_profile ADD COLUMN IF NOT EXISTS max_discount_pct NUMERIC(5,2);
 
 -- Employee clock code for QR/barcode self-service attendance
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS clock_code VARCHAR(40);
