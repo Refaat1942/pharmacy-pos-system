@@ -1175,6 +1175,9 @@ def create_sale(req: SaleRequest,
                 else:
                     visa_amount_val = account_paid_now
             credit_portion = net_total - account_paid_now
+            # Two tills selling on account to the same customer at once must not both
+            # pass the limit: hold the customer row until this sale commits.
+            cur.execute("SELECT id FROM customers WHERE id=%s FOR UPDATE", (account_customer_id,))
             # Compute current balance
             cur.execute(
                 """SELECT COALESCE(SUM(net_total),0) AS charged FROM invoices

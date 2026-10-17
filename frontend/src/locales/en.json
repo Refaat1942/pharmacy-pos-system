@@ -246,7 +246,12 @@
     "match": "Match",
     "cash_refunds": "Refunds paid from the drawer",
     "debt_cash": "Customer debt collected (cash)",
-    "debt_card": "Customer debt collected (card)"
+    "debt_card": "Customer debt collected (card)",
+    "outside_banner": "{{n}} invoice(s) outside any shift in the last 30 days — total {{total}}",
+    "outside_hint": "Usually made offline while no shift was open, so they are in no drawer count. Check them with the cashier.",
+    "outside_show": "Show invoices",
+    "outside_hide": "Hide",
+    "outside_offline": "offline"
   },
   "hr": {
     "title": "HR & Payroll",
