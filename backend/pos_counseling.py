@@ -7,6 +7,7 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from counseling_kb import cart_interactions, classes_for, tips_for
 from counseling_knowledge import build_counseling_message, match_counseling_rule
 from db import get_db_connection
 from deps import get_active_branch_id, get_current_user, requires_feature, requires_feature_option
@@ -50,12 +51,23 @@ def suggest_counseling(
         if not product:
             return {"active": False}
 
-        rule = match_counseling_rule(
-            product.get("name_en") or "",
-            product.get("name_ar") or "",
-            product.get("category"),
-        )
-        if not rule:
+        name_en, name_ar = product.get("name_en") or "", product.get("name_ar") or ""
+        classes = classes_for(name_en, name_ar, product.get("category"))
+        rule = match_counseling_rule(name_en, name_ar, product.get("category"))
+        tips = tips_for(classes, lang)
+
+        # What is already in the cart, for interaction / duplicate checks.
+        interactions: list[dict] = []
+        others = [i for i in (body.cart_product_ids or []) if i != body.product_id]
+        if classes and others:
+            cur.execute("SELECT id, name_en, name_ar, category FROM products WHERE id = ANY(%s)", (others,))
+            cart = []
+            for r in cur.fetchall():
+                cname = (r.get("name_ar") if lang == "ar" else r.get("name_en")) or r.get("name_en") or ""
+                cart.append((cname, classes_for(r.get("name_en") or "", r.get("name_ar") or "", r.get("category"))))
+            interactions = cart_interactions(classes, cart, lang)
+
+        if not rule and not classes:
             return {
                 "active": True,
                 "matched": False,
@@ -63,11 +75,21 @@ def suggest_counseling(
                 "product_name": product.get("name_ar") if lang == "ar" else product.get("name_en"),
             }
 
-        msg = build_counseling_message(rule, lang)
+        msg = build_counseling_message(rule, lang) if rule else {
+            "rule_id": classes[0], "advice": " · ".join(tips["how_to"][:2]), "suggest": " · ".join(tips["suggestions"]),
+        }
+        if classes:
+            # Drug-level points replace the broad category text.
+            msg["advice"] = " · ".join(tips["how_to"][:2]) or msg["advice"]
+            if tips["suggestions"]:
+                msg["suggest"] = ("اقترح: " if lang == "ar" else "Suggest: ") + "، ".join(tips["suggestions"])
+            elif rule:
+                msg["suggest"] = ""
         exclude = set(body.cart_product_ids or []) | {body.product_id}
         related: list[dict] = []
         seen: set[int] = set()
-        for term in rule.get("related_terms", [])[:8]:
+        terms = tips["related_terms"] + [t for t in (rule or {}).get("related_terms", []) if t not in tips["related_terms"]]
+        for term in terms[:10]:
             if len(related) >= 4:
                 break
             term = (term or "").strip()
@@ -107,6 +129,11 @@ def suggest_counseling(
             "rule_id": msg["rule_id"],
             "advice": msg["advice"],
             "suggest": msg["suggest"],
+            "classes": classes,
+            "how_to": tips["how_to"],
+            "warnings": tips["warnings"],
+            "suggestions": tips["suggestions"],
+            "interactions": interactions,
             "related_products": related,
             "lang": lang,
         }

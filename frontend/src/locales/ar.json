@@ -1943,7 +1943,10 @@
   "counseling": {
     "banner_title": "نصيحة للصيدلي",
     "related_items": "يمكنك أيضاً اقتراح",
-    "add_to_cart": "أضف للسلة"
+    "add_to_cart": "أضف للسلة",
+    "how_to": "طريقة الاستخدام",
+    "warnings": "تنبيهات",
+    "interaction_with": "تداخل مع: {{name}}"
   },
   "insurance": {
     "title": "إدارة التأمين",

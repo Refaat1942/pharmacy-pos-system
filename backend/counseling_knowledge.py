@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+
+from counseling_kb import _hit
 from typing import Any
 
 # Each rule: match product name/category keywords → advice + related inventory search terms.
@@ -172,11 +174,12 @@ def match_counseling_rule(
     best_score = 0
     for rule in COUNSELING_RULES:
         score = 0
+        # Whole words for Latin keys: "flu" must not match "fluconazole".
         for k in rule.get("keys", []):
-            if _norm(k) in blob:
+            if _hit(k, blob):
                 score += 2
         for c in rule.get("categories", []):
-            if _norm(c) in blob:
+            if _hit(c, blob):
                 score += 1
         if score > best_score:
             best_score = score
