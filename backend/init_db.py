@@ -605,6 +605,26 @@ ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS discount_pct DECIMAL(6
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS vat_pct      DECIMAL(6,2) DEFAULT 0;
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS public_price DECIMAL(12,2);
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS sales_tax DECIMAL(12,4) DEFAULT 0;
+-- One-time data fixes, applied once per pharmacy.
+CREATE TABLE IF NOT EXISTS schema_fixes (key VARCHAR(80) PRIMARY KEY, applied_at TIMESTAMP DEFAULT now());
+-- Fix 2026-10: the purchase screen sent the lines' sales tax as invoice tax and the
+-- server added it again, so totals (and supplier balances) carried the sales tax twice.
+-- Remove the second copy from POs whose stored tax still contains it.
+DO $fix$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_fixes WHERE key = 'po_double_sales_tax') THEN
+    UPDATE purchase_orders po
+       SET tax = po.tax - v.vat, total = po.total - v.vat
+      FROM (SELECT po_id, SUM(quantity * COALESCE(sales_tax, 0)) AS vat
+              FROM purchase_order_items GROUP BY po_id
+            HAVING SUM(quantity * COALESCE(sales_tax, 0)) > 0) v
+     WHERE po.id = v.po_id AND po.status IN ('draft', 'received')
+       AND po.tax >= 2 * v.vat - 0.01
+       AND ABS(po.total - (po.subtotal - po.discount + po.tax)) < 0.05;
+    INSERT INTO schema_fixes (key) VALUES ('po_double_sales_tax');
+  END IF;
+END
+$fix$;
 -- Free goods on a supplier line (e.g. 10 + 2 bonus). Was read/written by purchasing
 -- but never created, so every PO failed on schemas built from this file.
 ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS bonus_qty INTEGER DEFAULT 0;

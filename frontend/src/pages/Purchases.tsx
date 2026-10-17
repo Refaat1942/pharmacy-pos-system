@@ -515,7 +515,9 @@ function CreatePOModal({
         supplier_invoice_number: invNum || undefined,
         supplier_invoice_date: invDate || undefined,
         discount: invoiceDiscount,
-        tax: totalSalesTax + invoiceExtraTax,
+        // Line sales tax is added by the server from the lines; send only the extra charges
+        // (sending both counted the sales tax twice in the invoice total and supplier balance).
+        tax: invoiceExtraTax,
         notes: notes || undefined,
         receive_immediately: receiveImmediately,
         items: flat.map((i) => {
