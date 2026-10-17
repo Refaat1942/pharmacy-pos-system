@@ -1036,6 +1036,7 @@ interface PharmacyProfile {
   shift_morning_start: string
   shift_evening_start: string
   shift_night_start: string
+  max_discount_pct: number | null
   dose_label_presets: { id: string; text_en: string; text_ar: string }[]
   pos_quick_items: number[]
 }
@@ -1049,6 +1050,7 @@ const EMPTY_PROFILE: PharmacyProfile = {
   show_logo: true, show_pharmacy_name: true, show_pharmacy_name_on_labels: true, show_tax_id: true, show_seller: true, show_customer: true,
   show_sale_type: true, show_branch: true, show_date: true, show_time: true, show_barcode: true,
   shift_morning_start: '06:00', shift_evening_start: '14:00', shift_night_start: '22:00',
+  max_discount_pct: null,
   dose_label_presets: [],
   pos_quick_items: [],
 }
@@ -1073,6 +1075,7 @@ function PharmacyTab() {
         }
         if (!Array.isArray(d.dose_label_presets)) d.dose_label_presets = []
         if (!Array.isArray(d.pos_quick_items)) d.pos_quick_items = []
+        d.max_discount_pct = d.max_discount_pct == null ? null : Number(d.max_discount_pct)
         setP({ ...EMPTY_PROFILE, ...d })
       })
       .catch(() => {})
@@ -1237,6 +1240,19 @@ function PharmacyTab() {
             <Field label={t('settings.pharma.shift_night_start')}>
               <input type="time" value={p.shift_night_start} onChange={(e) => set('shift_night_start', e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </Field>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5">
+          <h3 className="font-semibold text-slate-800 mb-1">{t('settings.pharma.max_discount_title')}</h3>
+          <p className="text-xs text-slate-500 mb-3">{t('settings.pharma.max_discount_hint')}</p>
+          <div className="flex items-center gap-2 max-w-xs">
+            <input type="number" min={0} max={100} step={0.5}
+              value={p.max_discount_pct ?? ''}
+              placeholder={t('settings.pharma.max_discount_none') as string}
+              onChange={(e) => set('max_discount_pct', e.target.value === '' ? null : Math.min(100, Math.max(0, Number(e.target.value))))}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            <span className="text-sm text-slate-500">%</span>
           </div>
         </div>
 

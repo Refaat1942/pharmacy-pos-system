@@ -61,6 +61,8 @@ class ProfilePatch(BaseModel):
     dose_label_presets: Optional[List[dict]] = None
     pos_quick_items: Optional[List[int]] = None
     label_print_settings: Optional[dict] = None
+    # Max discount % a non-admin may give on a sale (None = no limit).
+    max_discount_pct: Optional[float] = None
 
 
 def _ensure_profile_row(cur):
@@ -119,6 +121,8 @@ def update_profile(body: ProfilePatch, current_user: dict = Depends(get_current_
         if not re.fullmatch(r"#[0-9A-Fa-f]{6}", data["receipt_accent"]):
             raise HTTPException(400, "receipt_accent must be a 6-digit hex color like #0EA5E9")
 
+    if data.get("max_discount_pct") is not None and not 0 <= float(data["max_discount_pct"]) <= 100:
+        raise HTTPException(400, "max_discount_pct must be between 0 and 100")
     import re as _re
     for k in ("shift_morning_start", "shift_evening_start", "shift_night_start"):
         if k in data and data[k]:

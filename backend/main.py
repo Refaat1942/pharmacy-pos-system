@@ -908,6 +908,19 @@ class InvoiceItemInput(BaseModel):
     dose_text: Optional[str] = None
 
 
+def _list_unit_price(prod: dict, line_pack: int) -> float:
+    """Shelf price of one sold unit (box / strip / tablet) from the product card."""
+    pack = max(1, int(prod.get("pack_size") or 1))
+    price = float(prod.get("price") or 0)
+    if line_pack >= pack:
+        return price
+    if line_pack == 1 and prod.get("sub_price"):
+        return float(prod["sub_price"])
+    if prod.get("mid_price") and int(prod.get("mid_size") or 0) == line_pack:
+        return float(prod["mid_price"])
+    return price * line_pack / pack
+
+
 def _line_discount(item: "InvoiceItemInput") -> float:
     """Line discount (manual + offer, sent together in `discount`), within 0 … line value."""
     return round(min(max(float(item.discount or 0), 0.0), item.quantity * item.unit_price), 2)
@@ -1366,6 +1379,11 @@ def create_sale(req: SaleRequest,
                 (datetime.now(), seller_id, prescription_id, branch_id),
             )
 
+        # For the cashier discount limit: list value of the cart and how much of it was
+        # given away by hand (manual line/invoice discounts + prices typed below list;
+        # promotional offers don't count).
+        list_value = 0.0
+        manual_given = float(invoice_discount or 0) if req.type != "insurance" else 0.0
         for item in req.items:
             if item.quantity <= 0:
                 raise HTTPException(status_code=400, detail=f"Invalid quantity for product {item.product_id}")
@@ -1374,7 +1392,8 @@ def create_sale(req: SaleRequest,
             cur.execute(
                 """SELECT name_ar, name_en, barcode, stock, branch_id, active,
                           unit, sub_unit, COALESCE(pack_size,1) AS pack_size, mid_unit, mid_size,
-                          COALESCE(NULLIF(avg_cost, 0), NULLIF(cost, 0), 0) AS box_cost
+                          COALESCE(NULLIF(avg_cost, 0), NULLIF(cost, 0), 0) AS box_cost,
+                          price, sub_price, mid_price
                    FROM products WHERE id=%s FOR UPDATE""",
                 (item.product_id,),
             )
@@ -1394,6 +1413,11 @@ def create_sale(req: SaleRequest,
             unit_label = _unit_label(prod, item.unit_type)
             offer_disc = float(item.offer_discount or 0)
             line_discount = _line_discount(item)
+            list_unit = _list_unit_price(prod, line_pack)
+            if list_unit > 0:
+                list_value += list_unit * item.quantity
+                manual_given += max(0.0, list_unit - float(item.unit_price)) * item.quantity
+            manual_given += max(0.0, line_discount - offer_disc)
             if int(item.product_id) in offer_product_ids:
                 if line_discount > offer_disc + 0.009:
                     raise HTTPException(
@@ -1428,6 +1452,16 @@ def create_sale(req: SaleRequest,
                 reason=f"Sale {invoice_number} ({item.quantity} {unit_label})",
                 user_id=seller_id,
             )
+
+        if (req.type not in ("return", "insurance") and offline_at is None
+                and current_user.get("role") != "admin" and list_value > 0):
+            cur.execute("SELECT max_discount_pct FROM pharmacy_profile WHERE id=1")
+            lim = (cur.fetchone() or {}).get("max_discount_pct")
+            if lim is not None and manual_given / list_value * 100 > float(lim) + 0.01:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Discount is above the {float(lim):g}% allowed for your role — ask the manager",
+                )
 
         if req.type != "return" and invoice_customer_id and (loyalty_points_earned or loyalty_points_redeemed):
             from loyalty_engine import apply_sale_loyalty
