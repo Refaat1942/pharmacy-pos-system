@@ -1,11 +1,14 @@
 """Clinic prescription portal — admin clinic management, POS prescription
 inbox, and public (no-auth) endpoints used by the clinic link."""
 import secrets
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends, Request
+from pydantic import BaseModel, Field
 import psycopg2.extras
 
 from db import get_db_connection
@@ -214,19 +217,63 @@ def update_prescription_status(prescription_id: int, status: str,
 # ─── PUBLIC: clinic portal (no auth; tenant slug + token in the URL) ──────────
 
 class PublicRxItem(BaseModel):
-    medicine_name: str
-    quantity: int = 1
-    dose: Optional[str] = None
-    note: Optional[str] = None
+    medicine_name: str = Field(max_length=200)
+    quantity: int = Field(1, ge=1, le=1000)
+    dose: Optional[str] = Field(None, max_length=200)
+    note: Optional[str] = Field(None, max_length=500)
 
 
 class PublicRxIn(BaseModel):
     branch_id: int
-    patient_name: Optional[str] = None
-    patient_phone: Optional[str] = None
-    doctor_name: Optional[str] = None
-    notes: Optional[str] = None
-    items: List[PublicRxItem]
+    patient_name: Optional[str] = Field(None, max_length=150)
+    patient_phone: Optional[str] = Field(None, max_length=40)
+    doctor_name: Optional[str] = Field(None, max_length=150)
+    notes: Optional[str] = Field(None, max_length=1000)
+    items: List[PublicRxItem] = Field(max_length=50)
+
+
+# The portal needs no login, so it is rate limited: link guessing per IP, searches
+# per IP, and prescriptions per clinic link (in-memory sliding windows).
+_HITS: dict = defaultdict(deque)
+_HITS_LOCK = threading.Lock()
+
+
+def _rate(key: str, limit: int, window: float) -> None:
+    now = time.time()
+    with _HITS_LOCK:
+        q = _HITS[key]
+        while q and now - q[0] > window:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(status_code=429, detail="Too many requests — please wait a few minutes")
+        q.append(now)
+
+
+def _ip(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
+    # Behind the local nginx the real client is the LAST forwarded address (nginx
+    # appends it); earlier entries are whatever the client sent and can be faked.
+    if peer in ("127.0.0.1", "::1", "localhost"):
+        fwd = [x.strip() for x in (request.headers.get("x-forwarded-for") or "").split(",") if x.strip()]
+        if fwd:
+            return fwd[-1]
+    return peer
+
+
+def _resolve_limited(request: Request, slug: str, token: str):
+    ip = _ip(request)
+    with _HITS_LOCK:
+        bad = _HITS[f"bad:{ip}"]
+        while bad and time.time() - bad[0] > 600:
+            bad.popleft()
+        if len(bad) >= 20:
+            raise HTTPException(status_code=429, detail="Too many requests — please wait a few minutes")
+    try:
+        return _resolve_clinic(slug, token)
+    except HTTPException:
+        with _HITS_LOCK:
+            _HITS[f"bad:{ip}"].append(time.time())
+        raise
 
 
 def _resolve_clinic(slug: str, token: str):
@@ -254,8 +301,9 @@ def _resolve_clinic(slug: str, token: str):
 
 
 @router.get("/clinic/{slug}/{token}")
-def clinic_portal_info(slug: str, token: str):
-    schema, clinic = _resolve_clinic(slug, token)
+def clinic_portal_info(slug: str, token: str, request: Request):
+    _rate(f"info:{_ip(request)}", 60, 60)
+    schema, clinic = _resolve_limited(request, slug, token)
     ctx = set_current_schema(schema)
     try:
         conn = get_db_connection(schema=schema)
@@ -272,8 +320,9 @@ def clinic_portal_info(slug: str, token: str):
 
 
 @router.get("/clinic/{slug}/{token}/products")
-def clinic_portal_products(slug: str, token: str, q: str = ""):
-    schema, _clinic = _resolve_clinic(slug, token)
+def clinic_portal_products(slug: str, token: str, request: Request, q: str = ""):
+    _rate(f"search:{_ip(request)}", 120, 60)
+    schema, _clinic = _resolve_limited(request, slug, token)
     term = (q or "").strip()
     if len(term) < 2:
         return []
@@ -297,8 +346,9 @@ def clinic_portal_products(slug: str, token: str, q: str = ""):
 
 
 @router.post("/clinic/{slug}/{token}/prescriptions")
-def clinic_portal_submit(slug: str, token: str, req: PublicRxIn):
-    schema, clinic = _resolve_clinic(slug, token)
+def clinic_portal_submit(slug: str, token: str, req: PublicRxIn, request: Request):
+    schema, clinic = _resolve_limited(request, slug, token)
+    _rate(f"rx:{slug}:{clinic['id']}", 60, 3600)
     items = [i for i in req.items if (i.medicine_name or "").strip()]
     if not items:
         raise HTTPException(status_code=400, detail="Add at least one medicine")

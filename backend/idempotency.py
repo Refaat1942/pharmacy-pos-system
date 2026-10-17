@@ -38,7 +38,7 @@ def _ensure_table(cur) -> None:
     _table_ready = True
 
 
-def _scope(request: Request) -> str:
+def _scope(request: Request, body: bytes = b"") -> str:
     # Bind a key to the person (tenant + user), not to one login token: a change queued
     # offline may be uploaded after the cashier logs in again with a new token.
     who = ""
@@ -47,7 +47,11 @@ def _scope(request: Request) -> str:
         from auth import verify_token
         payload = verify_token(auth[7:]) or {}
         who = f"{payload.get('tenant_slug')}:{payload.get('user_id')}"
-    return hashlib.sha256(f"{request.method} {request.url.path} {who}".encode()).hexdigest()[:64]
+    # The body is part of the scope: the same key re-sent with different content is a
+    # client bug and is refused (409) instead of silently returning the first answer.
+    h = hashlib.sha256(f"{request.method} {request.url.path} {who}".encode())
+    h.update(hashlib.sha256(body or b"").digest())
+    return h.hexdigest()[:64]
 
 
 def _claim(key: str, scope: str) -> Optional[tuple]:
@@ -99,7 +103,11 @@ async def idempotency_middleware(request: Request, call_next):
     key = (request.headers.get(HEADER) or "").strip()[:80]
     if not key or request.method not in WRITE_METHODS:
         return await call_next(request)
-    scope = _scope(request)
+    try:
+        raw = await request.body()  # cached by Starlette for the endpoint
+    except Exception:
+        raw = b""
+    scope = _scope(request, raw)
     try:
         stored = await run_in_threadpool(_claim, key, scope)
     except Exception:

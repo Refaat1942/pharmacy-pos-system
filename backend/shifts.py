@@ -388,6 +388,38 @@ def export_shifts(
     return xlsx_response(headers, data, "cash_shifts.xlsx")
 
 
+@router.get("/outside")
+def invoices_outside_shifts(days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Completed sales that no shift of their seller covers (usually made offline while
+    no shift was open). They are missing from every drawer reconciliation."""
+    days = max(1, min(int(days or 30), 180))
+    is_admin = current_user.get("role") == "admin"
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        where = ["i.status = 'completed'", "i.type <> 'return'", "i.created_at >= now() - %s * INTERVAL '1 day'"]
+        params: list = [days]
+        if not is_admin:
+            where.append("i.seller_id = %s"); params.append(current_user["user_id"])
+        cur.execute(f"""
+            SELECT i.id, i.invoice_number, i.created_at, i.net_total, i.payment_method, i.is_offline,
+                   i.seller_id, u.name_ar AS seller_name_ar, u.name_en AS seller_name_en, i.branch_id
+            FROM invoices i
+            LEFT JOIN users u ON u.id = i.seller_id
+            WHERE {' AND '.join(where)}
+              AND NOT EXISTS (
+                SELECT 1 FROM shifts s
+                WHERE s.user_id = i.seller_id AND s.branch_id = i.branch_id
+                  AND s.opened_at <= i.created_at AND (s.closed_at IS NULL OR s.closed_at >= i.created_at))
+            ORDER BY i.created_at DESC LIMIT 300
+        """, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        return {"days": days, "count": len(rows),
+                "total": round(sum(float(r["net_total"] or 0) for r in rows), 2), "rows": rows}
+    finally:
+        conn.close()
+
+
 @router.get("")
 def list_shifts(
     request: Request,

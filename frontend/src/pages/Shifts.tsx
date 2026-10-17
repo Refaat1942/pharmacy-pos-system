@@ -106,6 +106,10 @@ export default function Shifts() {
   }), [isAr])
   const { sorted, sort, toggle } = useSort(filter.filtered, accessors)
 
+  type OutsideRow = { id: number; invoice_number: string; created_at: string; net_total: number; payment_method: string; is_offline: boolean; seller_name_ar: string | null; seller_name_en: string | null }
+  const [outside, setOutside] = useState<{ count: number; total: number; rows: OutsideRow[] } | null>(null)
+  const [showOutside, setShowOutside] = useState(false)
+
   const load = async () => {
     setLoading(true); setError(null)
     try {
@@ -115,6 +119,7 @@ export default function Shifts() {
       ])
       setCurrent(c.data)
       setShifts(l.data)
+      api.get('/shifts/outside', { params: { days: 30 } }).then((r) => setOutside(r.data)).catch(() => setOutside(null))
     } catch (e: any) {
       setError(e?.response?.data?.detail || 'Failed to load shifts')
     } finally { setLoading(false) }
@@ -221,6 +226,38 @@ export default function Shifts() {
         </div>
 
         {error && <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{error}</div>}
+
+        {outside && outside.count > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="flex items-center gap-2 font-semibold">
+                <AlertCircle size={16} />
+                {t('shifts.outside_banner', { n: outside.count, total: Number(outside.total).toFixed(2) })}
+              </span>
+              <button onClick={() => setShowOutside((v) => !v)} className="text-xs font-semibold underline">
+                {showOutside ? t('shifts.outside_hide') : t('shifts.outside_show')}
+              </button>
+            </div>
+            <p className="text-xs mt-1 text-amber-800">{t('shifts.outside_hint')}</p>
+            {showOutside && (
+              <div className="mt-2 max-h-64 overflow-auto bg-white rounded-lg border border-amber-200">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {outside.rows.map((r) => (
+                      <tr key={r.id} className="border-b border-amber-100 last:border-0">
+                        <td className="px-2 py-1 font-mono">{r.invoice_number}</td>
+                        <td className="px-2 py-1">{formatDateTime(r.created_at)}</td>
+                        <td className="px-2 py-1">{(isAr ? r.seller_name_ar : r.seller_name_en) || '—'}</td>
+                        <td className="px-2 py-1">{r.is_offline ? t('shifts.outside_offline') : ''}</td>
+                        <td className="px-2 py-1 text-end tabular-nums font-semibold">{Number(r.net_total).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {current && (
           <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 rounded-2xl p-5">
