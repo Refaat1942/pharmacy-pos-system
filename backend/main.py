@@ -160,6 +160,8 @@ async def tenant_middleware(request: Request, call_next):
 
 from deps import requires_feature
 app.include_router(inventory_router, dependencies=[Depends(requires_feature("inventory"))])
+from unit_detect import router as unit_detect_router  # noqa: E402
+app.include_router(unit_detect_router, dependencies=[Depends(requires_feature("inventory"))])
 app.include_router(purchasing_router, dependencies=[Depends(requires_feature("purchases"))])
 app.include_router(customers_router, dependencies=[Depends(requires_feature("customers"))])
 app.include_router(customer_treatments_router, dependencies=[Depends(requires_feature("customers"))])

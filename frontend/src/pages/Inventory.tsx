@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, ScanLine } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, History, Sliders, AlertTriangle, TrendingUp, FileSpreadsheet, X, Wand2, Printer, ScanLine, Pill } from 'lucide-react'
 import Layout from '../components/Layout'
 import BranchStockPickPanel from '../components/BranchStockPickPanel'
 import api, { formatApiError, suppliersAPI, type Supplier } from '../lib/api'
@@ -29,6 +29,7 @@ import DateInput from '../components/DateInput'
 import { TableLoadingRow } from '../components/LoadingSpinner'
 import BarcodeDesigner from '../components/BarcodeDesigner'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
+import LooseUnitsModal from '../components/LooseUnitsModal'
 import DoseLabelPrint, { type DoseLabelItem } from '../components/DoseLabelPrint'
 import { formatExpiryForLabel } from '../lib/barcodeLabel'
 import { useAuth } from '../lib/auth'
@@ -261,6 +262,7 @@ export default function Inventory() {
   const [showExcel, setShowExcel] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [showBulkPrint, setShowBulkPrint] = useState(false)
+  const [showLoose, setShowLoose] = useState(false)
   const [showCategoryMgr, setShowCategoryMgr] = useState(false)
   const [showAllItems, setShowAllItems] = useState(false)
   const [listPage, setListPage] = useState(0)
@@ -531,6 +533,13 @@ export default function Inventory() {
               </button>
               )}
               <ExcelExportButton onExport={exportItems} disabled={items.length === 0} />
+              {user?.role === 'admin' && (
+                <button onClick={() => setShowLoose(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-violet-200 text-violet-700 hover:bg-violet-50 rounded-lg text-sm font-medium"
+                  title={t('loose.btn_hint') as string}>
+                  <Pill size={15} />{t('loose.btn')}
+                </button>
+              )}
               <button
                 onClick={() => setShowBulkPrint(true)}
                 disabled={selected.size === 0}
@@ -706,6 +715,7 @@ export default function Inventory() {
           onChanged={() => { loadCategories(); loadItems() }}
         />
       )}
+      {showLoose && <LooseUnitsModal onClose={() => setShowLoose(false)} onDone={() => { setShowLoose(false); loadItems() }} />}
       {showBulkPrint && (
         <BulkBarcodePrint
           items={items.filter(i => selected.has(i.id)).flatMap((i) => bulkItemsForProduct(i, isAr))}
