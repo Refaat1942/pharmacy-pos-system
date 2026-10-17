@@ -1076,7 +1076,19 @@
     "f_mid_size": "{{sub}} per {{mid}}",
     "mid_invalid": "The middle unit size must divide the {{box}} units per box evenly (e.g. 30 = 3 × 10).",
     "move_supplier_return": "Returned to supplier",
-    "move_supplier_return_cancel": "Supplier return cancelled"
+    "move_supplier_return_cancel": "Supplier return cancelled",
+    "adj_reason_damaged": "Damaged",
+    "adj_reason_expired": "Expired write-off",
+    "adj_reason_lost": "Lost",
+    "adj_reason_theft": "Theft",
+    "adj_reason_count": "Count correction",
+    "adj_reason_internal_use": "Internal use",
+    "adj_reason_sample": "Sample",
+    "adj_reason_found": "Found / surplus",
+    "adj_reason_other": "Other",
+    "adj_summary_title": "Adjustments by reason",
+    "adj_value_out": "Loss at cost",
+    "adj_value_in": "Gain at cost"
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
@@ -2240,5 +2252,17 @@
     "cancel": "Cancel advance",
     "cancel_confirm": "Cancel this advance? Installments on unpaid slips are released.",
     "hint": "The installment is deducted automatically when payroll is generated for the month, never more than the net salary."
+  },
+  "force_pwd": {
+    "title": "Change your password",
+    "subtitle": "You are still on a default or easy password — anyone who knows it can open all the pharmacy's data.",
+    "current": "Current password",
+    "new": "New password",
+    "again": "Type it again",
+    "rules": "At least 6 characters, not a common one (like 123456 or admin123) and not the username.",
+    "mismatch": "The two passwords do not match",
+    "failed": "Could not change the password",
+    "save": "Save password",
+    "logout": "Log out"
   }
 }

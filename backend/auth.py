@@ -27,6 +27,25 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
+# Factory defaults and the passwords people try first. An admin still using one
+# is made to pick a new password right after logging in.
+_WEAK_PASSWORDS = {
+    "admin", "admin123", "admin1234", "super123", "cash123", "password", "pharmacy",
+    "123456", "1234567", "12345678", "123456789", "1234567890", "111111", "000000",
+    "123123", "qwerty", "fps123", "fps",
+}
+
+
+def is_weak_password(password: str, username: str = "") -> bool:
+    pw = (password or "").strip()
+    if len(pw) < 6:
+        return True
+    low = pw.lower()
+    if low in _WEAK_PASSWORDS or (username and low == username.strip().lower()):
+        return True
+    return len(set(low)) <= 2
+
+
 def create_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)

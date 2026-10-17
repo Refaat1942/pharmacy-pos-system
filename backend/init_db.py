@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 CREATE INDEX IF NOT EXISTS idx_movements_product ON stock_movements(product_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movements_branch ON stock_movements(branch_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_movements_type ON stock_movements(movement_type);
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS reason_code VARCHAR(20);
 
 CREATE TABLE IF NOT EXISTS stocktake_runs (
     id SERIAL PRIMARY KEY,
@@ -596,6 +597,7 @@ ALTER TABLE attendance ADD COLUMN IF NOT EXISTS paid_leave BOOLEAN;
 
 -- Per-user card code for unlocking a locked terminal by scanning a personal QR/barcode
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_code VARCHAR(40);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS users_card_code_key ON users(card_code) WHERE card_code IS NOT NULL;
 UPDATE users
    SET card_code = 'USR-' || LPAD(id::text, 4, '0') || '-' || SUBSTR(MD5(id::text || COALESCE(username,'') || 'fratelanza'), 1, 6)

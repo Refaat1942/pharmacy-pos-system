@@ -138,6 +138,7 @@ export default function Platform() {
   const [editing, setEditing] = useState<Tenant | null>(null)
   const [deleting, setDeleting] = useState<Tenant | null>(null)
   const [showPwd, setShowPwd] = useState(false)
+  const weakPwd = (() => { try { return !!JSON.parse(localStorage.getItem('platform_admin') || '{}').weak_password } catch { return false } })()
   const [migrating, setMigrating] = useState(false)
 
   const load = async () => {
@@ -240,6 +241,13 @@ export default function Platform() {
 
   return (
     <div className="min-h-screen bg-slate-100">
+      {weakPwd && (
+        <div className="bg-red-600 text-white text-sm px-6 py-2 flex items-center justify-center gap-3">
+          <ShieldCheck size={16} />
+          <span>You are still using a default / weak password. Anyone who knows it controls every pharmacy — change it now.</span>
+          <button onClick={() => setShowPwd(true)} className="bg-white text-red-700 font-semibold px-3 py-1 rounded-lg">Change password</button>
+        </div>
+      )}
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
         <div className="max-w-screen-2xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -1101,6 +1109,10 @@ function ChangePwdModal({ onClose }: { onClose: () => void }) {
     e.preventDefault(); setBusy(true); setMsg('')
     try {
       await platformAPI.changePassword(curr, next)
+      try {
+        const adm = JSON.parse(localStorage.getItem('platform_admin') || '{}')
+        localStorage.setItem('platform_admin', JSON.stringify({ ...adm, weak_password: false }))
+      } catch { /* ignore */ }
       setMsg('Password updated.')
       setCurr(''); setNext('')
     } catch (e: any) {

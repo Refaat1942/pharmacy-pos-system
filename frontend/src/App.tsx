@@ -35,6 +35,7 @@ import PlatformBlueprint from './pages/PlatformBlueprint'
 import PlatformDemo from './pages/PlatformDemo'
 import DemoAccess from './pages/DemoAccess'
 import LockScreen from './components/LockScreen'
+import ForcePasswordChange from './components/ForcePasswordChange'
 import { canAccessFeature, getDefaultHomePath } from './lib/routeAccess'
 
 function PlatformProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -80,7 +81,7 @@ function ClockRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   const { i18n } = useTranslation()
-  const { isAuthenticated, isLocked } = useAuth()
+  const { isAuthenticated, isLocked, user } = useAuth()
 
   useEffect(() => {
     const dir = i18n.language === 'ar' ? 'rtl' : 'ltr'
@@ -91,6 +92,7 @@ function AppRoutes() {
   return (
     <>
       {isAuthenticated && isLocked && <LockScreen />}
+      {isAuthenticated && !isLocked && user?.must_change_password && <ForcePasswordChange />}
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/demo/:token" element={<DemoAccess />} />

@@ -1424,8 +1424,16 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
   const [qty, setQty] = useState('')
   const [packQty, setPackQty] = useState('')
   const [reason, setReason] = useState('')
+  const [reasonCode, setReasonCode] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const codes = mode === 'add' ? ['found', 'count', 'other'] : mode === 'set' ? ['count', 'other']
+    : ['damaged', 'expired', 'lost', 'theft', 'internal_use', 'sample', 'count', 'other']
+  const pickCode = (c: string) => {
+    const prev = reasonCode ? (t(`inventory.adj_reason_${reasonCode}`) as string) : ''
+    setReasonCode(c)
+    if (!reason.trim() || reason === prev) setReason(t(`inventory.adj_reason_${c}`) as string)
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1453,6 +1461,7 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
           product_id: item.id,
           set_to: n,
           reason,
+          reason_code: reasonCode || null,
         })
       } else {
         const delta = mode === 'add' ? n : -n
@@ -1460,6 +1469,7 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
           product_id: item.id,
           delta,
           reason,
+          reason_code: reasonCode || null,
         })
       }
       onSaved()
@@ -1522,6 +1532,14 @@ function AdjustModal({ item, onClose, onSaved }: { item: Product; onClose: () =>
           </Field>
         )}
         <Field label={t('inventory.reason') + ' *'}>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {codes.map((c) => (
+              <button type="button" key={c} onClick={() => pickCode(c)}
+                className={`px-2.5 py-1 rounded-full text-xs border ${reasonCode === c ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                {t(`inventory.adj_reason_${c}`)}
+              </button>
+            ))}
+          </div>
           <textarea required value={reason} onChange={e => setReason(e.target.value)} className="input min-h-20" />
         </Field>
         {error && <div className="text-red-600 text-sm">{error}</div>}
@@ -1625,6 +1643,14 @@ function MovementsTab() {
   }
   useEffect(() => { load() }, [type, start, end])
 
+  type AdjRow = { reason_code: string; lines: number; units_out: number; units_in: number; value_out: number; value_in: number }
+  const [adj, setAdj] = useState<{ rows: AdjRow[]; value_out: number; value_in: number } | null>(null)
+  useEffect(() => {
+    if (type !== 'adjustment') { setAdj(null); return }
+    api.get('/inventory/adjustments/summary', { params: { start_date: start || undefined, end_date: end || undefined } })
+      .then((r) => setAdj(r.data)).catch(() => setAdj(null))
+  }, [type, start, end])
+
   const moveFilter = useQuickFilter(moves, [
     (m: any) => m.product_name_en,
     (m: any) => m.product_name_ar,
@@ -1655,6 +1681,8 @@ function MovementsTab() {
           <option value="initial">{t('inventory.move_initial')}</option>
           <option value="transfer_in">{t('inventory.move_transfer_in')}</option>
           <option value="transfer_out">{t('inventory.move_transfer_out')}</option>
+          <option value="purchase">{t('inventory.move_purchase', { defaultValue: 'purchase' })}</option>
+          <option value="supplier_return">{t('inventory.move_supplier_return')}</option>
         </select>
         <DateInput value={start} onChange={setStart} className="input max-w-40" />
         <DateInput value={end} onChange={setEnd} className="input max-w-40" />
@@ -1670,6 +1698,30 @@ function MovementsTab() {
           disabled={moves.length === 0}
         />
       </div>
+
+      {adj && adj.rows.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-4 mb-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+            <h3 className="font-semibold text-slate-800">{t('inventory.adj_summary_title')}</h3>
+            <div className="text-sm">
+              <span className="text-slate-500">{t('inventory.adj_value_out')}:</span>{' '}
+              <span className="font-bold text-red-700 tabular-nums">{Number(adj.value_out).toFixed(2)}</span>
+              <span className="mx-2 text-slate-300">|</span>
+              <span className="text-slate-500">{t('inventory.adj_value_in')}:</span>{' '}
+              <span className="font-bold text-emerald-700 tabular-nums">{Number(adj.value_in).toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+            {adj.rows.map((r) => (
+              <div key={r.reason_code} className="rounded-lg border border-slate-200 p-2.5">
+                <div className="text-xs text-slate-500">{t(`inventory.adj_reason_${r.reason_code}`, { defaultValue: r.reason_code })} · {r.lines}</div>
+                {Number(r.value_out) > 0 && <div className="font-bold text-red-700 tabular-nums">− {Number(r.value_out).toFixed(2)}</div>}
+                {Number(r.value_in) > 0 && <div className="font-bold text-emerald-700 tabular-nums">+ {Number(r.value_in).toFixed(2)}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm overflow-auto">
         <table className="w-full text-sm">

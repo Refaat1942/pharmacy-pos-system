@@ -8,6 +8,7 @@ interface AuthUser {
   role: string
   branch_id: number
   permissions?: string[] | null
+  must_change_password?: boolean
 }
 
 export interface TenantInfo {
@@ -168,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: data.user.role,
           branch_id: data.user.branch_id,
           permissions: data.user.permissions ?? null,
+          must_change_password: !!data.user.must_change_password,
         }
         localStorage.setItem('pharma_user', JSON.stringify(nextUser))
         setUser(nextUser)
