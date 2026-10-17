@@ -1,3 +1,4 @@
+import { localIsoDate } from '../lib/formatDate'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, Download, AlertTriangle } from 'lucide-react'
@@ -33,9 +34,9 @@ type FraudReport = {
   alerts: FraudAlert[]
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localIsoDate()
 const firstOfMonth = () => {
-  const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10)
+  const d = new Date(); d.setDate(1); return localIsoDate(d)
 }
 const fmt = (n: number) =>
   Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2 })

@@ -15,7 +15,7 @@ import i18n from '../lib/i18n'
 import { platformBadgeClass, platformDisplayLabel } from '../lib/digitalPlatforms'
 import { useDigitalPlatforms } from '../lib/useDigitalPlatforms'
 import { reportOptionEnabled } from '../lib/featureGates'
-import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay, formatDateTime } from '../lib/formatDate'
+import { formatDate as fmtDateDisplay, formatTime as fmtTimeDisplay, formatDateTime, localIsoDate } from '../lib/formatDate'
 import DateInput from '../components/DateInput'
 
 type PnL = {
@@ -303,9 +303,9 @@ type SalesReport = {
   line_items: SalesLineItemRow[]
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => localIsoDate()
 const firstOfMonth = () => {
-  const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10)
+  const d = new Date(); d.setDate(1); return localIsoDate(d)
 }
 const fmt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtInt = (n: number) => Number(n || 0).toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')
