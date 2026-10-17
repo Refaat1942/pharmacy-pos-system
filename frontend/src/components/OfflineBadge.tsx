@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Wifi, WifiOff, CloudUpload, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Wifi, WifiOff, CloudUpload, AlertTriangle, RefreshCw, CheckCircle2, X } from 'lucide-react'
 import api from '../lib/api'
 import {
   flushQueue,
@@ -9,6 +9,7 @@ import {
   retryFailed,
   syncOfflinePack,
   type OfflineStatus,
+  type SyncResult,
 } from '../lib/offline'
 
 /** Top-bar status: online/offline, sales waiting to upload, offline data freshness. */
@@ -21,7 +22,20 @@ export default function OfflineBadge() {
   const ref = useRef<HTMLDivElement>(null)
 
   const [toast, setToast] = useState(false)
+  const [synced, setSynced] = useState<SyncResult | null>(null)
   useEffect(() => onOfflineStatus(setSt), [])
+  // Internet is back and the queue was uploaded: confirm it, with the real numbers.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const done = (e: Event) => {
+      const r = (e as CustomEvent<SyncResult>).detail
+      setSynced(r)
+      clearTimeout(timer)
+      if (!r.failed && !r.pending) timer = setTimeout(() => setSynced(null), 12000)
+    }
+    window.addEventListener('fps-sync-done', done)
+    return () => { window.removeEventListener('fps-sync-done', done); clearTimeout(timer) }
+  }, [])
   // A back-office change was saved offline: say so, since the page shows old data.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -65,6 +79,37 @@ export default function OfflineBadge() {
           <span className="inline-flex items-center gap-0.5"><AlertTriangle size={13} />{st.failed}</span>
         )}
       </button>
+      {synced && (() => {
+        const sales = synced.uploaded.filter((u) => u.kind === 'sale')
+        const rets = synced.uploaded.filter((u) => u.kind === 'return')
+        const others = synced.uploaded.length - sales.length - rets.length
+        const ok = !synced.failed && !synced.pending
+        return (
+          <div className={`fixed bottom-5 end-5 z-[70] w-[min(100vw-2.5rem,24rem)] rounded-2xl shadow-2xl border-2 bg-white overflow-hidden ${ok ? 'border-emerald-400' : 'border-amber-400'}`} role="status">
+            <div className={`flex items-center gap-2 px-4 py-2.5 text-white ${ok ? 'bg-emerald-600' : 'bg-amber-600'}`}>
+              {ok ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
+              <span className="font-bold text-sm flex-1">{ok ? t('offline.sync_done_title') : t('offline.sync_partial_title')}</span>
+              <button type="button" onClick={() => setSynced(null)} className="p-0.5 rounded hover:bg-white/20"><X size={16} /></button>
+            </div>
+            <div className="px-4 py-3 text-xs text-slate-700 space-y-1.5">
+              <p className="font-semibold">
+                {[sales.length ? t('offline.sync_sales', { n: sales.length }) : '',
+                  rets.length ? t('offline.sync_returns', { n: rets.length }) : '',
+                  others ? t('offline.sync_others', { n: others }) : ''].filter(Boolean).join(' · ')}
+              </p>
+              {[...sales, ...rets].filter((u) => u.server_number).slice(0, 6).map((u) => (
+                <p key={u.number} className="font-mono text-[11px] text-slate-500" dir="ltr">{u.number} → <b className="text-slate-800">{u.server_number}</b></p>
+              ))}
+              {[...sales, ...rets].length > 6 && <p className="text-[11px] text-slate-400">+{[...sales, ...rets].length - 6}</p>}
+              {ok
+                ? <p className="text-emerald-700 font-semibold">{t('offline.sync_all_saved')}</p>
+                : <p className="text-amber-800 font-semibold">
+                    {synced.failed ? t('offline.sync_failed', { n: synced.failed }) : ''} {synced.pending ? t('offline.sync_pending', { n: synced.pending }) : ''}
+                  </p>}
+            </div>
+          </div>
+        )
+      })()}
       {toast && (
         <div className="fixed bottom-5 start-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-xl">
           {t('offline.saved_offline')}

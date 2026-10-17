@@ -248,9 +248,14 @@ function uuid(): string {
   })
 }
 
+/** This PC's code in temporary receipt numbers (OFF-<code>-<n>). 6 hex characters, so
+ * two devices practically never share one; older 4-character codes are upgraded. */
 function terminalId(): string {
   let id = localStorage.getItem('fps_terminal_id')
-  if (!id) { id = uuid().slice(0, 4).toUpperCase(); localStorage.setItem('fps_terminal_id', id) }
+  if (!id || id.length < 6) {
+    id = uuid().replace(/-/g, '').slice(0, 6).toUpperCase()
+    localStorage.setItem('fps_terminal_id', id)
+  }
   return id
 }
 
@@ -390,23 +395,57 @@ let flushing: Promise<void> | null = null
 export function flushQueue(api: AxiosInstance): Promise<void> {
   if (!localStorage.getItem('pharma_token')) return Promise.resolve()
   // A second caller waits for the upload already running (e.g. close shift after sales).
-  if (!flushing) flushing = doFlush(api).finally(() => { flushing = null })
+  if (!flushing) {
+    // One upload at a time across all tabs of this browser (they share the queue).
+    const run = () => doFlush(api)
+    const locks = (navigator as any).locks
+    flushing = (locks?.request ? locks.request('fps-offline-flush', run) as Promise<void> : run())
+      .finally(() => { flushing = null })
+  }
   return flushing
 }
 
+export interface SyncedItem { kind: string; number: string; server_number?: string }
+export interface SyncResult { uploaded: SyncedItem[]; failed: number; pending: number }
+
 async function doFlush(api: AxiosInstance): Promise<void> {
+  const uploaded: SyncedItem[] = []
+  try {
+    await uploadQueue(api, uploaded)
+  } finally {
+    if (uploaded.length) {
+      const q = await readQueue()
+      const result: SyncResult = {
+        uploaded, failed: q.filter((s) => s.error).length, pending: q.filter((s) => !s.error).length,
+      }
+      window.dispatchEvent(new CustomEvent<SyncResult>('fps-sync-done', { detail: result }))
+    }
+  }
+}
+
+async function uploadQueue(api: AxiosInstance, uploaded: SyncedItem[]): Promise<void> {
   {
     let q = await readQueue()
     for (const sale of q.filter((s) => !s.error)) {
       try {
         const own = sale.token && tokenValid(sale.token) ? { Authorization: `Bearer ${sale.token}` } : {}
+        let res: any
         if (sale.kind === 'generic') {
-          await api.request({
+          res = await api.request({
             method: sale.method || 'post', url: sale.url, data: sale.payload,
             headers: { 'X-Offline-Skip': '1', 'X-Idempotency-Key': sale.client_uuid, ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}), ...own },
           })
-        } else await api.post(sale.url || '/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
+        } else res = await api.post(sale.url || '/sales', {
+          ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at,
+          // The temporary number printed on the receipt is kept on the invoice for lookup.
+          ...((sale.kind ?? 'sale') === 'sale' || sale.kind === 'return' ? { offline_number: sale.number } : {}),
+        }, {
           headers: { 'X-Offline-Skip': '1', ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}), ...own },
+        })
+        const d = res?.data || {}
+        uploaded.push({
+          kind: sale.kind ?? 'sale', number: sale.number,
+          server_number: d.invoice?.invoice_number || d.return_invoice_number || d.invoice_number || undefined,
         })
         q = (await readQueue()).filter((s) => s.client_uuid !== sale.client_uuid)
         await writeQueue(q)

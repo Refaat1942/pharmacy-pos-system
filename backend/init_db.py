@@ -939,6 +939,9 @@ BEGIN
 END
 $tz$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid) WHERE client_uuid IS NOT NULL;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS offline_number VARCHAR(40);
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS offline_number VARCHAR(40);
+CREATE INDEX IF NOT EXISTS idx_invoices_offline_number ON invoices(offline_number) WHERE offline_number IS NOT NULL;
 -- Opening balances carried over from the old system (smart import / manual).
 -- Customers: positive = the customer owes us. Suppliers: positive = we owe the supplier.
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(12,2) DEFAULT 0;

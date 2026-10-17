@@ -1009,6 +1009,8 @@ class SaleRequest(BaseModel):
     # Offline POS upload: client-generated id (idempotency) + when the sale really happened.
     client_uuid: Optional[str] = None
     offline_created_at: Optional[datetime] = None
+    # Temporary number printed on the offline receipt (OFF-<device>-<n>), kept for lookup.
+    offline_number: Optional[str] = None
 
 
 def _sale_response(cur, invoice_id: int) -> dict:
@@ -1052,6 +1054,9 @@ def create_sale(req: SaleRequest,
         client_uuid = (req.client_uuid or "").strip()[:64] or None
         offline_at = _offline_sale_time(req)
         if client_uuid:
+            # Two uploads of the same offline sale at the same moment (two tabs or
+            # devices): the second waits here, then finds the first one saved.
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("sale:" + client_uuid,))
             # Retried upload of a sale already saved → return it, never duplicate.
             cur.execute("SELECT id FROM invoices WHERE client_uuid=%s", (client_uuid,))
             dup = cur.fetchone()
@@ -1393,8 +1398,8 @@ def create_sale(req: SaleRequest,
                 offer_ids, offer_savings, offer_names,
                 loyalty_points_earned, loyalty_points_redeemed, loyalty_discount,
                 insurance_company_id, insurance_plan_id, discount_card_id,
-                insurance_snapshot, insurance_totals, client_uuid, is_offline, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, NOW())) RETURNING *""",
+                insurance_snapshot, insurance_totals, client_uuid, is_offline, created_at, offline_number)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,COALESCE(%s, NOW()),%s) RETURNING *""",
             (invoice_number, req.type, req.payment_method, req.digital_type,
              subtotal, invoice_discount, net_total, cash_amount_val, visa_amount_val,
              change, seller_id, invoice_customer_id, branch_id, clinic_id, prescription_id, req.notes,
@@ -1406,7 +1411,8 @@ def create_sale(req: SaleRequest,
              insurance_company_id, insurance_plan_id, discount_card_id_val,
              psycopg2.extras.Json(insurance_snapshot) if insurance_snapshot else None,
              psycopg2.extras.Json(insurance_totals) if insurance_totals else None,
-             client_uuid, offline_at is not None, offline_at),
+             client_uuid, offline_at is not None, offline_at,
+             ((req.offline_number or "").strip()[:40] or None) if offline_at is not None else None),
         )
         invoice = cur.fetchone()
         invoice_id = invoice["id"]
@@ -1807,11 +1813,11 @@ def search_sales(q: str = "", limit: int = 50,
         conds.append("i.branch_id = %s")
         params.append(active_branch)
     conds.append(
-        "(i.invoice_number ILIKE %s OR EXISTS ("
+        "(i.invoice_number ILIKE %s OR i.offline_number ILIKE %s OR EXISTS ("
         " SELECT 1 FROM invoice_items ii WHERE ii.invoice_id = i.id"
         " AND (ii.barcode ILIKE %s OR ii.product_name_en ILIKE %s OR ii.product_name_ar ILIKE %s)))"
     )
-    params += [like, like, like, like]
+    params += [like, like, like, like, like]
     where = " WHERE " + " AND ".join(conds)
     params.append(max(1, min(limit, 200)))
     cur.execute(
@@ -1998,6 +2004,7 @@ class ReturnRequest(BaseModel):
     # Offline POS upload (see create_sale).
     client_uuid: Optional[str] = None
     offline_created_at: Optional[datetime] = None
+    offline_number: Optional[str] = None
 
 
 @app.post("/api/sales/{invoice_id}/return")
@@ -2008,6 +2015,9 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         if client_uuid:
+            # Two uploads of the same offline return at the same moment (two tabs or
+            # devices): the second waits here, then finds the first one saved.
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("return:" + client_uuid,))
             # Re-sent offline upload → the return is already saved.
             cur.execute("SELECT * FROM returns WHERE client_uuid=%s", (client_uuid,))
             dup = cur.fetchone()
@@ -2043,11 +2053,11 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         cur.execute(
             """INSERT INTO returns
                (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id,
-                client_uuid, is_offline, created_at, refund_method)
-               VALUES (%s,%s,'partial',%s,%s,%s,%s,%s,%s,COALESCE(%s, now()),%s) RETURNING *""",
+                client_uuid, is_offline, created_at, refund_method, offline_number)
+               VALUES (%s,%s,'partial',%s,%s,%s,%s,%s,%s,COALESCE(%s, now()),%s,%s) RETURNING *""",
             (invoice_id, return_number, 0, req.reason,
              current_user.get("user_id"), return_branch_id, client_uuid, offline_at is not None, offline_at,
-             refund_method),
+             refund_method, ((req.offline_number or "").strip()[:40] or None) if offline_at is not None else None),
         )
         ret = cur.fetchone()
 
