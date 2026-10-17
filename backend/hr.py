@@ -538,6 +538,89 @@ def list_attendance(
         cur.close(); conn.close()
 
 
+@router.get("/attendance/monthly-sheet")
+def attendance_monthly_sheet(month: str, current_user=Depends(get_current_user)):
+    """Excel: one row per employee, one column per day (in–out, absent, leave, no
+    check-out), with days / hours / incomplete totals. Branch staff get their branch."""
+    _require_hr_tab(current_user, "attendance")
+    try:
+        _, d1, d2 = _period_bounds(month)
+    except ValueError:
+        raise HTTPException(400, "month must be YYYY-MM")
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from fastapi.responses import StreamingResponse
+
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        sql, params = "SELECT id, name, role FROM employees WHERE active = TRUE", []
+        if current_user.get("role") != "admin":
+            sql += " AND (branch_id IS NULL OR branch_id = %s)"; params.append(current_user.get("branch_id"))
+        cur.execute(sql + " ORDER BY name", params)
+        emps = cur.fetchall()
+        cur.execute("""SELECT employee_id, work_date, check_in, check_out, hours, status FROM attendance
+                       WHERE work_date BETWEEN %s AND %s AND employee_id = ANY(%s)""",
+                    [d1, d2, [e["id"] for e in emps] or [0]])
+        att = {(r["employee_id"], r["work_date"].day): r for r in cur.fetchall()}
+    finally:
+        cur.close(); conn.close()
+
+    year, mon = map(int, month.split("-"))
+    ndays = monthrange(year, mon)[1]
+    ar_days = ["اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة", "سبت", "أحد"]
+    wb = Workbook(); ws = wb.active; ws.title = month; ws.sheet_view.rightToLeft = True
+    head = ["الموظف", "الوظيفة"] + [f"{d}\n{ar_days[date(year, mon, d).weekday()]}" for d in range(1, ndays + 1)] \
+        + ["أيام الحضور", "الساعات", "غياب", "إجازة", "بدون انصراف"]
+    ws.append(head)
+    fills = {"absent": PatternFill("solid", fgColor="FDE2E2"), "leave": PatternFill("solid", fgColor="E0E7FF"),
+             "open": PatternFill("solid", fgColor="FEF3C7"), "friday": PatternFill("solid", fgColor="F1F5F9")}
+    for e in emps:
+        row = [e["name"], e["role"] or ""]
+        present = absent = leave = incomplete = 0
+        hours = 0.0
+        for d in range(1, ndays + 1):
+            r = att.get((e["id"], d))
+            if not r:
+                row.append(""); continue
+            if r["status"] == "absent":
+                row.append("غ"); absent += 1; continue
+            if r["status"] == "leave":
+                row.append("إجازة"); leave += 1; continue
+            present += 1
+            ci = r["check_in"].strftime("%H:%M") if r["check_in"] else ""
+            co = r["check_out"].strftime("%H:%M") if r["check_out"] else ""
+            if r["check_in"] and not r["check_out"]:
+                incomplete += 1
+                row.append(f"{ci} ← ؟"); continue
+            hours += float(r["hours"] if r["hours"] is not None else STANDARD_HOURS_PER_DAY)
+            row.append(f"{ci}–{co}" if ci else "حاضر")
+        row += [present, round(hours, 2), absent, leave, incomplete]
+        ws.append(row)
+    for c in range(1, len(head) + 1):
+        cell = ws.cell(row=1, column=c)
+        cell.font = Font(bold=True); cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        ws.column_dimensions[get_column_letter(c)].width = 22 if c == 1 else 12 if c == 2 else 11
+    ws.row_dimensions[1].height = 32
+    for d in range(1, ndays + 1):
+        col = 2 + d
+        friday = date(year, mon, d).weekday() == 4
+        for r in range(2, ws.max_row + 1):
+            cell = ws.cell(row=r, column=col)
+            cell.alignment = Alignment(horizontal="center")
+            v = str(cell.value or "")
+            fill = fills["absent"] if v == "غ" else fills["leave"] if v == "إجازة" else fills["open"] if "؟" in v \
+                else fills["friday"] if friday else None
+            if fill:
+                cell.fill = fill
+    ws.freeze_panes = "C2"
+    buf = BytesIO(); wb.save(buf); buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="attendance-{month}.xlsx"'})
+
+
 @router.post("/attendance")
 def upsert_attendance(body: AttendanceIn, current_user=Depends(get_current_user)):
     _require_record_attendance(current_user)
