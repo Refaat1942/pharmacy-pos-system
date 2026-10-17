@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
-import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search, Download } from 'lucide-react'
+import { Eye, RotateCcw, X, Loader2, TrendingUp, Filter, Search, Download, Printer } from 'lucide-react'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
+import ReceiptModal from '../components/ReceiptModal'
 import { salesAPI, employeesAPI, clinicsAPI, returnsAPI } from '../lib/api'
 import type { Invoice, SaleResponse, Employee, Clinic, ReturnRow } from '../lib/api'
 import i18n from '../lib/i18n'
@@ -62,6 +63,7 @@ export default function Sales() {
   const [invoices, setInvoices] = useState<SalesRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSale, setSelectedSale] = useState<SaleResponse | null>(null)
+  const [reprintSale, setReprintSale] = useState<SaleResponse | null>(null)
   const [showDetail, setShowDetail] = useState(false)
   const [showReturn, setShowReturn] = useState(false)
   const [returnItems, setReturnItems] = useState<Record<number, number>>({})
@@ -662,12 +664,21 @@ export default function Sales() {
                   {formatDateTime(inv.created_at)}
                 </p>
               </div>
-              <button
-                onClick={() => setShowDetail(false)}
-                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setReprintSale(selectedSale)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-pharma-700 border border-pharma-200 hover:bg-pharma-50 px-3 py-1.5 rounded-xl"
+                >
+                  <Printer size={15} />
+                  {t('sales.reprint')}
+                </button>
+                <button
+                  onClick={() => setShowDetail(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="p-5 space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
@@ -836,6 +847,14 @@ export default function Sales() {
         </div>
         )
       })()}
+
+      {reprintSale && (
+        <ReceiptModal
+          sale={reprintSale}
+          onSaleUpdate={(s) => { setReprintSale(s); setSelectedSale(s) }}
+          onClose={() => setReprintSale(null)}
+        />
+      )}
 
       {/* ── Return Modal ── */}
       {showReturn && selectedSale && (

@@ -15,6 +15,11 @@ function isBlockedScannerKey(e: KeyboardEvent): boolean {
   return false
 }
 
+export const POS_HOTKEY_EVENT = 'fps:hotkey'
+const HOTKEYS = new Set(['F2', 'F4', 'F8', 'F9'])
+/** Keys a scanner sends come a few ms apart; a person's key press never follows that fast. */
+const SCAN_GAP_MS = 80
+
 /**
  * Prevent barcode scanners from opening Chrome DevTools or other browser chrome.
  * Uses capture phase so wedge keystrokes are swallowed before the browser handles them.
@@ -22,10 +27,19 @@ function isBlockedScannerKey(e: KeyboardEvent): boolean {
 export function useBlockScannerBrowserShortcuts(enabled = true): void {
   useEffect(() => {
     if (!enabled) return
+    let lastKeyAt = 0
     const onKeyDown = (e: KeyboardEvent) => {
+      const now = performance.now()
+      const sincePrev = now - lastKeyAt
+      lastKeyAt = now
       if (!isBlockedScannerKey(e)) return
       e.preventDefault()
       e.stopPropagation()
+      // A person pressing F2/F4/F8/F9 gets the till hotkey; the same key arriving
+      // straight after other keys is a wedge suffix and stays swallowed.
+      if (HOTKEYS.has(e.key) && !e.ctrlKey && !e.altKey && !e.metaKey && sincePrev > SCAN_GAP_MS) {
+        window.dispatchEvent(new CustomEvent(POS_HOTKEY_EVENT, { detail: e.key }))
+      }
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)

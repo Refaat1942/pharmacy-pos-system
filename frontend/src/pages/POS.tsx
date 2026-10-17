@@ -16,6 +16,7 @@ import {
   Pause,
   ClipboardList,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { ComponentType } from 'react'
@@ -24,6 +25,7 @@ import { useAuth } from '../lib/auth'
 import PaymentModal from '../components/PaymentModal'
 import PosSaleTypePicker, { type PosSaleType } from '../components/PosSaleTypePicker'
 import ReceiptModal from '../components/ReceiptModal'
+import { POS_HOTKEY_EVENT } from '../lib/scannerGuard'
 import PrescriptionBell from '../components/PrescriptionBell'
 import TreatmentReminderBell from '../components/TreatmentReminderBell'
 import PosCounselingTips, { type CounselingTip } from '../components/PosCounselingTips'
@@ -179,6 +181,15 @@ export default function POS() {
   const [highlight, setHighlight] = useState(0)
   const [searching, setSearching] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  // Bumped on every add: a scan resolved by Enter and the same scan resolved by the
+  // debounced search must not both add the item.
+  const scanGen = useRef(0)
+  const [scanNotice, setScanNotice] = useState<{ kind: 'error' | 'warn'; text: string } | null>(null)
+  useEffect(() => {
+    if (!scanNotice) return
+    const timer = setTimeout(() => setScanNotice(null), 6000)
+    return () => clearTimeout(timer)
+  }, [scanNotice])
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => loadJSON<Customer | null>(CUSTOMER_KEY, null))
@@ -419,15 +430,21 @@ export default function POS() {
       today.setHours(0, 0, 0, 0)
       const exp = new Date(product.expiry_date)
       const diffDays = Math.floor((exp.getTime() - today.getTime()) / 86400000)
+      const name = (lang === 'ar' && product.name_ar) || product.name_en
       if (diffDays < 0) {
-        alert(`${product.name_en} — expired on ${product.expiry_date}. Cannot sell expired products.`)
+        // Inline notice instead of a blocking alert: the scanner keeps working.
+        setScanNotice({ kind: 'error', text: t('pos.expired_blocked', { name, date: product.expiry_date }) })
+        setSearch('')
+        setResults([])
+        setShowResults(false)
+        searchRef.current?.focus()
         return
       }
       if (diffDays <= 30) {
-        const ok = confirm(`⚠️ ${product.name_en} expires in ${diffDays} day(s) (${product.expiry_date}). Add anyway?`)
-        if (!ok) return
+        setScanNotice({ kind: 'warn', text: t('pos.near_expiry_added', { name, days: diffDays, date: product.expiry_date }) })
       }
     }
+    scanGen.current++
     setCartItems((prev) => {
       const existing = prev.find((i) => i.product.id === product.id)
       if (existing) {
@@ -445,7 +462,7 @@ export default function POS() {
     setShowResults(false)
     searchRef.current?.focus()
     void pushCounseling(product)
-  }, [t, maxQty, pushCounseling])
+  }, [t, lang, maxQty, pushCounseling])
 
   // Debounced search — strips wedge noise (C85947-13C) and matches DB code (85947).
   useEffect(() => {
@@ -458,12 +475,14 @@ export default function POS() {
     const raw = search.trim()
     const queries = barcodeSearchQueries(raw)
     const timer = setTimeout(() => {
+      const gen = scanGen.current
       const run = async () => {
         const merged = new Map<number, Product>()
         for (const q of queries) {
           const r = await productsAPI.search(q)
           for (const p of r.data) merged.set(p.id, p)
           const hit = matchProductByBarcode(r.data, raw)
+          if (gen !== scanGen.current) return
           if (hit) {
             if (looksLikeScannerInput(raw)) {
               addToCart(hit)
@@ -477,6 +496,7 @@ export default function POS() {
             return
           }
         }
+        if (gen !== scanGen.current) return
         const list = [...merged.values()].slice(0, 12)
         setResults(list)
         setShowResults(true)
@@ -668,12 +688,14 @@ export default function POS() {
   const resolveScanToProduct = useCallback(async (code: string) => {
     const raw = code.trim()
     if (!raw) return
+    const gen = scanGen.current
     const tried = new Set<string>()
     for (const q of barcodeSearchQueries(raw)) {
       const key = q.toUpperCase()
       if (tried.has(key)) continue
       tried.add(key)
       const r = await productsAPI.search(q)
+      if (gen !== scanGen.current) return
       const matched = matchProductByBarcode(r.data, raw)
       if (matched) {
         addToCart(matched)
@@ -710,6 +732,11 @@ export default function POS() {
     }
   }
 
+  // Back to the scan box after typing a quantity or discount and pressing Enter.
+  const enterBackToSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') { e.preventDefault(); searchRef.current?.focus() }
+  }
+
   const handleSaleSuccess = (sale: SaleResponse) => {
     setLastSale(sale)
     setShowPaymentModal(false)
@@ -736,6 +763,43 @@ export default function POS() {
     setCheckoutHint('')
     setShowPaymentModal(true)
   }
+
+  // Till hotkeys: F2 scan box, F4 quantity of the last line, F8 invoice discount,
+  // F9 pay, Esc clears the scan box. Off while a dialog is open.
+  const hotkeyState = useRef({ blocked: false, canPay: false, tryCheckout })
+  hotkeyState.current = {
+    blocked: showPaymentModal || showReceiptModal || showHeld,
+    canPay: cartItems.length > 0 && canCheckout,
+    tryCheckout,
+  }
+  useEffect(() => {
+    const focusSel = (sel: string, last = false) => {
+      const els = document.querySelectorAll<HTMLInputElement>(sel)
+      const el = last ? els[els.length - 1] : els[0]
+      if (el) { el.focus(); el.select() }
+    }
+    // F-keys arrive through the scanner guard (Layout), which tells them apart from wedge suffixes.
+    const onHotkey = (e: Event) => {
+      const st = hotkeyState.current
+      if (st.blocked) return
+      const key = (e as CustomEvent<string>).detail
+      if (key === 'F2') { searchRef.current?.focus(); searchRef.current?.select() }
+      else if (key === 'F4') focusSel('input[data-pos-qty]', true)
+      else if (key === 'F8') focusSel('input[data-pos-discount]')
+      else if (key === 'F9' && st.canPay) st.tryCheckout()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !hotkeyState.current.blocked && document.activeElement === searchRef.current) {
+        setSearch(''); setResults([]); setShowResults(false)
+      }
+    }
+    window.addEventListener(POS_HOTKEY_EVENT, onHotkey)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener(POS_HOTKEY_EVENT, onHotkey)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [])
 
   const checkoutButtonLabel = posSaleType === 'cash'
     ? t('pos.checkout')
@@ -932,6 +996,24 @@ export default function POS() {
                 </div>
               )}
 
+              {scanNotice && (
+                <div
+                  role="status"
+                  onClick={() => setScanNotice(null)}
+                  className={`mt-2 flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold cursor-pointer ${
+                    scanNotice.kind === 'error'
+                      ? 'bg-red-50 border-red-200 text-red-700'
+                      : 'bg-amber-50 border-amber-200 text-amber-800'
+                  }`}
+                >
+                  <AlertTriangle size={16} className="shrink-0" />
+                  <span className="flex-1">{scanNotice.text}</span>
+                  <X size={14} className="shrink-0 opacity-60" />
+                </div>
+              )}
+
+              <p className="hidden md:block mt-1.5 text-[11px] text-slate-400 text-center">{t('pos.hotkeys_hint')}</p>
+
               {quickItemsOn && <PosQuickItems onAdd={addToCart} />}
             </div>
           </div>
@@ -1064,6 +1146,8 @@ export default function POS() {
                                 min={1}
                                 max={max}
                                 value={item.quantity}
+                                data-pos-qty
+                                onKeyDown={enterBackToSearch}
                                 onChange={(e) => {
                                   const v = parseInt(e.target.value || '0', 10)
                                   if (!isNaN(v) && v > 0) updateQty(item.product.id, Math.min(v, max))
@@ -1322,6 +1406,8 @@ export default function POS() {
                 <input
                   type="number"
                   value={invoiceDiscount || ''}
+                  data-pos-discount
+                  onKeyDown={enterBackToSearch}
                   onChange={(e) =>
                     setInvoiceDiscount(Math.max(0, parseFloat(e.target.value) || 0))
                   }

@@ -1138,7 +1138,10 @@
     "clear_clinic": "إزالة العيادة",
     "clear_cart": "مسح",
     "scan_or_type": "امسح أو اكتب",
-    "sell_unit": "وحدة البيع"
+    "sell_unit": "وحدة البيع",
+    "expired_blocked": "{{name}} — منتهي الصلاحية في {{date}}. لا يمكن بيعه.",
+    "near_expiry_added": "تمت الإضافة — تنبيه: {{name}} ينتهي خلال {{days}} يوم ({{date}}).",
+    "hotkeys_hint": "F2 بحث · F4 الكمية · F8 الخصم · F9 الدفع · Esc مسح"
   },
   "payment": {
     "title": "إتمام الدفع",
@@ -1358,7 +1361,8 @@
     "detail_title": "تفاصيل البيع",
     "items_count": "الأصناف",
     "filter_payment": "الدفع",
-    "filter_platform": "المنصة"
+    "filter_platform": "المنصة",
+    "reprint": "إعادة طباعة"
   },
   "branch": {
     "switch": "تبديل الفرع",
