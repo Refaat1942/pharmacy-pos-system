@@ -2090,6 +2090,7 @@
     "no_pack": "Offline data not downloaded yet",
     "refresh": "Refresh offline data",
     "help": "With no internet you can still open and close your shift and sell (cash, card, account). Everything is saved on this PC and uploaded automatically, in order, when the internet is back. Insurance sales and paying with loyalty points need internet; other pages show the last data loaded.",
-    "login_unavailable": "No internet, and this user has not logged in on this PC before (or the password is different). Log in once while online."
+    "login_unavailable": "No internet, and this user has not logged in on this PC before (or the password is different). Log in once while online.",
+    "saved_offline": "Saved on this PC — it will upload automatically when the internet is back."
   }
 }

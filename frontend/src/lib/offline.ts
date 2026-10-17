@@ -11,7 +11,11 @@
  *   PC at once and is queued.
  * - The last days' invoices (with items) are kept too, so a receipt can be found and a
  *   return made offline; the return is queued like a sale.
- * - Delivery status changes are queued too.
+ * - Delivery status changes are queued too, and so is any other change saved offline
+ *   (back office: prices, stock edits, purchases, customers, settings …). Every write
+ *   carries an X-Idempotency-Key, so the server applies it once however often it is
+ *   sent. Changes that depend on something created offline (e.g. editing a purchase
+ *   order made offline) can't be replayed and are flagged for review.
  * - A cashier who logged in on this PC before can log in / unlock offline (password
  *   checked against a salted PBKDF2 hash kept on the PC). Each queued item is uploaded
  *   with the login of the cashier who made it, while that login is still valid.
@@ -207,7 +211,7 @@ export async function searchOfflineProducts(q: string, limit = 60): Promise<any[
 }
 
 // ─── offline queue (sales + shift open/close) ─────────────────────────────
-type QueueKind = 'sale' | 'shift_open' | 'shift_close' | 'return' | 'delivery'
+type QueueKind = 'sale' | 'shift_open' | 'shift_close' | 'return' | 'delivery' | 'generic'
 interface QueuedSale {
   client_uuid: string
   created_at: string
@@ -221,6 +225,8 @@ interface QueuedSale {
   url?: string
   /** Login of the cashier who made it, so the upload is credited to them. */
   token?: string | null
+  /** 'generic' entries: HTTP method (post/put/patch/delete). */
+  method?: string
 }
 
 const queueKey = () => `sales-queue|${scope().split('|')[0]}`
@@ -297,11 +303,12 @@ async function queueSale(payload: any): Promise<{ invoice: any; items: any[] }> 
 // ─── offline cash shift ────────────────────────────────────────────────────
 const currentShiftKey = () => `get|${scope()}|/shifts/current|`
 
-async function queueEntry(kind: QueueKind, url: string, payload: any, number: string): Promise<string> {
+async function queueEntry(kind: QueueKind, url: string, payload: any, number: string, extra: Partial<QueuedSale> = {}): Promise<string> {
   const now = new Date().toISOString()
   const q = await readQueue()
   q.push({
-    client_uuid: uuid(), created_at: now, number, scope: scope(),
+    ...extra,
+    client_uuid: extra.client_uuid || uuid(), created_at: now, number, scope: scope(),
     branch: localStorage.getItem('pharma_active_branch'), payload, kind, url,
     token: localStorage.getItem('pharma_token'),
   })
@@ -389,7 +396,12 @@ async function doFlush(api: AxiosInstance): Promise<void> {
     for (const sale of q.filter((s) => !s.error)) {
       try {
         const own = sale.token && tokenValid(sale.token) ? { Authorization: `Bearer ${sale.token}` } : {}
-        await api.post(sale.url || '/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
+        if (sale.kind === 'generic') {
+          await api.request({
+            method: sale.method || 'post', url: sale.url, data: sale.payload,
+            headers: { 'X-Offline-Skip': '1', 'X-Idempotency-Key': sale.client_uuid, ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}), ...own },
+          })
+        } else await api.post(sale.url || '/sales', { ...sale.payload, client_uuid: sale.client_uuid, offline_created_at: sale.created_at }, {
           headers: { 'X-Offline-Skip': '1', ...(sale.branch ? { 'X-Active-Branch': sale.branch } : {}), ...own },
         })
         q = (await readQueue()).filter((s) => s.client_uuid !== sale.client_uuid)
@@ -397,6 +409,7 @@ async function doFlush(api: AxiosInstance): Promise<void> {
         setOnline(true)
       } catch (e: any) {
         if (isNetworkError(e)) { setOnline(false); break }
+        if (e?.response?.status === 409 && e.response.headers?.['x-idempotency-pending']) break // being saved — retry later
         if (e?.response?.status === 401) break // logged out — retry after login
         // Rejected by the server (e.g. product deleted): keep it, flagged for review.
         q = (await readQueue()).map((s) => s.client_uuid === sale.client_uuid
@@ -477,12 +490,25 @@ const SALE_GET = /^\/sales\/(-?\d+)$/
 const DELIVERY_STATUS = /^\/sales\/(\d+)\/delivery-status$/
 const SHIFT_REPORT = /^\/shifts\/(-?\d+)\/report$/
 /** Writes that depend on queued ones (a sale needs its shift): upload the queue first. */
-const ORDERED_WRITES = /^\/(sales$|sales\/-?\d+\/(return|delivery-status)$|shifts\/)/
+const WRITE_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+/** Never queued: logins, the offline machinery itself, AI, file transfers, exports. */
+const NOT_QUEUED = /^\/(auth|platform|pos\/offline|ai|assistant)|import|upload|export|download|whatsapp|\/eta\b/
+/** POSTs that only read or calculate (an answer is needed now, nothing is saved). */
+const READ_LIKE = /(calculate|preview|suggest|search|validate|check|quote|simulate|lookup|counsel|parse|analy|estimate|report|chat)/
 
 export function installOffline(api: AxiosInstance): void {
   api.interceptors.request.use(async (cfg) => {
     const method = (cfg.method || 'get').toLowerCase()
-    if (method === 'post' && ORDERED_WRITES.test(cfg.url || '') && !cfg.headers?.['X-Offline-Skip'] && status.pending > 0 && navigator.onLine) {
+    const isWrite = WRITE_METHODS.has(method) && !cfg.headers?.['X-Offline-Skip']
+    // Every write gets an id: if the answer is lost and it is queued and re-sent,
+    // the server returns the first answer instead of applying it twice.
+    // (Sales, returns and shifts carry their own client_uuid instead.)
+    const ownDedup = cfg.url === '/sales' || SALE_RETURN.test(cfg.url || '') || /^\/shifts\//.test(cfg.url || '')
+    if (isWrite && !ownDedup && !NOT_QUEUED.test(cfg.url || '') && !cfg.headers?.['X-Idempotency-Key']) {
+      cfg.headers.set('X-Idempotency-Key', uuid())
+    }
+    // Changes queued offline go first, so the server sees everything in order.
+    if (isWrite && !NOT_QUEUED.test(cfg.url || '') && status.pending > 0 && navigator.onLine) {
       await flushQueue(api)
     }
     // Give every sale its id up front: if the answer is lost (timeout) and the sale
@@ -547,8 +573,9 @@ export function installOffline(api: AxiosInstance): void {
         const cached = await idbGet(cacheKey(cfg))
         if (cached !== undefined) return fakeResponse(cfg, cached)
       }
-      if (method === 'post') {
-        const payload = typeof cfg.data === 'string' ? JSON.parse(cfg.data) : cfg.data
+      if (WRITE_METHODS.has(method)) {
+        let payload: any = cfg.data
+        try { if (typeof payload === 'string') payload = JSON.parse(payload) } catch { /* not JSON */ }
         if (url === '/sales' && payload?.type !== 'return') return fakeResponse(cfg, await queueSale(payload))
         if (url === '/shifts/open') return fakeResponse(cfg, await queueShiftOpen(payload))
         if (SHIFT_CLOSE.test(url)) return fakeResponse(cfg, await queueShiftClose(url, payload))
@@ -558,6 +585,14 @@ export function installOffline(api: AxiosInstance): void {
           return fakeResponse(cfg, { id: Number(dlv[1]), delivery_status: payload?.status, offline: true })
         }
         const ret = SALE_RETURN.exec(url)
+        if (!ret && url !== '/sales' && !NOT_QUEUED.test(url) && !READ_LIKE.test(url) && !(cfg.data instanceof FormData)
+          && !SHIFT_CLOSE.test(url) && url !== '/shifts/open') {
+          await queueEntry('generic', url, payload, `${method.toUpperCase()} ${url}`, {
+            method, client_uuid: String(cfg.headers?.['X-Idempotency-Key'] || uuid()),
+          })
+          window.dispatchEvent(new CustomEvent('fps-offline-queued'))
+          return { ...fakeResponse(cfg, { ...(payload && typeof payload === 'object' ? payload : {}), offline: true, queued: true }), status: 202 }
+        }
         if (ret) {
           if (Number(ret[1]) < 0) {
             return Promise.reject(Object.assign(new Error('This sale is still waiting to upload — make the return after it uploads.'), {

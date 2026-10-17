@@ -47,6 +47,13 @@ if os.getenv("ENVIRONMENT") == "production":
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=_trusted_hosts + ["localhost", "127.0.0.1"])
 
 
+from idempotency import idempotency_middleware  # noqa: E402
+
+# Writes carrying X-Idempotency-Key are applied once, however often they are sent
+# (offline tills re-send queued changes when the network returns).
+app.middleware("http")(idempotency_middleware)
+
+
 @app.middleware("http")
 async def demo_tenant_guard_middleware(request: Request, call_next):
     from demo_guard import demo_guard_for_request
