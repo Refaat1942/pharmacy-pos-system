@@ -96,6 +96,24 @@ def add_batch_stock(
     if qty <= 0:
         return
     ensure_batches_migrated(cur, product_id)
+    # Stock that arrives after an oversell first fills the oversold (negative) amount;
+    # otherwise a positive new lot sits next to a negative one and later transfers or
+    # adjustments, which only see positive lots, can push real stock below zero.
+    cur.execute("SELECT id, quantity FROM product_batches WHERE product_id=%s AND quantity < 0 FOR UPDATE",
+                (product_id,))
+    for neg in cur.fetchall():
+        if qty <= 0:
+            break
+        fill = min(qty, -int(neg["quantity"]))
+        left = int(neg["quantity"]) + fill
+        if left == 0:
+            cur.execute("DELETE FROM product_batches WHERE id=%s", (neg["id"],))
+        else:
+            cur.execute("UPDATE product_batches SET quantity=%s, updated_at=NOW() WHERE id=%s", (left, neg["id"]))
+        qty -= fill
+    if qty <= 0:
+        sync_product_from_batches(cur, product_id)
+        return
     key = _expiry_key(expiry_date)
     cur.execute(
         """UPDATE product_batches
@@ -192,8 +210,10 @@ def deduct_stock_fefo(
     today: Optional[date] = None,
     sellable_only: bool = True,
     allow_negative: bool = False,
-) -> None:
+) -> list:
     """Deduct stock from batches (FEFO). When sellable_only, skip expired lots.
+    Returns the lots taken as [(expiry_date, qty), …] (e.g. so a transfer can
+    recreate the same expiry dates at the other branch).
 
     When allow_negative is True (POS sales), overselling is permitted. Any
     quantity not covered by sellable batches is recorded as a negative oversell
@@ -206,7 +226,7 @@ def deduct_stock_fefo(
     remaining = qty
     if sellable_only:
         cur.execute(
-            """SELECT id, quantity FROM product_batches
+            """SELECT id, quantity, expiry_date FROM product_batches
                WHERE product_id = %s AND quantity > 0
                  AND (expiry_date IS NULL OR expiry_date >= %s)
                ORDER BY COALESCE(expiry_date, DATE '9999-12-31') ASC
@@ -215,13 +235,14 @@ def deduct_stock_fefo(
         )
     else:
         cur.execute(
-            """SELECT id, quantity FROM product_batches
+            """SELECT id, quantity, expiry_date FROM product_batches
                WHERE product_id = %s AND quantity > 0
                ORDER BY COALESCE(expiry_date, DATE '9999-12-31') ASC
                FOR UPDATE""",
             (product_id,),
         )
     batches = cur.fetchall()
+    taken: list = []
     available = sum(int(b["quantity"]) for b in batches)
     if available < qty and not allow_negative:
         if sellable_only:
@@ -242,6 +263,7 @@ def deduct_stock_fefo(
         if remaining <= 0:
             break
         take = min(remaining, int(b["quantity"]))
+        taken.append((b["expiry_date"], take))
         new_q = int(b["quantity"]) - take
         if new_q == 0:
             cur.execute("DELETE FROM product_batches WHERE id=%s", (b["id"],))
@@ -254,6 +276,7 @@ def deduct_stock_fefo(
     if remaining > 0 and allow_negative:
         _apply_oversell_deficit(cur, product_id, remaining)
     sync_product_from_batches(cur, product_id)
+    return taken
 
 
 def earliest_sellable_expiry(cur, product_id: int, today: Optional[date] = None) -> Optional[date]:

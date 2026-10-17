@@ -813,7 +813,7 @@ export const transfersAPI = {
   create: (data: {
     from_branch_id: number
     to_branch_id: number
-    items: { product_id: number; quantity: number; unit_type?: 'pack' | 'sub' }[]
+    items: { product_id: number; quantity: number; unit_type?: 'pack' | 'mid' | 'sub' }[]
     notes?: string
   }) => api.post<{ ok: boolean; transfer_id: number; transfer_number: string }>(
     '/inventory/transfers', data,

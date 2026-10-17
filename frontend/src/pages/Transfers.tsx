@@ -229,10 +229,23 @@ interface CartLine {
   international_barcode?: string | null
   stock: number              // available stock in sub-units
   quantity: number           // entered quantity in the chosen unit_type
-  unit_type: 'pack' | 'sub'  // box vs strip
+  unit_type: 'pack' | 'mid' | 'sub'  // box, strip (3-level items) or smallest unit
   unit: string
   sub_unit?: string | null
   pack_size?: number | null
+  mid_unit?: string | null
+  mid_size?: number | null
+}
+
+/** Smallest units in one unit of the line's chosen type. */
+function perUnit(l: CartLine) {
+  if (l.unit_type === 'sub') return 1
+  if (l.unit_type === 'mid' && l.mid_size && l.mid_size > 1) return l.mid_size
+  return packOf(l)
+}
+
+function hasMidUnit(l: { mid_unit?: string | null; mid_size?: number | null; pack_size?: number | null }) {
+  return !!l.mid_unit && !!l.mid_size && l.mid_size > 1 && l.mid_size < packOf(l)
 }
 
 /** Pack size as a usable factor (>=1). */
@@ -247,13 +260,12 @@ function hasSubUnit(l: { sub_unit?: string | null; pack_size?: number | null }) 
 
 /** Label of the currently selected transfer unit for a line. */
 function lineUnitLabel(l: CartLine) {
-  return l.unit_type === 'sub' ? (l.sub_unit || 'unit') : (l.unit || 'unit')
+  return l.unit_type === 'sub' ? (l.sub_unit || 'unit') : l.unit_type === 'mid' ? (l.mid_unit || 'strip') : (l.unit || 'unit')
 }
 
 /** Max quantity in the chosen unit (stock is stored in sub-units). */
 function maxInUnit(l: CartLine) {
-  const pack = packOf(l)
-  return l.unit_type === 'sub' ? l.stock : Math.floor(l.stock / pack)
+  return Math.floor(l.stock / perUnit(l))
 }
 
 /**
@@ -340,6 +352,8 @@ function CreateTransferModal({
         unit: p.unit,
         sub_unit: p.sub_unit,
         pack_size: p.pack_size,
+        mid_unit: (p as any).mid_unit,
+        mid_size: (p as any).mid_size,
       }]
     })
   }
@@ -347,7 +361,7 @@ function CreateTransferModal({
     setLines(lines.map((l) => l.product_id === pid
       ? { ...l, quantity: Math.max(1, Math.min(maxInUnit(l), qty)) }
       : l))
-  const updateUnitType = (pid: number, unit_type: 'pack' | 'sub') =>
+  const updateUnitType = (pid: number, unit_type: 'pack' | 'mid' | 'sub') =>
     setLines(lines.map((l) => {
       if (l.product_id !== pid) return l
       const next = { ...l, unit_type }
@@ -551,11 +565,12 @@ function CreateTransferModal({
                   {hasSubUnit(l) ? (
                     <select
                       value={l.unit_type}
-                      onChange={(e) => updateUnitType(l.product_id, e.target.value as 'pack' | 'sub')}
+                      onChange={(e) => updateUnitType(l.product_id, e.target.value as 'pack' | 'mid' | 'sub')}
                       className="input w-24 text-xs py-1"
                       title={t('transfers.unit') as string}
                     >
                       <option value="pack">{l.unit}</option>
+                      {hasMidUnit(l) && <option value="mid">{l.mid_unit}</option>}
                       <option value="sub">{l.sub_unit}</option>
                     </select>
                   ) : (

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 import io
+import json
 import math
 import re
 import threading
@@ -12,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id, requires_feature
+from deps import get_current_user, get_active_branch_id, requires_feature, require_user_feature
 from tenant_ctx import get_current_schema
 from stock_batches import (
     add_batch_stock,
@@ -240,6 +241,7 @@ ALLOWED_UPDATE_FIELDS = {"barcode", "international_barcode", "name_ar", "name_en
 @router.put("/products/{product_id}")
 def update_product(product_id: int, req: ProductUpdate,
                    current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "inventory")
     fields = {k: v for k, v in req.model_dump(exclude_unset=True).items()
               if k in ALLOWED_UPDATE_FIELDS}
     if not fields:
@@ -385,6 +387,7 @@ def create_product_batch(
     req: BatchCreate,
     current_user=Depends(get_current_user),
 ):
+    require_user_feature(current_user, "inventory", "expiry")
     if req.quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be positive")
     conn = get_db_connection()
@@ -421,6 +424,7 @@ def update_product_batch(
     req: BatchUpdate,
     current_user=Depends(get_current_user),
 ):
+    require_user_feature(current_user, "inventory", "expiry")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -460,6 +464,7 @@ def update_product_batch(
 
 @router.delete("/batches/{batch_id}")
 def delete_product_batch(batch_id: int, current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "inventory", "expiry")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -870,6 +875,7 @@ class AdjustmentRequest(BaseModel):
 @router.post("/adjustments")
 def create_adjustment(req: AdjustmentRequest,
                       current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "inventory")
     if req.set_to is None and (req.delta is None or req.delta == 0):
         raise HTTPException(status_code=400, detail="Provide delta or set_to")
     if not req.reason or not req.reason.strip():
@@ -966,6 +972,7 @@ def _current_batches_signature(cur, product_id: int) -> list:
 @router.post("/stocktake")
 def apply_stocktake(req: StocktakeRequest,
                     current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "inventory")
     if not req.items:
         raise HTTPException(status_code=400, detail="No counted items provided")
     note = (req.note or "").strip()
@@ -1309,6 +1316,10 @@ def list_movements(product_id: Optional[int] = None,
                    end_date: Optional[date] = None,
                    limit: int = 200,
                    current_user=Depends(get_current_user)):
+    # Branch staff see their own branch's movements only; results are capped.
+    if current_user.get("role") != "admin":
+        branch_id = current_user.get("branch_id") or -1
+    limit = max(1, min(int(limit or 200), 2000))
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     where = []
@@ -1390,9 +1401,11 @@ def export_movements(
 def velocity_classification(days: int = 90,
                             date_from: Optional[str] = None,
                             date_to: Optional[str] = None,
-                            current_user=Depends(get_current_user)):
+                            current_user=Depends(get_current_user),
+                            active_branch=Depends(get_active_branch_id)):
     """
-    Classify items by sales velocity over a period.
+    Classify items by sales velocity over a period (sold quantity in boxes, for the
+    active branch).
     Uses a custom [date_from, date_to] range when both are supplied,
     otherwise the last N days.
     - fast:  >= 10 units sold
@@ -1423,16 +1436,16 @@ def velocity_classification(days: int = 90,
         filter_params = [days]
     cur.execute(
         f"""SELECT p.id, p.name_ar, p.name_en, p.barcode, p.stock, p.unit, p.price,
-                  COALESCE(SUM(ii.quantity) FILTER (
+                  ROUND(COALESCE(SUM(ii.quantity * COALESCE(ii.pack_size, CASE WHEN ii.unit_label = p.sub_unit THEN 1 ELSE p.pack_size END, 1)) FILTER (
                       {sold_filter}
-                  ), 0) AS sold_qty
+                  ), 0)::numeric / GREATEST(COALESCE(p.pack_size, 1), 1), 2) AS sold_qty
            FROM products p
            LEFT JOIN invoice_items ii ON ii.product_id = p.id
            LEFT JOIN invoices i ON ii.invoice_id = i.id AND i.status='completed'
-           WHERE p.active = true
+           WHERE p.active = true {"AND p.branch_id = %s" if active_branch is not None else ""}
            GROUP BY p.id
            ORDER BY sold_qty DESC""",
-        filter_params,
+        filter_params + ([active_branch] if active_branch is not None else []),
     )
     rows = cur.fetchall()
     conn.close()
@@ -2509,6 +2522,7 @@ def _run_bulk_job(job_id: str, content: bytes, filename: str, branch_id: int, us
 @router.post("/bulk-upload/preview")
 def bulk_upload_preview(file: UploadFile = File(...), current_user=Depends(get_current_user)):
     """Detect sheet, header row and column meanings so the user can review them before importing."""
+    require_user_feature(current_user, "inventory")
     from import_mapper import FIELDS, analyze_file
     content = file.file.read()
     if not content:
@@ -2537,6 +2551,7 @@ def bulk_upload(file: UploadFile = File(...),
     ``mapping`` (optional JSON {column_index: field}) is the column mapping the user
     confirmed on the preview screen; without it columns are auto-detected.
     """
+    require_user_feature(current_user, "inventory")
     branch_id = active_branch if active_branch is not None else current_user.get("branch_id")
     if branch_id is None:
         raise HTTPException(
@@ -2588,7 +2603,8 @@ def bulk_upload_status(job_id: str, current_user=Depends(get_current_user)):
 @router.get("/consumption-alerts")
 def consumption_alerts(days: int = 30,
                        coverage_days: int = 7,
-                       current_user=Depends(get_current_user)):
+                       current_user=Depends(get_current_user),
+                       active_branch=Depends(get_active_branch_id)):
     """
     Alert when current stock < (avg daily consumption × coverage_days).
     Based on last `days` days of sales.
@@ -2600,15 +2616,19 @@ def consumption_alerts(days: int = 30,
                   COALESCE(s.sold, 0)::float / %s AS avg_daily
            FROM products p
            LEFT JOIN (
-               SELECT ii.product_id, SUM(ii.quantity) AS sold
+               -- smallest units, like products.stock (boxes and strips were mixed before)
+               SELECT ii.product_id,
+                      SUM(ii.quantity * COALESCE(ii.pack_size,
+                          CASE WHEN ii.unit_label = pp.sub_unit THEN 1 ELSE pp.pack_size END, 1)) AS sold
                FROM invoice_items ii
                JOIN invoices i ON ii.invoice_id = i.id
+               JOIN products pp ON pp.id = ii.product_id
                WHERE i.status='completed'
                  AND i.created_at >= NOW() - (%s || ' days')::interval
                GROUP BY ii.product_id
            ) s ON s.product_id = p.id
-           WHERE p.active = true""",
-        (days, days),
+           WHERE p.active = true AND (%s::int IS NULL OR p.branch_id = %s)""",
+        (days, days, active_branch, active_branch),
     )
     rows = cur.fetchall()
     conn.close()
@@ -2807,10 +2827,24 @@ def export_reallocation_suggestions(
 
 # ─── STOCK TRANSFERS ────────────────────────────────────────────────────────
 
+def _transfer_lots(item: dict, fallback_expiry):
+    """Lots a transfer line carried: [(expiry_date|None, qty)]; older transfers saved
+    none — then the whole quantity with the fallback expiry."""
+    raw = item.get("lots")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if raw:
+        return [(date.fromisoformat(e) if e else None, int(q)) for e, q in raw if int(q) > 0]
+    return [(fallback_expiry, int(item["quantity"]))]
+
+
 class TransferItemIn(BaseModel):
     product_id: int
     quantity: int                       # in the unit named by unit_type
-    unit_type: Optional[str] = "pack"   # "pack" (main unit / box) or "sub" (sub-unit / strip)
+    unit_type: Optional[str] = "pack"   # "pack" (box), "mid" (strip on 3-level items) or "sub" (smallest unit)
 
 
 class TransferRequest(BaseModel):
@@ -2829,6 +2863,7 @@ def _assert_can_transfer_from(user, from_branch_id: int):
 
 @router.post("/transfers")
 def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "transfers")
     if req.from_branch_id == req.to_branch_id:
         raise HTTPException(status_code=400, detail="Source and destination must differ")
     if not req.items:
@@ -2861,7 +2896,8 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
             if it.quantity <= 0:
                 raise HTTPException(status_code=400, detail="Quantity must be positive")
             cur.execute(
-                "SELECT id, stock, branch_id, barcode, name_ar, name_en, unit, sub_unit, pack_size FROM products WHERE id=%s FOR UPDATE",
+                "SELECT id, stock, branch_id, barcode, name_ar, name_en, unit, sub_unit, pack_size, mid_unit, mid_size "
+                "FROM products WHERE id=%s FOR UPDATE",
                 (it.product_id,),
             )
             p = cur.fetchone()
@@ -2873,28 +2909,28 @@ def create_transfer(req: TransferRequest, current_user=Depends(get_current_user)
                     detail=f"Product {p['name_en']} is not in source branch {req.from_branch_id}",
                 )
             # Convert the requested quantity into stock units (sub-units when pack_size > 1).
+            from pack_units import unit_label as _unit_label, unit_multiple
             pack_size = max(1, int(p.get("pack_size") or 1))
-            unit_type = (it.unit_type or "pack").lower()
-            if unit_type == "sub" and pack_size > 1:
-                sub_qty = it.quantity
-                unit_label = p.get("sub_unit") or "unit"
-                line_pack = 1
-            else:
-                sub_qty = it.quantity * pack_size
-                unit_label = p.get("unit") or "unit"
-                line_pack = pack_size
+            per = unit_multiple(p, it.unit_type)       # box / strip / tablet → smallest units
+            sub_qty = it.quantity * per
+            unit_label = _unit_label(p, it.unit_type) or p.get("unit") or "unit"
+            line_pack = per
             if int(p["stock"]) < sub_qty:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Insufficient stock for {p['name_en']} (have {p['stock']}, need {sub_qty})",
                 )
-            deduct_stock_fefo(cur, p["id"], sub_qty, sellable_only=False)
+            # Expired stock is not shipped; remember which expiry dates left so the
+            # receiving branch (or a cancel) gets exactly those dates back.
+            lots = deduct_stock_fefo(cur, p["id"], sub_qty, sellable_only=True)
             new_stock = sync_product_from_batches(cur, p["id"])
             cur.execute(
                 """INSERT INTO stock_transfer_items
-                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity, unit_label, pack_size)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], sub_qty, unit_label, line_pack),
+                   (transfer_id, source_product_id, barcode, product_name_ar, product_name_en, quantity, unit_label,
+                    pack_size, lots, source_pack_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (transfer_id, p["id"], p["barcode"], p["name_ar"], p["name_en"], sub_qty, unit_label, line_pack,
+                 json.dumps([[e.isoformat() if e else None, q] for e, q in lots]), pack_size),
             )
             log_movement(
                 cur, p["id"], req.from_branch_id, "transfer_out",
@@ -2979,6 +3015,7 @@ def get_transfer(transfer_id: int, current_user=Depends(get_current_user)):
 
 @router.post("/transfers/{transfer_id}/receive")
 def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "transfers")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -3036,7 +3073,14 @@ def receive_transfer(transfer_id: int, current_user=Depends(get_current_user)):
                             status_code=409,
                             detail=f"Could not resolve destination product for barcode {src['barcode']}",
                         )
-            add_batch_stock(cur, dest["id"], to_branch, int(it["quantity"]), src.get("expiry_date"))
+            # Same expiry dates as the stock that left; converted by boxes if the two
+            # branches pack the item differently.
+            cur.execute("SELECT pack_size FROM products WHERE id=%s", (dest["id"],))
+            dest_pack = max(1, int((cur.fetchone() or {}).get("pack_size") or 1))
+            src_pack = max(1, int(it.get("source_pack_size") or src.get("pack_size") or 1))
+            ratio = dest_pack / src_pack
+            for exp, q in _transfer_lots(it, src.get("expiry_date")):
+                add_batch_stock(cur, dest["id"], to_branch, int(round(q * ratio)), exp)
             new_stock = sync_product_from_batches(cur, dest["id"])
             cur.execute(
                 "UPDATE stock_transfer_items SET dest_product_id=%s WHERE id=%s",
@@ -3089,7 +3133,8 @@ def cancel_transfer(transfer_id: int, current_user=Depends(get_current_user)):
             p = cur.fetchone()
             if not p:
                 continue
-            add_batch_stock(cur, it["source_product_id"], t["from_branch_id"], int(it["quantity"]), None)
+            for exp, q in _transfer_lots(it, None):
+                add_batch_stock(cur, it["source_product_id"], t["from_branch_id"], q, exp)
             new_stock = sync_product_from_batches(cur, it["source_product_id"])
             log_movement(
                 cur, it["source_product_id"], t["from_branch_id"], "adjustment",

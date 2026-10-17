@@ -246,6 +246,8 @@ CREATE TABLE IF NOT EXISTS stock_transfer_items (
     quantity INTEGER NOT NULL CHECK (quantity > 0)
 );
 CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer ON stock_transfer_items(transfer_id);
+ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS lots JSONB;
+ALTER TABLE stock_transfer_items ADD COLUMN IF NOT EXISTS source_pack_size INTEGER;
 
 CREATE SEQUENCE IF NOT EXISTS stock_transfer_seq START 1;
 

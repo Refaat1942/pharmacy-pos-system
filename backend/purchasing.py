@@ -9,7 +9,7 @@ from typing import Optional, List
 from datetime import date, datetime
 import psycopg2.extras
 from db import get_db_connection
-from deps import get_current_user, get_active_branch_id
+from deps import get_current_user, get_active_branch_id, require_user_feature
 from inventory import log_movement
 from stock_batches import add_batch_stock, sync_product_from_batches
 
@@ -507,6 +507,7 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
 
 @router.post("/purchase-orders")
 def create_po(req: POIn, current_user=Depends(get_current_user)):
+    require_user_feature(current_user, "purchases")
     if not req.items:
         raise HTTPException(status_code=400, detail="At least one item required")
     if req.discount < 0 or req.tax < 0:
@@ -716,6 +717,7 @@ def get_po(po_id: int, current_user=Depends(get_current_user)):
 def receive_po(po_id: int, current_user=Depends(get_current_user)):
     """Receive PO: add stock to branch, log purchase movements,
     update product cost + expiry_date when provided."""
+    require_user_feature(current_user, "purchases")
     conn = get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
