@@ -1140,7 +1140,10 @@
     "clear_clinic": "Remove clinic",
     "clear_cart": "Clear",
     "scan_or_type": "Scan or type",
-    "sell_unit": "Sell unit"
+    "sell_unit": "Sell unit",
+    "expired_blocked": "{{name}} — expired on {{date}}. It cannot be sold.",
+    "near_expiry_added": "Added — note: {{name}} expires in {{days}} day(s) ({{date}}).",
+    "hotkeys_hint": "F2 search · F4 quantity · F8 discount · F9 pay · Esc clear"
   },
   "payment": {
     "title": "Complete Payment",
@@ -1365,7 +1368,8 @@
     "detail_title": "Sale details",
     "items_count": "Items",
     "filter_payment": "Payment",
-    "filter_platform": "Platform"
+    "filter_platform": "Platform",
+    "reprint": "Reprint"
   },
   "branch": {
     "switch": "Switch Branch",

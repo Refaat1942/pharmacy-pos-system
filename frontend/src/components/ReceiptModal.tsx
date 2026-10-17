@@ -12,7 +12,8 @@ import { useAuth } from '../lib/auth'
 
 interface Props {
   sale: SaleResponse
-  onNewSale: () => void
+  /** Omitted when reprinting an old sale from Sales history. */
+  onNewSale?: () => void
   onClose: () => void
   onSaleUpdate?: (sale: SaleResponse) => void
 }
@@ -567,14 +568,14 @@ export default function ReceiptModal({ sale, onNewSale, onClose, onSaleUpdate }:
               </button>
             )}
           </div>
-          <button
+          {onNewSale && <button
             onClick={onNewSale}
             className="w-full flex items-center justify-center gap-2 text-white rounded-xl py-2.5 text-sm font-bold transition-all shadow-lg"
             style={{ backgroundColor: accent }}
           >
             <ShoppingCart size={16} />
             {t('receipt.new_sale')}
-          </button>
+          </button>}
         </div>
       </div>
     </div>
