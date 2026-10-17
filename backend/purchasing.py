@@ -110,16 +110,21 @@ def list_suppliers(q: str = "", active_only: bool = True,
         paid_sub = ("(SELECT COALESCE(SUM(sp.amount),0) FROM supplier_payments sp "
                     "JOIN purchase_orders po ON sp.po_id=po.id "
                     "WHERE sp.supplier_id=s.id AND po.branch_id=%s)")
-        select_aggs = f"{charged_sub} AS total_charged, {paid_sub} AS total_paid"
+        returned_sub = ("(SELECT COALESCE(SUM(total),0) FROM supplier_returns "
+                        "WHERE supplier_id=s.id AND status='done' AND branch_id=%s)")
+        select_aggs = (f"{charged_sub} AS total_charged, {paid_sub} AS total_paid, "
+                       f"{returned_sub} AS total_returned")
         sql = f"SELECT s.*, {select_aggs} FROM suppliers s"
-        # Prepend two branch params before any q params
-        params = [ub, ub] + params
+        # Prepend the branch params before any q params
+        params = [ub, ub, ub] + params
     else:
         sql = """SELECT s.*,
                         COALESCE(s.opening_balance, 0) + COALESCE((SELECT SUM(total) FROM purchase_orders
                                   WHERE supplier_id=s.id AND status='received'), 0) AS total_charged,
                         COALESCE((SELECT SUM(amount) FROM supplier_payments
-                                  WHERE supplier_id=s.id), 0) AS total_paid
+                                  WHERE supplier_id=s.id), 0) AS total_paid,
+                        COALESCE((SELECT SUM(total) FROM supplier_returns
+                                  WHERE supplier_id=s.id AND status='done'), 0) AS total_returned
                  FROM suppliers s"""
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -127,7 +132,7 @@ def list_suppliers(q: str = "", active_only: bool = True,
     cur.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]
     for r in rows:
-        r["balance"] = float(r["total_charged"]) - float(r["total_paid"])
+        r["balance"] = float(r["total_charged"]) - float(r["total_paid"]) - float(r["total_returned"])
     conn.close()
     return rows
 
@@ -862,8 +867,13 @@ def supplier_statement(supplier_id: int,
                FROM supplier_payments sp
                JOIN purchase_orders po ON sp.po_id = po.id
                WHERE sp.supplier_id=%s AND po.branch_id=%s
+               UNION ALL
+               SELECT 'return' AS kind, id, return_number, created_at AS at,
+                      0 AS debit, total AS credit, notes
+               FROM supplier_returns
+               WHERE supplier_id=%s AND status='done' AND branch_id=%s
                ORDER BY at ASC NULLS LAST""",
-            (supplier_id, ub, supplier_id, ub),
+            (supplier_id, ub, supplier_id, ub, supplier_id, ub),
         )
     else:
         cur.execute(
@@ -876,8 +886,13 @@ def supplier_statement(supplier_id: int,
                       0 AS debit, amount AS credit, notes
                FROM supplier_payments
                WHERE supplier_id=%s
+               UNION ALL
+               SELECT 'return' AS kind, id, return_number, created_at AS at,
+                      0 AS debit, total AS credit, notes
+               FROM supplier_returns
+               WHERE supplier_id=%s AND status='done'
                ORDER BY at ASC NULLS LAST""",
-            (supplier_id, supplier_id),
+            (supplier_id, supplier_id, supplier_id),
         )
     txns = [dict(r) for r in cur.fetchall()]
     opening = float(sup.get("opening_balance") or 0)

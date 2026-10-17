@@ -1068,7 +1068,9 @@
     "mid_title": "Middle unit (optional) — for Box → Strip → Tablet. Set “Sub unit” to the smallest unit (e.g. Tablet) and “Units per box” to tablets per box.",
     "f_mid_unit": "Middle unit",
     "f_mid_size": "{{sub}} per {{mid}}",
-    "mid_invalid": "The middle unit size must divide the {{box}} units per box evenly (e.g. 30 = 3 × 10)."
+    "mid_invalid": "The middle unit size must divide the {{box}} units per box evenly (e.g. 30 = 3 × 10).",
+    "move_supplier_return": "Returned to supplier",
+    "move_supplier_return_cancel": "Supplier return cancelled"
   },
   "pos": {
     "search_placeholder": "Search by name or barcode...",
@@ -1486,7 +1488,8 @@
     "col_region": "Area / Region",
     "col_address_details": "Address Details",
     "address_details_placeholder": "Street, building #, apartment…",
-    "kind_opening": "Opening balance"
+    "kind_opening": "Opening balance",
+    "kind_return": "Return"
   },
   "purchases": {
     "title": "Purchase Orders",
@@ -2152,5 +2155,46 @@
     "read_failed": "Could not read the file",
     "import_failed": "Import failed",
     "btn_purchases": "Import old purchases"
+  },
+  "supplier_returns": {
+    "btn": "Return to supplier",
+    "title": "Supplier returns",
+    "subtitle": "Send expired, damaged or surplus items back — taken out of stock and credited to the supplier",
+    "new": "New return",
+    "supplier": "Supplier",
+    "branch": "Branch",
+    "reason": "Reason",
+    "notes": "Notes",
+    "search": "Search by name or barcode…",
+    "pick_supplier_first": "Pick the supplier first",
+    "item": "Item",
+    "lot": "Lot / expiry",
+    "unit": "Unit",
+    "qty": "Qty",
+    "cost": "Credit per unit",
+    "line_total": "Total",
+    "earliest_first": "Earliest expiry first",
+    "no_expiry": "No expiry",
+    "hint": "The credit is suggested from the last purchase from this supplier (or average cost) and can be changed. An expired lot is picked automatically when there is one.",
+    "empty": "No returns yet",
+    "date": "Date",
+    "items": "Items",
+    "total": "Total",
+    "status": "Status",
+    "status_done": "Done",
+    "status_cancelled": "Cancelled",
+    "cancel": "Cancel return",
+    "cancel_confirm": "Cancel return {{n}}? The quantities go back to stock with the same expiry dates.",
+    "save": "Save return",
+    "failed": "Could not save the return",
+    "reason_expired": "Expired",
+    "reason_near_expiry": "Near expiry",
+    "reason_damaged": "Damaged",
+    "reason_surplus": "Surplus / slow moving",
+    "reason_recall": "Recall",
+    "reason_other": "Other",
+    "unit_pack": "Box",
+    "unit_mid": "Strip",
+    "unit_sub": "Unit"
   }
 }
