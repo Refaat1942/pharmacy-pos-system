@@ -482,6 +482,8 @@ ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS dose_text TEXT;
 
 -- Backfill per-line pack_size on invoice/return items (requires products.pack_size + unit_label).
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS pack_size INTEGER;
+-- Cost of one smallest unit when the line was sold (profit reports use this).
+ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS unit_cost_sub NUMERIC(14,6);
 UPDATE invoice_items ii
 SET pack_size = CASE
         WHEN COALESCE(p.pack_size, 1) > 1 AND ii.unit_label IS DISTINCT FROM p.sub_unit
