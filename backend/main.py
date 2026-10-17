@@ -174,6 +174,8 @@ from shifts import router as shifts_router
 app.include_router(shifts_router, dependencies=[Depends(requires_feature("shifts"))])
 from hr import router as hr_router, _normalize_code
 app.include_router(hr_router, dependencies=[Depends(requires_feature("hr"))])
+from hr_leaves import router as hr_leaves_router  # noqa: E402
+app.include_router(hr_leaves_router, dependencies=[Depends(requires_feature("hr"))])
 from offers import router as offers_router
 app.include_router(offers_router)
 from platform_api import router as platform_router

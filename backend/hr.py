@@ -70,6 +70,8 @@ def _attendance_payroll_stats(cur, employee_id: int, period_month: str, hours_al
                  WHERE status = 'present' AND check_in IS NOT NULL AND check_out IS NULL)::int AS incomplete,
                COALESCE(SUM(
                  CASE
+                   -- Paid leave (annual / casual / sick from the leaves screen) is a full day.
+                   WHEN status = 'leave' AND COALESCE(paid_leave, false) THEN %(std)s
                    WHEN status <> 'present' THEN 0
                    -- Checked in but never checked out: no hours until HR completes the day
                    -- (it used to count as a full 8-hour day).
@@ -191,6 +193,7 @@ class EmployeeIn(BaseModel):
     notes: Optional[str] = None
     active: bool = True
     hours_allowance: float = Field(0, ge=0)
+    annual_leave_days: Optional[int] = Field(None, ge=0, le=60)
 
 
 @router.get("/employees")
@@ -220,10 +223,11 @@ def create_employee(body: EmployeeIn, current_user=Depends(get_current_user)):
     try:
         cur.execute("""
             INSERT INTO employees(name, role, branch_id, base_salary, hire_date,
-                                  phone, national_id, notes, active, hours_allowance)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+                                  phone, national_id, notes, active, hours_allowance, annual_leave_days)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, 21)) RETURNING *
         """, [body.name, body.role, body.branch_id, body.base_salary, body.hire_date,
-              body.phone, body.national_id, body.notes, body.active, body.hours_allowance])
+              body.phone, body.national_id, body.notes, body.active, body.hours_allowance,
+              body.annual_leave_days])
         row = dict(cur.fetchone())
         # Assign a unique clock_code now that we know the new id
         code = _generate_clock_code(row["id"], body.name)
@@ -430,10 +434,12 @@ def update_employee(eid: int, body: EmployeeIn, current_user=Depends(get_current
     try:
         cur.execute("""
             UPDATE employees SET name=%s, role=%s, branch_id=%s, base_salary=%s,
-              hire_date=%s, phone=%s, national_id=%s, notes=%s, active=%s, hours_allowance=%s
+              hire_date=%s, phone=%s, national_id=%s, notes=%s, active=%s, hours_allowance=%s,
+              annual_leave_days=COALESCE(%s, annual_leave_days)
             WHERE id=%s RETURNING *
         """, [body.name, body.role, body.branch_id, body.base_salary, body.hire_date,
-              body.phone, body.national_id, body.notes, body.active, body.hours_allowance, eid])
+              body.phone, body.national_id, body.notes, body.active, body.hours_allowance,
+              body.annual_leave_days, eid])
         row = cur.fetchone()
         if not row: raise HTTPException(404, "Employee not found")
         conn.commit(); return dict(row)
@@ -710,6 +716,38 @@ def list_payroll(period_month: Optional[str] = None, q: Optional[str] = None,
         cur.close(); conn.close()
 
 
+def _deduct_advances(cur, employee_id: int, slip_id: int, period_month: str, net: float) -> float:
+    """Take this month's installment of every open advance, never more than the slip pays."""
+    _, _, period_end = _period_bounds(period_month)
+    cur.execute("""
+        SELECT a.id, a.amount, a.installments,
+               a.amount - COALESCE((SELECT SUM(d.amount) FROM advance_deductions d WHERE d.advance_id=a.id), 0) AS remaining
+        FROM employee_advances a
+        WHERE a.employee_id=%s AND a.status='active' AND a.given_on <= %s
+        ORDER BY a.given_on, a.id
+    """, [employee_id, period_end])
+    room = max(0.0, float(net))
+    total = 0.0
+    for a in cur.fetchall():
+        remaining = float(a['remaining'] or 0)
+        if remaining <= 0.009 or room <= 0:
+            continue
+        due = round(float(a['amount']) / max(1, int(a['installments'])), 2)
+        take = round(min(remaining if remaining - due < 0.01 else due, room), 2)
+        if take <= 0:
+            continue
+        cur.execute("INSERT INTO advance_deductions(advance_id, slip_id, amount) VALUES (%s,%s,%s)",
+                    [a['id'], slip_id, take])
+        room -= take
+        total += take
+    if total:
+        cur.execute(
+            "UPDATE salary_slips SET advance_deduction=%s, net_amount=net_amount-%s WHERE id=%s",
+            [round(total, 2), round(total, 2), slip_id],
+        )
+    return total
+
+
 @router.post("/payroll/generate")
 def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
     """Create draft slips for active employees for given YYYY-MM. Skips existing."""
@@ -740,10 +778,14 @@ def generate_payroll(period_month: str, current_user=Depends(get_current_user)):
                     standard_days, standard_hours, net_amount, status)
                 VALUES (%s,%s,%s,0,0,0,%s,%s,%s,%s,%s,%s,%s,%s,'draft')
                 ON CONFLICT (employee_id, period_month) DO NOTHING
+                RETURNING id
             """, [e['id'], period_month, e['base_salary'], days, hours,
                   stats['absent_days'], stats['leave_days'], prorated,
                   PAYROLL_WORKING_DAYS, PAYROLL_STANDARD_MONTH_HOURS, net])
-            if cur.rowcount > 0: created += 1
+            new_slip = cur.fetchone()
+            if new_slip:
+                created += 1
+                _deduct_advances(cur, e['id'], new_slip['id'], period_month, net)
         conn.commit()
         # Days with a check-in but no check-out are paid 0 h until HR completes them.
         return {"created": created, "total_employees": len(emps), "period_month": period_month,
@@ -769,7 +811,8 @@ def update_slip(slip_id: int, body: SlipUpdateIn, current_user=Depends(get_curre
         prorated = float(slip.get('prorated_base') or 0)
         if not prorated:
             prorated = _prorated_base_hours(slip['base_salary'], hrs)
-        net = _slip_net(prorated, body.bonus, body.penalties, body.deductions)
+        net = round(_slip_net(prorated, body.bonus, body.penalties, body.deductions)
+                    - float(slip.get('advance_deduction') or 0), 2)
         cur.execute("""
             UPDATE salary_slips SET bonus=%s, penalties=%s, deductions=%s,
               prorated_base=%s, net_amount=%s,
@@ -815,7 +858,8 @@ def get_payslip(slip_id: int, current_user=Depends(get_current_user)):
         bonus = float(slip.get("bonus") or 0)
         penalties = float(slip.get("penalties") or 0)
         deductions = float(slip.get("deductions") or 0)
-        net = float(slip.get("net_amount") or _slip_net(prorated, bonus, penalties, deductions))
+        advances = float(slip.get("advance_deduction") or 0)
+        net = float(slip.get("net_amount") or _slip_net(prorated, bonus, penalties, deductions) - advances)
         std_days = int(slip.get("standard_days") or PAYROLL_WORKING_DAYS)
         std_hours = float(slip.get("standard_hours") or PAYROLL_STANDARD_MONTH_HOURS)
         return {
@@ -852,7 +896,8 @@ def get_payslip(slip_id: int, current_user=Depends(get_current_user)):
             "deductions_detail": {
                 "penalties": penalties,
                 "other_deductions": deductions,
-                "total_deductions": round(penalties + deductions, 2),
+                "advances": advances,
+                "total_deductions": round(penalties + deductions + advances, 2),
             },
             "net_amount": net,
         }

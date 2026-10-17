@@ -446,6 +446,44 @@ ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS penalties NUMERIC(10,2) DEFAUL
 ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS prorated_base NUMERIC(10,2) DEFAULT 0;
 ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS standard_days INTEGER DEFAULT 26;
 ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS standard_hours NUMERIC(10,2) DEFAULT 208;
+ALTER TABLE salary_slips ADD COLUMN IF NOT EXISTS advance_deduction NUMERIC(10,2) DEFAULT 0;
+
+-- Salary advances (سلف) repaid in monthly installments from the payroll.
+CREATE TABLE IF NOT EXISTS employee_advances (
+    id           SERIAL PRIMARY KEY,
+    employee_id  INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    amount       NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+    installments INTEGER NOT NULL DEFAULT 1 CHECK (installments >= 1),
+    given_on     DATE NOT NULL DEFAULT CURRENT_DATE,
+    status       VARCHAR(20) NOT NULL DEFAULT 'active',
+    notes        TEXT,
+    created_by   INTEGER REFERENCES users(id),
+    created_at   TIMESTAMP DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_advances_employee ON employee_advances(employee_id);
+CREATE TABLE IF NOT EXISTS advance_deductions (
+    id         SERIAL PRIMARY KEY,
+    advance_id INTEGER NOT NULL REFERENCES employee_advances(id) ON DELETE CASCADE,
+    slip_id    INTEGER NOT NULL REFERENCES salary_slips(id) ON DELETE CASCADE,
+    amount     NUMERIC(10,2) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_adv_ded_advance ON advance_deductions(advance_id);
+
+-- Leaves (إجازات): approved leave fills the attendance days; paid leave counts full hours.
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS annual_leave_days INTEGER DEFAULT 21;
+CREATE TABLE IF NOT EXISTS employee_leaves (
+    id          SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    leave_type  VARCHAR(20) NOT NULL,
+    start_date  DATE NOT NULL,
+    end_date    DATE NOT NULL,
+    days        INTEGER NOT NULL,
+    status      VARCHAR(20) NOT NULL DEFAULT 'approved',
+    notes       TEXT,
+    created_by  INTEGER REFERENCES users(id),
+    created_at  TIMESTAMP DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_leaves_employee ON employee_leaves(employee_id, start_date);
 
 -- Migration: replace single-column UNIQUE(barcode) with composite UNIQUE(barcode, branch_id)
 DO $$
@@ -553,6 +591,8 @@ ALTER TABLE attendance ADD COLUMN IF NOT EXISTS edited_by INTEGER;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS clock_check_in TIME;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS clock_check_out TIME;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS leave_id INTEGER;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS paid_leave BOOLEAN;
 
 -- Per-user card code for unlocking a locked terminal by scanning a personal QR/barcode
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_code VARCHAR(40);
