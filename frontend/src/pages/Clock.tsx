@@ -6,17 +6,34 @@ import { useAuth } from '../lib/auth'
 import { Navigate } from 'react-router-dom'
 
 type Result = {
-  kind: 'in' | 'out' | 'error'
+  kind: 'in' | 'out' | 'error' | 'duplicate' | 'queued'
   name?: string
   role?: string | null
   time?: string
+  hours?: number | null
   message?: string
 }
 
 function clockActionKind(action: string | undefined): Result['kind'] {
   if (action === 'check_in') return 'in'
   if (action === 'check_out' || action === 'check_out_updated') return 'out'
+  if (action === 'duplicate') return 'duplicate'
+  if (action === 'queued') return 'queued'
   return 'error'
+}
+
+/** Short tone so staff know the scan registered without looking at the screen. */
+function beep(ok: boolean) {
+  try {
+    const ctx = new AudioContext()
+    const o = ctx.createOscillator()
+    const g = ctx.createGain()
+    o.frequency.value = ok ? 880 : 220
+    g.gain.value = 0.15
+    o.connect(g); g.connect(ctx.destination)
+    o.start(); o.stop(ctx.currentTime + (ok ? 0.15 : 0.4))
+    o.onended = () => void ctx.close()
+  } catch { /* no audio device */ }
 }
 
 export default function Clock() {
@@ -36,7 +53,7 @@ export default function Clock() {
 
   useEffect(() => {
     inputRef.current?.focus()
-  }, [result])
+  }, [result, busy])
 
   if (!isAuthenticated) return <Navigate to="/login" replace />
 
@@ -50,10 +67,14 @@ export default function Clock() {
       if (kind === 'error') {
         setResult({ kind: 'error', message: t('clock.unknown_code') })
       } else {
-        setResult({ kind, name: data.employee?.name, role: data.employee?.role, time: data.time })
+        setResult({ kind, name: data.employee?.name, role: data.employee?.role, time: data.time, hours: data.hours })
       }
+      beep(kind !== 'error')
     } catch (e: any) {
-      setResult({ kind: 'error', message: e?.response?.data?.detail || t('clock.unknown_code') })
+      const d = e?.response?.data?.detail
+      const code = typeof d === 'object' && d ? d.code : null
+      setResult({ kind: 'error', message: code ? t(`clock.err_${code}`) : (typeof d === 'string' ? d : t('clock.unknown_code')) })
+      beep(false)
     } finally {
       setBusy(false)
       setCode('')
@@ -71,6 +92,7 @@ export default function Clock() {
     result?.kind === 'in' ? 'from-green-500 to-green-700'
     : result?.kind === 'out' ? 'from-blue-600 to-blue-800'
     : result?.kind === 'error' ? 'from-rose-500 to-rose-700'
+    : result?.kind === 'duplicate' || result?.kind === 'queued' ? 'from-amber-500 to-amber-700'
     : 'from-slate-700 to-slate-900'
 
   return (
@@ -100,7 +122,9 @@ export default function Clock() {
             placeholder={t('clock.placeholder')}
             autoFocus
             autoComplete="off"
-            disabled={busy}
+            // Never disabled: characters a scanner types during a request must not be lost.
+            // The clock PC is dedicated to scanning, so focus returns here if it wanders.
+            onBlur={() => window.setTimeout(() => inputRef.current?.focus(), 200)}
             className="w-full text-center text-2xl font-mono tracking-wider px-5 py-4 rounded-xl bg-white text-slate-900 placeholder-slate-400 shadow-inner focus:outline-none focus:ring-4 focus:ring-white/40"
           />
           <button
@@ -134,6 +158,20 @@ export default function Clock() {
               <div className="text-2xl font-bold">{result.name}</div>
               {result.role ? <div className="text-white/70 text-sm capitalize mt-0.5">{result.role}</div> : null}
               <div className="text-white/90 mt-2 font-medium">{t('clock.checked_out_at', { time: result.time })}</div>
+              {result.hours != null && <div className="text-white/80 text-sm mt-1">{t('clock.hours_worked', { h: result.hours })}</div>}
+            </div>
+          )}
+          {result?.kind === 'duplicate' && (
+            <div className="text-center">
+              <CheckCircle2 size={44} className="mx-auto mb-2" />
+              <div className="text-2xl font-bold">{result.name}</div>
+              <div className="text-white/90 mt-2 font-medium">{t('clock.duplicate', { time: result.time })}</div>
+            </div>
+          )}
+          {result?.kind === 'queued' && (
+            <div className="text-center">
+              <CheckCircle2 size={44} className="mx-auto mb-2" />
+              <div className="text-xl font-semibold">{t('clock.queued', { time: result.time })}</div>
             </div>
           )}
           {result?.kind === 'error' && (

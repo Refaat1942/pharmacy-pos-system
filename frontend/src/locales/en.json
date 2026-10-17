@@ -335,12 +335,14 @@
     "perf_revenue": "Revenue",
     "perf_share": "Share of Revenue",
     "perf_top": "Top seller",
-    "no_sales_in_range": "No sales in this date range"
+    "no_sales_in_range": "No sales in this date range",
+    "no_checkout": "No check-out",
+    "incomplete_warning": "These days have a check-in without a check-out and are paid 0 hours until you complete them in Attendance:"
   },
   "clock": {
     "title": "Employee Time Clock",
     "prompt": "Scan your QR card or type your code, then press Enter",
-    "placeholder": "Scan card or type code / ID…",
+    "placeholder": "Scan card or type code…",
     "submit": "Punch in / out",
     "waiting": "Waiting for scan…",
     "check_in": "Check in",
@@ -348,7 +350,14 @@
     "checked_in_at": "Checked in at {{time}}",
     "checked_out_at": "Checked out at {{time}}",
     "unknown_code": "Unknown employee code",
-    "hint": "This screen can be left open on a tablet near the entrance."
+    "hint": "This screen can be left open on a tablet near the entrance.",
+    "hours_worked": "{{h}} hours worked",
+    "duplicate": "Already recorded at {{time}} — no need to scan again",
+    "queued": "No internet — punch saved on this PC at {{time}}, it will upload automatically",
+    "err_unknown_code": "Unknown employee code",
+    "err_inactive": "This employee is inactive",
+    "err_other_branch": "This employee belongs to another branch",
+    "err_code_required": "Scan a card or type a code"
   },
   "reports": {
     "title": "Reports & Analytics",

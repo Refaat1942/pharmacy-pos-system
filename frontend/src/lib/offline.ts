@@ -584,6 +584,16 @@ export function installOffline(api: AxiosInstance): void {
           await queueEntry('delivery', url, payload, `DELIVERY-${dlv[1]}`)
           return fakeResponse(cfg, { id: Number(dlv[1]), delivery_status: payload?.status, offline: true })
         }
+        if (url === '/hr/clock') {
+          // Time clock with no internet: keep the punch with the real time; the server
+          // uses that time when it is uploaded (not the upload time).
+          const at = new Date()
+          await queueEntry('generic', url, { ...payload, offline_created_at: at.toISOString() }, 'CLOCK', {
+            method, client_uuid: String(cfg.headers?.['X-Idempotency-Key'] || uuid()),
+          })
+          const hhmm = `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+          return fakeResponse(cfg, { action: 'queued', time: hhmm, offline: true })
+        }
         const ret = SALE_RETURN.exec(url)
         if (!ret && url !== '/sales' && !NOT_QUEUED.test(url) && !READ_LIKE.test(url) && !(cfg.data instanceof FormData)
           && !SHIFT_CLOSE.test(url) && url !== '/shifts/open') {

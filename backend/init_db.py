@@ -542,6 +542,11 @@ ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_by_user_id INTEGER;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS punched_at TIMESTAMP;
 ALTER TABLE attendance ADD COLUMN IF NOT EXISTS allowed BOOLEAN DEFAULT false;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS hours_allowance NUMERIC(5,2) DEFAULT 0;
+-- Manual attendance edits are audited; the clock's original times are kept.
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS edited_by INTEGER;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS clock_check_in TIME;
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS clock_check_out TIME;
 
 -- Per-user card code for unlocking a locked terminal by scanning a personal QR/barcode
 ALTER TABLE users ADD COLUMN IF NOT EXISTS card_code VARCHAR(40);
