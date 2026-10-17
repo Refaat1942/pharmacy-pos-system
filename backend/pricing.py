@@ -58,3 +58,12 @@ def unit_inventory_cost(product: dict) -> float:
 
 # SQL fragment: cost per main unit from product row alias `p`
 SQL_UNIT_COST = "COALESCE(NULLIF(p.avg_cost, 0), NULLIF(p.cost, 0), 0)"
+
+
+# SQL fragment: cost of an invoice line (aliases ii = invoice_items, p = products).
+# Uses the cost saved at sale time; older lines (before it was saved) fall back to
+# today's cost per smallest unit.
+SQL_LINE_COST = (
+    "ii.quantity * COALESCE(ii.pack_size, 1) * COALESCE(ii.unit_cost_sub, "
+    f"({SQL_UNIT_COST}) / GREATEST(COALESCE(NULLIF(p.pack_size, 0), 1), 1))"
+)

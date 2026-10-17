@@ -1373,7 +1373,8 @@ def create_sale(req: SaleRequest,
                 continue
             cur.execute(
                 """SELECT name_ar, name_en, barcode, stock, branch_id, active,
-                          unit, sub_unit, COALESCE(pack_size,1) AS pack_size, mid_unit, mid_size
+                          unit, sub_unit, COALESCE(pack_size,1) AS pack_size, mid_unit, mid_size,
+                          COALESCE(NULLIF(avg_cost, 0), NULLIF(cost, 0), 0) AS box_cost
                    FROM products WHERE id=%s FOR UPDATE""",
                 (item.product_id,),
             )
@@ -1406,11 +1407,14 @@ def create_sale(req: SaleRequest,
                 """INSERT INTO invoice_items
                    (invoice_id, product_id, product_name_ar, product_name_en,
                     barcode, quantity, unit_price, discount, total, unit_label, pack_size,
-                    offer_id, offer_discount, dose_text, insurance_line)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    unit_cost_sub, offer_id, offer_discount, dose_text, insurance_line)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (invoice_id, item.product_id, prod["name_ar"], prod["name_en"],
                  prod["barcode"], item.quantity, item.unit_price, line_discount,
                  item_total, unit_label, line_pack,
+                 # Cost of one smallest unit at the moment of sale, so past profit doesn't
+                 # change when later purchases move the average cost.
+                 round(float(prod["box_cost"] or 0) / max(1, int(prod["pack_size"] or 1)), 6),
                  item.offer_id, offer_disc, (item.dose_text or "").strip() or None,
                  psycopg2.extras.Json(ins_line) if ins_line else None),
             )
