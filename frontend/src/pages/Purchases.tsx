@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { sellUnitsOf, unitPrice, unitsPerBox } from '../lib/packStock'
 import { useTranslation } from 'react-i18next'
-import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer } from 'lucide-react'
+import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer, Upload } from 'lucide-react'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
+import SmartImportModal from '../components/SmartImportModal'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner } from '../components/LoadingSpinner'
@@ -34,7 +35,7 @@ function FieldWithHint({
   )
 }
 
-type StatusFilter = '' | 'draft' | 'received' | 'cancelled'
+type StatusFilter = '' | 'draft' | 'received' | 'cancelled' | 'imported'
 
 type POExpiryLot = { expiry_date: string; quantity: number | '' }
 
@@ -127,6 +128,7 @@ export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('')
+  const [importing, setImporting] = useState(false)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [replenishing, setReplenishing] = useState(false)
@@ -151,6 +153,7 @@ export default function Purchases() {
       draft: 'bg-slate-200 text-slate-700',
       received: 'bg-emerald-100 text-emerald-800',
       cancelled: 'bg-red-100 text-red-700',
+      imported: 'bg-violet-100 text-violet-800',
     }
     return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${map[s] || ''}`}>{t(`purchases.status_${s}`)}</span>
   }
@@ -205,6 +208,7 @@ export default function Purchases() {
 
   return (
     <Layout>
+      {importing && <SmartImportModal kind="purchases" onClose={() => setImporting(false)} onDone={() => { setImporting(false); load() }} />}
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="feature-page-title flex items-center gap-2">
@@ -212,6 +216,12 @@ export default function Purchases() {
             {t('purchases.title')}
           </h1>
           <div className="flex gap-2">
+            {user?.role === 'admin' && (
+              <button onClick={() => setImporting(true)}
+                className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Upload size={16} />{t('smart_import.btn_purchases')}
+              </button>
+            )}
             <button
               onClick={() => setReplenishing(true)}
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
@@ -226,7 +236,7 @@ export default function Purchases() {
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          {(['', 'draft', 'received', 'cancelled'] as StatusFilter[]).map((s) => (
+          {(['', 'draft', 'received', 'cancelled', 'imported'] as StatusFilter[]).map((s) => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium ${
                 statusFilter === s ? 'bg-pharma-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'

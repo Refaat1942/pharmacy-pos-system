@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import SmartImportModal from '../components/SmartImportModal'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Users, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, FileSpreadsheet, Contact } from 'lucide-react'
@@ -247,106 +248,11 @@ export default function Customers() {
       {viewing && <CustomerCardModal customer={viewing} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} />}
       {statement && <StatementModal data={statement} onClose={() => setStatement(null)} />}
       {paying && <PaymentModal customer={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />}
-      {showUpload && <CustomerUploadModal onClose={() => setShowUpload(false)} onDone={() => { setShowUpload(false); load() }} />}
+      {showUpload && <SmartImportModal kind="customers" onClose={() => setShowUpload(false)} onDone={() => { setShowUpload(false); load() }} />}
     </Layout>
   )
 }
 
-function CustomerUploadModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const { t } = useTranslation()
-  const [file, setFile] = useState<File | null>(null)
-  const [result, setResult] = useState<{ inserted: number; updated: number; errors: number; error_details?: string[] } | null>(null)
-  const [error, setError] = useState('')
-  const [uploading, setUploading] = useState(false)
-
-  const submit = async () => {
-    if (!file) return
-    setError('')
-    setUploading(true)
-    const fd = new FormData()
-    fd.append('file', file)
-    try {
-      const { data } = await api.post('/customers/bulk-upload', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      setResult(data)
-    } catch (e: any) {
-      setError(e?.response?.data?.detail || 'Error')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  const downloadTemplate = async () => {
-    try {
-      const res = await api.get('/customers/bulk-template', { responseType: 'blob' })
-      const url = URL.createObjectURL(res.data as Blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'customers_template.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      setError(t('customers.download_failed'))
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="px-5 py-3 border-b flex items-center justify-between">
-          <h2 className="font-bold text-lg">{t('customers.bulk_upload')}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
-        </div>
-        <div className="p-5 space-y-4 text-sm">
-          <div className="bg-slate-50 p-3 rounded-lg text-slate-700">
-            <div className="font-semibold mb-1">{t('customers.excel_help_title')}</div>
-            <div>{t('customers.excel_help_cols')}</div>
-            <code className="block mt-2 text-xs bg-white p-2 rounded border border-slate-200 break-all">
-              Name, Phone, Email, Region, Address Details, Tax #, Credit Limit, Notes, Active, Authorized Branches
-            </code>
-            <button type="button" onClick={downloadTemplate} className="text-pharma-700 hover:underline text-xs mt-2 inline-block">
-              ⬇ {t('customers.download_template')}
-            </button>
-          </div>
-          <input
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="w-full p-2 border border-dashed border-slate-300 rounded-lg"
-          />
-          {error && <div className="text-red-600">{error}</div>}
-          {result && (
-            <div className="p-3 bg-emerald-50 rounded-lg text-emerald-800">
-              ✅ {result.inserted} {t('customers.imported')}, {result.updated} {t('customers.updated_count')}, {result.errors} {t('customers.errors')}
-              {result.error_details && result.error_details.length > 0 && (
-                <details className="mt-2 text-xs">
-                  <summary className="cursor-pointer">{t('customers.show_errors')}</summary>
-                  <ul className="mt-1 list-disc list-inside">
-                    {result.error_details.map((e, i) => <li key={i}>{e}</li>)}
-                  </ul>
-                </details>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="px-5 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.close')}</button>
-          {!result && (
-            <button onClick={submit} disabled={!file || uploading} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium hover:bg-pharma-700 disabled:opacity-50">
-              {uploading ? t('common.loading') : t('customers.upload')}
-            </button>
-          )}
-          {result && (
-            <button onClick={onDone} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium">{t('common.close')}</button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function CustomerCardModal({
   customer,

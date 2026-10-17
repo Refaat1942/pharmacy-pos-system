@@ -1425,7 +1425,7 @@
   "suppliers": {
     "title": "Suppliers",
     "new": "New Supplier",
-    "bulk_upload": "Bulk Upload",
+    "bulk_upload": "Import from old system",
     "bulk_hint": "Download the template, fill supplier rows, then upload Excel or CSV.",
     "download_template": "Download template",
     "bulk_done": "Done: {{created}} created, {{updated}} updated, {{skipped}} skipped.",
@@ -1576,7 +1576,8 @@
     "net_total": "Net total",
     "buy_unit_hint": "Unit you are buying in — quantity, public price and cost are per this unit",
     "unit_mid": "(strip)",
-    "unit_sub": "(small unit)"
+    "unit_sub": "(small unit)",
+    "status_imported": "Imported"
   },
   "customers": {
     "title": "Customers",
@@ -1626,7 +1627,7 @@
     "invoice_required": "Please select an invoice to apply the payment to",
     "authorized_branches": "Branches Authorized for Account Sales",
     "authorized_branches_hint": "Non-admin staff can only sell to this customer at these branches.",
-    "bulk_upload": "Bulk Upload",
+    "bulk_upload": "Import from old system",
     "excel_help_title": "Excel / CSV Bulk Upload",
     "excel_help_cols": "First row must be column headers. Existing customers matched by phone (or ID if provided) are updated.",
     "download_template": "Download blank template",
@@ -2092,5 +2093,39 @@
     "help": "With no internet you can still open and close your shift and sell (cash, card, account). Everything is saved on this PC and uploaded automatically, in order, when the internet is back. Insurance sales and paying with loyalty points need internet; other pages show the last data loaded.",
     "login_unavailable": "No internet, and this user has not logged in on this PC before (or the password is different). Log in once while online.",
     "saved_offline": "Saved on this PC — it will upload automatically when the internet is back."
+  },
+  "smart_import": {
+    "title_customers": "Import customers from your old system",
+    "title_suppliers": "Import suppliers from your old system",
+    "title_purchases": "Import old purchase invoices",
+    "subtitle": "Any Excel / CSV export, Arabic or English — columns are recognised automatically; check them before importing.",
+    "choose_file": "Choose the exported file",
+    "formats": "Excel (.xlsx / .xls), CSV, or a report saved from your old program",
+    "purchases_note": "Old invoices are saved as history (status “Imported”). They do not change stock or supplier balances — current stock comes from the items import and balances from the suppliers import, so nothing is counted twice. Re-uploading the same file does not duplicate invoices.",
+    "detected": "Found {{rows}} rows (headers on row {{header}}, sheet “{{sheet}}”). Check the matching below:",
+    "col_in_file": "Column in your file",
+    "col_samples": "Sample values",
+    "col_field": "Goes to",
+    "ignore": "— Ignore —",
+    "conf_high": "sure",
+    "conf_medium": "likely",
+    "conf_guess": "guessed — check",
+    "conf_none": "",
+    "missing": "Choose a column for: {{fields}}",
+    "import_n": "Import {{n}} rows",
+    "done": "Import finished",
+    "created": "Added",
+    "updated": "Updated",
+    "skipped": "Skipped (empty / totals)",
+    "errors": "Rows with errors",
+    "invoices": "Invoices",
+    "lines": "Invoice lines",
+    "unmatched": "Items not in your list",
+    "suppliers_created": "New suppliers",
+    "unmatched_hint": "Lines whose item was not found are kept with the item name from the file, so the history is complete.",
+    "row": "Row {{n}}",
+    "read_failed": "Could not read the file",
+    "import_failed": "Import failed",
+    "btn_purchases": "Import old purchases"
   }
 }
