@@ -75,7 +75,12 @@ def _compute_expected(cur, shift) -> dict:
     cur.execute("""
         SELECT
           COALESCE(SUM(CASE WHEN payment_method='cash' THEN net_total ELSE 0 END), 0)::float AS cash_sales,
-          COALESCE(SUM(CASE WHEN payment_method='visa' THEN net_total ELSE 0 END), 0)::float AS visa_sales,
+          COALESCE(SUM(CASE WHEN payment_method='visa' THEN net_total ELSE 0 END), 0)::float AS visa_only_sales,
+          -- Everything taken by card / wallet: card sales, the card part of hybrid
+          -- payments, InstaPay / Vodafone Cash, card part paid at an account sale.
+          COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN 0
+                            ELSE COALESCE(visa_amount, CASE WHEN payment_method = 'visa' THEN net_total ELSE 0 END)
+                       END), 0)::float AS visa_sales,
           COALESCE(SUM(CASE WHEN payment_method='account' THEN net_total ELSE 0 END), 0)::float AS account_sales,
           COALESCE(SUM(CASE WHEN payment_method NOT IN ('cash','visa','account') THEN net_total ELSE 0 END), 0)::float AS other_sales,
           COALESCE(SUM(net_total), 0)::float AS total_sales,
@@ -99,12 +104,28 @@ def _compute_expected(cur, shift) -> dict:
     """, [shift['user_id'], shift['branch_id'], shift['opened_at'], shift.get('closed_at')])
     rets = dict(cur.fetchone())
 
-    cash_in = sales['cash_collected'] - sales['cash_change']
+    # Debt collected from account customers by this cashier during the shift (not the
+    # part paid at the moment of an account sale — that is already in the sale).
+    cur.execute("""
+        SELECT COALESCE(SUM(cp.amount) FILTER (WHERE cp.payment_method = 'cash'), 0)::float AS debt_cash,
+               COALESCE(SUM(cp.amount) FILTER (WHERE cp.payment_method <> 'cash'), 0)::float AS debt_card
+        FROM customer_payments cp
+        LEFT JOIN invoices i ON i.id = cp.invoice_id
+        WHERE cp.recorded_by = %s AND COALESCE(cp.payment_method, '') <> 'return'
+          AND (i.id IS NULL OR i.branch_id = %s)
+          AND NOT (i.id IS NOT NULL AND COALESCE(cp.reference, '') = i.invoice_number)
+          AND cp.paid_at >= %s AND cp.paid_at <= COALESCE(%s, now())
+    """, [shift['user_id'], shift['branch_id'], shift['opened_at'], shift.get('closed_at')])
+    debt = dict(cur.fetchone())
+
+    cash_in = sales['cash_collected'] - sales['cash_change'] + debt['debt_cash']
     # Card and on-account refunds don't leave the drawer.
     expected_cash = float(shift['opening_cash']) + cash_in - rets['cash_refunds']
     return {
         **sales,
         **rets,
+        **debt,
+        "visa_sales": round(sales['visa_sales'] + debt['debt_card'], 2),
         "expected_cash": round(expected_cash, 2),
     }
 

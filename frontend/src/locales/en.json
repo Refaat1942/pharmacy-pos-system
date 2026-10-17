@@ -243,7 +243,10 @@
     "auto_detected": "Auto-detected from device time",
     "shortage": "Shortage",
     "excess": "Excess",
-    "match": "Match"
+    "match": "Match",
+    "cash_refunds": "Refunds paid from the drawer",
+    "debt_cash": "Customer debt collected (cash)",
+    "debt_card": "Customer debt collected (card)"
   },
   "hr": {
     "title": "HR & Payroll",
