@@ -148,6 +148,9 @@ def open_shift(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         if client_uuid:
+            # Two uploads of the same offline shift_open at the same moment (two tabs or
+            # devices): the second waits here, then finds the first one saved.
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("shift_open:" + client_uuid,))
             # Re-sent offline upload → the shift is already saved.
             cur.execute("SELECT * FROM shifts WHERE client_uuid=%s", [client_uuid])
             dup = cur.fetchone()
@@ -230,6 +233,7 @@ def close_shift(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         if client_uuid:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("shift_close:" + client_uuid,))
             cur.execute("SELECT * FROM shifts WHERE close_client_uuid=%s", [client_uuid])
             done = cur.fetchone()
             if done:

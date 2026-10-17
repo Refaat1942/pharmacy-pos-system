@@ -659,7 +659,12 @@ export default function Sales() {
             <div className="flex items-center justify-between px-5 py-4 border-b sticky top-0 bg-white z-10">
               <div>
                 <h3 className="font-bold text-gray-900">{t('sales.detail_title')}</h3>
-                <p className="font-mono text-sm text-pharma-700">{inv.invoice_number}</p>
+                <p className="font-mono text-sm text-pharma-700">
+                  {inv.invoice_number}
+                  {(inv as { offline_number?: string | null }).offline_number && (
+                    <span className="ms-2 text-xs text-slate-400">({(inv as { offline_number?: string | null }).offline_number})</span>
+                  )}
+                </p>
                 <p className="text-xs text-gray-500">
                   {formatDateTime(inv.created_at)}
                 </p>

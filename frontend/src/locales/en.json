@@ -2160,7 +2160,15 @@
     "refresh": "Refresh offline data",
     "help": "With no internet you can still open and close your shift and sell (cash, card, account). Everything is saved on this PC and uploaded automatically, in order, when the internet is back. Insurance sales and paying with loyalty points need internet; other pages show the last data loaded.",
     "login_unavailable": "No internet, and this user has not logged in on this PC before (or the password is different). Log in once while online.",
-    "saved_offline": "Saved on this PC — it will upload automatically when the internet is back."
+    "saved_offline": "Saved on this PC — it will upload automatically when the internet is back.",
+    "sync_done_title": "Sync complete ✅",
+    "sync_partial_title": "Sync partly done",
+    "sync_sales": "{{n}} invoice(s)",
+    "sync_returns": "{{n}} return(s)",
+    "sync_others": "{{n}} other change(s)",
+    "sync_all_saved": "Everything done offline is saved on the server — no duplicates.",
+    "sync_failed": "{{n}} need review (from the connection button above).",
+    "sync_pending": "{{n}} still waiting to upload."
   },
   "smart_import": {
     "title_customers": "Import customers from your old system",
