@@ -746,22 +746,29 @@ export const suppliersAPI = {
     api.post(`/suppliers/${id}/payments`, data),
 }
 
+export interface POCreateBody {
+  supplier_id: number
+  branch_id: number
+  supplier_invoice_number?: string
+  supplier_invoice_date?: string
+  discount?: number
+  tax?: number
+  notes?: string
+  receive_immediately?: boolean
+  items: POItem[]
+}
+
 export const purchasesAPI = {
   list: (params: { status?: string; supplier_id?: number } = {}) =>
     api.get<PurchaseOrder[]>('/purchase-orders', { params }),
   get: (id: number) => api.get<PurchaseOrder>(`/purchase-orders/${id}`),
-  create: (data: {
-    supplier_id: number
-    branch_id: number
+  create: (data: POCreateBody) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number; status: string }>('/purchase-orders', data),
+  update: (id: number, data: POCreateBody) =>
+    api.put<{ ok: boolean; po_id: number; po_number: string; total: number; status: string }>(`/purchase-orders/${id}`, data),
+  receive: (id: number, body?: {
+    lines?: { item_id: number; quantity: number; bonus_qty?: number; expiry_date?: string | null }[]
     supplier_invoice_number?: string
-    supplier_invoice_date?: string
-    discount?: number
-    tax?: number
-    notes?: string
-    receive_immediately?: boolean
-    items: POItem[]
-  }) => api.post<{ ok: boolean; po_id: number; po_number: string; total: number; status: string }>('/purchase-orders', data),
-  receive: (id: number) => api.post(`/purchase-orders/${id}/receive`),
+  }) => api.post<{ ok: boolean; status: string; received_po_id?: number; received_po_number?: string }>(`/purchase-orders/${id}/receive`, body),
   cancel: (id: number) => api.post(`/purchase-orders/${id}/cancel`),
   replenishment: (params: { branch_id?: number; supplier_id?: number; only_zero?: boolean; include_all?: boolean; q?: string } = {}) =>
     api.get<ReplenishmentItem[]>('/purchase-orders/replenishment', { params }),

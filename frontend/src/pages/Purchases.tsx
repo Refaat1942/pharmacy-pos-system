@@ -112,6 +112,24 @@ function poItemsToBulkItems(items: POItem[]): BulkItem[] {
     }))
 }
 
+/** A saved PO line back into the form. Lines without a public price stored the
+ * discounted pharmacy price; undo the discount so the form recomputes the same cost. */
+function poItemToDraft(it: POItem): POItemDraft {
+  const disc = Number(it.discount_pct) || 0
+  const stax = Number(it.sales_tax) || 0
+  const rawCost = it.public_price == null && disc < 100
+    ? +(Number(it.unit_cost) / (1 - disc / 100) + stax).toFixed(4)
+    : Number(it.unit_cost)
+  return {
+    ...it,
+    quantity: Number(it.quantity) || '',
+    bonus_qty: Number(it.bonus_qty) || '',
+    unit_cost: rawCost,
+    sales_tax: stax,
+    expiry_lots: [{ expiry_date: it.expiry_date || '', quantity: Number(it.quantity) || '' }],
+  }
+}
+
 function initialPOBranchId(userBranchId?: number | null): number | '' {
   if (userBranchId) return userBranchId
   const raw = localStorage.getItem('pharma_active_branch')
@@ -135,6 +153,7 @@ export default function Purchases() {
   const [creating, setCreating] = useState(false)
   const [replenishing, setReplenishing] = useState(false)
   const [viewing, setViewing] = useState<PurchaseOrder | null>(null)
+  const [editingPo, setEditingPo] = useState<PurchaseOrder | null>(null)
   const [poLabelsToPrint, setPoLabelsToPrint] = useState<BulkItem[] | null>(null)
 
   const load = () => {
@@ -304,13 +323,14 @@ export default function Purchases() {
         </div>
       </main>
 
-      {creating && (
+      {(creating || editingPo) && (
         <CreatePOModal
           suppliers={suppliers}
           branches={branches}
-          onClose={() => setCreating(false)}
+          editPo={editingPo}
+          onClose={() => { setCreating(false); setEditingPo(null) }}
           onSaved={async (result) => {
-            setCreating(false)
+            setCreating(false); setEditingPo(null)
             load()
             if (result?.received && result.poId) await openPoLabelPrint(result.poId)
           }}
@@ -329,6 +349,14 @@ export default function Purchases() {
           po={viewing}
           onClose={() => setViewing(null)}
           onReceive={() => handleReceive(viewing.id)}
+          onReceivePartial={async (lines, invNo) => {
+            try {
+              const { data } = await purchasesAPI.receive(viewing.id, { lines, supplier_invoice_number: invNo || undefined })
+              load(); setViewing(null)
+              if (data.received_po_id) await openPoLabelPrint(data.received_po_id)
+            } catch (e: any) { alert(e.response?.data?.detail || 'Error') }
+          }}
+          onEdit={() => { setEditingPo(viewing); setViewing(null) }}
           onCancel={() => handleCancel(viewing.id)}
           onPrintLabels={() => openPoLabelPrint(viewing.id)}
           canReceive={user?.role === 'admin' || user?.branch_id === viewing.branch_id}
@@ -347,28 +375,32 @@ export default function Purchases() {
 }
 
 function CreatePOModal({
-  suppliers, branches, onClose, onSaved,
+  suppliers, branches, onClose, onSaved, editPo,
 }: {
   suppliers: Supplier[]
   branches: Branch[]
+  editPo?: PurchaseOrder | null
   onClose: () => void
   onSaved: (result?: { poId: number; received: boolean }) => void
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [supplierId, setSupplierId] = useState<number | ''>('')
-  const [branchId, setBranchId] = useState<number | ''>(() => initialPOBranchId(user?.branch_id))
-  const [invNum, setInvNum] = useState('')
-  const [invDate, setInvDate] = useState('')
-  const [invoiceDiscount, setInvoiceDiscount] = useState(0)
-  const [invoiceExtraTax, setInvoiceExtraTax] = useState(0)
-  const [notes, setNotes] = useState('')
+  const [supplierId, setSupplierId] = useState<number | ''>(editPo?.supplier_id ?? '')
+  const [branchId, setBranchId] = useState<number | ''>(() => editPo?.branch_id ?? initialPOBranchId(user?.branch_id))
+  const [invNum, setInvNum] = useState(editPo?.supplier_invoice_number || '')
+  const [invDate, setInvDate] = useState(editPo?.supplier_invoice_date || '')
+  const [invoiceDiscount, setInvoiceDiscount] = useState(Number(editPo?.discount) || 0)
+  // PO.tax = line sales tax + extra charges; the form edits only the extra part.
+  const [invoiceExtraTax, setInvoiceExtraTax] = useState(() => editPo
+    ? Math.max(0, +(Number(editPo.tax || 0) - (editPo.items || []).reduce((s, i) => s + (Number(i.quantity) || 0) * (Number(i.sales_tax) || 0), 0)).toFixed(2))
+    : 0)
+  const [notes, setNotes] = useState(editPo?.notes || '')
   const [search, setSearch] = useState('')
   const [results, setResults] = useState<any[]>([])
   const [showResults, setShowResults] = useState(false)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [items, setItems] = useState<POItemDraft[]>([])
+  const [items, setItems] = useState<POItemDraft[]>(() => (editPo?.items || []).map(poItemToDraft))
   const [saving, setSaving] = useState(false)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -516,7 +548,8 @@ function CreatePOModal({
     setSaving(true)
     try {
       const flat = flattenPOItemsForApi(items)
-      const res = await purchasesAPI.create({
+      const save = editPo ? (b: Parameters<typeof purchasesAPI.create>[0]) => purchasesAPI.update(editPo.id, b) : purchasesAPI.create
+      const res = await save({
         supplier_id: Number(supplierId),
         branch_id: Number(branchId),
         supplier_invoice_number: invNum || undefined,
@@ -557,7 +590,7 @@ function CreatePOModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="po-form bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col border-2 border-slate-300">
         <div className="px-5 py-3 border-b flex items-center justify-between">
-          <h2 className="font-bold text-lg">{t('purchases.new')}</h2>
+          <h2 className="font-bold text-lg">{editPo ? `${t('purchases.edit_title')} — ${editPo.po_number}` : t('purchases.new')}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
         </div>
         <div className="p-5 overflow-auto flex-1">
@@ -805,10 +838,12 @@ function CreatePOModal({
   )
 }
 
-function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canReceive, canCancel }: {
+function PODetailModal({ po, onClose, onReceive, onReceivePartial, onEdit, onCancel, onPrintLabels, canReceive, canCancel }: {
   po: PurchaseOrder
   onClose: () => void
   onReceive: () => void
+  onReceivePartial: (lines: { item_id: number; quantity: number; bonus_qty: number; expiry_date: string | null }[], invNo: string) => void
+  onEdit: () => void
   onCancel: () => void
   onPrintLabels: () => void
   canReceive: boolean
@@ -816,6 +851,14 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
 }) {
   const { t } = useTranslation()
   const items = po.items || []
+  const [partial, setPartial] = useState(false)
+  const [recv, setRecv] = useState<Record<number, { q: number; b: number; exp: string }>>({})
+  const [recvInv, setRecvInv] = useState('')
+  const startPartial = () => {
+    setRecv(Object.fromEntries(items.map((it) => [it.id as number, { q: Number(it.quantity) || 0, b: Number(it.bonus_qty) || 0, exp: it.expiry_date || '' }])))
+    setPartial(true)
+  }
+  const recvCount = Object.values(recv).filter((r) => r.q > 0 || r.b > 0).length
   const poItemAccessors = useMemo(() => ({
     name: (it: POItem) => (i18n.language === 'ar' ? it.product_name_ar : it.product_name_en) || '',
     barcode: (it: POItem) => it.barcode || '',
@@ -831,7 +874,7 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
   const { sorted: sortedPoItems, sort: poItemSort, toggle: poItemToggle } = useSort(items, poItemAccessors)
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <div className={`bg-white rounded-xl shadow-2xl w-full ${partial ? 'max-w-5xl' : 'max-w-3xl'} max-h-[90vh] overflow-hidden flex flex-col`}>
         <div className="px-5 py-3 border-b flex items-center justify-between">
           <h2 className="font-bold text-lg">{po.po_number}</h2>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
@@ -856,6 +899,7 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
                 <SortTh k="unit_cost" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.pharmacy_price')}</SortTh>
                 <SortTh k="discount_pct" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.discount_pct')}</SortTh>
                 <SortTh k="total" sort={poItemSort} onToggle={poItemToggle} align="end">{t('purchases.line_ex_tax')}</SortTh>
+                {partial && <th className="px-2 py-2 text-start bg-emerald-50 text-emerald-800">{t('purchases.recv_now')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -874,6 +918,23 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
                   <td className="px-3 py-2 text-end">{formatMoney(it.unit_cost)}</td>
                   <td className="px-3 py-2 text-end">{formatNumber(it.discount_pct || 0, { minDecimals: 2, maxDecimals: 2 })}%</td>
                   <td className="px-3 py-2 text-end font-semibold">{formatMoney(it.total)}</td>
+                  {partial && recv[it.id] && (
+                    <td className="px-2 py-1.5 bg-emerald-50/60">
+                      <div className="flex items-center gap-1">
+                        <input type="number" min={0} max={it.quantity} value={recv[it.id].q} title={t('purchases.qty') as string}
+                          onChange={(e) => setRecv({ ...recv, [it.id]: { ...recv[it.id], q: Math.min(Number(it.quantity), Math.max(0, Number(e.target.value) || 0)) } })}
+                          className="w-14 border border-slate-300 rounded px-1 py-0.5 text-xs" />
+                        {Number(it.bonus_qty) > 0 && (
+                          <input type="number" min={0} max={it.bonus_qty} value={recv[it.id].b} title={t('purchases.bonus_qty') as string}
+                            onChange={(e) => setRecv({ ...recv, [it.id]: { ...recv[it.id], b: Math.min(Number(it.bonus_qty), Math.max(0, Number(e.target.value) || 0)) } })}
+                            className="w-12 border border-emerald-300 rounded px-1 py-0.5 text-xs" />
+                        )}
+                        <input type="date" value={recv[it.id].exp} title={t('purchases.expiry') as string}
+                          onChange={(e) => setRecv({ ...recv, [it.id]: { ...recv[it.id], exp: e.target.value } })}
+                          className="w-32 border border-slate-300 rounded px-1 py-0.5 text-xs" />
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -903,7 +964,32 @@ function PODetailModal({ po, onClose, onReceive, onCancel, onPrintLabels, canRec
               {t('purchases.cancel')}
             </button>
           )}
-          {po.status === 'draft' && canReceive && (
+          {po.status === 'draft' && canReceive && !partial && (
+            <button onClick={onEdit} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">
+              {t('purchases.edit')}
+            </button>
+          )}
+          {po.status === 'draft' && canReceive && !partial && (
+            <button onClick={startPartial} className="px-4 py-2 text-sm rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+              {t('purchases.receive_partial')}
+            </button>
+          )}
+          {partial && (
+            <>
+              <input value={recvInv} onChange={(e) => setRecvInv(e.target.value)} placeholder={t('purchases.delivery_invoice') as string}
+                className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-44" />
+              <button onClick={() => setPartial(false)} className="px-4 py-2 text-sm rounded-lg border border-slate-200 hover:bg-slate-50">{t('common.cancel')}</button>
+              <button disabled={recvCount === 0}
+                onClick={() => onReceivePartial(
+                  Object.entries(recv).map(([id, r]) => ({ item_id: Number(id), quantity: r.q, bonus_qty: r.b, expiry_date: r.exp || null })),
+                  recvInv,
+                )}
+                className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50">
+                {t('purchases.confirm_partial', { n: recvCount })}
+              </button>
+            </>
+          )}
+          {po.status === 'draft' && canReceive && !partial && (
             <button onClick={onReceive} className="px-4 py-2 text-sm rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700">
               {t('purchases.receive')}
             </button>

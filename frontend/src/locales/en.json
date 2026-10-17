@@ -1621,7 +1621,13 @@
     "buy_unit_hint": "Unit you are buying in — quantity, public price and cost are per this unit",
     "unit_mid": "(strip)",
     "unit_sub": "(small unit)",
-    "status_imported": "Imported"
+    "status_imported": "Imported",
+    "edit_title": "Edit purchase order",
+    "edit": "Edit",
+    "receive_partial": "Receive part",
+    "recv_now": "Arriving now (qty / bonus / expiry)",
+    "delivery_invoice": "Delivery invoice no.",
+    "confirm_partial": "Receive {{n}} line(s)"
   },
   "customers": {
     "title": "Customers",
