@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { sellUnitsOf, unitPrice, unitsPerBox } from '../lib/packStock'
 import { useTranslation } from 'react-i18next'
-import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer, Upload } from 'lucide-react'
+import { Package, Plus, Eye, Check, X, Trash2, AlertTriangle, FileDown, Search, Printer, Upload, Undo2 } from 'lucide-react'
 import BulkBarcodePrint, { type BulkItem } from '../components/BulkBarcodePrint'
 import SmartImportModal from '../components/SmartImportModal'
+import SupplierReturnsModal from '../components/SupplierReturnsModal'
 import Layout from '../components/Layout'
 import { useSort, SortTh, useQuickFilter, TableFilter } from '../components/DataTable'
 import { LoadingSpinner } from '../components/LoadingSpinner'
@@ -129,6 +130,7 @@ export default function Purchases() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('')
   const [importing, setImporting] = useState(false)
+  const [returning, setReturning] = useState(false)
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [replenishing, setReplenishing] = useState(false)
@@ -209,6 +211,7 @@ export default function Purchases() {
   return (
     <Layout>
       {importing && <SmartImportModal kind="purchases" onClose={() => setImporting(false)} onDone={() => { setImporting(false); load() }} />}
+      {returning && <SupplierReturnsModal suppliers={suppliers} branches={branches} onClose={() => setReturning(false)} />}
       <main className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <h1 className="feature-page-title flex items-center gap-2">
@@ -222,6 +225,10 @@ export default function Purchases() {
                 <Upload size={16} />{t('smart_import.btn_purchases')}
               </button>
             )}
+            <button onClick={() => setReturning(true)}
+              className="bg-white border border-rose-300 hover:bg-rose-50 text-rose-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+              <Undo2 size={16} />{t('supplier_returns.btn')}
+            </button>
             <button
               onClick={() => setReplenishing(true)}
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"

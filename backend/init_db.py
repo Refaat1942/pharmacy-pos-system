@@ -901,6 +901,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(12,2) DEFAULT 0;
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS opening_balance NUMERIC(12,2) DEFAULT 0;
 
+-- Supplier returns (مرتجع مشتريات): goods sent back, credited to the supplier.
+CREATE SEQUENCE IF NOT EXISTS supplier_return_seq START 1;
+CREATE TABLE IF NOT EXISTS supplier_returns (
+    id SERIAL PRIMARY KEY,
+    return_number VARCHAR(40) UNIQUE NOT NULL,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    branch_id INTEGER NOT NULL REFERENCES branches(id),
+    po_id INTEGER REFERENCES purchase_orders(id),
+    status VARCHAR(20) NOT NULL DEFAULT 'done',
+    reason VARCHAR(30),
+    notes TEXT,
+    total NUMERIC(12,2) NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    cancelled_by INTEGER REFERENCES users(id),
+    cancelled_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sup_returns_supplier ON supplier_returns(supplier_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS supplier_return_items (
+    id SERIAL PRIMARY KEY,
+    return_id INTEGER NOT NULL REFERENCES supplier_returns(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+    product_name TEXT,
+    quantity NUMERIC(12,3) NOT NULL,
+    unit_type VARCHAR(8) DEFAULT 'pack',
+    sub_quantity INTEGER NOT NULL,
+    unit_cost NUMERIC(12,4) NOT NULL,
+    total NUMERIC(12,2) NOT NULL,
+    expiry_date DATE,
+    lots JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_sup_return_items ON supplier_return_items(return_id);
+
 ALTER TABLE invoice_items ADD COLUMN IF NOT EXISTS insurance_line JSONB;
 
 CREATE TABLE IF NOT EXISTS insurance_usage_ledger (

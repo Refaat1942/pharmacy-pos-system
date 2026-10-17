@@ -186,6 +186,9 @@ from loyalty import router as loyalty_router
 app.include_router(loyalty_router)
 from smart_import import router as smart_import_router  # noqa: E402
 app.include_router(smart_import_router)
+
+from supplier_returns import router as supplier_returns_router  # noqa: E402
+app.include_router(supplier_returns_router, dependencies=[Depends(requires_feature("purchases"))])
 from pos_counseling import router as pos_counseling_router
 app.include_router(pos_counseling_router)
 from digital_platforms import router as digital_platforms_router
