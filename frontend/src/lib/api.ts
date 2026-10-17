@@ -297,6 +297,16 @@ export interface CounselingSuggestion {
   advice?: string
   suggest?: string
   related_products?: Product[]
+  how_to?: string[]
+  warnings?: string[]
+  suggestions?: string[]
+  interactions?: CounselingInteraction[]
+}
+
+export interface CounselingInteraction {
+  severity: 'high' | 'medium' | 'low'
+  with: string
+  message: string
 }
 
 export const posCounselingAPI = {

@@ -255,7 +255,7 @@ export default function POS() {
         cart_product_ids: cartItemsRef.current.map((i) => i.product.id),
         lang: lang === 'ar' ? 'ar' : 'en',
       })
-      if (!data.matched || !data.advice) return
+      if (!data.matched || (!data.advice && !data.how_to?.length && !data.interactions?.length)) return
       setCounselingTips((prev) => [
         ...prev,
         {
@@ -264,6 +264,9 @@ export default function POS() {
           product_name: data.product_name || (lang === 'ar' ? product.name_ar : product.name_en) || product.name_en,
           advice: data.advice || '',
           suggest: data.suggest || '',
+          how_to: data.how_to || [],
+          warnings: data.warnings || [],
+          interactions: data.interactions || [],
           related_products: counselingRelatedOn ? (data.related_products || []) : [],
         },
       ].slice(-3))

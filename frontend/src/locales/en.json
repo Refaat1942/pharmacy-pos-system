@@ -1957,7 +1957,10 @@
   "counseling": {
     "banner_title": "Pharmacist tip",
     "related_items": "You may also suggest",
-    "add_to_cart": "Add to cart"
+    "add_to_cart": "Add to cart",
+    "how_to": "How to take",
+    "warnings": "Warnings",
+    "interaction_with": "Interaction with: {{name}}"
   },
   "insurance": {
     "title": "Insurance Management",
