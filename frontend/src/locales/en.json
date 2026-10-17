@@ -2270,5 +2270,28 @@
     "failed": "Could not change the password",
     "save": "Save password",
     "logout": "Log out"
+  },
+  "loose": {
+    "btn": "Detect loose selling",
+    "btn_hint": "Box-only items whose name says tablets, capsules or sachets",
+    "title": "Items sold by strip or tablet",
+    "subtitle": "Item names were read to suggest units per box — review and pick; stock is converted mathematically (boxes × units)",
+    "item": "Item",
+    "per_box": "Units per box",
+    "strip": "Per strip",
+    "box_price": "Box price",
+    "loose_prices": "Loose prices",
+    "stock": "Stock",
+    "confidence": "Confidence",
+    "strip_word": "Strip",
+    "strip_hint": "Units in a strip (leave empty if not sold by the strip)",
+    "conf_high": "From the name",
+    "conf_medium": "Strip is a guess",
+    "conf_needs_count": "Enter the count",
+    "none": "No items need changing 👌",
+    "all_branches": "Apply to the same barcode in all branches",
+    "apply": "Convert {{n}} item(s)",
+    "done": "{{n}} item(s) converted — stock is now in small units and loose prices are set",
+    "hint": "Loose price = box price ÷ units, rounded up to 25 piasters. Box price and cost do not change. A converted item is never converted twice."
   }
 }
