@@ -857,6 +857,40 @@ CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id
 CREATE INDEX IF NOT EXISTS idx_returns_branch_created ON returns(branch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_returns_seller_branch_created ON returns(seller_id, branch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_return_items_invoice_item ON return_items(invoice_item_id);
+-- Fix 2026-10: the database ran in UTC, so every NOW()-stamped time was 2–3 h behind
+-- Egypt. Connections now use Africa/Cairo; convert existing UTC times once. Times that
+-- the app already wrote in Cairo time are left alone: offline sales/returns/shifts,
+-- imported purchase history, time-clock punches.
+DO $tz$
+DECLARE r record; extra text;
+BEGIN
+  IF EXISTS (SELECT 1 FROM schema_fixes WHERE key = 'utc_to_cairo_times') THEN RETURN; END IF;
+  FOR r IN SELECT c.table_name, c.column_name FROM information_schema.columns c
+           JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+           WHERE c.table_schema = current_schema() AND t.table_type = 'BASE TABLE'
+             AND c.data_type = 'timestamp without time zone'
+  LOOP
+    extra := '';
+    IF r.table_name IN ('invoices', 'returns') AND r.column_name = 'created_at' THEN
+      extra := ' AND NOT COALESCE(is_offline, false)';
+    ELSIF r.table_name = 'shifts' AND r.column_name = 'opened_at' THEN
+      extra := ' AND NOT COALESCE(is_offline, false)';
+    ELSIF r.table_name = 'shifts' AND r.column_name = 'closed_at' THEN
+      extra := ' AND close_client_uuid IS NULL';
+    ELSIF r.table_name = 'purchase_orders' THEN
+      extra := ' AND status <> ''imported''';
+    ELSIF r.table_name = 'attendance' AND r.column_name = 'punched_at' THEN
+      CONTINUE;
+    ELSIF r.table_name = 'customer_payments' AND r.column_name = 'paid_at' THEN
+      extra := ' AND NOT (payment_method = ''return'' AND reference IN '
+            || '(SELECT return_invoice_number FROM returns WHERE COALESCE(is_offline, false)))';
+    END IF;
+    EXECUTE format('UPDATE %I SET %I = (%I AT TIME ZONE ''UTC'') AT TIME ZONE ''Africa/Cairo'' WHERE %I IS NOT NULL',
+                   r.table_name, r.column_name, r.column_name, r.column_name) || extra;
+  END LOOP;
+  INSERT INTO schema_fixes (key) VALUES ('utc_to_cairo_times');
+END
+$tz$;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid) WHERE client_uuid IS NOT NULL;
 -- Opening balances carried over from the old system (smart import / manual).
 -- Customers: positive = the customer owes us. Suppliers: positive = we owe the supplier.

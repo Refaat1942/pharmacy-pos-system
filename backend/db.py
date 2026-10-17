@@ -8,6 +8,7 @@ from psycopg2 import sql
 
 from tenant_ctx import get_current_schema
 
+PHARMACY_TZ = os.getenv("PHARMACY_TZ", "Africa/Cairo")
 _SCHEMA_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
 
 
@@ -35,6 +36,9 @@ def _apply_search_path(conn, schema: str) -> None:
     cur.execute(
         sql.SQL("SET search_path TO {}, public").format(sql.Identifier(schema))
     )
+    # Pharmacy local time for now()/CURRENT_DATE and timestamp columns (the database
+    # server's own zone is UTC, which stored every time 2–3 hours behind Egypt).
+    cur.execute("SELECT set_config('TimeZone', %s, false)", (PHARMACY_TZ,))
     cur.close()
     # Commit so the setting is session-wide: SET inside an open transaction is undone
     # by a later conn.rollback(), silently pointing the connection at 'public'.
