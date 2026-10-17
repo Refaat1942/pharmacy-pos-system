@@ -1475,7 +1475,8 @@
     "confirm_delete": "Deactivate this supplier?",
     "col_region": "Area / Region",
     "col_address_details": "Address Details",
-    "address_details_placeholder": "Street, building #, apartment…"
+    "address_details_placeholder": "Street, building #, apartment…",
+    "kind_opening": "Opening balance"
   },
   "purchases": {
     "title": "Purchase Orders",
@@ -1665,7 +1666,9 @@
     "staff_note_placeholder": "Add a note about this customer…",
     "staff_note_delete_confirm": "Delete this note?",
     "whatsapp_chat": "WhatsApp",
-    "whatsapp_open": "Open WhatsApp chat"
+    "whatsapp_open": "Open WhatsApp chat",
+    "kind_opening": "Opening balance",
+    "kind_return": "Return (credit)"
   },
   "dashboard": {
     "title": "Operational Dashboard",

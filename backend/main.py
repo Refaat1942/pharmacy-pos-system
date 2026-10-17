@@ -908,6 +908,11 @@ class InvoiceItemInput(BaseModel):
     dose_text: Optional[str] = None
 
 
+def _line_discount(item: "InvoiceItemInput") -> float:
+    """Line discount (manual + offer, sent together in `discount`), within 0 … line value."""
+    return round(min(max(float(item.discount or 0), 0.0), item.quantity * item.unit_price), 2)
+
+
 class SaleRequest(BaseModel):
     type: str
     payment_method: str
@@ -962,7 +967,7 @@ def _sale_response(cur, invoice_id: int) -> dict:
 
 
 def _offline_sale_time(req) -> Optional[datetime]:
-    """When the sale was made offline (clamped to the last 30 days, never the future)."""
+    """When the sale was made offline (clamped to the last 3 days, never the future)."""
     if not req.client_uuid or not req.offline_created_at:
         return None
     from datetime import timedelta
@@ -970,7 +975,7 @@ def _offline_sale_time(req) -> Optional[datetime]:
     if ts.tzinfo is not None:
         ts = ts.astimezone().replace(tzinfo=None)  # invoices.created_at is server-local naive
     now = datetime.now()
-    return max(now - timedelta(days=30), min(ts, now))
+    return max(now - timedelta(days=3), min(ts, now))
 
 
 @app.post("/api/sales")
@@ -1013,9 +1018,19 @@ def create_sale(req: SaleRequest,
             if not user_feature_option(current_user, "insurance", "pos_billing"):
                 raise HTTPException(400, "Insurance sales are not enabled for your account")
 
-        subtotal = sum(i.quantity * i.unit_price for i in req.items)
+        for i in req.items:
+            if i.quantity <= 0:
+                raise HTTPException(400, "Quantity must be positive")
+            if i.unit_price < 0 or (i.discount or 0) < 0 or (i.offer_discount or 0) < 0:
+                raise HTTPException(400, "Prices and discounts cannot be negative")
+        subtotal = round(sum(i.quantity * i.unit_price for i in req.items), 2)
+        # Line discounts (manual + offer) come off the total; each is limited to its
+        # line, and the invoice discount to what is left. (The total used to ignore
+        # line discounts, so the saved/printed total and account balances were too high.)
+        lines_discount = round(sum(_line_discount(i) for i in req.items), 2)
+        invoice_discount_amt = round(min(max(float(req.discount or 0), 0.0), subtotal - lines_discount), 2)
         delivery_fee = float(req.delivery_fee or 0) if (req.delivery_fee and req.type not in ("return", "insurance")) else 0.0
-        net_total = subtotal - req.discount + delivery_fee
+        net_total = round(subtotal - lines_discount - invoice_discount_amt + delivery_fee, 2)
 
         insurance_data = None
         insurance_company_id = None
@@ -1023,7 +1038,7 @@ def create_sale(req: SaleRequest,
         discount_card_id_val = None
         insurance_snapshot = None
         insurance_totals = None
-        invoice_discount = req.discount
+        invoice_discount = invoice_discount_amt
 
         if req.type not in ("return", "cash", "insurance") and net_total > 100 and not req.customer_id and not (req.delivery_customer_name or "").strip():
             raise HTTPException(status_code=400, detail="Customer information is required for sales over EGP 100")
@@ -1118,7 +1133,9 @@ def create_sale(req: SaleRequest,
                 )
 
         seller_id = None
-        _seller_uid = req.seller_id or current_user.get("id")
+        # The token carries "user_id" (not "id"): the fallback was always NULL, so sales
+        # without a chosen seller were missing from every cashier's shift.
+        _seller_uid = req.seller_id or current_user.get("user_id")
         if _seller_uid:
             cur.execute("SELECT id, status FROM users WHERE id=%s", (_seller_uid,))
             _seller = cur.fetchone()
@@ -1248,7 +1265,7 @@ def create_sale(req: SaleRequest,
             from feature_access import user_has_feature
             if user_has_feature(current_user, "offers"):
                 from offer_engine import active_offer_product_ids
-                offer_product_ids = active_offer_product_ids(cur)
+                offer_product_ids = active_offer_product_ids(cur, branch_id)
 
         for item in req.items:
             cur.execute("SELECT branch_id, active, expiry_date, name_en FROM products WHERE id=%s", (item.product_id,))
@@ -1375,7 +1392,7 @@ def create_sale(req: SaleRequest,
             stock_used = int(item.quantity) * line_pack
             unit_label = _unit_label(prod, item.unit_type)
             offer_disc = float(item.offer_discount or 0)
-            line_discount = float(item.discount or 0)
+            line_discount = _line_discount(item)
             if int(item.product_id) in offer_product_ids:
                 if line_discount > offer_disc + 0.009:
                     raise HTTPException(
@@ -1908,11 +1925,22 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         # Always tag the return with the ORIGINAL INVOICE's branch (not the
         # operator's profile branch). Admins may operate across branches; the
         # return must remain accounted to the branch that owns the invoice.
-        cur.execute("SELECT branch_id FROM invoices WHERE id=%s", (invoice_id,))
+        cur.execute("""SELECT branch_id, customer_id, payment_method, net_total,
+                              COALESCE(delivery_fee, 0) AS delivery_fee
+                       FROM invoices WHERE id=%s FOR UPDATE""", (invoice_id,))
         inv_row = cur.fetchone()
         if not inv_row:
             raise HTTPException(status_code=404, detail="Invoice not found")
         return_branch_id = inv_row["branch_id"]
+        # Refund what the customer actually paid for the line: line total after its
+        # discount, scaled by the invoice-level discounts (invoice discount, loyalty,
+        # insurance share) = paid ÷ sum of line totals. (It used to refund list price.)
+        cur.execute("SELECT COALESCE(SUM(total), 0) AS lines FROM invoice_items WHERE invoice_id=%s", (invoice_id,))
+        lines_total = float(cur.fetchone()["lines"] or 0)
+        paid_goods = max(0.0, float(inv_row["net_total"] or 0) - float(inv_row["delivery_fee"] or 0))
+        paid_factor = min(1.0, paid_goods / lines_total) if lines_total > 0 else 1.0
+        pm = (inv_row["payment_method"] or "cash").lower()
+        refund_method = "account" if pm == "account" else "card" if pm in ("visa", "instapay", "vodafone_cash", "card") else "cash"
         if offline_at is None:
             # Offline returns were made in a shift opened on the till; it is matched by time.
             from shifts import assert_open_shift_for_sales
@@ -1923,17 +1951,18 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
         cur.execute(
             """INSERT INTO returns
                (original_invoice_id, return_invoice_number, type, total_returned, reason, seller_id, branch_id,
-                client_uuid, is_offline, created_at)
-               VALUES (%s,%s,'partial',%s,%s,%s,%s,%s,%s,COALESCE(%s, now())) RETURNING *""",
+                client_uuid, is_offline, created_at, refund_method)
+               VALUES (%s,%s,'partial',%s,%s,%s,%s,%s,%s,COALESCE(%s, now()),%s) RETURNING *""",
             (invoice_id, return_number, 0, req.reason,
-             current_user.get("user_id"), return_branch_id, client_uuid, offline_at is not None, offline_at),
+             current_user.get("user_id"), return_branch_id, client_uuid, offline_at is not None, offline_at,
+             refund_method),
         )
         ret = cur.fetchone()
 
         total_returned = 0.0
         for item in req.items:
             cur.execute(
-                """SELECT ii.unit_price, ii.product_id, ii.quantity, ii.unit_label,
+                """SELECT ii.unit_price, ii.total AS line_total, ii.product_id, ii.quantity, ii.unit_label,
                           ii.pack_size AS line_pack_stored,
                           COALESCE(p.pack_size, 1) AS cur_pack_size, p.sub_unit,
                           COALESCE((
@@ -1942,7 +1971,8 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
                           ), 0) AS already_sub
                    FROM invoice_items ii
                    LEFT JOIN products p ON ii.product_id = p.id
-                   WHERE ii.id=%s AND ii.invoice_id=%s""",
+                   WHERE ii.id=%s AND ii.invoice_id=%s
+                   FOR UPDATE OF ii""",
                 (item.invoice_item_id, invoice_id),
             )
             inv_item = cur.fetchone()
@@ -1969,7 +1999,9 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
             if req_sub > remaining_sub:
                 raise HTTPException(status_code=400, detail=f"Return qty {req_sub} exceeds remaining {remaining_sub}")
 
-            price_per_sub = float(inv_item["unit_price"]) / line_pack
+            line_paid = float(inv_item["line_total"]) if inv_item["line_total"] is not None \
+                else float(inv_item["unit_price"]) * int(inv_item["quantity"])
+            price_per_sub = line_paid * paid_factor / total_sub if total_sub else 0.0
             item_total = round(price_per_sub * req_sub, 2)
             total_returned += item_total
 
@@ -1996,6 +2028,16 @@ def process_return(invoice_id: int, req: ReturnRequest, current_user=Depends(get
 
         cur.execute("UPDATE returns SET total_returned=%s WHERE id=%s",
                     (round(total_returned, 2), ret["id"]))
+        if refund_method == "account" and inv_row["customer_id"] and total_returned > 0:
+            # On-account sale: the refund reduces what the customer owes (a credit on the
+            # account), it is not cash out of the drawer.
+            cur.execute(
+                """INSERT INTO customer_payments (customer_id, invoice_id, amount, payment_method, reference,
+                                                  notes, recorded_by, paid_at)
+                   VALUES (%s,%s,%s,'return',%s,%s,%s,COALESCE(%s, now()))""",
+                (inv_row["customer_id"], invoice_id, round(total_returned, 2), return_number,
+                 "مرتجع / Return", current_user.get("user_id"), offline_at),
+            )
         from loyalty_engine import reverse_loyalty_on_return
         reverse_loyalty_on_return(
             cur, invoice_id, round(total_returned, 2), current_user.get("user_id"),

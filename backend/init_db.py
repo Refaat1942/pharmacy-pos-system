@@ -844,6 +844,8 @@ ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_client_uuid ON invoices(client_uuid) WHERE client_uuid IS NOT NULL;
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS client_uuid VARCHAR(64);
 ALTER TABLE returns ADD COLUMN IF NOT EXISTS is_offline BOOLEAN DEFAULT false;
+-- How the refund was given: cash (from the drawer), card, or account (credit on the customer).
+ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_method VARCHAR(10);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_returns_client_uuid ON returns(client_uuid) WHERE client_uuid IS NOT NULL;
 -- Opening balances carried over from the old system (smart import / manual).
 -- Customers: positive = the customer owes us. Suppliers: positive = we owe the supplier.

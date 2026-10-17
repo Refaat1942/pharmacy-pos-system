@@ -282,8 +282,11 @@ async function queueSale(payload: any): Promise<{ invoice: any; items: any[] }> 
     }
   })
   const subtotal = items.reduce((s: number, i: any) => s + i.quantity * i.unit_price, 0)
+  const lineDisc = items.reduce((s: number, i: any) => s + Math.min(Math.max(Number(i.discount || 0), 0), i.quantity * i.unit_price), 0)
   const fee = payload.type === 'delivery' || payload.type === 'digital' ? Number(payload.delivery_fee || 0) : 0
-  const net = Math.max(0, +(subtotal - Number(payload.discount || 0) + fee).toFixed(2))
+  // Same rule as the server: line discounts, then the invoice discount (within what is left).
+  const invDisc = Math.min(Math.max(Number(payload.discount || 0), 0), subtotal - lineDisc)
+  const net = Math.max(0, +(subtotal - lineDisc - invDisc + fee).toFixed(2))
   let user: any = {}
   try { user = JSON.parse(localStorage.getItem('pharma_user') || '{}') } catch { /* ignore */ }
   const cash = payload.payment_method === 'cash' ? Number(payload.cash_amount ?? net) : payload.cash_amount ?? null
@@ -343,8 +346,9 @@ async function localBreakdown(shift: any): Promise<any> {
     const p = s.payload || {}
     const items = (p.items || []) as any[]
     const sub = items.reduce((t, i) => t + Number(i.quantity) * Number(i.unit_price), 0)
+    const ld = items.reduce((t, i) => t + Math.min(Math.max(Number(i.discount || 0), 0), Number(i.quantity) * Number(i.unit_price)), 0)
     const fee = p.type === 'delivery' || p.type === 'digital' ? Number(p.delivery_fee || 0) : 0
-    const net = Math.max(0, sub - Number(p.discount || 0) + fee)
+    const net = Math.max(0, sub - ld - Math.min(Math.max(Number(p.discount || 0), 0), sub - ld) + fee)
     total += net
     if (p.payment_method === 'cash') {
       cash += net
