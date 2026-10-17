@@ -468,7 +468,8 @@ def _receive_po_line(cur, it, po: dict, branch_id: int, current_user: dict) -> N
 
     old_stock_sub = int(prow.get("stock") or 0)
     old_avg = float(prow.get("avg_cost") or prow.get("cost") or 0)
-    old_packs = old_stock_sub / pack_size if pack_size > 1 else old_stock_sub
+    # Oversold (negative) stock has no cost to average with: start from zero.
+    old_packs = max(0, old_stock_sub) / pack_size if pack_size > 1 else max(0, old_stock_sub)
     total_packs = old_packs + outer_qty
     new_avg = (
         (old_packs * old_avg + outer_qty * box_cost) / total_packs
@@ -606,7 +607,10 @@ def create_po(req: POIn, current_user=Depends(get_current_user)):
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (po_id, it.product_id, barcode, pname_ar, pname_en,
                  it.quantity, it.bonus_qty, pharmacy, it.discount_pct, 0, stax,
-                 retail, it.expiry_date, line_total,
+                 # No public price on the line (e.g. a PO from the shortages screen): store
+                 # none, so receiving keeps the product's selling price instead of
+                 # overwriting it with the cost.
+                 retail if it.public_price is not None else None, it.expiry_date, line_total,
                  (it.unit_type or "pack") if it.product_id else "pack"),
             )
 
@@ -796,10 +800,15 @@ def record_payment(supplier_id: int, req: PaymentIn,
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Supplier not found")
         if req.po_id:
-            cur.execute("SELECT id FROM purchase_orders WHERE id=%s AND supplier_id=%s",
+            cur.execute("SELECT id, status FROM purchase_orders WHERE id=%s AND supplier_id=%s",
                         (req.po_id, supplier_id))
-            if not cur.fetchone():
+            po_row = cur.fetchone()
+            if not po_row:
                 raise HTTPException(status_code=400, detail="PO does not belong to this supplier")
+            if po_row["status"] == "imported":
+                # Old invoices from the previous system are history: their balance is in
+                # the supplier's opening balance — pay without linking to the invoice.
+                raise HTTPException(status_code=400, detail="Imported invoices are history only — record the payment without choosing an invoice")
         cur.execute(
             """INSERT INTO supplier_payments
                (supplier_id, po_id, amount, payment_method, reference, notes, recorded_by)
