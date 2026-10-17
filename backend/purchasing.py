@@ -116,7 +116,7 @@ def list_suppliers(q: str = "", active_only: bool = True,
         params = [ub, ub] + params
     else:
         sql = """SELECT s.*,
-                        COALESCE((SELECT SUM(total) FROM purchase_orders
+                        COALESCE(s.opening_balance, 0) + COALESCE((SELECT SUM(total) FROM purchase_orders
                                   WHERE supplier_id=s.id AND status='received'), 0) AS total_charged,
                         COALESCE((SELECT SUM(amount) FROM supplier_payments
                                   WHERE supplier_id=s.id), 0) AS total_paid
@@ -869,6 +869,11 @@ def supplier_statement(supplier_id: int,
             (supplier_id, supplier_id),
         )
     txns = [dict(r) for r in cur.fetchall()]
+    opening = float(sup.get("opening_balance") or 0)
+    if opening and current_user.get("role") == "admin":
+        txns.insert(0, {"kind": "opening", "ref_id": None, "reference": "رصيد افتتاحي / Opening balance",
+                        "at": sup.get("created_at"), "debit": max(opening, 0), "credit": max(-opening, 0),
+                        "notes": None})
     running = 0.0
     for t in txns:
         running += float(t["debit"] or 0) - float(t["credit"] or 0)

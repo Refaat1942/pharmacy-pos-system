@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import SmartImportModal from '../components/SmartImportModal'
 import { useTranslation } from 'react-i18next'
 import { Truck, Plus, Edit2, FileText, DollarSign, X, Trash2, Download, Upload } from 'lucide-react'
 import Layout from '../components/Layout'
@@ -207,70 +208,12 @@ export default function Suppliers() {
         <PaymentModal supplier={paying} onClose={() => setPaying(null)} onSaved={() => { setPaying(null); load() }} />
       )}
       {showBulk && (
-        <SuppliersBulkModal onClose={() => setShowBulk(false)} onDone={() => { setShowBulk(false); load() }} />
+        <SmartImportModal kind="suppliers" onClose={() => setShowBulk(false)} onDone={() => { setShowBulk(false); load() }} />
       )}
     </Layout>
   )
 }
 
-function SuppliersBulkModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const { t } = useTranslation()
-  const [file, setFile] = useState<File | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState('')
-
-  const downloadTemplate = async () => {
-    const res = await api.get('/suppliers/bulk-template', { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'suppliers_template.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const upload = async () => {
-    if (!file) return
-    setBusy(true)
-    setMsg('')
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const { data } = await api.post('/suppliers/bulk-upload', fd)
-      setMsg(t('suppliers.bulk_done', data) as string)
-      setTimeout(onDone, 1200)
-    } catch (e: any) {
-      setMsg(e?.response?.data?.detail || t('suppliers.bulk_failed'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-3 border-b">
-          <h2 className="font-bold text-lg">{t('suppliers.bulk_upload')}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={18} /></button>
-        </div>
-        <div className="p-5 space-y-3">
-          <p className="text-sm text-slate-600">{t('suppliers.bulk_hint')}</p>
-          <button type="button" onClick={() => void downloadTemplate()} className="text-sm text-pharma-700 font-semibold hover:underline">
-            ⬇ {t('suppliers.download_template')}
-          </button>
-          <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setFile(e.target.files?.[0] || null)} className="block w-full text-sm" />
-          {msg && <p className="text-sm text-slate-700">{msg}</p>}
-        </div>
-        <div className="px-5 py-3 border-t flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-200">{t('common.cancel')}</button>
-          <button onClick={() => void upload()} disabled={!file || busy} className="px-4 py-2 text-sm rounded-lg bg-pharma-600 text-white font-medium disabled:opacity-50">
-            {busy ? t('common.loading') : t('suppliers.bulk_upload')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function EditModal({ initial, onClose, onSaved }: { initial: Partial<Supplier>; onClose: () => void; onSaved: () => void }) {
   const { t } = useTranslation()

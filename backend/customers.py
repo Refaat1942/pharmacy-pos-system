@@ -427,8 +427,9 @@ def list_customers_v2(
                     "WHERE cp.customer_id=c.id AND i.branch_id=%s)")
         params = [ub, ub] + params + [ub]
     else:
-        charged_sub = ("(SELECT COALESCE(SUM(net_total),0) FROM invoices "
-                       "WHERE customer_id=c.id AND payment_method='account' AND type!='return')")
+        # Admins see the whole account, including the balance carried over from the old system.
+        charged_sub = ("(COALESCE(c.opening_balance,0) + (SELECT COALESCE(SUM(net_total),0) FROM invoices "
+                       "WHERE customer_id=c.id AND payment_method='account' AND type!='return'))")
         paid_sub = ("(SELECT COALESCE(SUM(amount),0) FROM customer_payments "
                     "WHERE customer_id=c.id)")
     sql = f"SELECT c.*, {charged_sub} AS total_charged, {paid_sub} AS total_paid FROM customers c"
@@ -692,6 +693,11 @@ def customer_statement(customer_id: int, current_user=Depends(get_current_user))
             (customer_id, customer_id),
         )
     txns = [dict(r) for r in cur.fetchall()]
+    opening = float(cust.get("opening_balance") or 0)
+    if opening and current_user.get("role") == "admin":
+        txns.insert(0, {"kind": "opening", "ref_id": None, "reference": "رصيد افتتاحي / Opening balance",
+                        "at": cust.get("created_at"), "debit": max(opening, 0), "credit": max(-opening, 0),
+                        "notes": None})
     running = 0.0
     for t in txns:
         running += float(t["debit"] or 0) - float(t["credit"] or 0)

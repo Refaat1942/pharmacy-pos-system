@@ -184,6 +184,8 @@ from ai_assistant import router as ai_assistant_router
 app.include_router(ai_assistant_router)
 from loyalty import router as loyalty_router
 app.include_router(loyalty_router)
+from smart_import import router as smart_import_router  # noqa: E402
+app.include_router(smart_import_router)
 from pos_counseling import router as pos_counseling_router
 app.include_router(pos_counseling_router)
 from digital_platforms import router as digital_platforms_router
@@ -1100,6 +1102,9 @@ def create_sale(req: SaleRequest,
                    WHERE customer_id=%s AND payment_method='account' AND type!='return'""",
                 (account_customer_id,))
             charged = float(cur.fetchone()["charged"])
+            # Balance carried over from the old system counts toward the credit limit.
+            cur.execute("SELECT COALESCE(opening_balance,0) AS ob FROM customers WHERE id=%s", (account_customer_id,))
+            charged += float(cur.fetchone()["ob"])
             cur.execute(
                 "SELECT COALESCE(SUM(amount),0) AS paid FROM customer_payments WHERE customer_id=%s",
                 (account_customer_id,))
@@ -1208,6 +1213,9 @@ def create_sale(req: SaleRequest,
                             (account_customer_id,),
                         )
                         charged = float(cur.fetchone()["charged"])
+                        # Balance carried over from the old system counts toward the credit limit.
+                        cur.execute("SELECT COALESCE(opening_balance,0) AS ob FROM customers WHERE id=%s", (account_customer_id,))
+                        charged += float(cur.fetchone()["ob"])
                         cur.execute(
                             "SELECT COALESCE(SUM(amount),0) AS paid FROM customer_payments WHERE customer_id=%s",
                             (account_customer_id,),
